@@ -5,6 +5,7 @@ from src.services.review.rules.checkers import (
     SignatureCheckRule,
     StampCheckRule,
 )
+from src.services.review.rules.config import RULES_BY_DOCUMENT, load_rules, get_all_document_types
 from src.services.review.rules.registry import RuleRegistry
 
 __all__ = [
@@ -15,4 +16,7 @@ __all__ = [
     "SignatureCheckRule",
     "StampCheckRule",
     "PrerequisiteCheckRule",
+    "RULES_BY_DOCUMENT",
+    "load_rules",
+    "get_all_document_types",
 ]

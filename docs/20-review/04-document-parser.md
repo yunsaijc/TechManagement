@@ -36,6 +36,110 @@
                                    └─────────────────┘
 ```
 
+## 文档内容预提取
+
+在规则检查之前，先一次性提取所有关键内容，避免重复提取。
+
+### 设计原则
+
+- **OCR 优先**：文字内容用 OCR 可靠提取
+- **LLM 辅助**：OCR 无法处理的内容（如印章图像）才用 LLM
+- **正则提取**：从 OCR 文本中用规则解析结构化信息
+- **开放式返回**：返回灵活字典，支持不同文档类型
+
+### 提取流程
+
+```
+PDF/图片
+    │
+    ▼
+┌─────────────────┐
+│  PyMuPDF 解析   │  提取文本、图像、坐标
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+ OCR 提取    裁剪印章/
+ 文字文本    签字区域图像
+    │         │
+    ▼         ▼
+ 正则/规则    LLM 识别
+ 解析结构化   印章单位/
+ 信息         签字人
+    │         │
+    └────┬────┘
+         ▼
+  ExtractedContent
+  (统一结果)
+```
+
+### 提取方式
+
+| 方式 | 用途 |
+|------|------|
+| OCR (PaddleOCR) | 从 PDF/图片提取文字内容 |
+| 正则/规则 | 从 OCR 文本解析特定字段（单位、签字人、项目名等） |
+| 多模态 LLM | 处理图像内容（印章图像识别、签字图像识别） |
+
+### 提取结果格式
+
+```python
+class ExtractedContent:
+    """提取结果 - 开放式键值对"""
+    
+    def __init__(self, data: dict):
+        self.data = data  # 灵活的字典
+    
+    def get(self, key: str, default=None):
+        return self.data.get(key, default)
+```
+
+### 示例
+
+```python
+# 检索报告提取结果
+{
+    "doc_type": "检索报告",
+    "project_name": "非均匀脆性固体灾变破坏",
+    "units": ["燕山大学", "中国科学院力学研究所"],
+    "stamps": [{"page": 1, "unit": "西南科技大学"}],
+    "authors": ["郝圣旺", "王军", "薛健"],
+    "pages": 10,
+}
+
+# 论文提取结果
+{
+    "doc_type": "论文",
+    "title": "论文标题",
+    "authors": [...],
+}
+```
+
+### 复用机制
+
+提取结果存入 `ReviewContext.content`，所有规则复用：
+
+```python
+class SomeRule(BaseRule):
+    async def check(self, context: ReviewContext):
+        # 按需获取
+        units = context.content.get("units", [])
+        stamps = context.content.get("stamps", [])
+        # 检查逻辑
+```
+
+### 与现有模块关系
+
+```
+src/services/review/
+├── parser.py          # 文档解析
+├── preprocessor.py    # 图像预处理
+├── extractor.py      # 新增：内容提取器
+├── agent.py          # 协调流程
+└── rules/
+    └── checkers/    # 使用提取结果检查
+```
+
 ## 核心实现
 
 ### 文档解析器

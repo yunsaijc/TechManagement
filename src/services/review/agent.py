@@ -2,10 +2,12 @@
 import time
 from typing import Any, List, Optional
 
-from src.common.llm import get_llm_client
+from src.common.llm import get_default_llm_client
 from src.common.models import CheckResult, CheckStatus, ReviewResult
 from src.common.vision import MultimodalLLM
+from src.services.review.extractor import DocumentExtractor
 from src.services.review.rules import ReviewContext, RuleRegistry
+from src.services.review.rules.config import load_rules
 
 
 class ReviewAgent:
@@ -27,9 +29,10 @@ class ReviewAgent:
             document_parser: 文档解析器
             rule_registry: 规则注册表
         """
-        self.llm = llm or get_llm_client()
+        self.llm = llm or get_default_llm_client()
         self.parser = document_parser
         self.rule_registry = rule_registry
+        self.extractor = DocumentExtractor(self.llm)
 
     async def process(
         self,
@@ -56,21 +59,25 @@ class ReviewAgent:
         if not document_type:
             document_type = await self._classify_document(file_data)
 
-        # 2. 内容提取（如果提供了 parser）
+        # 2. 预提取内容（一次性提取，供规则复用）
+        extracted = await self.extractor.extract(file_data, document_type)
+
+        # 3. 构建审查上下文
         context = ReviewContext(
             file_data=file_data,
             file_type=file_type,
             document_type=document_type,
+            extracted=extracted,
             metadata=kwargs.get("metadata", {}),
         )
 
-        # 3. 规则检查
+        # 4. 加载并运行规则
         rule_results = await self._run_rules(context, check_items)
 
-        # 4. LLM 补充（可选）
+        # 5. LLM 补充（可选）
         llm_results = await self._llm_check(context, check_items)
 
-        # 5. 结果聚合
+        # 6. 结果聚合
         all_results = rule_results + llm_results
         summary = self._generate_summary(all_results)
         suggestions = self._generate_suggestions(all_results)
@@ -96,7 +103,7 @@ class ReviewAgent:
 - retrieval_report（检索报告）
 - award_certificate（奖励证书）
 - contract（合同）
-- other（其他）
+- paper（论文）
 
 直接返回类型名称。"""
 
@@ -111,6 +118,7 @@ class ReviewAgent:
                 "检索报告": "retrieval_report",
                 "奖励证书": "award_certificate",
                 "合同": "contract",
+                "论文": "paper",
             }
             for key, value in type_mapping.items():
                 if key in result:
@@ -126,7 +134,19 @@ class ReviewAgent:
         check_items: Optional[List[str]] = None,
     ) -> List[CheckResult]:
         """运行规则"""
-        rules = self.rule_registry.create_chain(context.document_type)
+        # 从配置加载规则
+        rule_names = load_rules(context.document_type)
+        
+        # 创建规则实例
+        rules = []
+        for name in rule_names:
+            rule_class = self.rule_registry.get_rule(name)
+            if rule_class:
+                rules.append(rule_class())
+        
+        # 如果没有配置规则，使用 registry 的默认链
+        if not rules:
+            rules = self.rule_registry.create_chain(context.document_type)
 
         # 过滤检查项
         if check_items:

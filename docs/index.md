@@ -33,7 +33,8 @@ docs/
 │   ├── 02-rules.md                 # 规则引擎设计
 │   ├── 03-agent.md                # Agent 设计
 │   ├── 04-document-parser.md       # 文档解析方案
-│   └── 05-api.md                  # API 接口文档
+│   ├── 05-api.md                  # API 接口文档
+│   └── 06-rules.md                # 规则系统
 │
 ├── 30-project/                      # 📋 项目评审服务（未来）
 │
@@ -62,7 +63,8 @@ docs/
 │   ├── 02-rules.md
 │   ├── 03-agent.md
 │   ├── 04-document-parser.md
-│   └── 05-api.md
+│   ├── 05-api.md
+│   └── 06-rules.md
 │
 ├── 30-project/         ← 项目评审服务（未来，依赖 common）
 ├── 40-award/           ← 奖励评审服务（未来，依赖 common）

@@ -63,5 +63,14 @@ def get_llm_client(
             max_tokens=max_tokens,
             **kwargs
         )
+    elif provider == "minimax":
+        return ChatOpenAI(
+            model=model or "abab6.5s-chat",
+            api_key=api_key,
+            base_url=base_url or "https://api.minimax.chat/v1",
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
     else:
         raise ValueError(f"Unknown provider: {provider}")
