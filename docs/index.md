@@ -11,7 +11,8 @@ docs/
 │   ├── 02-doc-rules.md              # 文档维护规范
 │   ├── 03-coding-rules.md           # 开发规范
 │   ├── 04-architecture.md           # 系统架构总览
-│   └── 05-deployment.md             # 部署文档
+│   ├── 05-deployment.md             # 部署文档
+│   └── 06-database.md               # 数据库配置
 │
 ├── 10-common/                        # 🔧 通用组件层（所有服务共用）
 │   ├── 01-overview.md               # 通用组件概述
@@ -20,6 +21,12 @@ docs/
 │   ├── 04-file-handler.md          # 文件处理
 │   ├── 05-vision.md                # 视觉能力
 │   └── 06-tools.md                  # 工具函数
+│
+├── 15-data/                         # 📊 数据接入层
+│   ├── 01-overview.md              # 数据接入概述
+│   ├── 02-reward-db.md             # 奖励评审数据库
+│   ├── 03-project-db.md            # 项目评审数据库（待接入）
+│   └── 04-extension.md             # 扩展指南
 │
 ├── 20-review/                        # 🔍 形式审查服务
 │   ├── 01-overview.md              # 服务概述
@@ -88,5 +95,8 @@ docs/
 - [文档维护规范 →](00-global/02-doc-rules.md)
 - [开发规范 →](00-global/03-coding-rules.md)
 - [系统架构 →](00-global/04-architecture.md)
+- [数据库配置 →](00-global/06-database.md)
+- [数据接入概述 →](15-data/01-overview.md)
+- [奖励评审数据库 →](15-data/02-reward-db.md)
 - [通用组件概述 →](10-common/01-overview.md)
 - [形式审查服务 →](20-review/01-overview.md)

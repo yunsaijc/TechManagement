@@ -23,6 +23,11 @@ dependencies = [
     "Pillow>=10.0.0",
     "opencv-python>=4.8.0",
     "pymysql>=1.1.2",
+    # Web 框架
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "pymssql>=2.3.13",
+    "pyodbc>=5.3.0",
 ]
 
 [[tool.uv.index]]
