@@ -26,15 +26,17 @@ from typing import List
 from pydantic import BaseModel
 from src.common.models.document import BoundingBox
 
+
 class DetectionResult(BaseModel):
     """检测结果"""
     class_name: str
     bbox: BoundingBox
     confidence: float
 
+
 class BaseDetector(ABC):
     """目标检测器基类"""
-    
+
     @abstractmethod
     async def detect(
         self,
@@ -57,12 +59,13 @@ from ultralytics import YOLO
 from src.common.vision.base import BaseDetector, DetectionResult
 from src.common.models.document import BoundingBox
 
+
 class YOLODetector(BaseDetector):
     """YOLO 目标检测器"""
-    
+
     def __init__(self, model_path: str = "yolov8n.pt"):
         self.model = YOLO(model_path)
-    
+
     async def detect(
         self,
         image_data: bytes,
@@ -74,7 +77,7 @@ class YOLODetector(BaseDetector):
         # 转换图像
         nparr = np.frombuffer(image_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         # 检测
         results = self.model(
             img,
@@ -82,7 +85,7 @@ class YOLODetector(BaseDetector):
             classes=classes,
             verbose=False
         )
-        
+
         detections = []
         for result in results:
             boxes = result.boxes
@@ -90,7 +93,7 @@ class YOLODetector(BaseDetector):
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
-                
+
                 detections.append(DetectionResult(
                     class_name=result.names[cls],
                     bbox=BoundingBox(
@@ -99,7 +102,7 @@ class YOLODetector(BaseDetector):
                     ),
                     confidence=conf
                 ))
-        
+
         return detections
 ```
 
@@ -109,21 +112,23 @@ class YOLODetector(BaseDetector):
 # src/common/vision/specialized.py
 from src.common.vision.detector import YOLODetector
 
+
 class SignatureDetector(YOLODetector):
     """签名检测器 - 预训练模型"""
-    
+
     # 自定义类别
     CLASSES = ["signature", "handwriting"]
-    
+
     def __init__(self):
         # 使用专门训练的模型
         super().__init__("models/signature_detector.pt")
 
+
 class StampDetector(YOLODetector):
     """印章检测器"""
-    
+
     CLASSES = ["stamp", "seal", "official_seal"]
-    
+
     def __init__(self):
         super().__init__("models/stamp_detector.pt")
 ```
@@ -136,24 +141,25 @@ import cv2
 import numpy as np
 from typing import List
 
+
 class ImageSegmenter:
     """图像分割器"""
-    
+
     @staticmethod
     def crop_region(
         image_data: bytes,
-        bbox: BoundingBox
+        bbox: "BoundingBox"  # 前向引用
     ) -> bytes:
         """裁剪区域"""
         nparr = np.frombuffer(image_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         x, y, w, h = int(bbox.x), int(bbox.y), int(bbox.width), int(bbox.height)
         cropped = img[y:y+h, x:x+w]
-        
+
         _, buffer = cv2.imencode('.png', cropped)
         return buffer.tobytes()
-    
+
     @staticmethod
     def apply_mask(
         image_data: bytes,
@@ -163,11 +169,11 @@ class ImageSegmenter:
         """应用遮罩"""
         nparr = np.frombuffer(image_data, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         # 合并遮罩
         mask_3c = cv2.merge([mask, mask, mask])
         masked = cv2.bitwise_and(img, mask_3c)
-        
+
         _, buffer = cv2.imencode('.png', masked)
         return buffer.tobytes()
 ```
@@ -176,15 +182,22 @@ class ImageSegmenter:
 
 ```python
 # src/common/vision/multimodal.py
-from typing import List
-from src.common.llm.base import BaseLLM, Message, LLMResponse
+from typing import List, Any
+
+from langchain_core.messages import HumanMessage
+
 
 class MultimodalLLM:
-    """多模态 LLM 封装"""
-    
-    def __init__(self, llm: BaseLLM):
+    """多模态 LLM 封装 - 基于 LangChain"""
+
+    def __init__(self, llm: Any):
+        """初始化
+
+        Args:
+            llm: LangChain ChatModel 实例
+        """
         self.llm = llm
-    
+
     async def analyze_image(
         self,
         image_data: bytes,
@@ -192,20 +205,23 @@ class MultimodalLLM:
         **kwargs
     ) -> str:
         """分析图像"""
-        # 转换为 base64
         import base64
+
+        # 转换为 base64
         b64_image = base64.b64encode(image_data).decode("utf-8")
         image_url = f"data:image/png;base64,{b64_image}"
-        
-        messages = [Message(role="user", content=prompt)]
-        response = await self.llm.chat_with_image(
-            messages=messages,
-            images=[image_url],
-            **kwargs
+
+        # 构建多模态消息
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": image_url}}
+            ]
         )
-        
+
+        response = await self.llm.ainvoke([message], **kwargs)
         return response.content
-    
+
     async def describe_document(
         self,
         image_data: bytes,
@@ -219,7 +235,7 @@ class MultimodalLLM:
 4. 版式结构
 """
         return await self.analyze_image(image_data, prompt, **kwargs)
-    
+
     async def verify_signature(
         self,
         document_image: bytes,
@@ -228,28 +244,25 @@ class MultimodalLLM:
     ) -> str:
         """验证签名"""
         import base64
-        
+
         b64_doc = base64.b64encode(document_image).decode("utf-8")
         b64_sig = base64.b64encode(signature_image).decode("utf-8")
-        
+
         prompt = """比较这两张图片：
 - 图1：文档中的签名区域
 - 图2：参考签名
 
 请判断是否为同一人签名，置信度如何？"""
-        
-        messages = [Message(role="user", content=prompt)]
-        image_urls = [
-            f"data:image/png;base64,{b64_doc}",
-            f"data:image/png;base64,{b64_sig}"
-        ]
-        
-        response = await self.llm.chat_with_image(
-            messages=messages,
-            images=image_urls,
-            **kwargs
+
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_doc}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_sig}"}}
+            ]
         )
-        
+
+        response = await self.llm.ainvoke([message], **kwargs)
         return response.content
 ```
 
