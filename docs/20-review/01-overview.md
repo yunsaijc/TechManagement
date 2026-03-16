@@ -76,22 +76,33 @@
 ## 模块结构
 
 ```
-src/services/review/
-├── __init__.py
-├── agent.py              # 审查 Agent
-├── service.py            # 服务入口
-├── schema.py             # 请求/响应模型
-└── rules/                # 规则引擎
-    ├── __init__.py
-    ├── base.py           # 规则基类
-    ├── registry.py       # 规则注册表
-    └── checkers/         # 具体检查器
-        ├── __init__.py
-        ├── signature.py  # 签字检查
-        ├── stamp.py      # 盖章检查
-        ├── prerequisite.py  # 前置条件
-        └── consistency.py   # 一致性检查
+src/
+├── common/                         # 通用层
+│   ├── vision/                    # 底层视觉能力
+│   │   ├── detector.py            # YOLO 检测器
+│   │   └── multimodal.py          # 多模态 LLM
+│   └── detectors/                 # 通用检测器（Layer 4）
+│       ├── signature.py            # 签字检测器
+│       └── stamp.py               # 盖章检测器
+│
+└── services/review/               # 形式审查服务
+    ├── agent.py                   # 审查 Agent (Layer 6)
+    ├── service.py                 # 服务入口
+    ├── extractor.py               # 内容提取（OCR + 文字解析）
+    ├── parser.py                  # 文档解析
+    └── rules/                     # 规则引擎 (Layer 5)
+        ├── base.py                # 规则基类
+        ├── registry.py            # 规则注册表
+        └── checkers/              # 具体检查器
+            ├── signature.py       # 签字检查
+            ├── stamp.py           # 盖章检查
+            ├── prerequisite.py    # 前置条件
+            └── consistency.py     # 一致性检查
 ```
+
+## 架构分层
+
+详细架构设计见 [规则引擎设计 →](02-rules.md)
 
 ## 核心技术
 

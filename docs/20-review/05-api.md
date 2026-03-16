@@ -28,6 +28,7 @@
 | `file` | File | 是 | 上传的文件 |
 | `document_type` | String | 否 | 文档类型（自动识别时省略） |
 | `check_items` | String | 否 | 检查项，逗号分隔 |
+| `enable_llm_analysis` | Boolean | 否 | 是否启用 LLM 深度分析（默认 false，用于调试 OCR 效果） |
 
 #### 请求示例
 
@@ -47,6 +48,17 @@ curl -X POST "http://localhost:8000/api/v1/review" \
   "data": {
     "id": "review_1709280000000",
     "document_type": "patent_certificate",
+    "document_type_raw": "专利证书",
+    "ocr_text": "九、主要完成人情况表\n姓名\n边亮\n...",
+    "extracted_data": {
+      "units": ["河北地质大学"],
+      "work_units": ["河北地质大学"],
+      "authors": ["边亮"],
+      "project_name": "",
+      "stamps": [],
+      "signatures": [{"page": 1, "bbox": {"x": 100, "y": 500, "width": 200, "height": 50}}],
+      "pages": 1
+    },
     "results": [
       {
         "item": "signature",
@@ -284,3 +296,61 @@ curl -X POST "http://localhost:8000/review/chain" \
     "file_type": "pdf"
   }'
 ```
+
+---
+
+## LLM 深度分析（可选）
+
+当 `enable_llm_analysis=true` 时，响应中会增加 `llm_analysis` 字段，包含 LLM 对文档的深度分析结果。
+
+### 分析内容
+
+|| 字段 | 说明 |
+||------|------|
+|| `document_type_llm` | LLM 识别的文档类型 |
+|| `extracted_fields` | LLM 提取的结构化字段（姓名、单位等） |
+|| `stamps_description` | LLM 对印章区域的描述 |
+|| `signatures_description` | LLM 对签字区域的描述 |
+|| `tables` | LLM 识别的表格结构 |
+|| `issues` | LLM 发现的问题列表 |
+
+### 调用示例
+
+```bash
+curl -X POST "http://localhost:8888/api/v1/review" \
+  -F "file=@/path/to/document.pdf" \
+  -F "enable_llm_analysis=true"
+```
+
+### LLM 分析响应示例
+
+```json
+{
+  "llm_analysis": {
+    "document_type_llm": "奖励-主要完成人情况表",
+    "extracted_fields": {
+      "姓名": "董发勤",
+      "工作单位": "西南科技大学",
+      "完成单位": "西南科技大学"
+    },
+    "stamps_description": "页面右下角有一个红色印章，印章文字为'西南科技大学'",
+    "signatures_description": "页面底部有手写签名，签名为'董发勤'",
+    "tables": [
+      {
+        "title": "主要完成人情况表",
+        "rows": 10,
+        "columns": 5
+      }
+    ],
+    "issues": [
+      "工作单位填写为'西南科技大学'，与完成单位盖章'西南科技大学'一致"
+    ]
+  }
+}
+```
+
+### 适用场景
+
+- **OCR 效果调试**：对比 OCR 提取结果与 LLM 提取结果，定位识别问题
+- **复杂版式处理**：LLM 可以理解表格结构、跨页内容等复杂情况
+- **语义理解**：LLM 可以判断字段语义的合理性

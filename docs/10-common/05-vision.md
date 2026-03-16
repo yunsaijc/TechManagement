@@ -293,3 +293,15 @@ multi_llm = MultimodalLLM(llm)
 
 description = await multi_llm.describe_document(image_data)
 ```
+
+## 层次关系
+
+| 层级 | 组件 | 职责 |
+|------|------|------|
+| Layer 3 | `YOLODetector`, `MultimodalLLM` | 纯底层能力，只管"检测到" |
+| Layer 4 | `SignatureDetector`, `StampDetector` | 组合底层能力，输出结构化检测结果 |
+| Layer 5 | `*Checker` (规则) | 调用检测器，判断"是否通过" |
+
+## 架构分层说明
+
+详见 [形式审查 - 规则引擎设计 →](../20-review/02-rules.md)
