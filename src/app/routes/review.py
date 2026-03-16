@@ -18,6 +18,7 @@ class ReviewRequest(BaseModel):
     """审查请求"""
     document_type: Optional[str] = None
     check_items: Optional[List[str]] = None
+    enable_llm_analysis: bool = False  # 是否启用 LLM 深度分析
 
 
 class DocumentTypeInfo(BaseModel):
@@ -39,6 +40,7 @@ async def submit_review(
     file: UploadFile = File(...),
     document_type: Optional[str] = Form(None),
     check_items: Optional[str] = Form(None),
+    enable_llm_analysis: bool = Form(False),
 ) -> ApiResponse[ReviewResult]:
     """提交文件进行形式审查
 
@@ -46,6 +48,7 @@ async def submit_review(
         file: 上传的文件
         document_type: 文档类型（可选，自动识别）
         check_items: 检查项，逗号分隔（可选）
+        enable_llm_analysis: 是否启用 LLM 深度分析（可选）
 
     Returns:
         审查结果
@@ -67,6 +70,7 @@ async def submit_review(
             file_type=file.filename.split(".")[-1] if "." in file.filename else "pdf",
             document_type=document_type,
             check_items=items,
+            enable_llm_analysis=enable_llm_analysis,
         )
 
         # 存储结果

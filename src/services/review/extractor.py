@@ -6,10 +6,18 @@ OCR + LLM 混合方案：
 2. LLM 处理图像内容（印章、签字）
 """
 import io
+import os
 import re
 from typing import Any, Dict, List, Optional
 
 import fitz  # PyMuPDF
+# PaddleOCR 3.x 在部分 CPU 环境下会走到不兼容的 PIR/oneDNN 路径，
+# 这里固定使用稳定配置，避免运行时报错。
+os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", "bos")
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
+os.environ.setdefault("PADDLE_PDX_USE_PIR_TRT", "False")
+os.environ.setdefault("FLAGS_enable_pir_api", "0")
 from paddleocr import PaddleOCR
 from PIL import Image
 
@@ -100,8 +108,8 @@ class DocumentExtractor:
             for page_num in range(page_count):
                 page = doc.load_page(page_num)
                 
-                # 1. 渲染页面为图片
-                pix = page.get_pixmap(matrix=fitz.Matrix(1, 1))
+                # 1. 渲染页面为图片（提高分辨率到 2.0 以提升 OCR 准确率）
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                 img_data = pix.tobytes("png")
                 
                 # 压缩图片如果太大
@@ -232,15 +240,15 @@ class DocumentExtractor:
             img = Image.open(io.BytesIO(image_data))
             img_array = np.array(img)
             
-            # OCR 识别
-            result = self.ocr.ocr(img_array, cls=True)
-            
+            # PaddleOCR 3.x 推荐使用 predict，返回 OCRResult
+            result = self.ocr.predict(img_array)
+
             # 提取文字
             texts = []
-            if result and result[0]:
-                for line in result[0]:
-                    text = line[1][0]  # 识别出的文字
-                    texts.append(text)
+            if result:
+                first = list(result)[0]
+                rec_texts = first.get("rec_texts", [])
+                texts.extend([t for t in rec_texts if isinstance(t, str) and t.strip()])
             
             return "\n".join(texts)
         except Exception as e:
@@ -307,13 +315,13 @@ class DocumentExtractor:
         """从文字中提取单位名称"""
         units = []
         
-        # 模式：查找"单位"后面的内容
+        # 模式：查找"单位"后面的内容（支持跨行）
         patterns = [
-            r'单位[：:]\s*([^\n]{2,30})',
-            r'完成单位[：:]\s*([^\n]{2,30})',
-            r'盖章单位[：:]\s*([^\n]{2,30})',
-            r'所属单位[：:]\s*([^\n]{2,30})',
-            r'工作单位[：:]\s*([^\n]{2,30})',
+            r'单位[：:\s]*\n?\s*([^\n]{2,30})',
+            r'完成单位[：:\s]*\n?\s*([^\n]{2,30})',
+            r'盖章单位[：:\s]*\n?\s*([^\n]{2,30})',
+            r'所属单位[：:\s]*\n?\s*([^\n]{2,30})',
+            r'工作单位[：:\s]*\n?\s*([^\n]{2,30})',
         ]
         
         for pattern in patterns:
@@ -328,10 +336,10 @@ class DocumentExtractor:
         """提取工作单位"""
         work_units = []
         
-        # 模式：查找"工作单位"
+        # 模式：查找"工作单位"（支持跨行）
         patterns = [
-            r'工作单位[：:]\s*([^\n]{2,50})',
-            r'主要完成人.*?工作单位[：:]\s*([^\n]{2,50})',
+            r'工作单位[：:\s]*\n?\s*([^\n]{2,50})',
+            r'主要完成人.*?工作单位[：:\s]*\n?\s*([^\n]{2,50})',
         ]
         
         for pattern in patterns:
@@ -344,11 +352,12 @@ class DocumentExtractor:
         """提取作者/完成人"""
         authors = []
         
-        # 模式：查找"完成人"、"作者"
+        # 模式：查找"完成人"、"作者"（支持跨行）
         patterns = [
-            r'完成人[：:]\s*([^\n]{2,30})',
-            r'主要完成人[：:]\s*([^\n]{2,30})',
-            r'作者[：:]\s*([^\n]{2,30})',
+            r'完成人[：:\s]*\n?\s*([^\n]{2,30})',
+            r'主要完成人[：:\s]*\n?\s*([^\n]{2,30})',
+            r'作者[：:\s]*\n?\s*([^\n]{2,30})',
+            r'姓名[：:\s]*\n?\s*([^\n]{2,30})',
         ]
         
         for pattern in patterns:

@@ -1,58 +1,105 @@
 """
-规则配置
+文档类型配置
 
-定义不同文档类型对应的检查规则。
+定义不同文档类型的规则和 LLM 提取配置。
 """
-from typing import List
+from typing import Any, Dict, List
 
-# 不同文档类型对应的规则列表
-RULES_BY_DOCUMENT: dict[str, List[str]] = {
-    "retrieval_report": [
-        "stamp_check",        # 盖章检查
-        "signature_check",    # 签字检查
-        "stamp_consistency", # 盖章与单位一致性
-        "completeness",     # 完整性检查
-    ],
-    "paper": [  # 论文
-        "title_check",
-        "author_check",
-    ],
-    "acceptance_report": [
-        "stamp_check",
-        "signature_check",
-        "prerequisite",     # 前置条件
-    ],
-    "patent_certificate": [
-        "stamp_check",
-        "signature_check",
-    ],
-    "license": [
-        "stamp_check",
-        "signature_check",
-    ],
-    "contract": [
-        "stamp_check",
-        "signature_check",
-    ],
-    "award_certificate": [
-        "stamp_check",
-        "signature_check",
-    ],
+# 文档类型统一配置
+DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
+    "retrieval_report": {
+        "labels": ["检索报告"],
+        "rules": ["stamp_check", "signature_check", "stamp_consistency", "completeness"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "paper": {
+        "labels": ["论文"],
+        "rules": ["title_check", "author_check"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "acceptance_report": {
+        "labels": ["验收报告"],
+        "rules": ["stamp_check", "signature_check", "prerequisite"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "patent_certificate": {
+        "labels": ["专利证书"],
+        "rules": ["signature_check", "stamp_check"],
+        "llm_rules": [],
+        "llm_extract_fields": ["专利号", "发明人", "专利权人"],
+    },
+    "license": {
+        "labels": ["行政许可", "许可证"],
+        "rules": ["signature_check", "stamp_check"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "contract": {
+        "labels": ["合同"],
+        "rules": ["signature_check", "stamp_check"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "award_certificate": {
+        "labels": ["奖励证书"],
+        "rules": ["signature_check", "stamp_check"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "award_contributor": {
+        "labels": ["奖励-主要完成人情况表", "主要完成人情况表"],
+        "rules": ["signature_check", "stamp_check", "work_unit_consistency"],
+        "llm_rules": [],
+        "llm_extract_fields": ["姓名", "工作单位", "完成单位", "排名", "技术职称", "学历"],
+    },
+    "project_contributor": {
+        "labels": ["项目-主要完成人情况表"],
+        "rules": ["signature_check", "stamp_check", "work_unit_consistency"],
+        "llm_rules": [],
+        "llm_extract_fields": ["姓名", "工作单位", "完成单位", "排名"],
+    },
+    "unknown": {
+        "labels": ["未知"],
+        "rules": ["signature_check", "stamp_check"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
 }
 
 
+def get_labels(document_type: str) -> List[str]:
+    """获取文档类型的中文名称列表"""
+    return DOCUMENT_CONFIG.get(document_type, {}).get("labels", [])
+
+
 def load_rules(document_type: str) -> List[str]:
-    """根据文档类型加载对应规则列表
-    
-    Args:
-        document_type: 文档类型
-        
-    Returns:
-        规则名称列表
-    """
-    return RULES_BY_DOCUMENT.get(document_type, [])
+    """根据文档类型加载规则列表"""
+    return DOCUMENT_CONFIG.get(document_type, {}).get("rules", [])
+
+
+def load_llm_extract_fields(document_type: str) -> List[str]:
+    """根据文档类型加载 LLM 提取字段列表"""
+    return DOCUMENT_CONFIG.get(document_type, {}).get("llm_extract_fields", [])
 
 
 def get_all_document_types() -> List[str]:
     """获取所有支持的文档类型"""
-    return list(RULES_BY_DOCUMENT.keys())
+    return list(DOCUMENT_CONFIG.keys())
+
+
+def get_type_labels_for_llm() -> str:
+    """获取所有文档类型的中文名称，用于 LLM 分类 prompt"""
+    labels_list = []
+    for doc_type, config in DOCUMENT_CONFIG.items():
+        if doc_type != "unknown":
+            labels_list.extend(config.get("labels", []))
+    # 去重
+    unique_labels = list(dict.fromkeys(labels_list))
+    return "\n".join(f"- {label}" for label in unique_labels)
+
+
+# 向后兼容：保持原有的 RULES_BY_DOCUMENT
+RULES_BY_DOCUMENT = {k: v.get("rules", []) for k, v in DOCUMENT_CONFIG.items()}

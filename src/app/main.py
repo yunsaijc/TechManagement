@@ -1,10 +1,11 @@
 """FastAPI 应用入口"""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-# 加载 .env 配置
-load_dotenv()
+# 加载 .env 配置（从项目根目录）
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from src.app.routes import review
 
