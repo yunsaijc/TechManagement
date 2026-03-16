@@ -36,6 +36,13 @@ docs/
 │   ├── 05-api.md                  # API 接口文档
 │   └── 06-rules.md                # 规则系统
 │
+├── 30-grouping/                     # 🧠 智能分组与专家匹配服务
+│   ├── 01-overview.md              # 服务概述
+│   ├── 02-grouping.md              # 分组子服务设计
+│   ├── 03-matching.md              # 专家匹配子服务设计
+│   ├── 04-models.md                # 数据模型
+│   └── 05-api.md                  # API 接口文档
+│
 ├── 30-project/                      # 📋 项目评审服务（未来）
 │
 ├── 40-award/                        # 🏆 奖励评审服务（未来）
@@ -65,6 +72,13 @@ docs/
 │   ├── 04-document-parser.md
 │   ├── 05-api.md
 │   └── 06-rules.md
+│
+├── 30-grouping/         ← 智能分组与专家匹配服务（依赖 common）
+│   ├── 01-overview.md
+│   ├── 02-grouping.md
+│   ├── 03-matching.md
+│   ├── 04-models.md
+│   └── 05-api.md
 │
 ├── 30-project/         ← 项目评审服务（未来，依赖 common）
 ├── 40-award/           ← 奖励评审服务（未来，依赖 common）
@@ -102,3 +116,4 @@ docs/
 - [奖励评审数据库 →](15-data/02-reward-db.md)
 - [通用组件概述 →](10-common/01-overview.md)
 - [形式审查服务 →](20-review/01-overview.md)
+- [智能分组与专家匹配服务 →](30-grouping/01-overview.md)

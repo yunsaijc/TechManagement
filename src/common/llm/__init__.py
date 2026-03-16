@@ -10,9 +10,17 @@ load_dotenv()
 
 from src.common.llm.config import LLMConfig
 from src.common.llm.factory import get_llm_client
+from src.common.llm.embedding_config import EmbeddingConfig
+from src.common.llm.embedding_factory import (
+    get_embedding_client,
+    get_default_embedding_client,
+)
 
 # 全局 LLM 配置实例
 llm_config = LLMConfig()
+
+# 全局 Embedding 配置实例
+embedding_config = EmbeddingConfig()
 
 
 def get_default_llm_client():
@@ -27,4 +35,13 @@ def get_default_llm_client():
     )
 
 
-__all__ = ["get_llm_client", "LLMConfig", "get_default_llm_client", "llm_config"]
+__all__ = [
+    "get_llm_client",
+    "LLMConfig",
+    "get_default_llm_client",
+    "llm_config",
+    "get_embedding_client",
+    "get_default_embedding_client",
+    "EmbeddingConfig",
+    "embedding_config",
+]

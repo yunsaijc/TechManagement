@@ -5,8 +5,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.common.models import ApiResponse, ReviewResult
-from src.common.models.enums import CheckItem, DocumentType
 from src.services.review.agent import ReviewAgent
+from src.services.review.rules.config import DOCUMENT_CONFIG
 
 router = APIRouter()
 
@@ -16,7 +16,7 @@ _review_results: dict[str, ReviewResult] = {}
 
 class ReviewRequest(BaseModel):
     """审查请求"""
-    document_type: Optional[str] = None
+    document_type: str
     check_items: Optional[List[str]] = None
     enable_llm_analysis: bool = False  # 是否启用 LLM 深度分析
 
@@ -38,7 +38,7 @@ class CheckItemInfo(BaseModel):
 @router.post("")
 async def submit_review(
     file: UploadFile = File(...),
-    document_type: Optional[str] = Form(None),
+    document_type: str = Form(...),
     check_items: Optional[str] = Form(None),
     enable_llm_analysis: bool = Form(False),
 ) -> ApiResponse[ReviewResult]:
@@ -46,7 +46,7 @@ async def submit_review(
 
     Args:
         file: 上传的文件
-        document_type: 文档类型（可选，自动识别）
+        document_type: 文档类型（必填，由调用方指定）
         check_items: 检查项，逗号分隔（可选）
         enable_llm_analysis: 是否启用 LLM 深度分析（可选）
 
@@ -112,43 +112,22 @@ async def get_document_types() -> ApiResponse[List[DocumentTypeInfo]]:
     Returns:
         文档类型列表
     """
-    types = [
-        DocumentTypeInfo(
-            value="patent_certificate",
-            label="专利证书",
-            check_items=["signature", "stamp", "consistency"],
-        ),
-        DocumentTypeInfo(
-            value="patent_application",
-            label="专利申请",
-            check_items=["signature", "stamp"],
-        ),
-        DocumentTypeInfo(
-            value="acceptance_report",
-            label="验收报告",
-            check_items=["signature", "stamp", "prerequisite"],
-        ),
-        DocumentTypeInfo(
-            value="retrieval_report",
-            label="检索报告",
-            check_items=["completeness"],
-        ),
-        DocumentTypeInfo(
-            value="license",
-            label="行政许可",
-            check_items=["signature", "stamp"],
-        ),
-        DocumentTypeInfo(
-            value="award_certificate",
-            label="奖励证书",
-            check_items=["signature", "consistency"],
-        ),
-        DocumentTypeInfo(
-            value="contract",
-            label="合同",
-            check_items=["signature", "stamp"],
-        ),
-    ]
+    types: List[DocumentTypeInfo] = []
+    for doc_type, config in DOCUMENT_CONFIG.items():
+        labels = config.get("labels", [])
+        rules = config.get("rules", [])
+        llm_rules = config.get("llm_rules", [])
+        # 展示优先中文首标签；无标签则回退到 code
+        label = labels[0] if labels else doc_type
+        # 对外统一返回该类型可用检查项（规则引擎 + llm规则）
+        check_items = [*rules, *llm_rules]
+        types.append(
+            DocumentTypeInfo(
+                value=doc_type,
+                label=label,
+                check_items=check_items,
+            )
+        )
 
     return ApiResponse(
         status="success",

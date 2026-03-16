@@ -8,6 +8,30 @@ from src.common.models.enums import CheckItem, DocumentType
 from src.common.models.file import FileMeta, FileType, UploadFile
 from src.common.models.review import CheckResult, CheckStatus, ReviewResult
 from src.common.models.types import JSON, ImageData, CheckFunction
+# 分组服务模型
+from src.common.models.grouping import (
+    GroupingRequest,
+    GroupingResult,
+    GroupingStatistics,
+    GroupingStrategy,
+    GroupSummary,
+    Project,
+    ProjectAnalysis,
+    ProjectGroup,
+    ProjectInGroup,
+    ProjectQuality,
+    Expert,
+    ExpertProfile,
+    ExpertAssignment,
+    AssignedExpert,
+    AvoidanceInfo,
+    MatchingRequest,
+    MatchingResult,
+    MatchingStatistics,
+    FullGroupingRequest,
+    FullGroupingResult,
+    FullStatistics,
+)
 
 __all__ = [
     # 文件模型
@@ -34,4 +58,26 @@ __all__ = [
     # 枚举
     "DocumentType",
     "CheckItem",
+    # 分组服务模型
+    "GroupingStrategy",
+    "GroupingRequest",
+    "GroupingResult",
+    "GroupingStatistics",
+    "GroupSummary",
+    "Project",
+    "ProjectAnalysis",
+    "ProjectGroup",
+    "ProjectInGroup",
+    "ProjectQuality",
+    "Expert",
+    "ExpertProfile",
+    "ExpertAssignment",
+    "AssignedExpert",
+    "AvoidanceInfo",
+    "MatchingRequest",
+    "MatchingResult",
+    "MatchingStatistics",
+    "FullGroupingRequest",
+    "FullGroupingResult",
+    "FullStatistics",
 ]
