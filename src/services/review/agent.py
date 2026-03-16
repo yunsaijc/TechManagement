@@ -426,110 +426,14 @@ class ReviewAgent:
             
             logger.info(f"[LLM] 定位到 {len(field_coords)} 个字段区域")
             
-            # Step3: 裁剪放大+转写
-            logger.info("[LLM] Step3: 裁剪放大转写...")
-            
-            fields_llm = {"__fields": field_names}
-            
-            for i, fname in enumerate(field_names):
-                if fname not in field_coords:
-                    fields_llm[fname] = "未定位"
-                    continue
-                
-                x1, y1, x2, y2 = field_coords[fname]
-                # 扩展边距（再减小到0.2%）
-                margin = 0.002
-                x1, y1 = max(0, x1-margin), max(0, y1-margin)
-                x2, y2 = min(1, x2+margin), min(1, y2+margin)
-                
-                # 检查区域是否有效（阈值降到1.5%）
-                if x2 - x1 < 0.005 or y2 - y1 < 0.005:
-                    logger.warning(f"[LLM] 字段{fname}区域太小，跳过: {(x1,y1,x2,y2)}")
-                    fields_llm[fname] = "区域太小"
-                    continue
-                
-                # 裁剪坐标
-                left = int(x1 * img_w)
-                top = int(y1 * img_h)
-                right = int(x2 * img_w)
-                bottom = int(y2 * img_h)
-                
-                if right - left < 5 or bottom - top < 5:
-                    logger.warning(f"[LLM] 字段{fname}裁剪区域太小")
-                    fields_llm[fname] = "裁剪区域太小"
-                    continue
-                
-                # 裁剪
-                cropped_img = img.crop((left, top, right, bottom))
-                
-                # 保存裁剪图片用于调试
-                debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
-                import os
-                os.makedirs(debug_dir, exist_ok=True)
-                debug_path = f"{debug_dir}/{fname}_{i+1}.png"
-                cropped_img.save(debug_path)
-                
-                # 放大5倍
-                cropped_img = cropped_img.resize((cropped_img.width * 5, cropped_img.height * 5), Image.LANCZOS)
-                
-                # 转bytes
-                buf = io.BytesIO()
-                cropped_img.save(buf, format='PNG')
-                cropped = buf.getvalue()
-                
-                # Step3: 转写 - 优先 OCR，失败则用 LLM
-                use_ocr = os.getenv("LLM_USE_OCR_FOR_FIELDS", "true").lower() == "true"
-                
-                trans = ""
-                if use_ocr:
-                    # 用 PaddleOCR 转写（快速，不超时）
-                    try:
-                        import logging
-                        import numpy as np
-                        # 关闭 PaddleOCR 日志
-                        logging.getLogger("ppocr").setLevel(logging.ERROR)
-                        from paddleocr import PaddleOCR
-                        if not hasattr(self, '_paddle_ocr'):
-                            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang='ch')
-                        # PaddleOCR 更稳定的输入是 ndarray，避免 bytes 触发异常时把二进制打到日志
-                        cropped_np = np.array(cropped_img)
-                        ocr_result = self._paddle_ocr.ocr(cropped_np)
-                        # PaddleOCR 5.x 返回格式：[{..., 'rec_texts': ['文字'], 'rec_scores': [分数]}]
-                        logger.info(f"[OCR] 原始结果 keys: {list(ocr_result[0][0].keys()) if ocr_result and ocr_result[0] else 'empty'}")
-                        if ocr_result and ocr_result[0]:
-                            # 取第一个结果
-                            first_result = ocr_result[0][0] if isinstance(ocr_result[0], list) else ocr_result[0]
-                            rec_texts = first_result.get('rec_texts', [])
-                            if rec_texts:
-                                trans = rec_texts[0]  # 取第一个识别结果
-                            else:
-                                trans = ""
-                            logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:20]}...")
-                        else:
-                            trans = ""
-                    except Exception as e:
-                        logger.warning(f"[OCR] 字段{fname}识别失败: {type(e).__name__}")
-                        trans = ""
-                
-                # 如果 OCR 没结果，尝试 LLM 转写（作为后备）
-                if not trans.strip():
-                    prompt_trans = """【重要】请原封不动抄写图中文字，不要纠正任何错误！
-
-即使看到错别字也要原样抄写。
-直接返回文字，不要其他内容。"""
-                    
-                    try:
-                        trans = await self._analyze_image_with_timeout(
-                            multi_llm, cropped, prompt_trans, f"深度分析-Step3转写[{i+1}/{len(field_names)}:{fname}]",
-                            timeout_sec=60
-                        )
-                        logger.info(f"[LLM] 字段{i+1}/{len(field_names)}: {fname}")
-                    except Exception as ex:
-                        trans = f"错误: {str(ex)}"
-                
-                fields_llm[fname] = trans.strip()
-            
-            logger.info("[LLM] 表格提取完成")
+            # Step3: 使用 FieldExtractor 提取（统一提取逻辑）
+            from src.common.extractors import FieldExtractor
+            extractor = FieldExtractor()
+            fields_llm = await extractor.extract_with_coords(
+                file_data=image_data,
+                field_coords=field_coords,
+                field_names=field_names,
+            )
             
             logger.info("[LLM] 表格提取完成")
             
@@ -537,35 +441,23 @@ class ReviewAgent:
             logger.error(f"[LLM] 表格提取失败: {e}")
             fields_llm = {"error": str(e)}
         
-        # 3. LLM 印章描述
-        prompt_stamps = """请描述页面中所有印章的位置和内容。
-只返回描述，不要其他内容。"""
+        # 3. 使用 StampExtractor 提取印章
+        from src.common.extractors import StampExtractor
+        stamp_extractor = StampExtractor()
+        stamps_result = await stamp_extractor.extract(file_data)
+        stamps_desc = stamps_result if stamps_result else "未检测到印章"
         
-        stamps_desc = ""
-        try:
-            stamps_desc = await self._analyze_image_with_timeout(
-                multi_llm, image_data, prompt_stamps, "深度分析-印章描述", timeout_sec=25
-            )
-        except Exception:
-            stamps_desc = "LLM分析失败"
-        
-        # 4. LLM 签字描述
-        prompt_sigs = """请描述页面中所有签字/签名的位置。
-只返回描述，不要其他内容。"""
-        
-        sigs_desc = ""
-        try:
-            sigs_desc = await self._analyze_image_with_timeout(
-                multi_llm, image_data, prompt_sigs, "深度分析-签字描述", timeout_sec=25
-            )
-        except Exception:
-            sigs_desc = "LLM分析失败"
+        # 4. 使用 SignatureExtractor 提取签字
+        from src.common.extractors import SignatureExtractor
+        sig_extractor = SignatureExtractor()
+        sigs_result = await sig_extractor.extract(file_data)
+        sigs_desc = sigs_result if sigs_result else "未检测到签字"
         
         return {
             "document_type_llm": doc_type_llm.strip(),
             "extracted_fields": fields_llm,
-            "stamps_description": stamps_desc.strip(),
-            "signatures_description": sigs_desc.strip(),
+            "stamps_description": str(stamps_desc) if stamps_desc else "未检测到印章",
+            "signatures_description": str(sigs_desc) if sigs_desc else "未检测到签字",
         }
     
     def _pdf_to_image(self, file_data: bytes) -> bytes:

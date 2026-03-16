@@ -164,8 +164,7 @@ class OCRProcessor:
     def __init__(self):
         self.reader = paddleocr.PaddleOCR(
             use_angle_cls=True,
-            lang='ch',
-            show_log=False
+            lang='ch'
         )
     
     async def recognize(

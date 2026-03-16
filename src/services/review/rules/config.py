@@ -53,7 +53,7 @@ DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
         "labels": ["奖励-主要完成人情况表", "主要完成人情况表"],
         "rules": ["signature_check", "stamp_check", "work_unit_consistency"],
         "llm_rules": [],
-        "llm_extract_fields": ["姓名", "工作单位", "完成单位", "排名", "技术职称", "学历"],
+        "llm_extract_fields": ["姓名", "工作单位", "完成单位", "技术职称", "学历"],
     },
     "project_contributor": {
         "labels": ["项目-主要完成人情况表"],

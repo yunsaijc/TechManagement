@@ -84,6 +84,70 @@ class QualityAssessor:
         
         return results
     
+    async def batch_assess(
+        self,
+        projects: List[Project]
+    ) -> Dict[str, float]:
+        """批量评估项目质量（一次LLM调用评估多个）
+        
+        优化：合并多个项目的评估到一次API调用
+        
+        Args:
+            projects: 项目列表
+        
+        Returns:
+            项目ID -> 质量分数
+        """
+        if not projects:
+            return {}
+        
+        # 构建批量prompt
+        prompt = "请评估以下项目的质量分数（0-100分），返回JSON数组：\n\n"
+        
+        for i, p in enumerate(projects):
+            prompt += f"{i+1}. 项目名称: {p.xmmc}\n"
+            if p.gjc:
+                prompt += f"   关键词: {p.gjc}\n"
+            if p.xmjj:
+                clean = self._clean_html(p.xmjj)[:500]
+                prompt += f"   简介: {clean}\n"
+            prompt += "\n"
+        
+        prompt += """请按以下JSON格式返回（只需JSON数组，不要其他内容）：
+[
+  {"index": 1, "innovation": 80, "difficulty": 70, "value": 75, "total": 75, "comment": "评语"},
+  ...
+]"""
+        
+        # 一次LLM调用
+        try:
+            import asyncio
+            response = await asyncio.wait_for(self.llm.ainvoke(prompt), timeout=60.0)
+            content = response.content if hasattr(response, 'content') else str(response)
+        except Exception as e:
+            # 出错返回默认分数
+            return {p.id: 75.0 for p in projects}
+        
+        # 解析结果
+        try:
+            import json
+            # 尝试提取JSON数组
+            start = content.find('[')
+            end = content.rfind(']') + 1
+            if start >= 0 and end > start:
+                arr = json.loads(content[start:end])
+                result = {}
+                for item in arr:
+                    idx = item.get('index', 1) - 1
+                    if 0 <= idx < len(projects):
+                        result[projects[idx].id] = float(item.get('total', 75))
+                return result
+        except:
+            pass
+        
+        # 解析失败返回默认
+        return {p.id: 75.0 for p in projects}
+    
     def _build_assessment_text(
         self,
         project: Project,

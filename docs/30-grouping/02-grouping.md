@@ -6,21 +6,22 @@
 
 ## 功能说明
 
-1. **项目内容分析**：使用 LLM 提取项目的核心创新点、技术方向、研究领域
+1. **项目向量化**：使用 Embedding 模型将项目转换为向量（直接用项目名称+关键词，不需要 LLM 分析）
 2. **智能分组计算**：根据项目数量自动计算最优分组数
-3. **质量评估**：评估每个项目的创新性、技术难度、应用价值
-4. **分组优化**：确保各组数量均衡、质量均衡、主题相关
+3. **质量评估**：使用 LLM 评估每个项目的创新性、技术难度、应用价值（**抽样评估**）
+4. **分组优化**：确保各组数量均衡，质量均衡、主题相关
+5. **结果缓存**：避免重复计算
 
 ---
 
-## 业务流程
+## 业务流程（优化后）
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        分组子服务流程                              │
 └─────────────────────────────────────────────────────────────────┘
 
-     输入: 项目列表 (含 xmjj, gjc, ssxk)
+     输入: 项目列表 (含 xmmc, gjc, ssxk)
          │
          ▼
 ┌─────────────────────┐
@@ -32,19 +33,11 @@
          │
          ▼
 ┌─────────────────────┐
-│   2. 项目内容分析    │
-│   (LLM)             │
-│   - 提取创新点      │
-│   - 提取技术方向    │
-│   - 提取研究领域    │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   3. 项目向量化      │
+│   2. 项目向量化      │
 │   (Embedding)       │
-│   - 文本向量化      │
-│   - 向量存储        │
+│   - 直接用项目文本  │
+│   - 无需LLM分析    │
+│   - 结果缓存        │
 └──────┬──────────────┘
          │
          ▼
@@ -52,15 +45,15 @@
     │         │
     ▼         ▼
 ┌────────┐ ┌────────┐
-│4a.聚类 │ │4b.质量│
-│分组   │ │评估   │
+│3a.聚类 │ │3b.质量│
+│分组   │ │评估(抽)│
 └───┬────┘ └───┬────┘
     │         │
     └────┬────┘
          │
          ▼
 ┌─────────────────────┐
-│   5. 分组优化       │
+│   4. 分组优化       │
 │   - 数量均衡        │
 │   - 质量均衡        │
 │   - 学科内聚        │
@@ -70,13 +63,22 @@
      输出: 分组结果
 ```
 
+### 优化要点
+
+| 优化项 | 原方案 | 优化后 | 效果 |
+|--------|--------|--------|------|
+| 项目分析 | 每个LLM分析 | 直接用Embedding | 减少5000+次LLM调用 |
+| 质量评估 | 全量评估 | 每组抽样3-5个 | 减少90% LLM调用 |
+| LLM调用 | 逐个调用 | 批量调用 | 减少API往返 |
+| 结果缓存 | 无 | 向量/结果缓存 | 避免重复计算 |
+
 ---
 
 ## 核心模块
 
-### 1. 项目内容分析 (Analyzer)
+### 1. 项目向量化 (Embedding)
 
-负责使用 LLM 分析项目内容，提取关键信息。
+直接使用 Embedding 模型将项目文本转换为向量，**不需要 LLM 分析步骤**。
 
 #### 输入
 
@@ -93,33 +95,30 @@
 #### 处理流程
 
 1. **HTML 清洗**：去除富文本标签，提取纯文本
-2. **内容融合**：拼接项目名称 + 关键词 + 简介
-3. **LLM 分析**：提取创新点、技术方向、研究领域
+2. **文本融合**：拼接 `项目名称 + 关键词 + 简介`（不超过2000字）
+3. **Embedding 向量化**：使用 qwen text-embedding-v3 生成 1024 维向量
 
-#### LLM Prompt 示例
+#### 向量缓存
 
-```
-请分析以下项目内容，提取关键信息：
+```python
+# 检查缓存
+cached = cache.get(f"project_vector:{project_id}")
+if cached:
+    return cached
 
-项目名称：{xmmc}
-关键词：{gjc}
-项目简介：{xmjj}
-
-请提取：
-1. 核心创新点（100字以内）
-2. 技术方向（如：人工智能、电力系统、自动化等）
-3. 研究领域（如：故障预测、智能电网、数据挖掘等）
-4. 应用场景（如：电力系统、工业物联网等）
+# 计算并缓存
+vector = embedder.embed_documents([text])[0]
+cache.set(f"project_vector:{project_id}", vector, ttl=7*24*3600)
+return vector
 ```
 
 #### 输出
 
 ```python
 {
-    "innovation": "提出基于多尺度时空特征融合的故障预测方法",
-    "tech_direction": "人工智能,电力系统",
-    "research_field": "故障预测,智能电网",
-    "application": "电力系统,智能电网"
+    "project_id": "xxx",
+    "vector": [0.123, -0.456, ...],  # 1024维
+    "text": "基于多尺度分析的智能电网故障预测系统..."
 }
 ```
 
@@ -164,7 +163,35 @@ def calculate_optimal_groups(project_count: int, max_per_group: int = 30) -> int
 
 ### 3. 质量评估 (Quality Assessment)
 
-使用 LLM 评估每个项目的质量分数。
+**优化：采用抽样评估策略**
+
+对于每个分组，只评估 3-5 个代表性项目，然后推算全组质量。
+
+#### 抽样策略
+
+```python
+def sample_projects_for_quality(group_projects: List[Project], sample_size: int = 5) -> List[Project]:
+    """抽样选择需要评估的项目
+    
+    策略：
+    1. 按向量距离选择中心点附近的3个
+    2. 随机选择2个作为补充
+    """
+    if len(group_projects) <= sample_size:
+        return group_projects
+    
+    # 计算组内向量中心
+    center = np.mean([p.vector for p in group_projects], axis=0)
+    
+    # 选择距离中心最近的
+    distances = [np.linalg.norm(p.vector - center) for p in group_projects]
+    sorted_idx = np.argsort(distances)[:sample_size-2]
+    
+    # 补充随机
+    random_idx = random.sample(range(len(group_projects)), 2)
+    
+    return [group_projects[i] for i in set(list(sorted_idx) + random_idx)]
+```
 
 #### 评估维度
 
@@ -172,27 +199,32 @@ def calculate_optimal_groups(project_count: int, max_per_group: int = 30) -> int
 |------|------|------|
 | 创新性 | 40% | 技术的原创性、领先程度 |
 | 技术难度 | 30% | 技术的复杂程度、实现难度 |
-| 应用价值 | 30% | 推广应用前景、经济效益 |
+| 应用价值 | 30% | 推广应用前景，经济效益 |
 
-#### LLM 评估 Prompt
+#### 批量LLM评估
 
-```
-请评估以下项目的质量分数（0-100分）：
-
-项目名称：{xmmc}
-项目简介：{xmjj}
-
-评估维度：
-1. 创新性（40%）：技术是否具有原创性，是否处于领先水平
-2. 技术难度（30%）：技术实现是否复杂，难度高低
-3. 应用价值（30%）：推广应用前景如何，经济效益如何
-
-请给出：
-- 创新性得分：XX分
-- 技术难度得分：XX分  
-- 应用价值得分：XX分
-- 综合得分：XX分
-- 简要评语：XX
+```python
+async def batch_assess_quality(projects: List[Project], batch_size: int = 10) -> List[QualityScore]:
+    """批量评估项目质量
+    
+    优化：一次发送多个项目，减少API调用次数
+    """
+    results = []
+    
+    for i in range(0, len(projects), batch_size):
+        batch = projects[i:i+batch_size]
+        
+        # 批量构建prompt
+        prompt = build_batch_prompt(batch)
+        
+        # 一次LLM调用
+        response = await llm.ainvoke(prompt)
+        
+        # 解析批量结果
+        batch_results = parse_batch_quality(response)
+        results.extend(batch_results)
+    
+    return results
 ```
 
 ### 4. 分组优化 (Optimizer)
@@ -205,35 +237,35 @@ def calculate_optimal_groups(project_count: int, max_per_group: int = 30) -> int
 2. **质量均衡**：各组平均质量得分差异 ≤ 5分
 3. **学科内聚**：同组分尽量包含相似学科的项目
 
-#### 优化算法
+---
+
+## 性能优化
+
+### 5000+ 项目处理预估
+
+| 步骤 | 优化前 | 优化后 |
+|------|--------|--------|
+| 项目向量化 | ~10分钟 | ~10分钟 |
+| 聚类计算 | ~1分钟 | ~1分钟 |
+| 质量评估 | ~8小时 (10000次LLM) | ~5分钟 (100次抽样) |
+| **总计** | **~8小时** | **~15分钟** |
+
+### 缓存策略
 
 ```python
-def optimize_groups(groups: List[ProjectGroup]) -> List[ProjectGroup]:
-    """分组优化
-    
-    Args:
-        groups: 初始分组结果
-    
-    Returns:
-        优化后的分组结果
-    """
-    # 1. 数量均衡优化
-    groups = balance_count(groups)
-    
-    # 2. 质量均衡优化
-    groups = balance_quality(groups)
-    
-    # 3. 学科内聚优化
-    groups = optimize_subject_cohesion(groups)
-    
-    return groups
+# 缓存配置
+CACHE_CONFIG = {
+    "project_vectors": {"ttl": 7 * 24 * 3600},  # 7天
+    "quality_scores": {"ttl": 24 * 3600},        # 1天
+    "grouping_results": {"ttl": 30 * 24 * 3600} # 30天
+}
 ```
 
 ---
 
 ## 核心代码结构
 
-### GroupingAgent
+### GroupingAgent (优化后)
 
 ```python
 class GroupingAgent:
@@ -247,9 +279,11 @@ class GroupingAgent:
     ):
         self.llm = llm or get_default_llm_client()
         self.embedder = embedder or get_default_embedder()
-        self.analyzer = ProjectAnalyzer(self.llm)
+        self.vector_cache = VectorCache()  # 新增：向量缓存
+        self.quality_cache = QualityCache() # 新增：质量缓存
         self.cluster = ProjectCluster(self.embedder, cluster_algorithm)
         self.optimizer = GroupOptimizer()
+        self.quality_assessor = QualityAssessor(self.llm)
     
     async def group_projects(
         self,
@@ -258,36 +292,26 @@ class GroupingAgent:
         max_per_group: int = 30,
         strategy: str = "balanced"
     ) -> GroupingResult:
-        """执行项目分组
+        """执行项目分组"""
         
-        Args:
-            projects: 项目列表
-            group_count: 分组数量（None 则自动计算）
-            max_per_group: 每组最大项目数
-            strategy: 分组策略 (balanced/quality)
+        # 1. 项目向量化（带缓存）
+        vectors = await self._get_project_vectors(projects)
         
-        Returns:
-            分组结果
-        """
-        # 1. 项目内容分析
-        analyzed = await self.analyzer.analyze_projects(projects)
-        
-        # 2. 项目向量化
-        vectors = self.embedder.embed([p.text for p in analyzed])
-        
-        # 3. 计算分组数
+        # 2. 计算分组数
         if group_count is None:
             group_count = self._calculate_optimal_groups(
                 len(projects), max_per_group
             )
         
-        # 4. 聚类分组
+        # 3. 聚类分组
         cluster_labels = self.cluster.fit_predict(vectors, group_count)
         
-        # 5. 质量评估
-        quality_scores = await self._assess_quality(analyzed)
+        # 4. 质量评估（抽样+批量）
+        quality_scores = await self._assess_quality_sampled(
+            projects, cluster_labels, group_count
+        )
         
-        # 6. 分组优化
+        # 5. 分组优化
         groups = self.optimizer.optimize(
             cluster_labels, quality_scores, strategy
         )
@@ -310,28 +334,6 @@ class GroupingAgent:
 优先保证各组质量层次分明。
 
 适用场景：需要区分重点项目
-
----
-
-## 扩展性设计
-
-### 新增分组算法
-
-```
-1. 在 grouping/cluster/ 下创建新算法类
-2. 继承 BaseCluster
-3. 实现 fit_predict() 方法
-4. 在 GroupingAgent 中注册
-```
-
-### 新增质量评估维度
-
-```
-1. 在 grouping/analyzer/ 下创建新评估器
-2. 继承 BaseQualityAssessor
-3. 实现 assess() 方法
-4. 在 GroupingAgent 中注册
-```
 
 ---
 

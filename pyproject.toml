@@ -33,6 +33,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "paddlepaddle>=3.3.0",
     "paddleocr>=3.4.0",
+    "easyocr>=1.7.2",
 ]
 
 [[tool.uv.index]]
