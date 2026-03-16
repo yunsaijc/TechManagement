@@ -1,5 +1,12 @@
-"""盖章检查规则"""
+"""盖章检查规则
+
+使用统一的 StampExtractor 进行检查：
+1. 先用 LLM 定位印章区域 bbox
+2. 裁剪区域
+3. OCR 转写印章文字
+"""
 from src.common.models.review import CheckResult, CheckStatus
+from src.common.extractors import StampExtractor
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 
@@ -7,8 +14,8 @@ from src.services.review.rules.registry import RuleRegistry
 @RuleRegistry.register
 class StampCheckRule(BaseRule):
     """盖章检查规则
-    
-    使用预提取的内容判断是否存在印章。
+
+    使用 StampExtractor 提取印章内容。
     """
 
     name = "stamp"
@@ -16,80 +23,52 @@ class StampCheckRule(BaseRule):
     priority = 10
 
     def __init__(self):
-        self.min_confidence = 0.7
+        self.min_regions = 1  # 最少印章区域数
 
     async def check(self, context: ReviewContext) -> CheckResult:
         """执行盖章检查
-        
-        从预提取的内容中获取印章信息。
+
+        使用 StampExtractor 提取印章内容。
+        能提取到则 PASS，否则 FAILED。
         """
-        # 优先使用预提取的内容
-        if context.extracted:
-            stamps = context.extracted.get("stamps", [])
-            if stamps:
-                return CheckResult(
-                    item=self.name,
-                    status=CheckStatus.PASSED,
-                    message=f"检测到 {len(stamps)} 个印章",
-                    evidence={"stamps": stamps},
-                    confidence=0.9,
-                )
-            
-            # 检查是否有错误
-            if context.extracted.get("error"):
-                return CheckResult(
-                    item=self.name,
-                    status=CheckStatus.WARNING,
-                    message="印章提取失败",
-                    evidence={"error": context.extracted.get("error")},
-                )
-        
-        # 如果没有预提取结果，尝试使用 LLM 直接检查
-        return await self._llm_check(context)
-    
-    async def _llm_check(self, context: ReviewContext) -> CheckResult:
-        """使用 LLM 检查印章"""
-        from src.common.vision import MultimodalLLM
-        from src.common.llm import get_default_llm_client
+        extractor = StampExtractor()
         
         try:
-            llm = get_default_llm_client()
-            multi_llm = MultimodalLLM(llm)
-            
-            prompt = """请仔细检查这个文档页面，判断是否存在印章/公章。
-请以以下JSON格式返回结果：
-{"has_stamp": true/false, "stamp_count": 数量, "stamp_units": ["盖章单位1", "盖章单位2"]}
-
-只返回JSON，不要其他内容。"""
-            
-            result = await multi_llm.analyze_image(context.file_data, prompt)
-            
-            # 简单解析 JSON
-            import json
-            import re
-            json_match = re.search(r'\{.*\}', result, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-                if data.get("has_stamp"):
-                    return CheckResult(
-                        item=self.name,
-                        status=CheckStatus.PASSED,
-                        message=f"检测到 {data.get('stamp_count', 1)} 个印章",
-                        evidence={"stamp_units": data.get("stamp_units", [])},
-                        confidence=0.9,
-                    )
-            
-            return CheckResult(
-                item=self.name,
-                status=CheckStatus.FAILED,
-                message="未检测到印章",
-                evidence={"llm_result": result},
+            result = await extractor.extract(
+                context.file_data,
+                min_regions=self.min_regions,
             )
-            
         except Exception as e:
+            # 如果提取失败，返回警告
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.WARNING,
-                message=f"印章检测暂时不可用: {str(e)}",
+                message=f"印章提取暂时不可用: {e}",
                 evidence={},
+            )
+
+        if result and result.get("stamps"):
+            stamps = result["stamps"]
+            return CheckResult(
+                item=self.name,
+                status=CheckStatus.PASSED,
+                message=f"提取到 {len(stamps)} 个印章",
+                evidence={
+                    "stamps": [
+                        {
+                            "text": s.get("text", ""),
+                            "bbox": s.get("bbox", {}),
+                            "confidence": s.get("confidence", 0),
+                        }
+                        for s in stamps
+                    ],
+                },
+                confidence=0.9,
+            )
+        else:
+            return CheckResult(
+                item=self.name,
+                status=CheckStatus.FAILED,
+                message="未提取到印章",
+                evidence={"stamps": []},
             )

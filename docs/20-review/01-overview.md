@@ -81,9 +81,10 @@ src/
 │   ├── vision/                    # 底层视觉能力
 │   │   ├── detector.py            # YOLO 检测器
 │   │   └── multimodal.py          # 多模态 LLM
-│   └── detectors/                 # 通用检测器（Layer 4）
-│       ├── signature.py            # 签字检测器
-│       └── stamp.py               # 盖章检测器
+│   └── extractors/               # 统一提取器（Layer 4）
+│       ├── signature.py            # 签字提取器
+│       ├── stamp.py               # 盖章提取器
+│       └── field.py               # 字段提取器
 │
 └── services/review/               # 形式审查服务
     ├── agent.py                   # 审查 Agent (Layer 6)
@@ -97,7 +98,7 @@ src/
             ├── signature.py       # 签字检查
             ├── stamp.py           # 盖章检查
             ├── prerequisite.py    # 前置条件
-            └── consistency.py     # 一致性检查
+            └── work_unit.py      # 工作单位一致性检查
 ```
 
 ## 架构分层

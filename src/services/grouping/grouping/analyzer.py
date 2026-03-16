@@ -92,10 +92,27 @@ class ProjectAnalyzer:
         # 构建 prompt
         prompt = self._build_analysis_prompt(project, text)
         
-        # 调用 LLM
-        response = await self.llm.ainvoke(prompt)
-        content = response.content if hasattr(response, 'content') else str(response)
         
+        # 调用 LLM (添加超时)
+        import asyncio
+        try:
+            response = await asyncio.wait_for(
+                self.llm.ainvoke(prompt),
+                timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            # 返回默认分析结果
+            return ProjectAnalysis(
+                project_id=project.id,
+                innovation="分析超时",
+                tech_direction="",
+                research_field="",
+                application="",
+                text=text
+            )
+        
+        content = response.content if hasattr(response, 'content') else str(response)
+                
         # 解析结果
         analysis = self._parse_analysis_result(project.id, content)
         analysis.text = text

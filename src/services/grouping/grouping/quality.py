@@ -38,15 +38,20 @@ class QualityAssessor:
         Returns:
             质量评估结果
         """
+        import asyncio
+        
         # 构建评估文本
         text = self._build_assessment_text(project, project_analysis)
         
         # 构建 prompt
         prompt = self._build_assessment_prompt(text)
         
-        # 调用 LLM
-        response = await self.llm.ainvoke(prompt)
-        content = response.content if hasattr(response, 'content') else str(response)
+        # 调用 LLM (带超时)
+        try:
+            response = await asyncio.wait_for(self.llm.ainvoke(prompt), timeout=30.0)
+            content = response.content if hasattr(response, 'content') else str(response)
+        except asyncio.TimeoutError:
+            content = '{"innovation_score": 50, "difficulty_score": 50, "value_score": 50, "total_score": 50}'
         
         # 解析结果
         quality = self._parse_assessment_result(project.id, content)
@@ -69,7 +74,7 @@ class QualityAssessor:
         """
         results = {}
         
-        for project in projects:
+        for i, project in enumerate(projects):
             analysis = None
             if project_analyses:
                 analysis = project_analyses.get(project.id)

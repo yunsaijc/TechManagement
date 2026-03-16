@@ -1,14 +1,22 @@
-"""签字检查规则"""
-from src.common.models.document import BoundingBox
-from src.common.models.review import CheckResult, CheckStatus
-from src.common.vision import YOLODetector
+"""签字检查规则
+
+使用统一的 SignatureExtractor 进行检查：
+1. 先用 LLM 定位签字区域 bbox
+2. 裁剪区域
+3. OCR 转写签字内容
+"""
+from src.common.models import CheckResult, CheckStatus
+from src.common.extractors import SignatureExtractor
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 
 
 @RuleRegistry.register
 class SignatureCheckRule(BaseRule):
-    """签字检查规则"""
+    """签字检查规则
+
+    使用 SignatureExtractor 提取签字内容。
+    """
 
     name = "signature"
     description = "检查文档中是否存在签字"
@@ -16,7 +24,6 @@ class SignatureCheckRule(BaseRule):
 
     def __init__(self):
         self.min_regions = 1  # 最少签字区域数
-        self.min_confidence = 0.7  # 最低置信度
 
     async def should_run(self, context: ReviewContext) -> bool:
         """根据文档类型判断"""
@@ -25,47 +32,49 @@ class SignatureCheckRule(BaseRule):
         return context.document_type not in no_signature_types
 
     async def check(self, context: ReviewContext) -> CheckResult:
-        """执行签字检查"""
-        # 检测签名区域 - 使用通用目标检测
-        detector = YOLODetector("yolov8n.pt")
+        """执行签字检查
+
+        使用 SignatureExtractor 提取签字内容。
+        能提取到则 PASS，否则 FAILED。
+        """
+        extractor = SignatureExtractor()
+        
         try:
-            regions = await detector.detect(
+            result = await extractor.extract(
                 context.file_data,
-                confidence=self.min_confidence,
+                min_regions=self.min_regions,
             )
-        except Exception:
-            # 如果检测失败，返回警告
+        except Exception as e:
+            # 如果提取失败，返回警告
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.WARNING,
-                message="签名检测暂时不可用",
+                message=f"签字提取暂时不可用: {e}",
                 evidence={},
             )
 
-        # 过滤可能的签名区域（简化处理，实际需要专门模型）
-        signature_regions = [r for r in regions if r.class_name in ["person", "hand"]]
-
-        if len(signature_regions) >= self.min_regions:
+        if result and result.get("signatures"):
+            signatures = result["signatures"]
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.PASSED,
-                message=f"检测到 {len(signature_regions)} 个疑似签字区域",
+                message=f"提取到 {len(signatures)} 个签字区域",
                 evidence={
-                    "region_count": len(signature_regions),
-                    "regions": [
+                    "signatures": [
                         {
-                            "bbox": r.bbox.model_dump(),
-                            "confidence": r.confidence,
+                            "text": s.get("text", ""),
+                            "bbox": s.get("bbox", {}),
+                            "confidence": s.get("confidence", 0),
                         }
-                        for r in signature_regions
+                        for s in signatures
                     ],
                 },
-                confidence=0.6,  # 通用模型置信度较低
+                confidence=0.9,
             )
         else:
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,
-                message="未检测到签字",
-                evidence={"region_count": 0},
+                message="未提取到签字",
+                evidence={"signatures": []},
             )

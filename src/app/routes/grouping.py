@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.common.models import ApiResponse
+from src.common.models import ApiResponse, ResponseStatus
 from src.common.models.grouping import (
     FullGroupingRequest,
     FullGroupingResult,
@@ -41,11 +41,13 @@ async def group_projects(request: GroupingRequest) -> ApiResponse[GroupingResult
     try:
         service = get_grouping_service()
         result = await service.group_projects(request)
+        result = await service.group_projects(request)
         
         # 存储结果
         _grouping_results[result.id] = result
         
         return ApiResponse(
+            status=ResponseStatus.SUCCESS,
             data=result,
             message="分组完成",
             code=200
@@ -98,6 +100,7 @@ async def match_experts(
         _matching_results[result.id] = result
         
         return ApiResponse(
+            status=ResponseStatus.SUCCESS,
             data=result,
             message="匹配完成",
             code=200
@@ -139,6 +142,7 @@ async def full_grouping(request: FullGroupingRequest) -> ApiResponse[FullGroupin
         )
         
         return ApiResponse(
+            status=ResponseStatus.SUCCESS,
             data=result,
             message="完整流程完成",
             code=200
@@ -163,6 +167,7 @@ async def get_grouping_result(grouping_id: str) -> ApiResponse[GroupingResult]:
         raise HTTPException(status_code=404, detail=f"分组结果 {grouping_id} 不存在")
     
     return ApiResponse(
+        status=ResponseStatus.SUCCESS,
         data=_grouping_results[grouping_id],
         code=200
     )
@@ -182,6 +187,7 @@ async def get_matching_result(matching_id: str) -> ApiResponse[MatchingResult]:
         raise HTTPException(status_code=404, detail=f"匹配结果 {matching_id} 不存在")
     
     return ApiResponse(
+        status=ResponseStatus.SUCCESS,
         data=_matching_results[matching_id],
         code=200
     )

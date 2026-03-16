@@ -1,9 +1,52 @@
-"""Embedding 向量模型工厂"""
-from typing import List, Optional
+"""
+Embedding 向量模型工厂
 
-from langchain_openai import OpenAIEmbeddings
+支持多种Embedding providers
+"""
+from typing import List, Optional
+import numpy as np
+import requests
 
 from src.common.llm.embedding_config import embedding_config
+
+
+class DashscopeEmbeddings:
+    """Dashscope embedding client (qwen)"""
+    
+    def __init__(self, api_key: str, base_url: str, model: str = "text-embedding-v3", dimension: int = 1024):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        self.dimension = dimension
+    
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed a list of texts"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        embeddings = []
+        for text in texts:
+            data = {
+                "model": self.model,
+                "input": text
+            }
+            resp = requests.post(
+                f"{self.base_url}/embeddings",
+                json=data,
+                headers=headers,
+                timeout=30
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            embeddings.append(result["data"][0]["embedding"])
+        
+        return embeddings
+    
+    def embed_query(self, text: str) -> List[float]:
+        """Embed a single text"""
+        return self.embed_documents([text])[0]
 
 
 def get_embedding_client(
@@ -24,7 +67,7 @@ def get_embedding_client(
         dimension: 向量维度
 
     Returns:
-        LangChain Embeddings 实例
+        Embeddings 实例
     """
     # 使用配置或传入的参数
     provider = provider or embedding_config.provider
@@ -32,28 +75,20 @@ def get_embedding_client(
     api_key = api_key or embedding_config.api_key
     base_url = base_url or embedding_config.base_url
     dimension = dimension or embedding_config.dimension
-
-    if provider == "openai":
+    
+    if provider == "qwen":
+        # 使用自定义Dashscope客户端
+        return DashscopeEmbeddings(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            dimension=dimension
+        )
+    elif provider == "openai":
+        from langchain_openai import OpenAIEmbeddings
         return OpenAIEmbeddings(
             model=model,
             api_key=api_key,
-            dimensions=dimension,
-            **kwargs
-        )
-    elif provider == "qwen":
-        # 阿里云通义千问 embedding
-        return OpenAIEmbeddings(
-            model=model or "text-embedding-v3",
-            api_key=api_key,
-            base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            dimensions=dimension,
-            **kwargs
-        )
-    elif provider == "minimax":
-        return OpenAIEmbeddings(
-            model=model or "embo-01",
-            api_key=api_key,
-            base_url=base_url or "https://api.minimax.chat/v1",
             dimensions=dimension,
             **kwargs
         )
@@ -74,6 +109,6 @@ def get_default_embedding_client():
     """获取默认 Embedding 客户端
 
     Returns:
-        默认 LangChain Embeddings 实例
+        默认 Embeddings 实例
     """
     return get_embedding_client()

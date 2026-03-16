@@ -132,10 +132,8 @@ class GroupOptimizer:
         large_groups = [g for g in groups if g.summary.count > target_size + 3]
         small_groups = [g for g in groups if g.summary.count < target_size - 3]
         
-        # 简单均衡：调整目标大小
-        for group in groups:
-            # 保持分组结构，仅调整摘要
-            group.summary.avg_projects_per_group = target_size
+        # 简单均衡：当前只做分组筛查，摘要字段保持模型定义内的值
+        # （GroupSummary 无 avg_projects_per_group 字段）
         
         return groups
     

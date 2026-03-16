@@ -24,42 +24,54 @@
 ┌───────────▼───────────────────▼────────────────────────────────────┐
 │  Layer 5: 规则引擎层 (services/review/rules/)                      │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
-│  │  RuleRegistry   │  │  RuleEngine     │  │  BaseChecker    │   │
+│  │  RuleRegistry   │  │  RuleEngine     │  │  BaseRule      │   │
 │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘   │
 │           │                     │                     │             │
 │  ┌────────▼────────────────────▼─────────────────────▼─────────┐   │
-│  │                    Checkers (规则实现)                       │   │
+│  │                    Rules (规则实现)                         │   │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │   │
-│  │  │SignatureCheck│  │ StampCheck   │  │PrerequisiteCh│     │   │
-│  │  │   (签字检查)  │  │   (盖章检查)  │  │  (前置条件)  │     │   │
+│  │  │SignatureCheck│  │ StampCheck   │  │WorkUnitCheck │     │   │
+│  │  │   (签字检查)  │  │   (盖章检查)  │  │  (一致性检查)  │     │   │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘     │   │
 │  └───────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
-            │ 调用检测器
+            │ 调用 Extractor
 ┌───────────▼─────────────────────────────────────────────────────────┐
-│  Layer 4: 检测器层 (common/detectors/)    ← 通用检测能力抽象层       │
+│  Layer 4: 提取器层 (common/extractors/)  ← 通用提取能力抽象层      │
+│                                                                     │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌─────────────────┐ │
-│  │SignatureDetector │  │   StampDetector   │  │ TextExtractor   │ │
-│  │    (签字检测)     │  │    (盖章检测)     │  │   (文字提取)    │ │
+│  │ SignatureExtract │  │  StampExtractor  │  │ FieldExtractor  │ │
+│  │    (提取签字)    │  │  (提取印章+内容)  │  │  (提取字段值)   │ │
+│  │  无签字→返回null │  │  无印章→返回null  │  │  无字段→返回null│ │
 │  └──────────────────┘  └──────────────────┘  └─────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
             │ 使用底层能力
 ┌───────────▼─────────────────────────────────────────────────────────┐
-│  Layer 3: 底层能力层 (common/vision/)                               │
+│  Layer 3: 底层能力层 (common/vision/)                             │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌─────────────────┐  │
 │  │   YOLODetector   │  │  MultimodalLLM   │  │      OCR        │  │
 │  └──────────────────┘  └──────────────────┘  └─────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+## 设计理念：统一为 Extractor
+
+**核心思路**：所有能力都是 **Extractor（提取器）**
+- 能提取到 → 返回内容
+- 提取不到 → 返回 null（相当于 detect 不到）
+
+这样：
+- "有无检查" = 调用 Extractor，返回 null 则失败
+- "一致性检查" = 调用 Extractor，获取值后比对
+
 ## 各层职责定义
 
 | 层级 | 组件 | 职责 |
 |------|------|------|
-| **Layer 3** | `YOLODetector`, `MultimodalLLM`, `OCR` | 纯底层能力，只管"检测到" |
-| **Layer 4** | `SignatureDetector`, `StampDetector` | 组合底层能力，输出结构化检测结果 |
-| **Layer 5** | `*Checker` (规则) | 调用检测器，判断"是否通过" |
-| **Layer 6** | `ReviewAgent`, `ReviewService` | 流程编排，不直接调用底层检测器 |
+| **Layer 3** | `YOLODetector`, `MultimodalLLM`, `OCR` | 纯底层能力，提供基础检测/识别功能 |
+| **Layer 4** | `SignatureExtractor`, `StampExtractor`, `FieldExtractor` | 统一提取器，能提取到则返回内容，提取不到返回 null |
+| **Layer 5** | `*Rule` (规则) | 调用 Extractor，根据返回内容判断 PASS/FAILED |
+| **Layer 6** | `ReviewAgent`, `ReviewService` | 流程编排，不直接调用底层能力 |
 
 ## 为什么要分层
 
@@ -93,10 +105,10 @@ ReviewAgent.process()
     └─> _run_rules()
             │
             ├─> SignatureCheckRule.check()
-            │       └─> SignatureDetector.detect()  # 只做检测
+            │       └─> SignatureExtractor.extract()  # 只做提取
             │
             └─> StampCheckRule.check()
-                    └─> StampDetector.detect()       # 只做检测
+                    └─> StampExtractor.extract()       # 只做提取
 ```
 
 **优点：**
@@ -245,34 +257,25 @@ class SignatureCheckRule(BaseRule):
     
     async def check(self, context: ReviewContext) -> CheckResult:
         """执行签字检查"""
-        from src.common.vision import SignatureDetector
+        from src.common.extractors import SignatureExtractor
         
-        # 检测签名区域
-        detector = SignatureDetector()
-        regions = await detector.detect(
-            context.file_data,
-            confidence=self.min_confidence
-        )
+        # 提取签字区域
+        extractor = SignatureExtractor()
+        result = await extractor.extract(context.file_data)
         
-        if len(regions) >= self.min_regions:
+        if result:
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.PASSED,
-                message=f"检测到 {len(regions)} 个签字区域",
-                evidence={
-                    "region_count": len(regions),
-                    "regions": [
-                        {"bbox": r.bbox.model_dump(), "confidence": r.confidence}
-                        for r in regions
-                    ]
-                }
+                message=f"提取到签字内容",
+                evidence={"content": result}
             )
         else:
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,
-                message="未检测到签字",
-                evidence={"region_count": 0}
+                message="未提取到签字",
+                evidence={}
             )
 ```
 
@@ -293,24 +296,24 @@ class StampCheckRule(BaseRule):
     
     async def check(self, context: ReviewContext) -> CheckResult:
         """执行盖章检查"""
-        from src.common.vision import StampDetector
+        from src.common.extractors import StampExtractor
         
-        detector = StampDetector()
-        regions = await detector.detect(context.file_data, confidence=0.7)
+        extractor = StampExtractor()
+        result = await extractor.extract(context.file_data)
         
-        if regions:
+        if result:
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.PASSED,
-                message=f"检测到 {len(regions)} 个印章",
-                evidence={"region_count": len(regions)}
+                message=f"提取到印章内容",
+                evidence={"content": result}
             )
         else:
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,
-                message="未检测到印章",
-                evidence={"region_count": 0}
+                message="未提取到印章",
+                evidence={}
             )
 ```
 
