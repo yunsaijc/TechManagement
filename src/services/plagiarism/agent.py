@@ -150,10 +150,14 @@ class PlagiarismAgent:
         threshold: float = 0.5,
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
+        skip_pages: int = 2,
+        debug: bool = False,
     ):
         self.threshold = threshold
         self.threshold_high = threshold_high
         self.threshold_medium = threshold_medium
+        self.skip_pages = skip_pages
+        self.debug = debug
         
         self.comparator = TextComparator(threshold_high, threshold_medium)
     
@@ -179,9 +183,25 @@ class PlagiarismAgent:
                 file_type = self._detect_type_from_bytes(file_data)
                 parser = get_parser(file_type)
                 result = await parser.parse(file_data)
-                text = result.content.to_text()
+                
+                # 跳过前 N 页
+                if self.skip_pages > 0:
+                    # 过滤掉前 skip_pages 页的内容
+                    filtered_blocks = [
+                        block for block in result.content.text_blocks
+                        if block.page >= self.skip_pages
+                    ]
+                    # 重新构建文本
+                    text = "\n".join(block.text for block in filtered_blocks)
+                else:
+                    text = result.content.to_text()
+                
                 texts[doc_id] = text
-                print(f"[Plagiarism] 提取文本 {doc_id}: {len(text)} chars")
+                print(f"[Plagiarism] 提取文本 {doc_id}: {len(text)} chars (跳过前{self.skip_pages}页)")
+                
+                # Debug: 保存解析结果
+                if self.debug:
+                    self._save_debug(doc_id, result, filtered_blocks if self.skip_pages > 0 else None)
             except Exception as e:
                 print(f"[Plagiarism] 提取文本失败 {doc_id}: {e}")
                 texts[doc_id] = ""
@@ -256,3 +276,35 @@ class PlagiarismAgent:
             return 'docx'
         else:
             return 'unknown'
+    
+    def _save_debug(self, doc_id: str, result, filtered_blocks=None):
+        """保存 debug 结果"""
+        import json
+        import os
+        from pathlib import Path
+        
+        debug_dir = Path("debug_plagiarism")
+        debug_dir.mkdir(exist_ok=True)
+        
+        # 保存原始解析结果
+        output = {
+            "doc_id": doc_id,
+            "pages": result.pages,
+            "metadata": result.metadata,
+            "text_blocks": [
+                {"text": block.text[:200], "page": block.page}
+                for block in result.content.text_blocks[:50]
+            ],
+        }
+        
+        if filtered_blocks is not None:
+            output["filtered_blocks"] = [
+                {"text": block.text[:200], "page": block.page}
+                for block in filtered_blocks[:50]
+            ]
+        
+        filename = debug_dir / f"{doc_id}_parse.json"
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+        
+        print(f"[Plagiarism] Debug: 保存解析结果到 {filename}")

@@ -20,17 +20,21 @@ class PlagiarismRequest(BaseModel):
 @router.post("")
 async def check_plagiarism(
     files: List[UploadFile] = File(...),
-    threshold: float = Form(0.8),
-    threshold_high: float = Form(0.9),
-    threshold_medium: float = Form(0.7),
+    threshold: float = Form(0.5),
+    threshold_high: float = Form(0.8),
+    threshold_medium: float = Form(0.5),
+    skip_pages: int = Form(2),
+    debug: bool = Form(False),
 ) -> ApiResponse[dict]:
     """查重接口
     
     Args:
         files: 上传的文件列表（支持 pdf, docx）
-        threshold: 相似度阈值，默认 0.8
-        threshold_high: 高相似度阈值，默认 0.9
-        threshold_medium: 中相似度阈值，默认 0.7
+        threshold: 相似度阈值，默认 0.5
+        threshold_high: 高相似度阈值，默认 0.8
+        threshold_medium: 中相似度阈值，默认 0.5
+        skip_pages: 跳过的页数，默认 2
+        debug: 是否保存 debug 结果，默认 False
         
     Returns:
         查重结果
@@ -55,6 +59,8 @@ async def check_plagiarism(
         threshold=threshold,
         threshold_high=threshold_high,
         threshold_medium=threshold_medium,
+        skip_pages=skip_pages,
+        debug=debug,
     )
     
     result = await agent.check(file_data_list)

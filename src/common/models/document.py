@@ -37,7 +37,7 @@ class DocumentContent(BaseModel):
     text_blocks: List[TextBlock] = Field(default_factory=list)
     image_regions: List[ImageRegion] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    
+
     def to_text(self) -> str:
         """将所有文本块合并为纯文本"""
         return "\n".join(block.text for block in self.text_blocks if block.text)
