@@ -14,7 +14,7 @@ from src.services.review.rules.registry import RuleRegistry
 @RuleRegistry.register
 class StampCheckRule(BaseRule):
     """盖章检查规则
-
+    
     使用 StampExtractor 提取印章内容。
     """
 
@@ -27,7 +27,7 @@ class StampCheckRule(BaseRule):
 
     async def check(self, context: ReviewContext) -> CheckResult:
         """执行盖章检查
-
+        
         使用 StampExtractor 提取印章内容。
         能提取到则 PASS，否则 FAILED。
         """

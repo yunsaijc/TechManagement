@@ -129,6 +129,7 @@ class ProjectInGroup(BaseModel):
     """分组内的项目"""
     project_id: str = Field(..., description="项目ID")
     xmmc: str = Field(..., description="项目名称")
+    xmjj: Optional[str] = Field(None, description="项目简介")
     quality_score: float = Field(..., description="质量评分")
     reason: Optional[str] = Field(None, description="分配理由")
 
@@ -149,8 +150,18 @@ class GroupSummary(BaseModel):
 class ProjectGroup(BaseModel):
     """项目分组"""
     group_id: int = Field(..., description="分组ID")
+    subject_code: Optional[str] = Field(None, description="学科代码")
+    subject_name: Optional[str] = Field(None, description="学科名称")
     projects: List[ProjectInGroup] = Field(default_factory=list, description="分组内项目列表")
-    summary: GroupSummary = Field(..., description="分组摘要")
+    
+    # 统计信息
+    count: int = Field(0, description="项目数量")
+    avg_quality: float = Field(0.0, description="平均质量得分")
+    max_quality: float = Field(0.0, description="最高质量得分")
+    min_quality: float = Field(0.0, description="最低质量得分")
+    
+    # 兼容旧版
+    summary: Optional[GroupSummary] = Field(None, description="分组摘要(兼容)")
 
     class Config:
         from_attributes = True
@@ -163,6 +174,19 @@ class GroupingStatistics(BaseModel):
     balance_score: float = Field(..., description="均衡度得分 (0-1)")
     avg_projects_per_group: float = Field(..., description="平均每组项目数")
     avg_quality_per_group: float = Field(..., description="平均质量得分")
+    
+    # 新增：质量评估详情
+    quality_mean: Optional[float] = Field(None, description="质量分数均值")
+    quality_median: Optional[float] = Field(None, description="质量分数中位数")
+    quality_std: Optional[float] = Field(None, description="质量分数标准差")
+    quality_min: Optional[float] = Field(None, description="质量分数最小值")
+    quality_max: Optional[float] = Field(None, description="质量分数最大值")
+    
+    # 新增：分组质量
+    quantity_balance: Optional[float] = Field(None, description="数量均衡度 (0-1)")
+    quality_balance: Optional[float] = Field(None, description="质量均衡度 (0-1)")
+    subject_purity: Optional[float] = Field(None, description="学科纯度 (0-1)")
+    split_correctness: Optional[float] = Field(None, description="拆分正确率 (0-1)")
 
     class Config:
         from_attributes = True

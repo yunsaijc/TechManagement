@@ -9,6 +9,7 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from src.app.routes import review
 from src.app.routes import grouping
+from src.app.routes import plagiarism
 
 app = FastAPI(
     title="科技管理系统 API",
@@ -19,6 +20,7 @@ app = FastAPI(
 # 注册路由
 app.include_router(review.router, prefix="/api/v1/review", tags=["形式审查"])
 app.include_router(grouping.router, prefix="/api/v1/grouping", tags=["智能分组"])
+app.include_router(plagiarism.router, prefix="/api/v1/plagiarism", tags=["查重"])
 
 
 @app.get("/health")

@@ -18,8 +18,39 @@ from src.common.models.grouping import (
     ProjectGroup,
 )
 from src.services.grouping import get_grouping_service
+from src.common.database import get_subject_repo
 
 router = APIRouter()
+
+# 调试接口：查询学科
+@router.get("/debug/subjects")
+async def debug_subjects():
+    """查询学科表"""
+    try:
+        repo = get_subject_repo()
+        subjects = repo.list_all()
+        return {"count": len(subjects), "samples": [{"code": s.code, "name": s.name} for s in subjects[:20]]}
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/debug/subjects/all")
+async def debug_subjects_all():
+    """查询所有学科(按前缀分组)"""
+    try:
+        repo = get_subject_repo()
+        subjects = repo.list_all()
+        
+        # 按前2位分组
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for s in subjects:
+            if s.code:
+                prefix = s.code[:2]
+                groups[prefix].append({"code": s.code, "name": s.name})
+        
+        return {"count": len(subjects), "prefixes": dict(groups)}
+    except Exception as e:
+        return {"error": str(e)}
 
 # 存储分组和匹配结果（生产环境应使用数据库）
 _grouping_results: Dict[str, GroupingResult] = {}
