@@ -106,7 +106,7 @@ class WorkUnitConsistencyRule(BaseRule):
         
         units = []
         
-        # 匹配 "河北地质大学" 这种单位名称
+        # 匹配单位名称
         # 常见模式：XXX大学、XXX研究所、XXX公司、XXX学院等
         patterns = [
             r'([^，,\n]+大学)',

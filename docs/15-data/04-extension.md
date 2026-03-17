@@ -13,12 +13,16 @@
 ```python
 # scripts/explore_new_db.py
 import pymysql
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 DB_CONFIG = {
-    "host": "192.168.0.xxx",
-    "port": 3306,
-    "user": "xxx",
-    "password": "xxx",
+    "host": os.getenv("NEW_DB_HOST", "your_host"),
+    "port": int(os.getenv("NEW_DB_PORT", 3306)),
+    "user": os.getenv("NEW_DB_USER", "your_user"),
+    "password": os.getenv("NEW_DB_PASSWORD", "your_password"),
 }
 
 DATABASES = {
@@ -104,16 +108,16 @@ def get_new_repo() -> NewRepository:
 from pydantic_settings import BaseSettings
 
 class DatabaseSettings(BaseSettings):
-    # 已有数据库
-    reward_host: str = "192.168.0.211"
+    # 已有数据库 - 从环境变量读取
+    reward_host: str = ""
     # ...
     
     # 新数据库
-    new_host: str = "192.168.0.xxx"
+    new_host: str = ""
     new_port: int = 3306
-    new_user: str = "xxx"
-    new_password: str = "xxx"
-    new_database: str = "xxx"
+    new_user: str = ""
+    new_password: str = ""
+    new_database: str = ""
 ```
 
 ---

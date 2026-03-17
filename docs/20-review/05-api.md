@@ -53,7 +53,7 @@ curl -X POST "http://localhost:8000/api/v1/review" \
     "extracted_data": {
       "units": ["河北地质大学"],
       "work_units": ["河北地质大学"],
-      "authors": ["边亮"],
+      "authors": ["xx"],
       "project_name": "",
       "stamps": [],
       "signatures": [{"page": 1, "bbox": {"x": 100, "y": 500, "width": 200, "height": 50}}],

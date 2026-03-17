@@ -21,7 +21,7 @@ class DatabaseSettings(BaseSettings):
     project_port: int = 1433
     project_user: str = ""
     project_password: str = ""
-    project_database: str = "kjjhxm_wlps"
+    project_database: str = ""
     
     class Config:
         env_prefix = "DB_"
