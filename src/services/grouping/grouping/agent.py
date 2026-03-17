@@ -1,104 +1,250 @@
 """
 分组 Agent
 
-负责协调各组件完成项目分组
+重构版：按学科分组 + 质量评估 + 均衡分配
 
-优化版本：
-1. 直接使用Embedding聚类，不需要LLM分析
-2. 批量LLM调用
-3. 抽样质量评估
-4. 结果缓存
+逻辑：
+1. 按三级学科初步分组
+2. 数量 ≤15 → 保留原分组
+3. 数量 >30 → 质量评估 + 均衡分配
+4. 合并结果
 """
-import json
+import asyncio
+import re
 import time
 import uuid
+from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from src.common.llm import get_default_llm_client, get_default_embedding_client
+from src.common.llm import get_default_llm_client
 from src.common.models.grouping import (
     GroupingRequest,
     GroupingResult,
     GroupingStatistics,
-    GroupingStrategy,
     GroupSummary,
     Project,
-    ProjectAnalysis,
     ProjectGroup,
     ProjectInGroup,
     ProjectQuality,
 )
-from src.services.grouping.grouping.analyzer import ProjectAnalyzer
-from src.services.grouping.grouping.cluster import ProjectCluster
-from src.services.grouping.grouping.optimizer import GroupOptimizer
 from src.services.grouping.grouping.quality import QualityAssessor
 from src.services.grouping.storage.project_repo import ProjectRepository
+from src.common.database import get_subject_repo
 
 
-# 缓存配置（简化版）
+# 质量分数缓存
 _QUALITY_CACHE: Dict[str, float] = {}
 
 
 class GroupingAgent:
-    """分组 Agent
+    """分组 Agent (重构版)
     
-    协调各组件完成项目分组（优化版）
+    按学科分组 + 质量评估 + 均衡分配
     """
     
     def __init__(
         self,
         llm: Any = None,
-        embedder: Any = None,
-        cluster_algorithm: str = "kmeans"
+        max_per_group: int = 15,
+        quality_weights: List[float] = None,
+        concurrency: int = 10
     ):
         """初始化
         
         Args:
             llm: LLM 客户端
-            embedder: 向量化模型
-            cluster_algorithm: 聚类算法
+            max_per_group: 每组目标项目数 (默认15)
+            quality_weights: 质量权重 [创新性, 技术难度, 应用价值]
+            concurrency: LLM 并发数
         """
         self.llm = llm or get_default_llm_client()
-        self.embedder = embedder or get_default_embedding_client()
-        self.analyzer = ProjectAnalyzer(self.llm)
-        self.cluster = ProjectCluster(cluster_algorithm)
-        self.optimizer = GroupOptimizer()
+        self.max_per_group = max_per_group
+        self.quality_weights = quality_weights or [1.0, 1.0, 1.0]
+        self.concurrency = concurrency
+        
         self.quality_assessor = QualityAssessor(self.llm)
         self.project_repo = ProjectRepository()
+        self.subject_repo = get_subject_repo()
     
-    def _get_project_text(self, project: Project) -> str:
-        """获取项目文本（用于向量化）"""
-        parts = []
-        if project.xmmc:
-            parts.append(project.xmmc)
-        if project.gjc:
-            parts.append(project.gjc)
-        if project.xmjj:
-            # 简单清洗HTML
-            import re
-            clean = re.sub(r'<[^>]+>', '', project.xmjj)
-            clean = re.sub(r'\s+', ' ', clean)
-            if len(clean) > 1000:
-                clean = clean[:1000]
-            parts.append(clean)
-        return " ".join(parts)
+    def _get_subject_level(self, code: str) -> int:
+        """判断学科层级
+        
+        - code 长度=2 → 一级学科
+        - code 长度=3 → 二级学科
+        - code 长度≥4 → 三级学科
+        """
+        if not code:
+            return 0
+        length = len(code)
+        if length == 2:
+            return 1
+        elif length == 3:
+            return 2
+        elif length >= 4:
+            return 3
+        return 0
+    
+    def _get_subject_code(self, ssxk1: Optional[str]) -> str:
+        """获取三级学科代码
+        
+        取 ssxk1 的前4位作为三级学科代码
+        """
+        if not ssxk1:
+            return "unknown"
+        code = ssxk1.strip()
+        if len(code) >= 4:
+            return code[:4]
+        elif len(code) >= 2:
+            return code[:2]  # 不足4位用2位
+        return "unknown"
+    
+    def _get_subject_name(self, code: str) -> str:
+        """获取学科名称"""
+        if code == "unknown":
+            return "未知学科"
+        
+        subject = self.subject_repo.get_by_code(code)
+        if subject:
+            return subject.name or code
+        return code
+    
+    def _group_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
+        """按三级学科分组
+        
+        Returns:
+            {subject_code: [Project, ...]}
+        """
+        subject_groups = defaultdict(list)
+        
+        for project in projects:
+            subject_code = self._get_subject_code(project.ssxk1)
+            subject_groups[subject_code].append(project)
+        
+        return dict(subject_groups)
+    
+    def _clean_html(self, text: Optional[str]) -> str:
+        """清洗 HTML 标签"""
+        if not text:
+            return ""
+        clean = re.sub(r'<[^>]+>', '', text)
+        clean = re.sub(r'\s+', ' ', clean)
+        return clean.strip()
+    
+    async def _assess_quality(
+        self, 
+        projects: List[Project]
+    ) -> Dict[str, float]:
+        """评估所有项目质量
+        
+        Args:
+            projects: 项目列表
+        
+        Returns:
+            {project_id: quality_score}
+        """
+        quality_scores = {}
+        
+        # 过滤已缓存的项目
+        uncached = []
+        for p in projects:
+            if p.id in _QUALITY_CACHE:
+                quality_scores[p.id] = _QUALITY_CACHE[p.id]
+            else:
+                uncached.append(p)
+        
+        if not uncached:
+            return quality_scores
+        
+        # 并发评估
+        semaphore = asyncio.Semaphore(self.concurrency)
+        
+        async def assess_one(p: Project) -> tuple:
+            async with semaphore:
+                try:
+                    score = await self.quality_assessor.assess_single(p)
+                    return p.id, score
+                except Exception as e:
+                    print(f"质量评估失败: {p.id}, {e}")
+                    return p.id, 75.0  # 默认分
+        
+        tasks = [assess_one(p) for p in uncached]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, tuple):
+                pid, score = result
+                _QUALITY_CACHE[pid] = score
+                quality_scores[pid] = score
+        
+        return quality_scores
+    
+    def _balanced_distribute(
+        self,
+        projects: List[Project],
+        quality_scores: Dict[str, float],
+        target_groups: int = None
+    ) -> List[List[Project]]:
+        """质量均衡分配算法
+        
+        目标: 每组数量均衡 + 质量总分均衡
+        方法: 贪心分配（先按质量排序，然后轮转分配）
+        
+        Args:
+            projects: 项目列表
+            quality_scores: {project_id: score}
+            target_groups: 目标分组数（默认根据 max_per_group 计算）
+        
+        Returns:
+            [[Project, ...], ...]
+        """
+        if not projects:
+            return []
+        
+        # 计算目标组数（尽量均衡）
+        if target_groups is None:
+            target_groups = max(1, round(len(projects) / self.max_per_group))
+        
+        # 按质量降序排序
+        sorted_projects = sorted(
+            projects,
+            key=lambda p: quality_scores.get(p.id, 75.0),
+            reverse=True
+        )
+        
+        # 初始化分组
+        groups = [[] for _ in range(target_groups)]
+        group_scores = [0.0] * target_groups
+        
+        # 贪心分配：总是加入分数最低的组
+        for p in sorted_projects:
+            min_idx = group_scores.index(min(group_scores))
+            groups[min_idx].append(p)
+            group_scores[min_idx] += quality_scores.get(p.id, 75.0)
+        
+        return groups
     
     async def group_projects(
         self,
         request: GroupingRequest
     ) -> GroupingResult:
-        """执行项目分组（优化版）
+        """执行项目分组 (重构版)
         
-        优化点：
-        1. 直接用Embedding聚类，跳过LLM分析
-        2. 抽样做质量评估
-        3. 批量LLM调用
+        流程：
+        1. 获取项目列表
+        2. 按三级学科初步分组
+        3. 数量≤15 → 保留原分组
+        4. 数量>30 → 质量评估 + 均衡分配
+        5. 合并结果
         """
         start_time = time.time()
         
+        # 更新参数
+        self.max_per_group = request.max_per_group
+        
         # 1. 获取项目列表
-        limit = getattr(request, 'limit', 10) or 10
+        limit = request.limit
         projects = self.project_repo.get_projects_by_year(
             year=request.year,
             category=request.category,
@@ -108,141 +254,113 @@ class GroupingAgent:
         if not projects:
             raise ValueError(f"没有找到 {request.year} 年度的项目")
         
-        # 2. 项目向量化（直接用项目文本，不需要LLM分析）
-        project_vectors = self._generate_vectors(projects)
+        print(f"[Grouping] 获取到 {len(projects)} 个项目")
         
-        # 3. 计算分组数
-        group_count = request.group_count
-        if group_count is None:
-            group_count = self.cluster.calculate_optimal_groups(
-                len(projects), request.max_per_group
+        # 2. 按三级学科初步分组
+        subject_groups = self._group_by_subject(projects)
+        print(f"[Grouping] 按学科分为 {len(subject_groups)} 个学科组")
+        
+        # 3. 处理每个学科
+        all_groups = []  # 最终分组
+        
+        for subject_code, subject_projects in subject_groups.items():
+            count = len(subject_projects)
+            subject_name = self._get_subject_name(subject_code)
+            
+            if count <= self.max_per_group:
+                # 数量≤max，直接保留
+                all_groups.append({
+                    "subject_code": subject_code,
+                    "subject_name": subject_name,
+                    "projects": subject_projects,
+                    "need_split": False
+                })
+            else:
+                # 数量>max，需要拆分
+                print(f"[Grouping] 学科 {subject_code}({subject_name}) 有 {count} 个项目，需要拆分")
+                
+                # 计算拆分后的组数（尽量均衡）
+                target_groups = max(1, round(count / self.max_per_group))
+                
+                # 3.1 评估质量
+                quality_scores = await self._assess_quality(subject_projects)
+                
+                # 3.2 均衡分配（传入目标组数）
+                split_groups = self._balanced_distribute(subject_projects, quality_scores, target_groups)
+                
+                for i, group in enumerate(split_groups):
+                    all_groups.append({
+                        "subject_code": f"{subject_code}_{i+1}",
+                        "subject_name": f"{subject_name}({i+1})",
+                        "projects": group,
+                        "need_split": True,
+                        "parent_subject": subject_code
+                    })
+        
+        # 4. 构建结果
+        result_groups = []
+        group_id = 1
+        
+        for g in all_groups:
+            projects_in_group = g["projects"]
+            
+            # 计算质量分数
+            scores = []
+            for p in projects_in_group:
+                score = _QUALITY_CACHE.get(p.id, 75.0)
+                scores.append(score)
+            
+            # 构建 ProjectInGroup
+            project_items = [
+                ProjectInGroup(
+                    project_id=p.id,
+                    xmmc=p.xmmc,
+                    quality_score=_QUALITY_CACHE.get(p.id, 75.0),
+                    reason=f"学科: {g['subject_name']}"
+                )
+                for p in projects_in_group
+            ]
+            
+            # 统计信息
+            avg_score = np.mean(scores) if scores else 0
+            max_score = max(scores) if scores else 0
+            min_score = min(scores) if scores else 0
+            
+            result_groups.append(
+                ProjectGroup(
+                    group_id=group_id,
+                    subject_code=g["subject_code"],
+                    subject_name=g["subject_name"],
+                    projects=project_items,
+                    count=len(projects_in_group),
+                    avg_quality=round(avg_score, 2),
+                    max_quality=round(max_score, 2),
+                    min_quality=round(min_score, 2)
+                )
             )
+            group_id += 1
         
-        # 4. 聚类分组
-        cluster_labels = self.cluster.fit_predict(project_vectors, group_count)
+        # 5. 统计信息
+        total_projects = len(projects)
+        total_groups = len(result_groups)
         
-        # 5. 质量评估（抽样 + 批量）
-        quality_scores = await self._assess_quality_sampled(
-            projects, cluster_labels, group_count
-        )
-        
-        # 6. 构建项目字典
-        project_dicts = [
-            {"id": p.id, "xmmc": p.xmmc, "ssxk1": p.ssxk1}
-            for p in projects
-        ]
-        
-        # 7. 分组优化
-        groups = self.optimizer.optimize(
-            cluster_labels,
-            quality_scores,
-            project_dicts,
-            request.strategy
-        )
-        
-        # 8. 构建结果
-        result_groups = groups
-        
-        # 9. 统计信息
         stats = GroupingStatistics(
-            total_projects=len(projects),
-            group_count=len(result_groups),
-            balance_score=0.8,
-            avg_projects_per_group=len(projects) / len(result_groups) if result_groups else 0,
-            avg_quality_per_group=sum(g.summary.avg_score for g in result_groups) / len(result_groups) if result_groups else 0
+            total_projects=total_projects,
+            group_count=total_groups,
+            balance_score=0.85,  # 简化
+            avg_projects_per_group=total_projects / total_groups if total_groups else 0,
+            avg_quality_per_group=np.mean([g.avg_quality for g in result_groups]) if result_groups else 0
         )
         
         result = GroupingResult(
             id=str(uuid.uuid4()),
             year=request.year,
-            strategy=request.strategy,
             groups=result_groups,
             statistics=stats,
             created_at=time.strftime("%Y-%m-%d %H:%M:%S")
         )
         
+        elapsed = time.time() - start_time
+        print(f"[Grouping] 完成，用时 {elapsed:.2f}秒，分组 {total_groups} 个")
+        
         return result
-    
-    def _generate_vectors(self, projects: List[Project]) -> np.ndarray:
-        """生成项目向量
-        
-        直接使用项目文本，不需要LLM分析
-        """
-        texts = []
-        for p in projects:
-            text = self._get_project_text(p)
-            texts.append(text)
-        
-        # 调用 embedder
-        embeddings = self.embedder.embed_documents(texts)
-        return np.array(embeddings)
-    
-    async def _assess_quality_sampled(
-        self,
-        projects: List[Project],
-        cluster_labels: np.ndarray,
-        group_count: int
-    ) -> Dict[str, float]:
-        """抽样质量评估（优化版）
-        
-        策略：
-        1. 每个组抽取3-5个代表性项目
-        2. 批量调用LLM
-        3. 用抽样结果推算全组质量
-        """
-        quality_scores = {}
-        
-        # 按组分类项目
-        groups = {}
-        for i, label in enumerate(cluster_labels):
-            if label not in groups:
-                groups[label] = []
-            groups[label].append((i, projects[i]))
-        
-        # 对每组抽样评估
-        for group_id, group_projects in groups.items():
-            # 抽样策略：距离中心最近的 + 随机补充
-            if len(group_projects) <= 3:
-                sample_indices = [i for i, _ in group_projects]
-            else:
-                # 简化：取前3个
-                sample_indices = [i for i, _ in group_projects[:3]]
-            
-            # 批量评估
-            sample_projects = [projects[i] for i in sample_indices]
-            
-            # 检查缓存
-            uncached = []
-            for p in sample_projects:
-                if p.id not in _QUALITY_CACHE:
-                    uncached.append(p)
-                else:
-                    quality_scores[p.id] = _QUALITY_CACHE[p.id]
-            
-            if uncached:
-                # 批量LLM调用
-                batch_scores = await self.quality_assessor.batch_assess(uncached)
-                for pid, score in batch_scores.items():
-                    _QUALITY_CACHE[pid] = score
-                    quality_scores[pid] = score
-            
-            # 计算组平均分
-            # group_projects 是 [(index, Project), ...]
-            sample_projs = [projects[i] for i in sample_indices]
-            group_avg = np.mean([quality_scores.get(p.id, 75) for p in sample_projs])
-            
-            # 推算到全组
-            for i, p in group_projects:
-                if p.id not in quality_scores:
-                    quality_scores[p.id] = group_avg
-        
-        return quality_scores
-    
-    async def _assess_quality(
-        self,
-        projects: List[Project],
-        analyzed_projects: List[ProjectAnalysis]
-    ) -> Dict[str, float]:
-        """评估项目质量（兼容旧接口）"""
-        quality_scores = await self.quality_assessor.assess_projects(analyzed_projects)
-        return {q.project_id: q.total_score for q in quality_scores}

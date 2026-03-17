@@ -277,10 +277,9 @@ class GroupingRequest(BaseModel):
     """分组请求"""
     year: str = Field(..., description="年度 (必填)")
     category: Optional[str] = Field(None, description="奖种类别")
-    group_count: Optional[int] = Field(None, description="分组数量 (None 则自动计算)")
-    max_per_group: int = Field(30, description="每组最大项目数")
+    max_per_group: int = Field(15, description="每组目标项目数")
     strategy: GroupingStrategy = Field(GroupingStrategy.BALANCED, description="分组策略")
-    limit: Optional[int] = Field(10, description="限制项目数量（测试用）")
+    limit: Optional[int] = Field(None, description="限制项目数量（测试用）")
 
     class Config:
         from_attributes = True
@@ -302,7 +301,7 @@ class FullGroupingRequest(BaseModel):
     """完整分组与匹配请求"""
     year: str = Field(..., description="年度 (必填)")
     category: Optional[str] = Field(None, description="奖种类别")
-    group_count: Optional[int] = Field(None, description="分组数量")
+    max_per_group: int = Field(15, description="每组目标项目数")
     experts_per_project: int = Field(5, description="每个项目分配专家数")
     min_experts_per_group: int = Field(10, description="每组最少懂行专家")
     avoid_relations: bool = Field(True, description="是否回避关系")

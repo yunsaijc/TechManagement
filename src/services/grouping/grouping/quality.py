@@ -148,6 +148,60 @@ class QualityAssessor:
         # 解析失败返回默认
         return {p.id: 75.0 for p in projects}
     
+    async def assess_single(self, project: Project) -> float:
+        """评估单个项目，返回分数
+        
+        简化版，直接返回综合分数
+        
+        Args:
+            project: 项目
+        
+        Returns:
+            质量分数 (0-100)
+        """
+        # 构建评估文本
+        clean_xmjj = self._clean_html(project.xmjj)[:1000] if project.xmjj else ""
+        
+        prompt = f"""项目名称: {project.xmmc}
+关键词: {project.gjc or '无'}
+项目简介: {clean_xmjj}
+
+请从以下三个维度评估该项目质量（每个维度0-100分）：
+1. 创新性: 项目的创新程度
+2. 技术难度: 技术实现的复杂程度
+3. 应用价值: 实际应用和推广价值
+
+请返回JSON格式：
+{{"innovation": 85, "difficulty": 70, "value": 90, "comment": "简要评语"}}
+只需返回JSON，不要其他内容。"""
+        
+        try:
+            import asyncio
+            response = await asyncio.wait_for(self.llm.ainvoke(prompt), timeout=30.0)
+            content = response.content if hasattr(response, 'content') else str(response)
+        except Exception as e:
+            print(f"[Quality] 评估失败: {project.id}, {e}")
+            return 75.0
+        
+        # 解析 JSON
+        try:
+            import json
+            # 提取 JSON
+            start = content.find('{')
+            end = content.rfind('}') + 1
+            if start >= 0 and end > start:
+                data = json.loads(content[start:end])
+                # 计算综合分数 (等权重)
+                innovation = data.get('innovation', 75)
+                difficulty = data.get('difficulty', 75)
+                value = data.get('value', 75)
+                total = (innovation + difficulty + value) / 3
+                return round(total, 2)
+        except Exception as e:
+            print(f"[Quality] 解析失败: {project.id}, {e}")
+        
+        return 75.0
+    
     def _build_assessment_text(
         self,
         project: Project,

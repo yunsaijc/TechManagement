@@ -41,7 +41,6 @@ async def group_projects(request: GroupingRequest) -> ApiResponse[GroupingResult
     try:
         service = get_grouping_service()
         result = await service.group_projects(request)
-        result = await service.group_projects(request)
         
         # 存储结果
         _grouping_results[result.id] = result
