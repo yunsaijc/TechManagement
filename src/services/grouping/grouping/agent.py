@@ -110,20 +110,120 @@ def _calculate_quality_stats(quality_scores: Dict[str, float]) -> dict:
     }
 
 
-def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[ProjectGroup], year: str):
+def _assess_reliability(
+    quality_scores: Dict[str, float],
+    detail_cache: Dict[str, dict]
+) -> dict:
+    """评估LLM分数的可靠性
+    
+    Args:
+        quality_scores: {project_id: total_score}
+        detail_cache: {project_id: {innovation, difficulty, value, total, comment}}
+    
+    Returns:
+        {
+            is_anomaly: bool,  # 是否存在异常
+            anomaly_type: str,  # 异常类型
+            anomaly_details: str,  # 异常详情
+            consistency_score: float,  # 一致性分数 (0-1)
+            dimension_correlation: dict,  # 维度相关性
+            distribution_quality: str  # 分布质量评价
+        }
+    """
+    if not quality_scores or len(quality_scores) < 5:
+        return {"is_anomaly": False, "reason": "样本不足"}
+    
+    scores = list(quality_scores.values())
+    
+    # 1. 异常检测
+    anomaly_type = None
+    anomaly_details = []
+    
+    # 1.1 全相同分数
+    unique_scores = set(scores)
+    if len(unique_scores) == 1:
+        anomaly_type = "all_same"
+        anomaly_details.append(f"所有项目分数相同: {scores[0]}")
+    
+    # 1.2 分数集中在极窄范围
+    score_range = max(scores) - min(scores)
+    if score_range < 5:
+        anomaly_type = "too_narrow"
+        anomaly_details.append(f"分数范围过窄: {score_range}分")
+    
+    # 1.3 分布不自然（过多相同分数）
+    from collections import Counter
+    score_counts = Counter(scores)
+    most_common_count = score_counts.most_common(1)[0][1]
+    if most_common_count / len(scores) > 0.5:
+        anomaly_type = "unnatural_distribution"
+        anomaly_details.append(f"分数 {score_counts.most_common(1)[0][0]} 出现 {most_common_count} 次 ({most_common_count/len(scores)*100:.1f}%)")
+    
+    # 2. 分布质量评价
+    mean = np.mean(scores)
+    std = np.std(scores)
+    if std < 5:
+        distribution_quality = "过于集中，建议检查"
+    elif std > 25:
+        distribution_quality = "分散度较大，可能存在评分不一致"
+    else:
+        distribution_quality = "正常"
+    
+    # 3. 维度相关性分析
+    dimension_correlation = {}
+    if detail_cache:
+        innovations = []
+        difficulties = []
+        values = []
+        for d in detail_cache.values():
+            if all(k in d for k in ['innovation', 'difficulty', 'value']):
+                innovations.append(d['innovation'])
+                difficulties.append(d['difficulty'])
+                values.append(d['value'])
+        
+        if len(innovations) > 5:
+            # 计算相关系数
+            try:
+                dimension_correlation['innovation_difficulty'] = round(np.corrcoef(innovations, difficulties)[0,1], 3)
+                dimension_correlation['innovation_value'] = round(np.corrcoef(innovations, values)[0,1], 3)
+                dimension_correlation['difficulty_value'] = round(np.corrcoef(difficulties, values)[0,1], 3)
+            except:
+                pass
+    
+    # 4. 一致性评估（基于方差）- 标准差越大一致性越低
+    consistency_score = max(0, 1 - std / 30)  # 标准差30分时一致性为0，标准差0时一致性为1
+    
+    return {
+        "is_anomaly": anomaly_type is not None,
+        "anomaly_type": anomaly_type,
+        "anomaly_details": anomaly_details,
+        "consistency_score": round(consistency_score, 3),
+        "distribution_quality": distribution_quality,
+        "dimension_correlation": dimension_correlation,
+        "sample_size": len(scores)
+    }
+
+
+def _generate_quality_charts(
+    quality_scores: Dict[str, float], 
+    groups: List[ProjectGroup], 
+    year: str,
+    reliability: dict = None
+):
     """生成质量统计图表并保存
     
     Args:
         quality_scores: 所有项目质量分数
         groups: 分组列表
         year: 年份
+        reliability: 可靠性评估结果
     """
     try:
         # 设置中文字体
         plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial Unicode MS', 'SimHei']
         plt.rcParams['axes.unicode_minus'] = False
         
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        fig, axes = plt.subplots(2, 3, figsize=(16, 10))
         fig.suptitle(f'Grouping Quality Report - {year}', fontsize=14)
         
         # 1. 质量分数分布直方图
@@ -151,7 +251,7 @@ def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[Proj
             ax2.legend()
         
         # 3. 各组平均质量
-        ax3 = axes[1, 0]
+        ax3 = axes[0, 2]
         group_means = [g.avg_quality for g in groups]
         if group_means:
             ax3.bar(range(1, len(group_means)+1), group_means, color='mediumseagreen', alpha=0.7)
@@ -162,16 +262,16 @@ def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[Proj
             ax3.set_title('Average Quality per Group')
             ax3.legend()
         
-        # 4. 质量均衡度雷达图
-        ax4 = axes[1, 1]
+        # 4. 分组质量指标
+        ax4 = axes[1, 0]
         metrics = ['Quantity\nBalance', 'Quality\nBalance', 'Subject\nPurity', 'Split\nCorrectness']
         values = [
-            np.mean(group_counts) / max(group_counts) if max(group_counts) > 0 else 1,  # 简化的数量均衡
-            1 - (np.std(group_means) / 100) if group_means else 1,  # 质量均衡
-            1 - (len([g for g in groups if '(' in (g.subject_name or '')]) / len(groups)) if groups else 1,  # 学科纯度
-            1.0  # 拆分正确率（简化）
+            np.mean(group_counts) / max(group_counts) if max(group_counts) > 0 else 1,
+            1 - (np.std(group_means) / 100) if group_means else 1,
+            1 - (len([g for g in groups if '(' in (g.subject_name or '')]) / len(groups)) if groups else 1,
+            1.0
         ]
-        values = [max(0, min(1, v)) for v in values]  # 限制在0-1之间
+        values = [max(0, min(1, v)) for v in values]
         
         x = np.arange(len(metrics))
         bars = ax4.bar(x, values, color=['steelblue', 'coral', 'mediumseagreen', 'gold'], alpha=0.7)
@@ -181,10 +281,70 @@ def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[Proj
         ax4.set_ylabel('Score (0-1)')
         ax4.set_title('Grouping Quality Metrics')
         
-        # 添加数值标签
         for bar, val in zip(bars, values):
             ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02, 
                     f'{val:.2f}', ha='center', va='bottom', fontsize=9)
+        
+        # 5. LLM可靠性评估 - 改为仪表盘风格
+        ax5 = axes[1, 1]
+        if reliability:
+            # 一致性分数进度条
+            consistency = reliability.get('consistency_score', 0.5)
+            is_anomaly = reliability.get('is_anomaly', False)
+            
+            # 绘制进度条背景
+            ax5.barh(['Consistency'], [1], color='lightgray', height=0.4, alpha=0.5)
+            # 绘制实际分数
+            color = 'green' if consistency > 0.7 else 'orange' if consistency > 0.4 else 'red'
+            ax5.barh(['Consistency'], [consistency], color=color, height=0.4)
+            ax5.set_xlim(0, 1)
+            ax5.set_title('LLM Consistency Score')
+            ax5.text(consistency + 0.05, 0, f'{consistency:.2f}', va='center', fontsize=10)
+            
+            # 添加状态标记
+            status = "Normal" if not is_anomaly else "ANOMALY"
+            status_color = 'green' if not is_anomaly else 'red'
+            ax5.text(0.5, -0.3, f'Status: {status}', ha='center', fontsize=9, color=status_color)
+            
+            ax5.set_ylabel('')
+            ax5.set_yticks([])
+        else:
+            ax5.text(0.5, 0.5, "No Reliability Data", ha='center')
+            ax5.axis('off')
+            ax5.set_title('LLM Reliability')
+        
+        # 6. 分数分布柱状图（每5分一段）
+        ax6 = axes[1, 2]
+        if quality_scores:
+            scores = list(quality_scores.values())
+            # 每5分一段
+            ranges = ['0-4', '5-9', '10-14', '15-19', '20-24', '25-29', '30-34', '35-39', 
+                     '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', 
+                     '70-74', '75-79', '80-84', '85-89', '90-94', '95-100']
+            counts = [0] * 20
+            for s in scores:
+                idx = min(int(s // 5), 19)
+                counts[idx] += 1
+            
+            # 只显示有数据的区间
+            nonzero_indices = [i for i, c in enumerate(counts) if c > 0]
+            if nonzero_indices:
+                nonzero_ranges = [ranges[i] for i in nonzero_indices]
+                nonzero_counts = [counts[i] for i in nonzero_indices]
+                
+                colors = plt.cm.RdYlGn(np.linspace(0.2, 0.8, len(nonzero_ranges)))
+                ax6.bar(range(len(nonzero_ranges)), nonzero_counts, color=colors, edgecolor='black', alpha=0.8)
+                ax6.set_xticks(range(len(nonzero_ranges)))
+                ax6.set_xticklabels(nonzero_ranges, rotation=45, ha='right', fontsize=7)
+                ax6.set_ylabel('Count')
+                ax6.set_title('Score Distribution (per 5)')
+            else:
+                ax6.text(0.5, 0.5, "No Data", ha='center')
+                ax6.set_title('Score Distribution')
+        else:
+            ax6.text(0.5, 0.5, "No Data", ha='center')
+            ax6.axis('off')
+            ax6.set_title('Score Distribution')
         
         plt.tight_layout()
         
@@ -199,6 +359,9 @@ def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[Proj
         
     except Exception as e:
         print(f"[Grouping] 生成图表失败: {e}")
+
+
+def _calculate_balance_metrics(
     groups: List[ProjectGroup],
     quality_scores: Dict[str, float]
 ) -> dict:
@@ -281,7 +444,7 @@ def _save_quality_cache():
         print(f"[Grouping] 保存缓存失败: {e}")
 
 
-def _save_grouping_result(year: str, result: GroupingResult):
+def _save_grouping_result(year: str, result: GroupingResult, reliability: dict = None):
     """保存分组结果到文件"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -316,6 +479,7 @@ def _save_grouping_result(year: str, result: GroupingResult):
                 "subject_purity": result.statistics.subject_purity,
                 "split_correctness": result.statistics.split_correctness,
             },
+            "reliability": reliability or {},
             "groups": []
         }
         
@@ -501,7 +665,11 @@ class GroupingAgent:
         async def process_batch(batch: List[Project]):
             async with semaphore:
                 try:
-                    return await self.quality_assessor.batch_assess(batch)
+                    result = await self.quality_assessor.batch_assess(batch)
+                    # 每批完成后立即更新缓存
+                    for pid, score in result.items():
+                        _QUALITY_CACHE[pid] = score
+                    return result
                 except Exception as e:
                     return {p.id: 75.0 for p in batch}
         
@@ -511,8 +679,9 @@ class GroupingAgent:
         # 合并
         for r in results:
             quality_scores.update(r)
-            for pid, score in r.items():
-                _QUALITY_CACHE[pid] = score
+        
+        # 获取详细分数（包含各维度）
+        detail_cache = self.quality_assessor._detail_cache
         
         return quality_scores
     
@@ -694,6 +863,22 @@ class GroupingAgent:
         quality_stats = _calculate_quality_stats(_QUALITY_CACHE)
         balance_metrics = _calculate_balance_metrics(result_groups, _QUALITY_CACHE)
         
+        # 获取详细分数缓存并评估可靠性
+        detail_cache = self.quality_assessor._detail_cache if hasattr(self.quality_assessor, '_detail_cache') else {}
+        reliability = _assess_reliability(_QUALITY_CACHE, detail_cache)
+        
+        # 打印可靠性报告
+        print(f"[Grouping] 可靠性评估:")
+        print(f"  - 样本量: {reliability.get('sample_size', 0)}")
+        print(f"  - 是否异常: {reliability.get('is_anomaly', False)}")
+        if reliability.get('anomaly_details'):
+            for d in reliability.get('anomaly_details', []):
+                print(f"  - {d}")
+        print(f"  - 分布质量: {reliability.get('distribution_quality', 'N/A')}")
+        print(f"  - 一致性分数: {reliability.get('consistency_score', 'N/A')}")
+        if reliability.get('dimension_correlation'):
+            print(f"  - 维度相关性: {reliability['dimension_correlation']}")
+        
         # 综合均衡分数
         balance_score = (
             balance_metrics.get("quantity_balance", 0.85) * 0.3 +
@@ -729,10 +914,10 @@ class GroupingAgent:
         )
         
         # 保存分组结果到文件
-        _save_grouping_result(request.year, result)
+        _save_grouping_result(request.year, result, reliability)
         
         # 生成质量统计图表
-        _generate_quality_charts(_QUALITY_CACHE, result_groups, request.year)
+        _generate_quality_charts(_QUALITY_CACHE, result_groups, request.year, reliability)
         
         # 保存质量分数缓存
         _save_quality_cache()

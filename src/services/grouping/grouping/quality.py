@@ -23,6 +23,7 @@ class QualityAssessor:
             llm: LLM 客户端实例
         """
         self.llm = llm or get_default_llm_client()
+        self._detail_cache: Dict[str, dict] = {}  # 详细分数缓存
     
     async def assess_quality(
         self,
@@ -137,10 +138,24 @@ class QualityAssessor:
             if start >= 0 and end > start:
                 arr = json.loads(content[start:end])
                 result = {}
+                detail_result = {}  # 保存详细分数
                 for item in arr:
                     idx = item.get('index', 1) - 1
                     if 0 <= idx < len(projects):
-                        result[projects[idx].id] = float(item.get('total', 75))
+                        pid = projects[idx].id
+                        total = float(item.get('total', 75))
+                        result[pid] = total
+                        # 保存详细维度分数
+                        detail_result[pid] = {
+                            "total": total,
+                            "innovation": float(item.get('innovation', total)),
+                            "difficulty": float(item.get('difficulty', total)),
+                            "value": float(item.get('value', total)),
+                            "comment": item.get('comment', '')
+                        }
+                # 保存到模块级详细缓存
+                if hasattr(self, '_detail_cache'):
+                    self._detail_cache.update(detail_result)
                 return result
         except:
             pass
