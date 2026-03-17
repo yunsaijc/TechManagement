@@ -269,7 +269,7 @@ class ReviewAgent:
     ) -> List[CheckResult]:
         """LLM 补充检查"""
         # 需要 LLM 检查的项目
-        llm_items = ["consistency", "completeness"]
+        llm_items = ["consistency", "completeness", "signature_name_consistency"]
         if check_items:
             llm_items = [i for i in llm_items if i in check_items]
 
@@ -277,6 +277,11 @@ class ReviewAgent:
 
         if "consistency" in llm_items:
             result = await self._check_consistency(context)
+            if result:
+                results.append(result)
+
+        if "signature_name_consistency" in llm_items:
+            result = await self._check_signature_name_consistency(context)
             if result:
                 results.append(result)
 
@@ -314,6 +319,69 @@ class ReviewAgent:
                 status=CheckStatus.WARNING,
                 message="一致性检查暂时不可用",
                 evidence={},
+            )
+
+    async def _check_signature_name_consistency(
+        self, context: ReviewContext
+    ) -> Optional[CheckResult]:
+        """签字与完成人姓名一致性检查
+        
+        检查签字区域识别出的人名是否与"主要完成人情况表"中的姓名一致。
+        """
+        extracted = context.extracted
+        llm_analysis = extracted.get("llm_analysis", {})
+        
+        if not llm_analysis:
+            return CheckResult(
+                item="signature_name_consistency",
+                status=CheckStatus.WARNING,
+                message="未找到 LLM 分析结果",
+                evidence={},
+            )
+        
+        # 从提取的字段获取姓名
+        fields = llm_analysis.get("extracted_fields", {})
+        contributor_name = fields.get("姓名", "").strip()
+        
+        # 从签字描述获取签字人名
+        signatures_desc = llm_analysis.get("signatures_description", "").strip()
+        
+        if not contributor_name:
+            return CheckResult(
+                item="signature_name_consistency",
+                status=CheckStatus.WARNING,
+                message="未提取到完成人姓名",
+                evidence={"fields": fields},
+            )
+        
+        if not signatures_desc:
+            return CheckResult(
+                item="signature_name_consistency",
+                status=CheckStatus.FAILED,
+                message="未提取到签字信息",
+                evidence={"signatures_description": signatures_desc},
+            )
+        
+        # 检查签字描述中是否包含完成人姓名
+        if contributor_name in signatures_desc:
+            return CheckResult(
+                item="signature_name_consistency",
+                status=CheckStatus.PASSED,
+                message=f"签字人'{contributor_name}'与完成人一致",
+                evidence={
+                    "contributor_name": contributor_name,
+                    "signatures_description": signatures_desc,
+                },
+            )
+        else:
+            return CheckResult(
+                item="signature_name_consistency",
+                status=CheckStatus.FAILED,
+                message=f"完成人'{contributor_name}'与签字人不一致",
+                evidence={
+                    "contributor_name": contributor_name,
+                    "signatures_description": signatures_desc,
+                },
             )
 
     def _generate_summary(self, results: List[CheckResult]) -> str:

@@ -29,7 +29,8 @@
 |------|------|------|------|------|
 | `year` | String | 是 | 年度，如 "2024" |
 | `category` | String | 否 | 奖种类别 |
-| `group_count` | Integer | 否 | 分组数量（省略则自动计算） |
+| `max_per_group` | Integer | 否 | 每组目标项目数（默认15） |
+| `split_threshold` | Integer | 否 | 超过此数量则拆分（默认30） |
 | `max_per_group` | Integer | 否 | 每组最大项目数（默认30） |
 | `strategy` | String | 否 | 分组策略：`balanced`（均衡）或 `quality`（质量优先） |
 
@@ -89,7 +90,7 @@ curl -X POST "http://localhost:8000/api/v1/grouping/projects" \
     ],
     "statistics": {
       "total_projects": 147,
-      "group_count": 5,
+      "target_groups": 15,
       "balance_score": 0.92,
       "avg_projects_per_group": 29.4,
       "avg_quality_per_group": 81.2
@@ -234,7 +235,7 @@ curl -X POST "http://localhost:8000/api/v1/grouping/full" \
   -d '{
     "year": "2024",
     "category": "自然科学",
-    "group_count": 5,
+    "target_groups": 15,
     "experts_per_project": 5,
     "min_experts_per_group": 10,
     "avoid_relations": true

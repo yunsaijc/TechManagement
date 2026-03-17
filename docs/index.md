@@ -42,12 +42,7 @@ docs/
 │   ├── 03-matching.md              # 专家匹配子服务设计
 │   ├── 04-models.md                # 数据模型
 │   └── 05-api.md                  # API 接口文档
-│
-├── 30-project/                      # 📋 项目评审服务（未来）
-│
-├── 40-award/                        # 🏆 奖励评审服务（未来）
-│
-└── 50-expert/                       # 👤 专家匹配服务（未来）
+
 ```
 
 ## 层次关系
@@ -79,10 +74,6 @@ docs/
 │   ├── 03-matching.md
 │   ├── 04-models.md
 │   └── 05-api.md
-│
-├── 30-project/         ← 项目评审服务（未来，依赖 common）
-├── 40-award/           ← 奖励评审服务（未来，依赖 common）
-└── 50-expert/          ← 专家匹配服务（未来，依赖 common）
 ```
 
 ## 服务依赖关系

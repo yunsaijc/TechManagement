@@ -2,42 +2,56 @@
 
 ## 概述
 
-分组子服务是智能分组与专家匹配服务的核心组件之一，负责将申报项目智能地分配到不同的评审组，实现组内数量与质量的双均衡。
-
-## 功能说明
-
-1. **项目向量化**：使用 Embedding 模型将项目转换为向量（直接用项目名称+关键词，不需要 LLM 分析）
-2. **智能分组计算**：根据项目数量自动计算最优分组数
-3. **质量评估**：使用 LLM 评估每个项目的创新性、技术难度、应用价值（**抽样评估**）
-4. **分组优化**：确保各组数量均衡，质量均衡、主题相关
-5. **结果缓存**：避免重复计算
+分组子服务是智能分组与专家匹配服务的核心组件之一，负责将申报项目按学科分类，并对超出30项的学科进行质量均衡分配，实现组内数量与质量的双均衡。
 
 ---
 
-## 业务流程（优化后）
+## 核心逻辑（重构后）
+
+### 原有方案问题
+
+| 问题 | 原因 |
+|------|------|
+| 语义聚类 ≠ 学科分组 | Embedding 只保证语义相近，不保证学科一致 |
+| 质量不均衡 | 聚类只保证语义相似，不保证质量分布 |
+
+### 新方案：按学科分组 + 质量均衡分配
+
+```
+1. 按三级学科初步分组（利用 ssxk1 字段）
+2. 数量 ≤30 → 直接保留
+3. 数量 >30 → 进入质量均衡分配流程
+   3.1 LLM 评估每个项目质量（创新性/技术难度/应用价值）
+   3.2 贪心算法分配，保证组间质量均衡
+4. 合并结果，输出 15 个分组
+```
+
+---
+
+## 业务流程
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        分组子服务流程                              │
 └─────────────────────────────────────────────────────────────────┘
 
-     输入: 项目列表 (含 xmmc, gjc, ssxk)
+     输入: year, target_groups=15
          │
          ▼
 ┌─────────────────────┐
-│   1. 数据预处理      │
-│   - 清洗 HTML 标签  │
-│   - 提取纯文本      │
-│   - 字段拼接        │
+│  1. 获取项目列表     │
+│     + 学科代码       │
 └──────┬──────────────┘
          │
          ▼
 ┌─────────────────────┐
-│   2. 项目向量化      │
-│   (Embedding)       │
-│   - 直接用项目文本  │
-│   - 无需LLM分析    │
-│   - 结果缓存        │
+│  2. 查询学科层级    │
+│  sys_subject 表    │
+└──────┬──────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│  3. 按三级学科分组  │
 └──────┬──────────────┘
          │
          ▼
@@ -45,197 +59,229 @@
     │         │
     ▼         ▼
 ┌────────┐ ┌────────┐
-│3a.聚类 │ │3b.质量│
-│分组   │ │评估(抽)│
-└───┬────┘ └───┬────┘
-    │         │
-    └────┬────┘
-         │
-         ▼
+│ ≤30项  │ │ >30项  │
+│ 保留   │ │ 质量评估│
+│ 原分组 │ │ +均衡分配│
+└────────┘ └────┬────┘
+                 │
+                 ▼
 ┌─────────────────────┐
-│   4. 分组优化       │
-│   - 数量均衡        │
-│   - 质量均衡        │
-│   - 学科内聚        │
+│  4. 合并分组结果   │
+│     + 质量统计      │
 └──────┬──────────────┘
-         │
-         ▼
-     输出: 分组结果
+                 │
+                 ▼
+             输出: 15个分组
 ```
-
-### 优化要点
-
-| 优化项 | 原方案 | 优化后 | 效果 |
-|--------|--------|--------|------|
-| 项目分析 | 每个LLM分析 | 直接用Embedding | 减少5000+次LLM调用 |
-| 质量评估 | 全量评估 | 每组抽样3-5个 | 减少90% LLM调用 |
-| LLM调用 | 逐个调用 | 批量调用 | 减少API往返 |
-| 结果缓存 | 无 | 向量/结果缓存 | 避免重复计算 |
 
 ---
 
 ## 核心模块
 
-### 1. 项目向量化 (Embedding)
+### 1. 学科分组 (Subject Grouping)
 
-直接使用 Embedding 模型将项目文本转换为向量，**不需要 LLM 分析步骤**。
-
-#### 输入
+#### 1.1 学科层级判断
 
 ```python
-# 项目原始数据
-{
-    "xmmc": "基于多尺度分析的智能电网故障预测系统",
-    "gjc": "智能电网,故障预测,机器学习",
-    "xmjj": "<p>本项目拟开展基于多尺度分析的智能电网故障预测研究...</p>",
-    "ssxk1": "4704017"
-}
-```
-
-#### 处理流程
-
-1. **HTML 清洗**：去除富文本标签，提取纯文本
-2. **文本融合**：拼接 `项目名称 + 关键词 + 简介`（不超过2000字）
-3. **Embedding 向量化**：使用 qwen text-embedding-v3 生成 1024 维向量
-
-#### 向量缓存
-
-```python
-# 检查缓存
-cached = cache.get(f"project_vector:{project_id}")
-if cached:
-    return cached
-
-# 计算并缓存
-vector = embedder.embed_documents([text])[0]
-cache.set(f"project_vector:{project_id}", vector, ttl=7*24*3600)
-return vector
-```
-
-#### 输出
-
-```python
-{
-    "project_id": "xxx",
-    "vector": [0.123, -0.456, ...],  # 1024维
-    "text": "基于多尺度分析的智能电网故障预测系统..."
-}
-```
-
-### 2. 聚类分组 (Cluster)
-
-基于项目内容向量进行智能聚类。
-
-#### 算法选择
-
-| 算法 | 适用场景 | 优点 |
-|------|----------|------|
-| K-means | 项目数量大，主题分散 | 速度快，效果稳定 |
-| 层次聚类 | 项目数量中等，需要层次结构 | 可解释性强 |
-| DBSCAN | 项目密度不均 | 可发现异常项目 |
-
-#### 自动分组数计算
-
-```python
-def calculate_optimal_groups(project_count: int, max_per_group: int = 30) -> int:
-    """自动计算最优分组数
+def get_subject_level(code: str) -> int:
+    """判断学科层级
     
-    Args:
-        project_count: 项目总数
-        max_per_group: 每组最大项目数
+    - code 长度=2 → 一级学科 (如 01, 02, 03)
+    - code 长度=3 → 二级学科 (如 010, 011)
+    - code 长度≥4 → 三级学科 (如 0101, 0102)
+    """
+    if not code:
+        return 0
+    length = len(code)
+    if length == 2:
+        return 1
+    elif length == 3:
+        return 2
+    elif length >= 4:
+        return 3
+    return 0
+```
+
+#### 1.2 按三级学科分组
+
+```python
+def group_by_subject(projects: List[Project]) -> Dict[str, List[Project]]:
+    """按三级学科代码分组
     
     Returns:
-        最优分组数
+        {
+            "0101": [Project, Project, ...],  # 计算机软件与理论
+            "0201": [Project, ...],           # 理论物理
+            ...
+        }
     """
-    # 基础分组数
-    base_groups = ceil(project_count / max_per_group)
+    subject_groups = defaultdict(list)
     
-    # 根据项目总数调整
-    if project_count < 50:
-        return max(2, base_groups)
-    elif project_count < 100:
-        return max(3, base_groups)
-    elif project_count < 200:
-        return max(4, base_groups)
-    else:
-        return max(5, min(10, base_groups))
+    for project in projects:
+        # 取三级学科代码（前4位）
+        if project.ssxk1 and len(project.ssxk1) >= 4:
+            subject_code = project.ssxk1[:4]
+        else:
+            subject_code = "unknown"
+        
+        subject_groups[subject_code].append(project)
+    
+    return dict(subject_groups)
 ```
 
-### 3. 质量评估 (Quality Assessment)
+### 2. 质量评估 (Quality Assessment)
 
-**优化：采用抽样评估策略**
+对数量 >30 的学科，评估每个项目的质量。
 
-对于每个分组，只评估 3-5 个代表性项目，然后推算全组质量。
-
-#### 抽样策略
-
-```python
-def sample_projects_for_quality(group_projects: List[Project], sample_size: int = 5) -> List[Project]:
-    """抽样选择需要评估的项目
-    
-    策略：
-    1. 按向量距离选择中心点附近的3个
-    2. 随机选择2个作为补充
-    """
-    if len(group_projects) <= sample_size:
-        return group_projects
-    
-    # 计算组内向量中心
-    center = np.mean([p.vector for p in group_projects], axis=0)
-    
-    # 选择距离中心最近的
-    distances = [np.linalg.norm(p.vector - center) for p in group_projects]
-    sorted_idx = np.argsort(distances)[:sample_size-2]
-    
-    # 补充随机
-    random_idx = random.sample(range(len(group_projects)), 2)
-    
-    return [group_projects[i] for i in set(list(sorted_idx) + random_idx)]
-```
-
-#### 评估维度
+#### 2.1 评估维度
 
 | 维度 | 权重 | 说明 |
 |------|------|------|
-| 创新性 | 40% | 技术的原创性、领先程度 |
-| 技术难度 | 30% | 技术的复杂程度、实现难度 |
-| 应用价值 | 30% | 推广应用前景，经济效益 |
+| 创新性 | 33.3% | 技术的原创性、领先程度 |
+| 技术难度 | 33.3% | 技术的复杂程度、实现难度 |
+| 应用价值 | 33.3% | 推广应用前景，经济效益 |
 
-#### 批量LLM评估
+#### 2.2 LLM 评估 Prompt
 
 ```python
-async def batch_assess_quality(projects: List[Project], batch_size: int = 10) -> List[QualityScore]:
-    """批量评估项目质量
+def build_quality_prompt(project: Project) -> str:
+    """构建质量评估 prompt"""
+    # 清洗 HTML
+    clean_xmjj = clean_html(project.xmjj)[:1000]
     
-    优化：一次发送多个项目，减少API调用次数
-    """
-    results = []
-    
-    for i in range(0, len(projects), batch_size):
-        batch = projects[i:i+batch_size]
-        
-        # 批量构建prompt
-        prompt = build_batch_prompt(batch)
-        
-        # 一次LLM调用
-        response = await llm.ainvoke(prompt)
-        
-        # 解析批量结果
-        batch_results = parse_batch_quality(response)
-        results.extend(batch_results)
-    
-    return results
+    return f"""
+项目名称: {project.xmmc}
+关键词: {project.gjc or '无'}
+项目简介: {clean_xmjj}
+
+请从以下三个维度评估该项目质量（每个维度0-100分）：
+1. 创新性: 项目的创新程度
+2. 技术难度: 技术实现的复杂程度  
+3. 应用价值: 实际应用和推广价值
+
+请返回JSON格式：
+{{"innovation": 85, "difficulty": 70, "value": 90, "comment": "简要评语"}}
+"""
 ```
 
-### 4. 分组优化 (Optimizer)
+#### 2.3 并发评估
 
-确保分组结果满足约束条件。
+```python
+async def assess_all_quality(
+    projects: List[Project], 
+    concurrency: int = 10
+) -> Dict[str, ProjectQuality]:
+    """并发评估所有项目质量
+    
+    Args:
+        projects: 项目列表
+        concurrency: 并发数
+    
+    Returns:
+        {project_id: ProjectQuality}
+    """
+    semaphore = asyncio.Semaphore(concurrency)
+    
+    async def assess_with_limit(p: Project):
+        async with semaphore:
+            return p.id, await llm_assess(p)
+    
+    tasks = [assess_with_limit(p) for p in projects]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    return {
+        pid: quality 
+        for pid, quality in results 
+        if not isinstance(quality, Exception)
+    }
+```
 
-#### 约束条件
+### 3. 均衡分配 (Balanced Distribution)
 
-1. **数量均衡**：每组项目数尽量接近，差异 ≤ 3
-2. **质量均衡**：各组平均质量得分差异 ≤ 5分
-3. **学科内聚**：同组分尽量包含相似学科的项目
+对数量 >30 的学科，使用贪心算法进行均衡分配。
+
+#### 3.1 算法逻辑
+
+```python
+def balanced_distribute(
+    projects: List[Project],
+    quality_scores: Dict[str, ProjectQuality],
+    max_per_group: int = 15
+) -> List[List[Project]]:
+    """质量均衡分配算法
+    
+    目标: 每组数量均衡 + 质量总分均衡
+    方法: 贪心分配（先按质量排序，然后轮转分配）
+    
+    Args:
+        projects: 项目列表
+        quality_scores: 质量分数 {project_id: ProjectQuality}
+        max_per_group: 每组目标项目数 (默认15)
+    
+    Returns:
+        分组结果 [[Project, ...], [Project, ...], ...]
+    """
+    # 计算需要的组数
+    target_groups = max(1, (len(projects) + max_per_group - 1) // max_per_group)
+    sorted_projects = sorted(
+        projects, 
+        key=lambda p: quality_scores.get(p.id, ProjectQuality()).total_score,
+        reverse=True
+    )
+    
+    # 2. 初始化分组
+    groups = [[] for _ in range(target_groups)]
+    group_scores = [0.0] * target_groups
+    
+    # 3. 贪心分配：总是加入分数最低的组
+    for p in sorted_projects:
+        min_idx = group_scores.index(min(group_scores))
+        groups[min_idx].append(p)
+        group_scores[min_idx] += quality_scores.get(p.id, ProjectQuality()).total_score
+    
+    return groups
+```
+
+#### 3.2 均衡约束
+
+| 约束 | 容忍度 |
+|------|--------|
+| 数量差异 | ≤ 3 项 |
+| 质量差异 | ≤ 10% |
+
+#### 3.3 均衡性检查
+
+```python
+def check_balance(groups: List[List[Project]], quality_scores: Dict) -> bool:
+    """检查分组是否满足均衡约束"""
+    sizes = [len(g) for g in groups]
+    scores = [sum(quality_scores[p.id].total_score for p in g) for g in groups]
+    
+    # 数量差异检查
+    if max(sizes) - min(sizes) > 3:
+        return False
+    
+    # 质量差异检查 (10%)
+    avg_score = sum(scores) / len(scores)
+    for s in scores:
+        if abs(s - avg_score) / avg_score > 0.1:
+            return False
+    
+    return True
+```
+
+---
+
+## 参数配置
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `max_per_group` | 15 | 每组目标项目数 |
+| `split_threshold` | 30 | 超过此数量则拆分该学科 |
+| `quality_weights` | 1:1:1 | 创新性:技术难度:应用价值 |
+| `quantity_tolerance` | 3 | 数量差异容忍 |
+| `quality_tolerance` | 0.1 | 质量差异容忍 (10%) |
+| `llm_concurrency` | 10 | LLM 并发数 |
 
 ---
 
@@ -243,97 +289,100 @@ async def batch_assess_quality(projects: List[Project], batch_size: int = 10) ->
 
 ### 5000+ 项目处理预估
 
-| 步骤 | 优化前 | 优化后 |
-|------|--------|--------|
-| 项目向量化 | ~10分钟 | ~10分钟 |
-| 聚类计算 | ~1分钟 | ~1分钟 |
-| 质量评估 | ~8小时 (10000次LLM) | ~5分钟 (100次抽样) |
-| **总计** | **~8小时** | **~15分钟** |
+| 步骤 | 时间 |
+|------|------|
+| 获取项目 + 学科 | ~5秒 |
+| 学科分组统计 | ~1秒 |
+| 质量评估 (LLM并发10) | ~10分钟 (5000项目) |
+| 均衡分配算法 | ~1秒 |
+| **总计** | **~10分钟** |
 
-### 缓存策略
+### 优化策略
 
-```python
-# 缓存配置
-CACHE_CONFIG = {
-    "project_vectors": {"ttl": 7 * 24 * 3600},  # 7天
-    "quality_scores": {"ttl": 24 * 3600},        # 1天
-    "grouping_results": {"ttl": 30 * 24 * 3600} # 30天
-}
-```
+1. **质量分数缓存**: 评估过的项目结果缓存，避免重复评估
+2. **LLM 并发**: 控制并发数，避免 API 限流
+3. **超时处理**: 单项目评估超时跳过，使用默认分
 
 ---
 
 ## 核心代码结构
 
-### GroupingAgent (优化后)
+### GroupingAgent (重构后)
 
 ```python
 class GroupingAgent:
-    """分组 Agent，负责协调各组件完成项目分组"""
+    """分组 Agent"""
     
-    def __init__(
-        self,
-        llm: Any = None,
-        embedder: Any = None,
-        cluster_algorithm: str = "kmeans"
-    ):
+    def __init__(self, llm=None):
         self.llm = llm or get_default_llm_client()
-        self.embedder = embedder or get_default_embedder()
-        self.vector_cache = VectorCache()  # 新增：向量缓存
-        self.quality_cache = QualityCache() # 新增：质量缓存
-        self.cluster = ProjectCluster(self.embedder, cluster_algorithm)
-        self.optimizer = GroupOptimizer()
-        self.quality_assessor = QualityAssessor(self.llm)
+        self.quality_cache = {}  # 质量分数缓存
     
     async def group_projects(
         self,
         projects: List[Project],
-        group_count: int = None,
-        max_per_group: int = 30,
-        strategy: str = "balanced"
+        target_groups: int = 15
     ) -> GroupingResult:
         """执行项目分组"""
         
-        # 1. 项目向量化（带缓存）
-        vectors = await self._get_project_vectors(projects)
+        # 1. 按三级学科初步分组
+        subject_groups = self._group_by_subject(projects)
         
-        # 2. 计算分组数
-        if group_count is None:
-            group_count = self._calculate_optimal_groups(
-                len(projects), max_per_group
-            )
+        # 2. 处理每个学科
+        final_groups = []
         
-        # 3. 聚类分组
-        cluster_labels = self.cluster.fit_predict(vectors, group_count)
+        for subject_code, subject_projects in subject_groups.items():
+            if len(subject_projects) <= 30:
+                # 数量≤30，直接保留
+                final_groups.append(subject_projects)
+            else:
+                # 数量>30，质量均衡分配
+                # 2.1 评估质量
+                quality_scores = await self._assess_quality(subject_projects)
+                # 2.2 均衡分配
+                split_groups = self._balanced_distribute(
+                    subject_projects, 
+                    quality_scores,
+                    len(subject_projects) // 30 + 1
+                )
+                final_groups.extend(split_groups)
         
-        # 4. 质量评估（抽样+批量）
-        quality_scores = await self._assess_quality_sampled(
-            projects, cluster_labels, group_count
-        )
-        
-        # 5. 分组优化
-        groups = self.optimizer.optimize(
-            cluster_labels, quality_scores, strategy
-        )
-        
-        return GroupingResult(groups=groups, statistics=...)
+        # 3. 合并并返回结果
+        return self._merge_groups(final_groups, target_groups)
 ```
 
 ---
 
-## 分组策略
+## 输出结果
 
-### 1. 均衡策略 (balanced)
+### 分组结果示例
 
-优先保证各组数量和质量均衡。
-
-适用场景：评审资源均匀分布
-
-### 2. 质量策略 (quality)
-
-优先保证各组质量层次分明。
-
-适用场景：需要区分重点项目
+```json
+{
+  "groups": [
+    {
+      "group_id": 1,
+      "subject_code": "0101",
+      "subject_name": "计算机软件与理论",
+      "projects": [
+        {"id": "p1", "xmmc": "项目A", "quality_score": 85.0},
+        {"id": "p2", "xmmc": "项目B", "quality_score": 78.3}
+      ],
+      "statistics": {
+        "count": 28,
+        "avg_quality": 81.5,
+        "max_quality": 95.0,
+        "min_quality": 65.0
+      }
+    }
+  ],
+  "statistics": {
+    "total_groups": 15,
+    "total_projects": 5000,
+    "avg_projects_per_group": 333.3,
+    "avg_quality_per_group": 75.0
+  }
+}
+```
 
 ---
 

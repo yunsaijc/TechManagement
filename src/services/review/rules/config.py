@@ -31,18 +31,6 @@ DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
         "llm_rules": [],
         "llm_extract_fields": ["专利号", "发明人", "专利权人"],
     },
-    "license": {
-        "labels": ["行政许可", "许可证"],
-        "rules": ["signature_check", "stamp_check"],
-        "llm_rules": [],
-        "llm_extract_fields": [],
-    },
-    "contract": {
-        "labels": ["合同"],
-        "rules": ["signature_check", "stamp_check"],
-        "llm_rules": [],
-        "llm_extract_fields": [],
-    },
     "award_certificate": {
         "labels": ["奖励证书"],
         "rules": ["signature_check", "stamp_check"],
@@ -52,14 +40,8 @@ DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
     "award_contributor": {
         "labels": ["奖励-主要完成人情况表", "主要完成人情况表"],
         "rules": ["signature_check", "stamp_check", "work_unit_consistency"],
-        "llm_rules": [],
+        "llm_rules": ["signature_name_consistency"],
         "llm_extract_fields": ["姓名", "工作单位", "完成单位", "技术职称", "学历"],
-    },
-    "project_contributor": {
-        "labels": ["项目-主要完成人情况表"],
-        "rules": ["signature_check", "stamp_check", "work_unit_consistency"],
-        "llm_rules": [],
-        "llm_extract_fields": ["姓名", "工作单位", "完成单位", "排名"],
     },
     "unknown": {
         "labels": ["未知"],
