@@ -58,7 +58,7 @@
 │                     分组子服务 (Grouping)                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  1. 获取项目列表 + 学科代码                                       │
-│  2. 查询 sys_subject 获取学科层级                                 │
+│  2. 查询 sys_xkfl 获取学科层级                                 │
 │  3. 按三级学科初步分组                                            │
 │  4. 数量≤30 → 保留原分组                                         │
 │  5. 数量>30 → 进入质量均衡分配                                    │
@@ -145,11 +145,13 @@ src/
 
 ### 学科代码表
 
+学科代码来自项目评审数据库 (`kjjhxm_wlps.sys_xkfl`)，而非奖励评审数据库的 `sys_subject`。
+
 | 数据库表 | 字段 | 用途 |
 |----------|------|------|
-| `hbstanew.sys_subject` | `code` | 学科代码 (如 01, 0101, 010101) |
-| `hbstanew.sys_subject` | `name` | 学科名称 |
-| `hbstanew.sys_subject` | `parent_id` | 父级ID (用于构建层级) |
+| `kjjhxm_wlps.sys_xkfl` | `code` | 学科代码 (如 01, 0101, 010101) |
+| `kjjhxm_wlps.sys_xkfl` | `name` | 学科名称 |
+| `kjjhxm_wlps.sys_xkfl` | `parent_id` | 父级ID (用于构建层级) |
 
 **学科层级判断**：
 - code 长度=2 → 一级学科 (如 01, 02, 03)

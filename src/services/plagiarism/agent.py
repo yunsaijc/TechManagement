@@ -2,12 +2,14 @@
 
 基于句子级比对 + 位置追溯的查重方案。
 """
+import re
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from src.common.file_handler import get_parser
+from src.services.plagiarism.section_extractor import SectionExtractor
 
 
 @dataclass
@@ -150,14 +152,19 @@ class PlagiarismAgent:
         threshold: float = 0.5,
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
-        skip_pages: int = 2,
+        section_config: Optional[Dict] = None,
         debug: bool = False,
     ):
         self.threshold = threshold
         self.threshold_high = threshold_high
         self.threshold_medium = threshold_medium
-        self.skip_pages = skip_pages
         self.debug = debug
+        
+        # 初始化 Section 提取器
+        if section_config and SectionExtractor.validate_config(section_config):
+            self.section_extractor = SectionExtractor(section_config)
+        else:
+            self.section_extractor = None
         
         self.comparator = TextComparator(threshold_high, threshold_medium)
     
@@ -177,6 +184,7 @@ class PlagiarismAgent:
         
         # 1. 提取所有文本
         texts = {}
+        extracted_texts = {}  # 保存提取后的文本
         for doc_id, file_data in files:
             try:
                 # 检测文件类型
@@ -184,27 +192,26 @@ class PlagiarismAgent:
                 parser = get_parser(file_type)
                 result = await parser.parse(file_data)
                 
-                # 跳过前 N 页
-                if self.skip_pages > 0:
-                    # 过滤掉前 skip_pages 页的内容
-                    filtered_blocks = [
-                        block for block in result.content.text_blocks
-                        if block.page >= self.skip_pages
-                    ]
-                    # 重新构建文本
-                    text = "\n".join(block.text for block in filtered_blocks)
+                # 提取全部文本
+                full_text = result.content.to_text()
+                
+                # 如果配置了 section，使用 SectionExtractor 提取
+                if self.section_extractor:
+                    text = self.section_extractor.extract(full_text)
+                    extracted_texts[doc_id] = text
                 else:
-                    text = result.content.to_text()
+                    text = full_text
                 
                 texts[doc_id] = text
-                print(f"[Plagiarism] 提取文本 {doc_id}: {len(text)} chars (跳过前{self.skip_pages}页)")
+                print(f"[Plagiarism] 提取文本 {doc_id}: {len(text)} chars")
                 
                 # Debug: 保存解析结果
                 if self.debug:
-                    self._save_debug(doc_id, result, filtered_blocks if self.skip_pages > 0 else None)
+                    self._save_debug(doc_id, result, full_text, text)
             except Exception as e:
                 print(f"[Plagiarism] 提取文本失败 {doc_id}: {e}")
                 texts[doc_id] = ""
+                extracted_texts[doc_id] = ""
         
         if len(texts) < 2:
             return PlagiarismResult(
@@ -277,7 +284,7 @@ class PlagiarismAgent:
         else:
             return 'unknown'
     
-    def _save_debug(self, doc_id: str, result, filtered_blocks=None):
+    def _save_debug(self, doc_id: str, result, full_text: str = "", extracted_text: str = ""):
         """保存 debug 结果"""
         import json
         import os
@@ -291,17 +298,48 @@ class PlagiarismAgent:
             "doc_id": doc_id,
             "pages": result.pages,
             "metadata": result.metadata,
-            "text_blocks": [
-                {"text": block.text[:200], "page": block.page}
-                for block in result.content.text_blocks[:50]
-            ],
+            "total_blocks": len(result.content.text_blocks),
         }
         
-        if filtered_blocks is not None:
-            output["filtered_blocks"] = [
-                {"text": block.text[:200], "page": block.page}
-                for block in filtered_blocks[:50]
-            ]
+        # 保存提取的 section（按配置分段）
+        if extracted_text and self.section_extractor:
+            sections = self.section_extractor.sections
+            output["sections"] = []
+            
+            current_pos = 0
+            for i, section in enumerate(sections):
+                start_pattern = section.get("start_pattern", "")
+                end_pattern = section.get("end_pattern")
+                
+                # 查找起始位置
+                start_regex = re.compile(start_pattern)
+                start_match = start_regex.search(extracted_text)
+                
+                if start_match:
+                    start_pos = start_match.start()
+                    
+                    # 查找结束位置
+                    if end_pattern:
+                        end_regex = re.compile(end_pattern)
+                        end_match = end_regex.search(extracted_text[start_pos + 1:])
+                        if end_match:
+                            end_pos = start_pos + 1 + end_match.start()
+                        else:
+                            end_pos = len(extracted_text)
+                    else:
+                        end_pos = len(extracted_text)
+                    
+                    section_text = extracted_text[start_pos:end_pos].strip()
+                    
+                    output["sections"].append({
+                        "name": section.get("name", f"section_{i}"),
+                        "char_count": len(section_text),
+                        "text": section_text,
+                    })
+        
+        # 保存全文预览
+        if full_text:
+            output["full_text_preview"] = full_text[:3000]
         
         filename = debug_dir / f"{doc_id}_parse.json"
         with open(filename, "w", encoding="utf-8") as f:

@@ -42,7 +42,7 @@ class ExpertRepository:
                 SXZY,
                 YJLY,
                 LWLZ,
-                GZDW
+                GZDWID
             FROM ZJK_ZJXX
             WHERE 1=1
         """
@@ -60,13 +60,13 @@ class ExpertRepository:
             )"""
             params.extend(subject_codes)
         
-        sql += " ORDER BY ZJNO"
-        
+        # SQL Server: TOP 需要在 ORDER BY 之前
         if limit:
             sql = f"SELECT TOP {limit} * FROM ({sql}) AS t"
-        
-        # 执行查询
-        rows = project_execute(sql, tuple(params))
+            rows = project_execute(sql, tuple(params))
+        else:
+            sql += " ORDER BY ZJNO"
+            rows = project_execute(sql, tuple(params))
         
         # 转换为模型
         experts = []
@@ -82,7 +82,7 @@ class ExpertRepository:
                 sxzy=row.SXZY,
                 yjly=row.YJLY,
                 lwlz=row.LWLZ,
-                gzdw=row.GZDW,
+                gzdw=row.GZDWID,  # 工作单位ID
             )
             experts.append(expert)
         

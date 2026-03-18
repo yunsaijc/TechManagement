@@ -37,7 +37,7 @@ from src.common.models.grouping import (
 )
 from src.services.grouping.grouping.quality import QualityAssessor
 from src.services.grouping.storage.project_repo import ProjectRepository
-from src.common.database import get_subject_repo
+from src.common.database import get_xkfl_repo
 
 
 # 缓存目录
@@ -547,7 +547,22 @@ class GroupingAgent:
         
         self.quality_assessor = QualityAssessor(self.llm)
         self.project_repo = ProjectRepository()
-        self.subject_repo = get_subject_repo()
+        self.xkfl_repo = get_xkfl_repo()
+        
+        # 加载学科分类缓存
+        self._subject_cache: Dict[str, str] = {}
+        self._load_subject_cache()
+    
+    def _load_subject_cache(self):
+        """加载学科分类到内存缓存"""
+        try:
+            all_xkfl = self.xkfl_repo.list_all()
+            for x in all_xkfl:
+                if x.get("code") and x.get("name"):
+                    self._subject_cache[x["code"]] = x["name"]
+            print(f"[Grouping] 已加载 {len(self._subject_cache)} 条学科分类缓存")
+        except Exception as e:
+            print(f"[Grouping] 加载学科缓存失败: {e}")
     
     def _get_subject_level(self, code: str) -> int:
         """判断学科层级
@@ -568,42 +583,46 @@ class GroupingAgent:
         return 0
     
     def _get_subject_code(self, ssxk1: Optional[str]) -> str:
-        """获取三级学科代码
+        """获取学科代码
         
-        取 ssxk1 的前4位作为三级学科代码
+        sys_xkfl 编码规则:
+        - 一级学科: 3位 (如 460, 020)
+        - 二级学科: 5位 (如 46010, 46540)
+        - 三级学科: 7位 (如 4654030)
+        
+        使用前3位作为一级学科代码进行分组
         """
         if not ssxk1:
             return "unknown"
         code = ssxk1.strip()
-        if len(code) >= 4:
-            return code[:4]
+        if len(code) >= 3:
+            return code[:3]  # 取前3位作为一级学科
         elif len(code) >= 2:
-            return code[:2]  # 不足4位用2位
+            return code[:2]
         return "unknown"
     
     def _get_subject_name(self, code: str) -> str:
         """获取学科名称
         
-        学科编码映射：
-        - 项目代码: 4602, 3203 (4位)
-        - 数据库代码: 4600000, 3200000 (7位)
-        映射规则: 取项目代码前2位 + 补0到7位
+        学科编码映射 (来自 kjjhxm_wlps.sys_xkfl):
+        - 一级学科: 3位 (如 460, 020)
+        - 二级学科: 5位 (如 46010, 46540)
+        - 三级学科: 7位 (如 4654030)
+        
+        使用缓存查询
         """
         if code == "unknown":
             return "未知学科"
         
-        # 转换为数据库格式
-        if len(code) >= 2:
-            db_code = code[:2] + "00000"  # 4602 -> 4600000
-        else:
-            db_code = code
+        # 先尝试精确匹配
+        if code in self._subject_cache:
+            return self._subject_cache[code]
         
-        try:
-            subject = self.subject_repo.get_by_code(db_code)
-            if subject and subject.name:
-                return subject.name
-        except Exception as e:
-            print(f"[Grouping] 学科查询失败: {code} -> {db_code}, {e}")
+        # 尝试逐级缩短匹配
+        for i in range(len(code), 2, -1):
+            prefix = code[:i]
+            if prefix in self._subject_cache:
+                return self._subject_cache[prefix]
         
         return code
     
@@ -666,9 +685,10 @@ class GroupingAgent:
             async with semaphore:
                 try:
                     result = await self.quality_assessor.batch_assess(batch)
-                    # 每批完成后立即更新缓存
+                    # 每批完成后立即更新缓存并保存到文件
                     for pid, score in result.items():
                         _QUALITY_CACHE[pid] = score
+                    _save_quality_cache()  # 实时保存
                     return result
                 except Exception as e:
                     return {p.id: 75.0 for p in batch}
