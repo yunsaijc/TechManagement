@@ -70,6 +70,55 @@ class SectionExtractor:
         
         return "\n".join(results)
     
+    def filter_template_content(self, text: str) -> str:
+        """过滤模板内容，只保留正文
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            过滤后的正文
+        """
+        lines = text.split('\n')
+        filtered_lines = []
+
+        # 模板内容的正则模式
+        patterns_to_skip = [
+            # 章节标题：一、二、三 或 第X部分
+            r'^[\u4e00-\u9fa5]\s*[、.]\s*\S+',
+            r'^第[一二三四五六七八九十百]+部分',
+            r'^第一部分\s*',
+            r'^第二部分\s*',
+            r'^第三部分\s*',
+            # 表格行标记 [表格行X]
+            r'^\[表格行\d+\]',
+            # 纯表格表头（只有 | 分隔的）
+            r'^[\u4e00-\u9fa5a-zA-Z]+\s*\|',
+        ]
+
+        skip_regexes = [re.compile(p) for p in patterns_to_skip]
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # 过滤太短的内容（少于10个字符）
+            if len(line) < 10:
+                continue
+
+            # 检查是否匹配任何模板模式
+            is_template = False
+            for regex in skip_regexes:
+                if regex.match(line):
+                    is_template = True
+                    break
+
+            if not is_template:
+                filtered_lines.append(line)
+
+        return "\n".join(filtered_lines)
+    
     @staticmethod
     def validate_config(section_config: Dict) -> bool:
         """验证配置是否有效
