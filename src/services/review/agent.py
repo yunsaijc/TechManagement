@@ -466,9 +466,9 @@ class ReviewAgent:
                     logger.warning(f"[LLM] 字段数过多({len(field_names)})，仅保留前{max_fields}个")
                     field_names = field_names[:max_fields]
                 logger.info(f"[LLM] 识别到字段数: {len(field_names)}")
-                
-                if not field_names:
-                    raise Exception("未能识别到表格字段")
+            
+            if not field_names:
+                raise Exception("未能识别到表格字段")
             
             # Step2: 定位每个字段的值区域
             logger.info("[LLM] Step2: 定位字段值区域...")
@@ -480,7 +480,7 @@ class ReviewAgent:
 字段名: x1,y1,x2,y2 （归一化坐标0-1）"""
 
             locate_result = await self._analyze_image_with_timeout(
-                multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
+                    multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
             )
             
             # 解析坐标
@@ -504,7 +504,6 @@ class ReviewAgent:
             )
             
             logger.info("[LLM] 表格提取完成")
-            
         except Exception as e:
             logger.error(f"[LLM] 表格提取失败: {e}")
             fields_llm = {"error": str(e)}
