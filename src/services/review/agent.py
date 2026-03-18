@@ -466,44 +466,44 @@ class ReviewAgent:
                     logger.warning(f"[LLM] 字段数过多({len(field_names)})，仅保留前{max_fields}个")
                     field_names = field_names[:max_fields]
                 logger.info(f"[LLM] 识别到字段数: {len(field_names)}")
-                
-                if not field_names:
-                    raise Exception("未能识别到表格字段")
             
-            # Step2: 定位每个字段的值区域
-            logger.info("[LLM] Step2: 定位字段值区域...")
-            prompt_locate = f"""请在图片中找出以下字段的【填写内容】区域（不是字段名，是实际填写文字的区域，要尽量小，只包含文字）：
+            if not field_names:
+                raise Exception("未能识别到表格字段")
+            
+                # Step2: 定位每个字段的值区域
+                logger.info("[LLM] Step2: 定位字段值区域...")
+                prompt_locate = f"""请在图片中找出以下字段的【填写内容】区域（不是字段名，是实际填写文字的区域，要尽量小，只包含文字）：
 
 {chr(10).join(field_names)}
 
 返回格式（每行）：
 字段名: x1,y1,x2,y2 （归一化坐标0-1）"""
 
-            locate_result = await self._analyze_image_with_timeout(
-                multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
-            )
-            
-            # 解析坐标
-            field_coords = {}
-            for line in locate_result.strip().split('\n'):
-                match = re.match(r'(.+?):\s*([\d.]+),([\d.]+),([\d.]+),([\d.]+)', line)
-                if match:
-                    fname = match.group(1).strip()
-                    x1, y1, x2, y2 = float(match.group(2)), float(match.group(3)), float(match.group(4)), float(match.group(5))
-                    field_coords[fname] = (x1, y1, x2, y2)
-            
-            logger.info(f"[LLM] 定位到 {len(field_coords)} 个字段区域")
-            
-            # Step3: 使用 FieldExtractor 提取（统一提取逻辑）
-            from src.common.extractors import FieldExtractor
-            extractor = FieldExtractor()
-            fields_llm = await extractor.extract_with_coords(
-                file_data=image_data,
-                field_coords=field_coords,
-                field_names=field_names,
-            )
-            
-            logger.info("[LLM] 表格提取完成")
+                locate_result = await self._analyze_image_with_timeout(
+                    multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
+                )
+                
+                # 解析坐标
+                field_coords = {}
+                for line in locate_result.strip().split('\n'):
+                    match = re.match(r'(.+?):\s*([\d.]+),([\d.]+),([\d.]+),([\d.]+)', line)
+                    if match:
+                        fname = match.group(1).strip()
+                        x1, y1, x2, y2 = float(match.group(2)), float(match.group(3)), float(match.group(4)), float(match.group(5))
+                        field_coords[fname] = (x1, y1, x2, y2)
+                
+                logger.info(f"[LLM] 定位到 {len(field_coords)} 个字段区域")
+                
+                # Step3: 使用 FieldExtractor 提取（统一提取逻辑）
+                from src.common.extractors import FieldExtractor
+                extractor = FieldExtractor()
+                fields_llm = await extractor.extract_with_coords(
+                    file_data=image_data,
+                    field_coords=field_coords,
+                    field_names=field_names,
+                )
+                
+                logger.info("[LLM] 表格提取完成")
             
         except Exception as e:
             logger.error(f"[LLM] 表格提取失败: {e}")

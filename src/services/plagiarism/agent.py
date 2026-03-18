@@ -183,9 +183,14 @@ class PlagiarismAgent:
         start_time = time.time()
         
         # 1. 提取所有文本
+        # section_config 只对第一个文档（主动查询的文档）生效
+        # 其他文档（全量比对库）使用全文
         texts = {}
-        extracted_texts = {}  # 保存提取后的文本
-        for doc_id, file_data in files:
+        
+        doc_ids = [doc_id for doc_id, _ in files]
+        primary_doc_id = doc_ids[0] if doc_ids else None
+        
+        for idx, (doc_id, file_data) in enumerate(files):
             try:
                 # 检测文件类型
                 file_type = self._detect_type_from_bytes(file_data)
@@ -195,11 +200,11 @@ class PlagiarismAgent:
                 # 提取全部文本
                 full_text = result.content.to_text()
                 
-                # 如果配置了 section，使用 SectionExtractor 提取
-                if self.section_extractor:
+                # 只有第一个文档使用 section 提取配置
+                if idx == 0 and self.section_extractor:
                     text = self.section_extractor.extract(full_text)
-                    extracted_texts[doc_id] = text
                 else:
+                    # 其他文档使用全文
                     text = full_text
                 
                 texts[doc_id] = text
@@ -207,11 +212,15 @@ class PlagiarismAgent:
                 
                 # Debug: 保存解析结果
                 if self.debug:
-                    self._save_debug(doc_id, result, full_text, text)
+                    is_primary = (doc_id == primary_doc_id)
+                    self._save_debug(doc_id, result, full_text, text if is_primary else None, is_primary)
             except Exception as e:
                 print(f"[Plagiarism] 提取文本失败 {doc_id}: {e}")
                 texts[doc_id] = ""
-                extracted_texts[doc_id] = ""
+        
+        # 保存查重debug信息
+        if self.debug and primary_doc_id:
+            self._save_plagiarism_debug(doc_ids, texts, primary_doc_id)
         
         if len(texts) < 2:
             return PlagiarismResult(
@@ -229,6 +238,9 @@ class PlagiarismAgent:
         for r in results:
             print(f"  - {r.doc_a} vs {r.doc_b}: similarity={r.similarity:.4f}, type={r.type}")
         
+        # 记录主文档文本用于定位 section
+        primary_text = texts.get(primary_doc_id, "") if primary_doc_id else ""
+        
         # 3. 过滤并分类
         high_sim = []
         medium_sim = []
@@ -237,6 +249,34 @@ class PlagiarismAgent:
         for r in results:
             print(f"[Plagiarism] 检查: similarity={r.similarity}, threshold={self.threshold}")
             if r.similarity >= self.threshold:
+                # 为每个重复片段添加详细信息
+                enhanced_segments = []
+                for seg in r.duplicate_segments[:20]:
+                    # 获取原文该行的内容
+                    primary_line_content = ""
+                    if primary_doc_id and primary_doc_id in texts:
+                        primary_lines = texts[primary_doc_id].split('\n')
+                        if 0 < seg.line_number <= len(primary_lines):
+                            primary_line_content = primary_lines[seg.line_number - 1]
+                    
+                    # 获取来源文档该行的内容
+                    source_contents = []
+                    for src_doc, src_line in zip(seg.source_docs, seg.source_lines):
+                        if src_doc in texts:
+                            src_lines = texts[src_doc].split('\n')
+                            if 0 < src_line <= len(src_lines):
+                                source_contents.append({
+                                    "doc": src_doc,
+                                    "line": src_line,
+                                    "text": src_lines[src_line - 1]
+                                })
+                    
+                    enhanced_segments.append({
+                        "primary_line": seg.line_number,
+                        "primary_text": primary_line_content,
+                        "sources": source_contents,
+                    })
+                
                 result_dict = {
                     "doc_a": r.doc_a,
                     "doc_b": r.doc_b,
@@ -244,15 +284,7 @@ class PlagiarismAgent:
                     "type": r.type,
                     "total_chars": r.total_chars,
                     "duplicate_chars": r.duplicate_chars,
-                    "duplicate_segments": [
-                        {
-                            "text": seg.text,
-                            "line_number": seg.line_number,
-                            "source_docs": seg.source_docs,
-                            "source_lines": seg.source_lines,
-                        }
-                        for seg in r.duplicate_segments[:10]  # 限制返回数量
-                    ],
+                    "duplicate_segments": enhanced_segments,
                 }
                 
                 if r.type == "high":
@@ -273,6 +305,10 @@ class PlagiarismAgent:
         
         print(f"[Plagiarism] 查重完成: {result.total_pairs} 对, 高相似度 {len(high_sim)} 对")
         
+        # 保存 debug 信息
+        if self.debug and primary_doc_id:
+            self._save_plagiarism_debug(doc_ids, texts, primary_doc_id)
+        
         return result
     
     def _detect_type_from_bytes(self, file_data: bytes) -> str:
@@ -284,25 +320,34 @@ class PlagiarismAgent:
         else:
             return 'unknown'
     
-    def _save_debug(self, doc_id: str, result, full_text: str = "", extracted_text: str = ""):
-        """保存 debug 结果"""
+    def _save_debug(self, doc_id: str, result, full_text: str = "", extracted_text: str = "", is_primary: bool = False):
+        """保存 debug 结果
+        
+        Args:
+            doc_id: 文档 ID
+            result: 解析结果
+            full_text: 完整文本
+            extracted_text: 提取后的文本（仅主文档有）
+            is_primary: 是否是主文档（第一个上传的文档）
+        """
         import json
-        import os
         from pathlib import Path
         
         debug_dir = Path("debug_plagiarism")
         debug_dir.mkdir(exist_ok=True)
         
-        # 保存原始解析结果
         output = {
             "doc_id": doc_id,
-            "pages": result.pages,
+            "is_primary": is_primary,
             "metadata": result.metadata,
-            "total_blocks": len(result.content.text_blocks),
         }
         
-        # 保存提取的 section（按配置分段）
-        if extracted_text and self.section_extractor:
+        # 保存全文预览
+        if full_text:
+            output["full_text_preview"] = full_text[:3000]
+        
+        # 只对主文档保存 section 提取结果
+        if is_primary and extracted_text and self.section_extractor:
             sections = self.section_extractor.sections
             output["sections"] = []
             
@@ -311,14 +356,12 @@ class PlagiarismAgent:
                 start_pattern = section.get("start_pattern", "")
                 end_pattern = section.get("end_pattern")
                 
-                # 查找起始位置
                 start_regex = re.compile(start_pattern)
                 start_match = start_regex.search(extracted_text)
                 
                 if start_match:
                     start_pos = start_match.start()
                     
-                    # 查找结束位置
                     if end_pattern:
                         end_regex = re.compile(end_pattern)
                         end_match = end_regex.search(extracted_text[start_pos + 1:])
@@ -337,12 +380,125 @@ class PlagiarismAgent:
                         "text": section_text,
                     })
         
-        # 保存全文预览
-        if full_text:
-            output["full_text_preview"] = full_text[:3000]
-        
         filename = debug_dir / f"{doc_id}_parse.json"
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
         
         print(f"[Plagiarism] Debug: 保存解析结果到 {filename}")
+    
+    def _save_plagiarism_debug(self, doc_ids: List[str], texts: Dict[str, str], primary_doc_id: str):
+        """保存查重详细debug信息"""
+        import json
+        from pathlib import Path
+        
+        debug_dir = Path("debug_plagiarism")
+        debug_dir.mkdir(exist_ok=True)
+        
+        # 获取主文档文本和section信息
+        primary_text = texts.get(primary_doc_id, "")
+        
+        output = {
+            "primary_doc": primary_doc_id,
+            "total_docs": len(doc_ids),
+            "text_lengths": {doc_id: len(text) for doc_id, text in texts.items()},
+        }
+        
+        # 如果有 section 配置，保存每个 section 的范围
+        if self.section_extractor:
+            sections_info = []
+            for section in self.section_extractor.sections:
+                start_pattern = section.get("start_pattern", "")
+                end_pattern = section.get("end_pattern")
+                
+                start_regex = re.compile(start_pattern)
+                start_match = start_regex.search(primary_text)
+                
+                if start_match:
+                    start_pos = start_match.start()
+                    if end_pattern:
+                        end_regex = re.compile(end_pattern)
+                        end_match = end_regex.search(primary_text[start_pos + 1:])
+                        if end_match:
+                            end_pos = start_pos + 1 + end_match.start()
+                        else:
+                            end_pos = len(primary_text)
+                    else:
+                        end_pos = len(primary_text)
+                    
+                    # 计算行号范围
+                    section_text = primary_text[start_pos:end_pos]
+                    lines = section_text.split('\n')
+                    start_line = primary_text[:start_pos].count('\n') + 1
+                    end_line = start_line + len(lines) - 1
+                    
+                    sections_info.append({
+                        "name": section.get("name", ""),
+                        "start_line": start_line,
+                        "end_line": end_line,
+                        "char_count": len(section_text),
+                    })
+            
+            output["sections_info"] = sections_info
+        
+        filename = debug_dir / "plagiarism_debug.json"
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+        
+        print(f"[Plagiarism] Debug: 保存查重详情到 {filename}")
+    
+    def _find_section_for_line(self, line_number: int, text: str) -> str:
+        """根据行号查找对应的 section 名称
+        
+        Args:
+            line_number: 行号
+            text: 完整文本
+            
+        Returns:
+            section 名称
+        """
+        if not self.section_extractor:
+            return "全文"
+        
+        # 按行统计位置
+        lines = text.split('\n')
+        current_pos = 0
+        line_start_pos = 0
+        
+        for i, line in enumerate(lines[:line_number]):
+            # 找到目标行的起始位置
+            if i == line_number - 1:
+                line_start_pos = current_pos
+                break
+            current_pos += len(line) + 1  # +1 for newline
+        
+        # 查找该位置属于哪个 section
+        sections = self.section_extractor.sections
+        for section in sections:
+            start_pattern = section.get("start_pattern", "")
+            if not start_pattern:
+                continue
+            
+            start_regex = re.compile(start_pattern)
+            start_match = start_regex.search(text)
+            
+            if not start_match:
+                continue
+            
+            start_pos = start_match.start()
+            end_pattern = section.get("end_pattern")
+            
+            if end_pattern:
+                end_regex = re.compile(end_pattern)
+                end_match = end_regex.search(text[start_pos + 1:])
+                if end_match:
+                    end_pos = start_pos + 1 + end_match.start()
+                else:
+                    end_pos = len(text)
+            else:
+                end_pos = len(text)
+            
+            # 检查 line_start_pos 是否在该 section 范围内
+            if start_pos <= line_start_pos < end_pos:
+                return section.get("name", "未知")
+        
+        return "未知"

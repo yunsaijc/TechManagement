@@ -529,6 +529,7 @@ class GroupingAgent:
         self,
         llm: Any = None,
         max_per_group: int = 15,
+        min_per_group: int = 5,
         quality_weights: List[float] = None,
         concurrency: int = 10
     ):
@@ -537,11 +538,13 @@ class GroupingAgent:
         Args:
             llm: LLM 客户端
             max_per_group: 每组目标项目数 (默认15)
+            min_per_group: 每组最少项目数 (默认5，低于此值会合并)
             quality_weights: 质量权重 [创新性, 技术难度, 应用价值]
             concurrency: LLM 并发数
         """
         self.llm = llm or get_default_llm_client()
         self.max_per_group = max_per_group
+        self.min_per_group = min_per_group
         self.quality_weights = quality_weights or [1.0, 1.0, 1.0]
         self.concurrency = concurrency
         
@@ -590,16 +593,12 @@ class GroupingAgent:
         - 二级学科: 5位 (如 46010, 46540)
         - 三级学科: 7位 (如 4654030)
         
-        使用前3位作为一级学科代码进行分组
+        优先使用完整代码，不足时逐级 fallback
         """
         if not ssxk1:
             return "unknown"
         code = ssxk1.strip()
-        if len(code) >= 3:
-            return code[:3]  # 取前3位作为一级学科
-        elif len(code) >= 2:
-            return code[:2]
-        return "unknown"
+        return code if code else "unknown"
     
     def _get_subject_name(self, code: str) -> str:
         """获取学科名称
@@ -625,6 +624,64 @@ class GroupingAgent:
                 return self._subject_cache[prefix]
         
         return code
+    
+    def _merge_small_groups(
+        self, 
+        subject_groups: Dict[str, List[Project]], 
+        min_per_group: int = 3
+    ) -> Dict[str, List[Project]]:
+        """合并项目太少的学科组
+        
+        策略：只合并一级学科(前3位)相同的组
+        7位 → 5位 → 3位
+        
+        Args:
+            subject_groups: 原始学科分组
+            min_per_group: 每组最少项目数
+        
+        Returns:
+            合并后的学科分组
+        """
+        # 找出需要合并的小组
+        small_groups = {k: v for k, v in subject_groups.items() if len(v) < min_per_group}
+        
+        if not small_groups:
+            return subject_groups
+        
+        print(f"[Grouping] 发现 {len(small_groups)} 个小组项目过少，开始合并...")
+        
+        # 按项目数排序，先处理最大的
+        sorted_codes = sorted(small_groups.keys(), key=lambda x: len(subject_groups[x]), reverse=True)
+        
+        for code in sorted_codes:
+            projects = subject_groups.get(code)
+            if not projects or len(projects) >= min_per_group:
+                continue  # 可能已被合并
+            
+            # 只尝试用前3位（一级学科）匹配
+            prefix_3 = code[:3] if len(code) >= 3 else code
+            
+            # 找到同样一级学科（前3位）且也小于最小值的组
+            merged = False
+            for other_code in list(subject_groups.keys()):
+                if other_code == code:
+                    continue
+                other_prefix_3 = other_code[:3] if len(other_code) >= 3 else other_code
+                if other_prefix_3 == prefix_3:
+                    # 一级学科相同，可以合并
+                    other_count = len(subject_groups[other_code])
+                    if other_count < min_per_group:
+                        # 合并
+                        subject_groups[other_code].extend(projects)
+                        del subject_groups[code]
+                        print(f"[Grouping] 合并 {code}({len(projects)}项) → {other_code}(同{prefix_3}学科)")
+                        merged = True
+                        break
+            
+            if not merged:
+                print(f"[Grouping] 无法合并 {code}({len(projects)}项)，无相近学科")
+        
+        return subject_groups
     
     def _group_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         """按三级学科分组
@@ -786,9 +843,12 @@ class GroupingAgent:
         
         print(f"[Grouping] 获取到 {original_count} 个项目，过滤 {filtered_count} 个无学科代码项目")
         
-        # 2. 按三级学科初步分组
+        # 2. 按学科初步分组
         subject_groups = self._group_by_subject(projects)
         print(f"[Grouping] 按学科分为 {len(subject_groups)} 个学科组")
+        
+        # 2.1 合并项目太少的学科组
+        subject_groups = self._merge_small_groups(subject_groups, self.min_per_group)
         
         # 3. 先对所有项目统一评估质量（只评估一次，并发批量）
         print(f"[Grouping] 开始评估所有项目质量...")
