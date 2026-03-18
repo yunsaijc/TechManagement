@@ -110,13 +110,16 @@ class QualityAssessor:
             if p.gjc:
                 prompt += f"   关键词: {p.gjc}\n"
             if p.xmjj:
-                clean = self._clean_html(p.xmjj)[:500]
+                clean = self._clean_html(p.xmjj)[:800]
                 prompt += f"   简介: {clean}\n"
             prompt += "\n"
         
         prompt += """请按以下JSON格式返回（只需JSON数组，不要其他内容）：
 [
-  {"index": 1, "innovation": 80, "difficulty": 70, "value": 75, "total": 75, "comment": "评语"},
+  {"index": 1, "innovation": 80, "difficulty": 70, "value": 75, "total": 75, 
+   "innovation_comment": "简要评价创新性，如'技术路线具有原创性，在XX领域有突破'或'属于跟踪性研究，创新点不足'",
+   "difficulty_comment": "简要评价技术难度，如'涉及多学科交叉，实现难度大'或'技术方案成熟，实施难度较低'",
+   "value_comment": "简要评价应用价值，如'成果可直接转化应用，市场前景广阔'或'偏基础研究，实际应用尚需时日'"},
   ...
 ]"""
         
@@ -151,7 +154,10 @@ class QualityAssessor:
                             "innovation": float(item.get('innovation', total)),
                             "difficulty": float(item.get('difficulty', total)),
                             "value": float(item.get('value', total)),
-                            "comment": item.get('comment', '')
+                            "comment": item.get('innovation_comment', '') + ' ' + item.get('difficulty_comment', '') + ' ' + item.get('value_comment', ''),
+                            "innovation_comment": item.get('innovation_comment', ''),
+                            "difficulty_comment": item.get('difficulty_comment', ''),
+                            "value_comment": item.get('value_comment', '')
                         }
                 # 保存到模块级详细缓存
                 if hasattr(self, '_detail_cache'):

@@ -46,8 +46,8 @@ DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-# 质量分数缓存（内存）
-_QUALITY_CACHE: Dict[str, float] = {}
+# 质量分数缓存（内存）- 存储完整评估结果
+_QUALITY_CACHE: Dict[str, dict] = {}
 
 # 缓存文件路径
 _QUALITY_CACHE_FILE = os.path.join(CACHE_DIR, "grouping_quality.json")
@@ -70,11 +70,11 @@ def _clean_html_text(text: Optional[str]) -> str:
     return clean.strip()
 
 
-def _calculate_quality_stats(quality_scores: Dict[str, float]) -> dict:
+def _calculate_quality_stats(quality_scores: Dict[str, dict]) -> dict:
     """计算质量分数统计信息
     
     Args:
-        quality_scores: {project_id: score}
+        quality_scores: {project_id: {"total": float, "innovation": float, ...}}
     
     Returns:
         {
@@ -85,7 +85,8 @@ def _calculate_quality_stats(quality_scores: Dict[str, float]) -> dict:
     if not quality_scores:
         return {}
     
-    scores = list(quality_scores.values())
+    # 提取总分
+    scores = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
     
     # 基本统计
     mean = np.mean(scores)
@@ -111,13 +112,13 @@ def _calculate_quality_stats(quality_scores: Dict[str, float]) -> dict:
 
 
 def _assess_reliability(
-    quality_scores: Dict[str, float],
+    quality_scores: Dict[str, dict],
     detail_cache: Dict[str, dict]
 ) -> dict:
     """评估LLM分数的可靠性
     
     Args:
-        quality_scores: {project_id: total_score}
+        quality_scores: {project_id: {"total": float, ...}}
         detail_cache: {project_id: {innovation, difficulty, value, total, comment}}
     
     Returns:
@@ -133,7 +134,8 @@ def _assess_reliability(
     if not quality_scores or len(quality_scores) < 5:
         return {"is_anomaly": False, "reason": "样本不足"}
     
-    scores = list(quality_scores.values())
+    # 提取总分
+    scores = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
     
     # 1. 异常检测
     anomaly_type = None
@@ -205,7 +207,7 @@ def _assess_reliability(
 
 
 def _generate_quality_charts(
-    quality_scores: Dict[str, float], 
+    quality_scores: Dict[str, dict], 
     groups: List[ProjectGroup], 
     year: str,
     reliability: dict = None
@@ -228,7 +230,8 @@ def _generate_quality_charts(
         
         # 1. 质量分数分布直方图
         ax1 = axes[0, 0]
-        scores = list(quality_scores.values())
+        raw_values = list(quality_scores.values())
+        scores = [v.get("total", 75) if isinstance(v, dict) else v for v in raw_values]
         if scores:
             ax1.hist(scores, bins=10, edgecolor='black', alpha=0.7, color='steelblue')
             ax1.axvline(np.mean(scores), color='red', linestyle='--', label=f'Mean: {np.mean(scores):.1f}')
@@ -316,7 +319,8 @@ def _generate_quality_charts(
         # 6. 分数分布柱状图（每5分一段）
         ax6 = axes[1, 2]
         if quality_scores:
-            scores = list(quality_scores.values())
+            # 提取总分（兼容 dict 和 float）
+            scores = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
             # 每5分一段
             ranges = ['0-4', '5-9', '10-14', '15-19', '20-24', '25-29', '30-34', '35-39', 
                      '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', 
@@ -363,7 +367,7 @@ def _generate_quality_charts(
 
 def _calculate_balance_metrics(
     groups: List[ProjectGroup],
-    quality_scores: Dict[str, float]
+    quality_scores: Dict[str, dict]
 ) -> dict:
     """计算分组均衡度指标
     
@@ -394,7 +398,9 @@ def _calculate_balance_metrics(
     # 2. 质量均衡度
     group_avgs = [g.avg_quality for g in groups if g.count > 0]
     if group_avgs:
-        overall_avg = np.mean(list(quality_scores.values()))
+        # 从 dict 中提取总分
+        all_totals = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
+        overall_avg = np.mean(all_totals)
         quality_deviation = np.mean([abs(ga - overall_avg) / overall_avg for ga in group_avgs])
         quality_balance = max(0, 1 - quality_deviation)
     else:
@@ -428,7 +434,20 @@ def _load_quality_cache():
     if os.path.exists(_QUALITY_CACHE_FILE):
         try:
             with open(_QUALITY_CACHE_FILE, 'r', encoding='utf-8') as f:
-                _QUALITY_CACHE = json.load(f)
+                data = json.load(f)
+                # 兼容旧格式（float）和新格式（dict）
+                for pid, value in data.items():
+                    if isinstance(value, dict):
+                        _QUALITY_CACHE[pid] = value
+                    else:
+                        # 旧格式：转换为新格式
+                        _QUALITY_CACHE[pid] = {
+                            "total": value,
+                            "innovation": value,
+                            "difficulty": value,
+                            "value": value,
+                            "comment": ""
+                        }
             print(f"[Grouping] 已加载 {len(_QUALITY_CACHE)} 条质量分数缓存")
         except Exception as e:
             print(f"[Grouping] 加载缓存失败: {e}")
@@ -715,11 +734,17 @@ class GroupingAgent:
         """
         quality_scores = {}
         
-        # 过滤已缓存的项目
+        # 过滤已缓存且完整（有效comment）的项目
         uncached = []
         for p in projects:
             if p.id in _QUALITY_CACHE:
-                quality_scores[p.id] = _QUALITY_CACHE[p.id]
+                entry = _QUALITY_CACHE[p.id]
+                # 必须是 dict 格式且有有效 comment 才算完整
+                if isinstance(entry, dict) and entry.get("comment"):
+                    quality_scores[p.id] = entry.get("total", 75.0)
+                else:
+                    # 缓存不完整，需要重新评估
+                    uncached.append(p)
             else:
                 uncached.append(p)
         
@@ -741,10 +766,23 @@ class GroupingAgent:
         async def process_batch(batch: List[Project]):
             async with semaphore:
                 try:
+                    # 批量评估（返回详细分数）
                     result = await self.quality_assessor.batch_assess(batch)
-                    # 每批完成后立即更新缓存并保存到文件
+                    # 每批完成后立即更新缓存（存储完整评估结果）
+                    detail_cache = self.quality_assessor._detail_cache
                     for pid, score in result.items():
-                        _QUALITY_CACHE[pid] = score
+                        # 存储完整信息：总分 + 各维度分数 + 各维度评语
+                        detail = detail_cache.get(pid, {})
+                        _QUALITY_CACHE[pid] = {
+                            "total": score,
+                            "innovation": detail.get("innovation", score),
+                            "difficulty": detail.get("difficulty", score),
+                            "value": detail.get("value", score),
+                            "comment": detail.get("comment", ""),
+                            "innovation_comment": detail.get("innovation_comment", ""),
+                            "difficulty_comment": detail.get("difficulty_comment", ""),
+                            "value_comment": detail.get("value_comment", "")
+                        }
                     _save_quality_cache()  # 实时保存
                     return result
                 except Exception as e:
@@ -901,7 +939,8 @@ class GroupingAgent:
             # 计算质量分数
             scores = []
             for p in projects_in_group:
-                score = _QUALITY_CACHE.get(p.id, 75.0)
+                entry = _QUALITY_CACHE.get(p.id, {"total": 75.0})
+                score = entry.get("total", 75.0) if isinstance(entry, dict) else entry
                 scores.append(score)
             
             # 构建 ProjectInGroup
@@ -910,7 +949,7 @@ class GroupingAgent:
                     project_id=p.id,
                     xmmc=p.xmmc,
                     xmjj=p.xmjj or "",
-                    quality_score=_QUALITY_CACHE.get(p.id, 75.0),
+                    quality_score=_QUALITY_CACHE.get(p.id, {"total": 75.0}).get("total", 75.0) if isinstance(_QUALITY_CACHE.get(p.id), dict) else _QUALITY_CACHE.get(p.id, 75.0),
                     reason=f"学科: {g['subject_name']}"
                 )
                 for p in projects_in_group
