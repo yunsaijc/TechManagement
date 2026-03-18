@@ -57,7 +57,7 @@ class ProjectQuality(BaseModel):
 
 ### Subject
 
-学科代码信息（来自 hbstanew.sys_subject）
+学科代码信息（来自 kjjhxm_wlps.sys_xkfl）
 
 ```python
 class Subject(BaseModel):

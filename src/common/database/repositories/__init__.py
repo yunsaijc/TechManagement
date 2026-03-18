@@ -4,6 +4,7 @@ from src.common.database.repositories.expert_repo import (
     WorkUnitRepository,
     RecommendUnitRepository,
     SubjectRepository,
+    XkflRepository,
 )
 
 __all__ = [
@@ -11,4 +12,5 @@ __all__ = [
     "WorkUnitRepository",
     "RecommendUnitRepository",
     "SubjectRepository",
+    "XkflRepository",
 ]

@@ -45,24 +45,114 @@
            │
            ▼
 ┌─────────────────────┐
-│  2. 句子切分        │  ← 按标点/换行切分成句子
+│  2. Section 提取   │  ← 标题匹配，提取目标区域
+│  (SectionExtractor) │    使用配置文件定义的正则模式
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  3. 句子切分        │  ← 按换行切分成句子
 │  (SentenceSplitter) │    记录每个句子的: 文本、来源文档、位置
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│  3. 查找重复        │  ← 构建句子库，查找跨文档重复
+│  4. 查找重复        │  ← 构建句子库，查找跨文档重复
 │  (DuplicateFinder)  │    统计重复字数、重复率
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│  4. 结果聚合        │  ← 按相似度分类，输出位置信息
+│  5. 结果聚合        │  ← 按相似度分类，输出位置信息
 │  (ResultAggregator) │
 └──────────┬──────────┘
            │
            ▼
       查重结果输出
+```
+
+## Section 提取
+
+使用正则表达式从文档中提取指定的 section 区域。
+
+### SectionExtractor
+
+```python
+# services/plagiarism/section_extractor.py
+
+class SectionExtractor:
+    """Section 区域提取器"""
+    
+    def __init__(self, section_config: Dict):
+        self.sections = section_config.get("sections", [])
+    
+    def extract(self, text: str) -> str:
+        """从全文中提取目标 section 区域
+        
+        Args:
+            text: 完整文档文本
+            
+        Returns:
+            提取后的文本
+        """
+        results = []
+        
+        for section in self.sections:
+            start_pattern = section.get("start_pattern")
+            end_pattern = section.get("end_pattern")
+            
+            # 查找起始位置
+            start_match = re.search(start_pattern, text)
+            if not start_match:
+                continue
+            
+            start_pos = start_match.start()
+            
+            # 查找结束位置
+            if end_pattern:
+                end_match = re.search(end_pattern, text[start_pos + 1:])
+                if end_match:
+                    end_pos = start_pos + 1 + end_match.start()
+                else:
+                    continue
+            else:
+                # 无结束模式，提取到文档结尾
+                end_pos = len(text)
+            
+            # 提取区域内容
+            section_text = text[start_pos:end_pos]
+            results.append(section_text)
+        
+        return "\n".join(results)
+```
+
+### 配置加载
+
+```python
+# services/plagiarism/agent.py
+
+from src.services.plagiarism.config import get_section_config
+
+class PlagiarismAgent:
+    def __init__(self, doc_type: str = "default"):
+        section_config = get_section_config(doc_type)
+        self.extractor = SectionExtractor(section_config)
+```
+
+### 支持自定义配置
+
+```python
+# 通过 API 传入自定义配置
+section_config = {
+    "sections": [
+        {
+            "name": "自定义区域",
+            "start_pattern": r"开始标题",
+            "end_pattern": r"结束标题",
+        }
+    ]
+}
+extractor = SectionExtractor(section_config)
 ```
 
 ## 核心组件
