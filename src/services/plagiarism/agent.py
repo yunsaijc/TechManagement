@@ -202,7 +202,10 @@ class PlagiarismAgent:
                 
                 # 只有第一个文档使用 section 提取配置
                 if idx == 0 and self.section_extractor:
+                    # 提取 section 区域
                     text = self.section_extractor.extract(full_text)
+                    # 过滤模板内容
+                    text = self.section_extractor.filter_template_content(text)
                 else:
                     # 其他文档使用全文
                     text = full_text
