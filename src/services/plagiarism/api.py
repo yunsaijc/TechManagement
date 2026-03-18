@@ -1,4 +1,5 @@
 """查重服务 API 路由"""
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -6,6 +7,7 @@ from pydantic import BaseModel
 
 from src.common.models import ApiResponse
 from src.services.plagiarism.agent import PlagiarismAgent
+from src.services.plagiarism.config import get_section_config, get_all_doc_types
 
 router = APIRouter()
 
@@ -23,7 +25,8 @@ async def check_plagiarism(
     threshold: float = Form(0.5),
     threshold_high: float = Form(0.8),
     threshold_medium: float = Form(0.5),
-    skip_pages: int = Form(2),
+    doc_type: str = Form("default"),
+    section_config: Optional[str] = Form(None),
     debug: bool = Form(False),
 ) -> ApiResponse[dict]:
     """查重接口
@@ -33,7 +36,8 @@ async def check_plagiarism(
         threshold: 相似度阈值，默认 0.5
         threshold_high: 高相似度阈值，默认 0.8
         threshold_medium: 中相似度阈值，默认 0.5
-        skip_pages: 跳过的页数，默认 2
+        doc_type: 文档类型，用于加载对应的 section 配置，默认 "default"
+        section_config: 自定义 section 配置（JSON 字符串），优先级高于 doc_type
         debug: 是否保存 debug 结果，默认 False
         
     Returns:
@@ -54,12 +58,23 @@ async def check_plagiarism(
     if len(file_data_list) < 2:
         raise HTTPException(status_code=400, detail="请上传至少 2 个文件进行比对")
     
+    # 解析 section 配置
+    config = None
+    if section_config:
+        try:
+            config = json.loads(section_config)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="section_config 必须是有效的 JSON 字符串")
+    else:
+        # 使用 doc_type 加载默认配置
+        config = get_section_config(doc_type)
+    
     # 执行查重
     agent = PlagiarismAgent(
         threshold=threshold,
         threshold_high=threshold_high,
         threshold_medium=threshold_medium,
-        skip_pages=skip_pages,
+        section_config=config,
         debug=debug,
     )
     
@@ -84,4 +99,16 @@ async def get_supported_types() -> ApiResponse[List[str]]:
     return ApiResponse(
         status="success",
         data=["pdf", "docx"],
+    )
+
+
+@router.get("/section-configs")
+async def get_section_configs() -> ApiResponse[dict]:
+    """获取支持的 section 配置"""
+    configs = {}
+    for doc_type in get_all_doc_types():
+        configs[doc_type] = get_section_config(doc_type)
+    return ApiResponse(
+        status="success",
+        data=configs,
     )

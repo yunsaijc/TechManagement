@@ -2,8 +2,36 @@
 专家数据访问层
 """
 from typing import List, Optional
-from src.common.database.connection import get_reward_connection
+from src.common.database.connection import get_reward_connection, get_project_connection
 from src.common.database.models.reward import Expert, WorkUnit, RecommendUnit, Subject
+
+
+class XkflRepository:
+    """学科分类数据访问 (来自项目评审数据库 kjjhxm_wlps.sys_xkfl)"""
+    
+    def list_all(self) -> List[dict]:
+        """查询所有学科分类"""
+        conn = get_project_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT code, name, parent_id FROM sys_xkfl ORDER BY code")
+                rows = cursor.fetchall()
+                return [{"code": r[0], "name": r[1], "parent_id": r[2]} for r in rows]
+        finally:
+            conn.close()
+    
+    def get_by_code(self, code: str) -> Optional[dict]:
+        """根据代码查询学科分类"""
+        conn = get_project_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT code, name, parent_id FROM sys_xkfl WHERE code = ?", (code,))
+                row = cursor.fetchone()
+                if row:
+                    return {"code": row[0], "name": row[1], "parent_id": row[2]}
+                return None
+        finally:
+            conn.close()
 
 
 class ExpertRepository:

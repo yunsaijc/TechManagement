@@ -18,11 +18,45 @@ from src.common.models.grouping import (
     ProjectGroup,
 )
 from src.services.grouping import get_grouping_service
+from src.services.grouping.storage.project_repo import ProjectRepository
 from src.common.database import get_subject_repo
+from src.common.database.connection import get_project_connection
 
 router = APIRouter()
 
+# 调试接口：查询项目
+@router.get("/debug/project/{project_id}")
+async def debug_project(project_id: str):
+    """根据ID查询项目原始数据"""
+    try:
+        project = ProjectRepository.get_project_by_id(project_id)
+        if not project:
+            return {"error": "项目不存在"}
+        return {
+            "id": project.id,
+            "xmmc": project.xmmc,
+            "ssxk1": project.ssxk1,
+            "ssxk2": project.ssxk2,
+            "xmjj": project.xmjj[:200] if project.xmjj else None,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 # 调试接口：查询学科
+@router.get("/debug/xkfl")
+async def debug_xkfl():
+    """查询学科分类表 sys_xkfl"""
+    try:
+        conn = get_project_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT code, name FROM sys_xkfl WHERE code LIKE '46%' ORDER BY code")
+                rows = cursor.fetchall()
+                return {"codes": [(r[0], r[1]) for r in rows]}
+        finally:
+            conn.close()
+    except Exception as e:
+        return {"error": str(e)}
 @router.get("/debug/subjects")
 async def debug_subjects():
     """查询学科表"""
