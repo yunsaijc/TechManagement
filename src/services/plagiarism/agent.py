@@ -218,10 +218,6 @@ class PlagiarismAgent:
                 print(f"[Plagiarism] 提取文本失败 {doc_id}: {e}")
                 texts[doc_id] = ""
         
-        # 保存查重debug信息
-        if self.debug and primary_doc_id:
-            self._save_plagiarism_debug(doc_ids, texts, primary_doc_id)
-        
         if len(texts) < 2:
             return PlagiarismResult(
                 id=f"plagiarism_{int(time.time() * 1000)}",
@@ -307,7 +303,8 @@ class PlagiarismAgent:
         
         # 保存 debug 信息
         if self.debug and primary_doc_id:
-            self._save_plagiarism_debug(doc_ids, texts, primary_doc_id)
+            self._save_plagiarism_debug(doc_ids, texts, primary_doc_id, results)
+            
         
         return result
     
@@ -386,7 +383,7 @@ class PlagiarismAgent:
         
         print(f"[Plagiarism] Debug: 保存解析结果到 {filename}")
     
-    def _save_plagiarism_debug(self, doc_ids: List[str], texts: Dict[str, str], primary_doc_id: str):
+    def _save_plagiarism_debug(self, doc_ids: List[str], texts: Dict[str, str], primary_doc_id: str, results: List):
         """保存查重详细debug信息"""
         import json
         from pathlib import Path
@@ -439,6 +436,37 @@ class PlagiarismAgent:
                     })
             
             output["sections_info"] = sections_info
+        
+        # 保存重复片段详情
+        duplicate_segments = []
+        for r in results:
+            for seg in r.duplicate_segments[:20]:
+                # 获取原文该行的内容
+                primary_line_content = ""
+                primary_lines = primary_text.split('\n')
+                if 0 < seg.line_number <= len(primary_lines):
+                    primary_line_content = primary_lines[seg.line_number - 1]
+                
+                # 获取来源文档该行的内容
+                source_contents = []
+                for src_doc, src_line in zip(seg.source_docs, seg.source_lines):
+                    if src_doc in texts:
+                        src_lines = texts[src_doc].split('\n')
+                        if 0 < src_line <= len(src_lines):
+                            source_contents.append({
+                                "doc": src_doc,
+                                "line": src_line,
+                                "text": src_lines[src_line - 1]
+                            })
+                
+                duplicate_segments.append({
+                    "primary_line": seg.line_number,
+                    "primary_text": primary_line_content,
+                    "sources": source_contents,
+                    "similarity_pair": f"{r.doc_a} vs {r.doc_b}"
+                })
+        
+        output["duplicate_segments"] = duplicate_segments
         
         filename = debug_dir / "plagiarism_debug.json"
         with open(filename, "w", encoding="utf-8") as f:
