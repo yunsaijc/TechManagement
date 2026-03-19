@@ -6,6 +6,7 @@ OCR + LLM 混合方案：
 2. LLM 处理图像内容（印章、签字）
 """
 import io
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional
@@ -22,6 +23,20 @@ from paddleocr import PaddleOCR
 from PIL import Image
 
 from src.common.vision import MultimodalLLM
+
+logger = logging.getLogger(__name__)
+
+# 全局 OCR 实例（避免重复加载模型）
+_ocr_instance: Optional[PaddleOCR] = None
+
+
+def get_global_ocr() -> PaddleOCR:
+    """获取全局 OCR 实例（单例）"""
+    global _ocr_instance
+    if _ocr_instance is None:
+        logger.info("[OCR] 初始化 PaddleOCR 模型（全局单例）")
+        _ocr_instance = PaddleOCR(use_angle_cls=True, lang='ch')
+    return _ocr_instance
 
 
 class ExtractedContent:
@@ -59,9 +74,7 @@ class DocumentExtractor:
     @property
     def ocr(self) -> PaddleOCR:
         """获取 OCR 实例"""
-        if self._ocr is None:
-            self._ocr = PaddleOCR(use_angle_cls=True, lang='ch')
-        return self._ocr
+        return get_global_ocr()
     
     @property
     def multi_llm(self) -> MultimodalLLM:

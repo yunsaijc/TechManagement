@@ -36,6 +36,12 @@ from src.common.models.grouping import (
     ProjectQuality,
 )
 from src.services.grouping.grouping.quality import QualityAssessor
+from src.services.grouping.grouping.quality import (
+    _eval_count,
+    AUDIT_SAMPLE_THRESHOLD,
+    AUDIT_SAMPLE_SIZE,
+    DUAL_EVAL_THRESHOLD
+)
 from src.services.grouping.storage.project_repo import ProjectRepository
 from src.common.database import get_xkfl_repo
 
@@ -113,14 +119,16 @@ def _calculate_quality_stats(quality_scores: Dict[str, dict]) -> dict:
 
 def _assess_reliability(
     quality_scores: Dict[str, dict],
-    detail_cache: Dict[str, dict]
+    detail_cache: Dict[str, dict],
+    dual_eval_results: Dict[str, dict] = None
 ) -> dict:
     """评估LLM分数的可靠性
-    
+
     Args:
         quality_scores: {project_id: {"total": float, ...}}
         detail_cache: {project_id: {innovation, difficulty, value, total, comment}}
-    
+        dual_eval_results: 双重评估结果 {project_id: {score_a, score_b, diff, is_stable}}
+
     Returns:
         {
             is_anomaly: bool,  # 是否存在异常
@@ -128,7 +136,13 @@ def _assess_reliability(
             anomaly_details: str,  # 异常详情
             consistency_score: float,  # 一致性分数 (0-1)
             dimension_correlation: dict,  # 维度相关性
-            distribution_quality: str  # 分布质量评价
+            distribution_quality: str,  # 分布质量评价
+            # 双重评估统计
+            dual_eval_count: int,  # 双重评估项目数
+            dual_eval_unstable_count: int,  # 不稳定项目数
+            dual_eval_unstable_rate: float,  # 不稳定率
+            dual_eval_avg_diff: float,  # 平均差异
+            dual_eval_max_diff: float,  # 最大差异
         }
     """
     if not quality_scores or len(quality_scores) < 5:
@@ -194,7 +208,28 @@ def _assess_reliability(
     
     # 4. 一致性评估（基于方差）- 标准差越大一致性越低
     consistency_score = max(0, 1 - std / 30)  # 标准差30分时一致性为0，标准差0时一致性为1
-    
+
+    # 5. 双重评估统计分析
+    dual_eval_count = 0
+    dual_eval_unstable_count = 0
+    dual_eval_avg_diff = 0.0
+    dual_eval_max_diff = 0.0
+    unstable_items = []
+
+    if dual_eval_results:
+        dual_eval_count = len(dual_eval_results)
+        diffs = []
+        for pid, result in dual_eval_results.items():
+            diff = result.get('diff', 0)
+            diffs.append(diff)
+            if not result.get('is_stable', True):
+                dual_eval_unstable_count += 1
+                unstable_items.append({"project_id": pid, "diff": diff})
+
+        if diffs:
+            dual_eval_avg_diff = round(np.mean(diffs), 2)
+            dual_eval_max_diff = round(max(diffs), 2)
+
     return {
         "is_anomaly": anomaly_type is not None,
         "anomaly_type": anomaly_type,
@@ -202,7 +237,14 @@ def _assess_reliability(
         "consistency_score": round(consistency_score, 3),
         "distribution_quality": distribution_quality,
         "dimension_correlation": dimension_correlation,
-        "sample_size": len(scores)
+        "sample_size": len(scores),
+        # 双重评估统计
+        "dual_eval_count": dual_eval_count,
+        "dual_eval_unstable_count": dual_eval_unstable_count,
+        "dual_eval_unstable_rate": round(dual_eval_unstable_count / dual_eval_count, 3) if dual_eval_count > 0 else 0,
+        "dual_eval_avg_diff": dual_eval_avg_diff,
+        "dual_eval_max_diff": dual_eval_max_diff,
+        "unstable_items": unstable_items[:10] if unstable_items else []  # 最多显示10个
     }
 
 
@@ -739,8 +781,8 @@ class GroupingAgent:
         for p in projects:
             if p.id in _QUALITY_CACHE:
                 entry = _QUALITY_CACHE[p.id]
-                # 必须是 dict 格式且有有效 comment 才算完整
-                if isinstance(entry, dict) and entry.get("comment"):
+                # 必须是 dict 格式且有 result_a.comment（双重评估之一有效）才算完整
+                if isinstance(entry, dict) and (entry.get("result_a", {}).get("comment") or entry.get("result_b", {}).get("comment")):
                     quality_scores[p.id] = entry.get("total", 75.0)
                 else:
                     # 缓存不完整，需要重新评估
@@ -770,18 +812,24 @@ class GroupingAgent:
                     result = await self.quality_assessor.batch_assess(batch)
                     # 每批完成后立即更新缓存（存储完整评估结果）
                     detail_cache = self.quality_assessor._detail_cache
-                    for pid, score in result.items():
-                        # 存储完整信息：总分 + 各维度分数 + 各维度评语
+                    for p in batch:
+                        pid = p.id
+                        score = result.get(pid, 75.0)
+                        # 存储完整信息：总分 + 各维度分数 + 双重评估结果
                         detail = detail_cache.get(pid, {})
                         _QUALITY_CACHE[pid] = {
+                            "xmmc": p.xmmc,
+                            "xmjj": _clean_html_text(p.xmjj)[:500] if p.xmjj else "",
                             "total": score,
                             "innovation": detail.get("innovation", score),
                             "difficulty": detail.get("difficulty", score),
                             "value": detail.get("value", score),
-                            "comment": detail.get("comment", ""),
-                            "innovation_comment": detail.get("innovation_comment", ""),
-                            "difficulty_comment": detail.get("difficulty_comment", ""),
-                            "value_comment": detail.get("value_comment", "")
+                            # 双重评估结果
+                            "result_a": detail.get("result_a", {}),
+                            "result_b": detail.get("result_b", {}),
+                            "result_c": detail.get("result_c", {}),
+                            "diff": detail.get("diff", 0),
+                            "need_review": detail.get("need_review", False)
                         }
                     _save_quality_cache()  # 实时保存
                     return result
@@ -978,13 +1026,14 @@ class GroupingAgent:
         total_projects = len(projects)
         total_groups = len(result_groups)
         
-        # 计算质量分数统计
-        quality_stats = _calculate_quality_stats(_QUALITY_CACHE)
-        balance_metrics = _calculate_balance_metrics(result_groups, _QUALITY_CACHE)
+        # 计算质量分数统计（只统计当前分组的项目）
+        quality_stats = _calculate_quality_stats(current_quality)
+        balance_metrics = _calculate_balance_metrics(result_groups, current_quality)
         
-        # 获取详细分数缓存并评估可靠性
+        # 获取详细分数缓存并评估可靠性（只评估当前分组项目）
         detail_cache = self.quality_assessor._detail_cache if hasattr(self.quality_assessor, '_detail_cache') else {}
-        reliability = _assess_reliability(_QUALITY_CACHE, detail_cache)
+        dual_eval_results = self.quality_assessor._dual_eval_results if hasattr(self.quality_assessor, '_dual_eval_results') else {}
+        reliability = _assess_reliability(current_quality, detail_cache, dual_eval_results)
         
         # 打印可靠性报告
         print(f"[Grouping] 可靠性评估:")
@@ -997,6 +1046,12 @@ class GroupingAgent:
         print(f"  - 一致性分数: {reliability.get('consistency_score', 'N/A')}")
         if reliability.get('dimension_correlation'):
             print(f"  - 维度相关性: {reliability['dimension_correlation']}")
+        # 双重评估统计
+        if reliability.get('dual_eval_count', 0) > 0:
+            print(f"  - 双重评估: {reliability.get('dual_eval_count', 0)} 个项目")
+            print(f"    - 不稳定: {reliability.get('dual_eval_unstable_count', 0)} 个 ({reliability.get('dual_eval_unstable_rate', 0)*100:.1f}%)")
+            print(f"    - 平均差异: {reliability.get('dual_eval_avg_diff', 0):.1f} 分")
+            print(f"    - 最大差异: {reliability.get('dual_eval_max_diff', 0):.1f} 分")
         
         # 综合均衡分数
         balance_score = (
@@ -1004,7 +1059,17 @@ class GroupingAgent:
             balance_metrics.get("quality_balance", 0.85) * 0.4 +
             balance_metrics.get("subject_purity", 0.85) * 0.3
         )
-        
+
+        # 计算是否需要人工复审提醒
+        audit_reminder = None
+        if _eval_count >= AUDIT_SAMPLE_THRESHOLD:
+            audit_reminder = (
+                f"建议人工复审：已累计评估 {_eval_count} 个项目，"
+                f"请随机抽取 {AUDIT_SAMPLE_SIZE} 个项目进行人工复核，"
+                f"对比 LLM 评分与人工判断的一致性。"
+            )
+            print(f"[Grouping] 提醒: {audit_reminder}")
+
         stats = GroupingStatistics(
             total_projects=total_projects,
             group_count=total_groups,
@@ -1021,7 +1086,9 @@ class GroupingAgent:
             quantity_balance=balance_metrics.get("quantity_balance"),
             quality_balance=balance_metrics.get("quality_balance"),
             subject_purity=balance_metrics.get("subject_purity"),
-            split_correctness=balance_metrics.get("split_correctness")
+            split_correctness=balance_metrics.get("split_correctness"),
+            # 人工复审提醒
+            audit_reminder=audit_reminder
         )
         
         result = GroupingResult(
@@ -1032,11 +1099,14 @@ class GroupingAgent:
             created_at=time.strftime("%Y-%m-%d %H:%M:%S")
         )
         
+        # 构建当前分组的项目质量分数（只包含本次分组的项目）
+        current_quality = {p.id: _QUALITY_CACHE.get(p.id, {"total": 75.0}) for p in projects}
+
         # 保存分组结果到文件
         _save_grouping_result(request.year, result, reliability)
-        
-        # 生成质量统计图表
-        _generate_quality_charts(_QUALITY_CACHE, result_groups, request.year, reliability)
+
+        # 生成质量统计图表（只统计当前分组的项目）
+        _generate_quality_charts(current_quality, result_groups, request.year, reliability)
         
         # 保存质量分数缓存
         _save_quality_cache()
