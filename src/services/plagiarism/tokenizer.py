@@ -1,0 +1,126 @@
+"""句子级分词器
+
+按标点符号（。！？；）将文本切分为句子，而非简单按行切分。
+保留位置映射，便于后续追溯。
+"""
+import re
+from dataclasses import dataclass
+from typing import List
+
+
+@dataclass
+class Sentence:
+    """句子"""
+    text: str  # 句子文本
+    start_pos: int  # 在原文中的起始位置
+    end_pos: int  # 在原文中的结束位置
+    line_number: int  # 起始行号
+    is_from_table: bool = False  # 是否来自表格
+
+
+class SentenceTokenizer:
+    """中文句子分词器 - 按标点分句"""
+
+    # 句末标点
+    SENTENCE_ENDINGS = ['。', '！', '？', '；']
+
+    # 句内分隔符（不分句，但标记位置）
+    INTERNAL_SEPARATORS = ['，', '、', ':', '：', '(', ')', '（', '）']
+
+    def tokenize(self, text: str) -> List[Sentence]:
+        """
+        将文本切分为句子列表
+
+        规则:
+        1. 按句末标点（。！？；）切分
+        2. 表格内容按单元格切分
+        3. 保留原始位置（start_pos, end_pos）
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            句子列表
+        """
+        if not text:
+            return []
+
+        sentences = []
+        current_pos = 0
+        current_text = []
+        line_offset = 0
+        sentence_start_pos = 0
+
+        for i, char in enumerate(text):
+            if char in self.SENTENCE_ENDINGS:
+                # 遇到句末标点，结束当前句子
+                sentence_text = ''.join(current_text).strip()
+                if sentence_text:
+                    sentences.append(Sentence(
+                        text=sentence_text,
+                        start_pos=sentence_start_pos,
+                        end_pos=i + 1,
+                        line_number=line_offset + 1,
+                    ))
+                current_pos = i + 1
+                current_text = []
+                sentence_start_pos = i + 1
+            elif char == '\n':
+                # 换行符不中断句子，但更新行号
+                current_text.append(char)
+                line_offset += 1
+            else:
+                current_text.append(char)
+
+        # 处理最后一个句子
+        if current_text:
+            sentence_text = ''.join(current_text).strip()
+            if sentence_text:
+                sentences.append(Sentence(
+                    text=sentence_text,
+                    start_pos=sentence_start_pos,
+                    end_pos=len(text),
+                    line_number=line_offset + 1,
+                ))
+
+        return sentences
+
+    def tokenize_by_paragraphs(self, text: str) -> List[Sentence]:
+        """
+        按段落分句（保留段落结构）
+
+        适用于需要保留段落信息的场景。
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            句子列表
+        """
+        paragraphs = text.split('\n\n')  # 双换行分割段落
+        sentences = []
+        current_pos = 0
+        line_offset = 0
+
+        for para in paragraphs:
+            if not para.strip():
+                line_offset += 2
+                current_pos += 2
+                continue
+
+            # 对每个段落进行分句
+            para_sentences = self.tokenize(para)
+
+            # 调整位置
+            for sent in para_sentences:
+                sent.start_pos += current_pos
+                sent.end_pos += current_pos
+                sent.line_number += line_offset
+
+            sentences.extend(para_sentences)
+
+            # 更新位置
+            current_pos += len(para)
+            line_offset += para.count('\n')
+
+        return sentences
