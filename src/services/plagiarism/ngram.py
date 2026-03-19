@@ -35,6 +35,7 @@ class NGramSplitter:
         n: int = 5,
         stop_words: Set[str] = None,
         use_fingerprint: bool = True,
+        remove_stop_words: bool = False,  # 默认不去停用词，保持位置对齐
     ):
         """
         初始化 N-gram 切分器
@@ -43,10 +44,12 @@ class NGramSplitter:
             n: N-gram 大小，默认 5
             stop_words: 停用词集合
             use_fingerprint: 是否生成指纹
+            remove_stop_words: 是否去除停用词（默认 False，保持位置对齐）
         """
         self.n = n
         self.stop_words = stop_words or DEFAULT_STOP_WORDS
         self.use_fingerprint = use_fingerprint
+        self.remove_stop_words = remove_stop_words
 
     def split(self, sentences: List[Sentence]) -> List[NGram]:
         """
@@ -69,8 +72,10 @@ class NGramSplitter:
         ngrams = []
 
         for sent_idx, sent in enumerate(sentences):
-            # 预处理：去停用词
-            text = self._remove_stop_words(sent.text)
+            # 预处理：可选去停用词
+            text = sent.text
+            if self.remove_stop_words:
+                text = self._remove_stop_words(text)
 
             if len(text) < self.n:
                 # 句子太短，无法生成完整的 N-gram

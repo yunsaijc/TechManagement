@@ -466,9 +466,9 @@ class ReviewAgent:
                     logger.warning(f"[LLM] 字段数过多({len(field_names)})，仅保留前{max_fields}个")
                     field_names = field_names[:max_fields]
                 logger.info(f"[LLM] 识别到字段数: {len(field_names)}")
-            
-            if not field_names:
-                raise Exception("未能识别到表格字段")
+                
+                if not field_names:
+                    raise Exception("未能识别到表格字段")
             
             # Step2: 定位每个字段的值区域
             logger.info("[LLM] Step2: 定位字段值区域...")

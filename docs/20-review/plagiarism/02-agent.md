@@ -59,23 +59,20 @@
            │
            ▼
 ┌─────────────────────┐
-│  2. 语义分句        │  ← 按标点分句（。！？；）
-│ (SentenceTokenizer) │    保留位置映射（句子→行号）
+│  2. Section 提取    │  ← 仅主文档提取指定区域
+│ (SectionExtractor)  │    对比文档使用全文
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│  3. 模板内容过滤   │  ← 多层过滤机制
-│ (TemplateFilter)    │    1. 白名单匹配
-           │          │    2. 标题检测（章节编号）
-           │          │    3. 短句过滤（< 15字）
-           │          │    4. 纯数字/符号过滤
+│  3. 语义分句        │  ← 按标点分句（。！？；）
+│ (SentenceTokenizer) │    保留位置映射
 └──────────┬──────────┘
            │
            ▼
 ┌─────────────────────┐
-│  4. N-gram 切分     │  ← 生成 3-gram/5-gram
-│ (NGramSplitter)     │    去停用词
+│  4. N-gram 切分     │  ← 生成 5-gram
+│ (NGramSplitter)     │    不过滤，保留原始位置
 └──────────┬──────────┘
            │
            ▼
@@ -92,12 +89,49 @@
            │
            ▼
 ┌─────────────────────┐
-│  7. 结果聚合        │  ← 片段合并
-│(ResultAggregator)   │    位置追溯（行号、段落、Section）
+│  7. 后置模板过滤    │  ← 对匹配结果过滤
+│ (TemplateFilter)    │    区分模板重复 vs 有效重复
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  8. 结果聚合        │  ← 片段合并
+│(ResultAggregator)   │    位置追溯
 └──────────┬──────────┘    分类输出（高/中/低）
            │
            ▼
       查重结果输出
+```
+
+## 查重策略：后置过滤
+
+业界最佳实践（知网、Turnitin）采用**先比对、后过滤**的策略：
+
+1. **全文N-gram指纹比对**（位置精确对齐）
+2. **找出所有重复片段**
+3. **后置过滤**：去除白名单短语、标题、表格等
+4. **输出**：总重复 + 有效重复（过滤后）
+
+### 为什么后置过滤？
+
+- **位置对齐**：主文档和对比文档都在原始位置上进行比对
+- **过滤准确**：基于匹配到的具体内容判断是否是模板
+- **可区分性**：可区分"模板重复"和"有效重复"
+
+### 输出结构
+
+```json
+{
+  "total_similarity": 0.52,        // 总重复率
+  "effective_similarity": 0.35,     // 有效重复率（过滤后）
+  "template_segments": [            // 模板重复片段（不计入有效重复）
+    {
+      "text": "为了认真贯彻落实...",
+      "reason": "whitelist_match"
+    }
+  ],
+  "effective_segments": [...]        // 有效重复片段
+}
 ```
 
 ## 核心组件
@@ -257,6 +291,33 @@ class TemplateFilter:
     def _is_number_only(self, text: str) -> bool:
         """检查是否纯数字/符号"""
         return bool(re.match(r'^[\d\s,，。.．:：%％]+$', text))
+
+    def is_template(self, text: str) -> bool:
+        """
+        检查文本片段是否是模板内容（用于后置过滤）
+
+        Args:
+            text: 待检查的文本片段
+
+        Returns:
+            True 如果是模板内容
+        """
+        if self._is_heading(text):
+            return True
+        if self._is_too_short(text):
+            return True
+        if self._is_table_related(text):
+            return True
+        if self._is_template(text):
+            return True
+        return False
+
+    def _is_table_related(self, text: str) -> bool:
+        """检查是否表格相关内容"""
+        for pattern in self.TABLE_PATTERNS:
+            if re.search(pattern, text):
+                return True
+        return False
 ```
 
 ### 3. NGramSplitter (N-gram 切分器)
@@ -481,36 +542,69 @@ class ComparisonEngine:
 ```python
 # services/plagiarism/aggregator.py
 
+@dataclass
+class PlagiarismResult:
+    """查重结果"""
+    id: str
+    total_pairs: int
+    high_similarity: List[dict]
+    medium_similarity: List[dict]
+    low_similarity: List[dict]
+    processing_time: float
+
+
 class ResultAggregator:
-    """查重结果聚合"""
-    
+    """查重结果聚合器 - 后置过滤"""
+
+    def __init__(self, template_filter: TemplateFilter = None):
+        self.template_filter = template_filter or TemplateFilter()
+
     def aggregate(
         self,
         results: List[DocumentSimilarity],
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
+        doc_texts: Dict[str, str] = None,
     ) -> PlagiarismResult:
         """
-        聚合比对结果
-        
-        输出:
-        - 重复位置（原文行号、段落名）
-        - 重复内容（原文片段）
-        - 来源文档位置
-        - 相似度分数
+        聚合比对结果 - 后置过滤模式
+
+        步骤:
+        1. 遍历每个文档对的匹配结果
+        2. 对每个匹配片段进行模板检测
+        3. 区分"模板重复"和"有效重复"
+        4. 计算总相似度和有效相似度
         """
         high = []
         medium = []
         low = []
-        
+
         for r in results:
+            # 分离模板片段和有效片段
+            template_segments = []
+            effective_segments = []
+
+            for m in r.matches:
+                # 检测是否是模板内容
+                if self._is_template_match(m.text):
+                    template_segments.append(m)
+                else:
+                    effective_segments.append(m)
+
+            # 计算有效重复字符数（排除模板）
+            effective_chars = sum(len(m.text) for m in effective_segments)
+            total_chars = sum(len(m.text) for m in r.matches)
+            effective_similarity = effective_chars / total_chars if total_chars > 0 else 0
+
             result_dict = {
                 "doc_a": r.doc_a,
                 "doc_b": r.doc_b,
-                "similarity": round(r.similarity, 4),
+                "similarity": round(r.similarity, 4),          # 总重复率
+                "effective_similarity": round(effective_similarity, 4),  # 有效重复率
                 "type": self._classify(r.similarity, threshold_high, threshold_medium),
-                "total_chars": r.total_chars,
-                "match_chars": r.match_chars,
+                "total_chars": total_chars,
+                "effective_chars": effective_chars,             # 有效重复字符
+                "template_chars": total_chars - effective_chars,  # 模板重复字符
                 "duplicate_segments": [
                     {
                         "primary_line": m.start_pos,
@@ -520,18 +614,28 @@ class ResultAggregator:
                             "line": m.source_start,
                             "text": "",  # 后续填充
                         }],
+                        "is_template": False,
+                        "template_reason": None,
                     }
-                    for m in r.matches[:20]  # 限制数量
+                    for m in effective_segments[:20]  # 限制数量
+                ],
+                "template_segments": [
+                    {
+                        "primary_line": m.start_pos,
+                        "primary_text": m.text,
+                        "template_reason": self._get_template_reason(m.text),
+                    }
+                    for m in template_segments[:10]
                 ],
             }
-            
+
             if r.similarity >= threshold_high:
                 high.append(result_dict)
             elif r.similarity >= threshold_medium:
                 medium.append(result_dict)
             else:
                 low.append(result_dict)
-        
+
         return PlagiarismResult(
             id=f"plagiarism_{int(time.time() * 1000)}",
             total_pairs=len(results),
@@ -540,6 +644,22 @@ class ResultAggregator:
             low_similarity=low,
             processing_time=0,  # 外部计时
         )
+
+    def _is_template_match(self, text: str) -> bool:
+        """检测匹配片段是否是模板内容"""
+        return self.template_filter.is_template(text)
+
+    def _get_template_reason(self, text: str) -> str:
+        """获取模板原因"""
+        if self.template_filter._is_heading(text):
+            return "heading"
+        if self.template_filter._is_too_short(text):
+            return "short"
+        if self.template_filter._is_table_related(text):
+            return "table"
+        if self.template_filter._is_template(text):
+            return "whitelist"
+        return "unknown"
     
     def _classify(self, similarity, threshold_high, threshold_medium):
         if similarity >= threshold_high:

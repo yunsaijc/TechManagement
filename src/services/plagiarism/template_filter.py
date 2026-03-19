@@ -3,7 +3,7 @@
 多层过滤机制，去除标题、表格头、模板句式等非正文内容。
 """
 import re
-from typing import List, Set
+from typing import List, Set, Optional
 
 from src.services.plagiarism.tokenizer import Sentence
 
@@ -33,11 +33,11 @@ class TemplateFilter:
         r"^\d+[、\.．:：]\s*\S+",  # 1、项目组织实施机制
     ]
 
-    # 表格相关
+    # 表格相关（使用 search 匹配任意位置）
     TABLE_PATTERNS = [
-        r"^\[表格行\d+\]",  # [表格行1]
-        r"^\s*[\u4e00-\u9fa5]+\s*\|\s*[\u4e00-\u9fa5]+",  # "项目 | 金额"
-        r"^表格序号",  # 表格表头
+        r'\[表格行\d+\]',  # 表格行标记 [表格行1]
+        r'[\u4e00-\u9fa5]+\s*\|\s*[\u4e00-\u9fa5]+',  # "项目 | 金额"
+        r'^表格序号',  # 表格表头
     ]
 
     # 短句过滤阈值
@@ -144,9 +144,52 @@ class TemplateFilter:
     def _is_table_related(self, text: str) -> bool:
         """检查是否表格相关内容"""
         for regex in self._table_compiled:
-            if regex.match(text):
+            # 使用 search 而不是 match，因为表格标记可能在句子中间
+            if regex.search(text):
                 return True
         return False
+
+    def is_template(self, text: str) -> bool:
+        """
+        检查文本片段是否是模板内容（用于后置过滤）
+
+        Args:
+            text: 待检查的文本片段
+
+        Returns:
+            True 如果是模板内容
+        """
+        if self._is_heading(text):
+            return True
+        if self._is_too_short(text):
+            return True
+        if self._is_table_related(text):
+            return True
+        if self._is_template(text):
+            return True
+        return False
+
+    def get_template_reason(self, text: str) -> Optional[str]:
+        """
+        获取文本片段被判定为模板的原因
+
+        Args:
+            text: 待检查的文本片段
+
+        Returns:
+            模板原因字符串，如果是有效内容则返回 None
+        """
+        if self._is_heading(text):
+            return "heading"
+        if self._is_too_short(text):
+            return "short"
+        if self._is_table_related(text):
+            return "table"
+        if self._is_template(text):
+            return "whitelist"
+        if self._is_number_only(text):
+            return "number_only"
+        return None
 
     def get_filter_stats(self, sentences: List[Sentence]) -> dict:
         """

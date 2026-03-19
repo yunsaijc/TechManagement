@@ -204,10 +204,17 @@ class ComparisonEngine:
                     for k in range(i + 1, match_end + 1):
                         match_text += ngrams_a[k].text[-1]  # 只追加最后一个字符
 
-                    # 查找来源文档位置
-                    source_positions = fingerprints_b[fp]
-                    source_start = source_positions[0] if source_positions else 0
+                    # 查找来源文档位置：应该根据位置对齐，而不是取第一个
+                    # 连续匹配时，doc_a 和 doc_b 的位置是对齐的
+                    # 使用 doc_a 的起始位置在 doc_b 中找对应的位置
+                    source_start = ngrams_a[i].position  # 假设位置对齐
                     source_end = source_start + len(match_text)
+
+                    # 验证 source 位置是否真的匹配
+                    # 如果 doc_b 在该位置不匹配，则取最近的匹配位置
+                    actual_match_start = self._find_actual_source_position(
+                        doc_b, source_start, match_text, ngrams_b
+                    )
 
                     matches.append(Match(
                         text=match_text,
@@ -215,8 +222,8 @@ class ComparisonEngine:
                         end_pos=end_pos,
                         ngram_count=count,
                         source_doc=doc_b,
-                        source_start=source_start,
-                        source_end=source_end,
+                        source_start=actual_match_start,
+                        source_end=actual_match_start + len(match_text),
                         source_text="",  # 后续填充
                     ))
 
@@ -225,6 +232,47 @@ class ComparisonEngine:
                 i += 1
 
         return matches
+
+    def _find_actual_source_position(
+        self,
+        doc_b: str,
+        approximate_pos: int,
+        match_text: str,
+        ngrams_b: List[NGram],
+    ) -> int:
+        """
+        查找实际的来源文档位置
+
+        Args:
+            doc_b: 来源文档 ID
+            approximate_pos: 近似位置
+            match_text: 匹配的文本
+            ngrams_b: doc_b 的 N-gram 列表
+
+        Returns:
+            实际的起始位置
+        """
+        # 在 doc_b 中找到与 match_text 完全匹配的位置
+        for ng in ngrams_b:
+            if ng.text == match_text[:len(ng.text)]:
+                # 找到了匹配的 N-gram
+                return ng.position
+
+        # 如果没找到精确匹配，使用近似位置
+        # 在附近找最接近的位置
+        best_match = None
+        min_distance = float('inf')
+
+        for ng in ngrams_b:
+            distance = abs(ng.position - approximate_pos)
+            if distance < min_distance:
+                min_distance = distance
+                best_match = ng
+
+        if best_match and min_distance < self.ngram_size * 2:
+            return best_match.position
+
+        return approximate_pos
 
     def _merge_overlapping_matches(self, matches: List[Match]) -> List[Match]:
         """

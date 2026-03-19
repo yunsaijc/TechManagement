@@ -60,7 +60,8 @@ class PlagiarismAgent:
         # 初始化 Layer 5 组件
         self.tokenizer = SentenceTokenizer()
         self.template_filter = TemplateFilter()
-        self.comparison_engine = ComparisonEngine(min_continuous_match=5, ngram_size=5)
+        # 使用更长的 N-gram (8-gram) 减少碎片化，连续匹配阈值 3
+        self.comparison_engine = ComparisonEngine(min_continuous_match=3, ngram_size=8)
         self.result_aggregator = ResultAggregator(section_extractor=self.section_extractor)
 
     async def check(
@@ -127,20 +128,15 @@ class PlagiarismAgent:
             extracted_texts[doc_id] = text
             print(f"[Plagiarism] Section提取 {doc_id}: {len(text)} chars")
 
-        # 3. 语义分句 + 模板过滤（主文档）
+        # 3. 语义分句（不过滤，保持原始位置对齐）
         sentences_map = {}  # {doc_id: [Sentence]}
 
         for idx, doc_id in enumerate(doc_ids):
             text = extracted_texts[doc_id]
 
-            # 分句
+            # 分句（不过滤，用于比对）
             sentences = self.tokenizer.tokenize(text)
             print(f"[Plagiarism] 分句 {doc_id}: {len(sentences)} 句子")
-
-            # 主文档：过滤模板内容
-            if idx == 0:
-                sentences = self.template_filter.filter(sentences)
-                print(f"[Plagiarism] 过滤后 {doc_id}: {len(sentences)} 句子")
 
             sentences_map[doc_id] = sentences
 
@@ -150,7 +146,7 @@ class PlagiarismAgent:
             # 保留原始句子，用换行分隔（供后续追溯用）
             processed_texts[doc_id] = '\n'.join(s.text for s in sentences)
 
-        # 4. N-gram 比对
+        # 5. N-gram 比对
         similarities = self.comparison_engine.compare(
             sentences_map,
             self.threshold_high,
@@ -161,12 +157,13 @@ class PlagiarismAgent:
         for r in similarities:
             print(f"  - {r.doc_a} vs {r.doc_b}: similarity={r.similarity:.4f}, type={r.type}")
 
-        # 5. 结果聚合
+        # 6. 结果聚合（后置过滤）
         result = self.result_aggregator.aggregate(
             similarities,
             self.threshold_high,
             self.threshold_medium,
             doc_texts=processed_texts,
+            template_filter=self.template_filter,  # 传入模板过滤器用于后置过滤
         )
         result.processing_time = time.time() - start_time
 
@@ -231,11 +228,12 @@ class PlagiarismAgent:
         debug_dir = Path("debug_plagiarism")
         debug_dir.mkdir(exist_ok=True)
 
-        # 格式化 debug 输出
+        # 格式化 debug 输出（应用后置过滤）
         output = self.result_aggregator.format_debug_output(
             similarities,
             processed_texts,
             primary_doc_id,
+            template_filter=self.template_filter,
         )
 
         filename = debug_dir / "plagiarism_debug.json"

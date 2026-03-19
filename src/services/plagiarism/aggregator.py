@@ -31,16 +31,18 @@ class DuplicateSegmentDetail:
 
 
 class ResultAggregator:
-    """查重结果聚合器"""
+    """查重结果聚合器 - 后置过滤模式"""
 
-    def __init__(self, section_extractor=None):
+    def __init__(self, section_extractor=None, template_filter=None):
         """
         初始化聚合器
 
         Args:
             section_extractor: Section 提取器（用于位置追溯）
+            template_filter: 模板过滤器（用于后置过滤）
         """
         self.section_extractor = section_extractor
+        self.template_filter = template_filter
 
     def aggregate(
         self,
@@ -48,37 +50,74 @@ class ResultAggregator:
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
         doc_texts: Optional[Dict[str, str]] = None,
+        template_filter=None,
     ) -> PlagiarismResult:
         """
-        聚合比对结果
+        聚合比对结果 - 后置过滤模式
+
+        步骤:
+        1. 遍历每个文档对的匹配结果
+        2. 对每个匹配片段进行模板检测
+        3. 区分"模板重复"和"有效重复"
+        4. 计算总相似度和有效相似度
 
         Args:
             results: 比对结果列表
             threshold_high: 高相似度阈值
             threshold_medium: 中相似度阈值
             doc_texts: 文档原文 {doc_id: text}（用于位置追溯）
+            template_filter: 模板过滤器（优先使用）
 
         Returns:
             查重结果
         """
+        # 优先使用传入的过滤器，否则使用初始化时的过滤器
+        filter_obj = template_filter or self.template_filter
+
         high = []
         medium = []
         low = []
 
         for r in results:
+            # 分离模板片段和有效片段
+            template_segments = []
+            effective_segments = []
+
+            for m in r.duplicate_segments:
+                # 检测是否是模板内容
+                if filter_obj and filter_obj.is_template(m.text):
+                    template_segments.append(m)
+                else:
+                    effective_segments.append(m)
+
+            # 计算有效重复字符数（排除模板）
+            effective_chars = sum(len(m.text) for m in effective_segments)
+            total_chars = sum(len(m.text) for m in r.duplicate_segments)
+            effective_similarity = effective_chars / r.total_chars if r.total_chars > 0 else 0
+
             result_dict = {
                 "doc_a": r.doc_a,
                 "doc_b": r.doc_b,
-                "similarity": round(r.similarity, 4),
+                "similarity": round(r.similarity, 4),  # 总重复率
+                "effective_similarity": round(effective_similarity, 4),  # 有效重复率
                 "type": r.type,
                 "total_chars": r.total_chars,
-                "duplicate_chars": r.duplicate_chars,
+                "effective_chars": effective_chars,  # 有效重复字符
+                "template_chars": total_chars - effective_chars if total_chars > 0 else 0,  # 模板重复字符
                 "duplicate_segments": self._format_segments(
-                    r.duplicate_segments,
+                    effective_segments,  # 只包含有效片段
                     r.doc_a,
                     r.doc_b,
                     doc_texts,
+                    filter_obj,
                 ),
+                "template_segments": self._format_segments(
+                    template_segments,  # 模板片段
+                    r.doc_a,
+                    r.doc_b,
+                    doc_texts,
+                    filter_obj,
+                ) if template_segments else [],
             }
 
             if r.type == "high":
@@ -103,6 +142,7 @@ class ResultAggregator:
         doc_a: str,
         doc_b: str,
         doc_texts: Optional[Dict[str, str]],
+        template_filter=None,
     ) -> List[dict]:
         """
         格式化匹配片段
@@ -112,6 +152,7 @@ class ResultAggregator:
             doc_a: 主文档 ID
             doc_b: 来源文档 ID
             doc_texts: 文档原文
+            template_filter: 模板过滤器
 
         Returns:
             格式化后的片段列表
@@ -136,6 +177,11 @@ class ResultAggregator:
                     doc_texts[doc_a], match.start_pos
                 )
 
+            # 获取模板原因
+            template_reason = None
+            if template_filter:
+                template_reason = template_filter.get_template_reason(match.text)
+
             formatted.append({
                 "primary_line": primary_line,
                 "primary_text": primary_text,
@@ -147,6 +193,8 @@ class ResultAggregator:
                 }],
                 "char_count": len(match.text),
                 "ngram_count": match.ngram_count,
+                "is_template": template_reason is not None,
+                "template_reason": template_reason,
             })
 
         return formatted
@@ -243,6 +291,7 @@ class ResultAggregator:
         results: List[DocumentSimilarity],
         doc_texts: Dict[str, str],
         primary_doc_id: str,
+        template_filter=None,
     ) -> dict:
         """
         格式化 debug 输出
@@ -251,6 +300,7 @@ class ResultAggregator:
             results: 比对结果
             doc_texts: 文档原文
             primary_doc_id: 主文档 ID
+            template_filter: 模板过滤器
 
         Returns:
             debug 输出字典
@@ -303,10 +353,15 @@ class ResultAggregator:
 
             output["sections_info"] = sections_info
 
-        # 添加重复片段
-        duplicate_segments = []
+        # 添加重复片段（应用后置过滤）
+        effective_segments = []
+        template_segments = []
+        total_effective_chars = 0
+        total_template_chars = 0
+
         for r in results:
-            for match in r.duplicate_segments[:20]:
+            for match in r.duplicate_segments[:50]:
+                # 获取位置信息
                 primary_line, primary_text_seg = self._get_line_info(
                     primary_doc_id, match.start_pos, match.end_pos, doc_texts
                 )
@@ -315,7 +370,14 @@ class ResultAggregator:
                     match.source_doc, match.source_start, match.source_end, doc_texts
                 )
 
-                duplicate_segments.append({
+                # 检测是否是模板
+                is_template = False
+                template_reason = None
+                if template_filter:
+                    template_reason = template_filter.get_template_reason(match.text)
+                    is_template = template_reason is not None
+
+                seg_info = {
                     "primary_line": primary_line,
                     "primary_text": primary_text_seg,
                     "sources": [{
@@ -326,8 +388,24 @@ class ResultAggregator:
                     "similarity_pair": f"{r.doc_a} vs {r.doc_b}",
                     "char_count": len(match.text),
                     "ngram_count": match.ngram_count,
-                })
+                    "is_template": is_template,
+                    "template_reason": template_reason,
+                }
 
-        output["duplicate_segments"] = duplicate_segments
+                if is_template:
+                    template_segments.append(seg_info)
+                    total_template_chars += len(match.text)
+                else:
+                    effective_segments.append(seg_info)
+                    total_effective_chars += len(match.text)
+
+        output["duplicate_segments"] = effective_segments
+        output["template_segments"] = template_segments
+        output["summary"] = {
+            "total_effective_segments": len(effective_segments),
+            "total_template_segments": len(template_segments),
+            "total_effective_chars": total_effective_chars,
+            "total_template_chars": total_template_chars,
+        }
 
         return output
