@@ -41,9 +41,26 @@ class StampExtractor:
             # 1. PDF 转图片
             image_data = self._pdf_to_image(file_data)
             
-            # 2. LLM 直接分析印章位置和内容
-            prompt = """请描述页面中所有印章的位置和内容。
-只返回描述，不要其他内容。"""
+            # 2. LLM 直接分析印章位置和内容（JSON 结构化输出）
+            prompt = """请分析页面中所有印章的位置和内容。
+
+【重要】只识别印章上**明确刻有**的文字，不要推测、补充或想象任何文字。
+
+返回 JSON 格式：
+{
+  "stamps": [
+    {"index": 1, "unit": "印章上明确有的单位名称", "location": "位置描述", "bbox": [x1,y1,x2,y2]},
+    ...
+  ]
+}
+
+注意：
+- unit 只填写印章上**明确刻有**的文字，如果看不清或无法确认，设为 null
+- bbox 为归一化坐标 (0-1)，无坐标则设为 null
+- 如果未检测到印章，返回 {"stamps": []}
+- 禁止推测、想象或补充任何印章上没有的文字
+
+只输出 JSON，不要其他内容。"""
 
             multi_llm = MultimodalLLM(self._get_llm_client())
             result = await multi_llm.analyze_image(image_data, prompt)
@@ -52,20 +69,44 @@ class StampExtractor:
                 logger.warning("[StampExtractor] 未能检测到印章")
                 return None
             
-            # 解析 LLM 返回的描述，尝试提取坐标信息
-            coords = self._parse_stamp_coords(result)
-            
-            if not coords:
-                # 没有坐标，至少有描述也算成功
+            # 解析 JSON 输出
+            import json
+            try:
+                # 尝试提取 JSON（可能 LLM 输出包含在 ```json 中）
+                json_str = result.strip()
+                if json_str.startswith("```"):
+                    json_str = json_str.split("```")[1]
+                    if json_str.startswith("json"):
+                        json_str = json_str[4:]
+                json_str = json_str.strip()
+                
+                stamp_data = json.loads(json_str)
+                stamps_list = stamp_data.get("stamps", [])
+                
+                if not stamps_list:
+                    logger.warning("[StampExtractor] 未能检测到印章")
+                    return {"stamps": [], "raw": result}
+                
+                stamps = []
+                for s in stamps_list:
+                    stamps.append({
+                        "index": s.get("index", 0),
+                        "unit": s.get("unit", ""),
+                        "location": s.get("location", ""),
+                        "bbox": s.get("bbox"),
+                    })
+                
+                logger.info(f"[StampExtractor] 提取到 {len(stamps)} 个印章")
+                return {"stamps": stamps, "raw": result}
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"[StampExtractor] JSON 解析失败: {e}，原始输出: {result[:200]}")
+                # 降级返回原始文本
                 return {
-                    "stamps": [{
-                        "text": result,
-                        "bbox": None,
-                    }]
+                    "stamps": [],
+                    "raw": result,
+                    "error": f"JSON解析失败: {e}",
                 }
-            
-            logger.info(f"[StampExtractor] 提取到 {len(coords)} 个印章区域")
-            return {"stamps": [{"text": result, "bbox": coords[0]}]}
 
         except Exception as e:
             logger.error(f"[StampExtractor] 印章提取失败: {e}")
@@ -77,27 +118,46 @@ class StampExtractor:
             self._llm_client = get_default_llm_client()
         return self._llm_client
 
-    def _parse_stamp_coords(self, text: str) -> List[Dict]:
-        """解析 LLM 返回的坐标描述"""
+    def _parse_stamp_result(self, text: str) -> List[Dict[str, Any]]:
+        """解析结构化印章输出"""
         import re
-        coords = []
-        patterns = [
-            r'(\d+\.?\d*),(\d+\.?\d*),(\d+\.?\d*),(\d+\.?\d*)',
-            r'x[=:]?\s*(\d+\.?\d*)[,\s]+y[=:]?\s*(\d+\.?\d*)',
-        ]
-        for pattern in patterns:
-            matches = re.findall(pattern, text)
-            for m in matches:
-                if len(m) == 4:
-                    coords.append({
-                        "x1": float(m[0]), "y1": float(m[1]),
-                        "x2": float(m[2]), "y2": float(m[3])
-                    })
-                elif len(m) == 2:
-                    coords.append({
-                        "x": float(m[0]), "y": float(m[1])
-                    })
-        return coords
+        stamps = []
+        
+        for line in text.strip().split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            
+            # 解析格式：序号|单位名称|位置描述|坐标
+            parts = line.split('|')
+            if len(parts) < 3:
+                continue
+            
+            stamp = {
+                "index": parts[0].strip(),
+                "unit": parts[1].strip(),
+                "location": parts[2].strip(),
+                "bbox": None,
+            }
+            
+            # 解析坐标（如果有）
+            if len(parts) >= 4 and parts[3].strip() != '无':
+                coord_str = parts[3].strip()
+                coords = re.findall(r'([\d.]+)', coord_str)
+                if len(coords) >= 4:
+                    try:
+                        stamp["bbox"] = {
+                            "x1": float(coords[0]),
+                            "y1": float(coords[1]),
+                            "x2": float(coords[2]),
+                            "y2": float(coords[3]),
+                        }
+                    except ValueError:
+                        pass
+            
+            stamps.append(stamp)
+        
+        return stamps
 
     def _pdf_to_image(self, file_data: bytes) -> bytes:
         """PDF 转图片（取第一页，fitz 放大3倍）"""

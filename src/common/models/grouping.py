@@ -188,6 +188,9 @@ class GroupingStatistics(BaseModel):
     subject_purity: Optional[float] = Field(None, description="学科纯度 (0-1)")
     split_correctness: Optional[float] = Field(None, description="拆分正确率 (0-1)")
 
+    # 新增：可靠性验证提醒
+    audit_reminder: Optional[str] = Field(None, description="人工复审提醒")
+
     class Config:
         from_attributes = True
 
