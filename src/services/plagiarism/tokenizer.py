@@ -53,7 +53,8 @@ class SentenceTokenizer:
 
         for i, char in enumerate(text):
             if char in self.SENTENCE_ENDINGS:
-                # 遇到句末标点，结束当前句子
+                # 遇到句末标点，保留标点后结束当前句子
+                current_text.append(char)
                 sentence_text = ''.join(current_text).strip()
                 if sentence_text:
                     sentences.append(Sentence(

@@ -189,7 +189,7 @@ class QualityAssessor:
         result_c = {}
         if unstable_pids and MAX_EVAL_RETRY > 0:
             unstable_projects = [p for p in projects if p.id in unstable_pids]
-            prompt_c = "评估以下科研项目质量（0-100分制），输出JSON数组：\n\n"
+            prompt_c = "根据项目标题和简介评估以下科研项目质量（0-100分制），输出JSON数组：\n\n"
             for i, p in enumerate(unstable_projects):
                 prompt_c += f"{i+1}. {p.xmmc}\n"
                 if p.gjc:
@@ -227,22 +227,18 @@ class QualityAssessor:
             need_review = False
             if pid in unstable_pids and result_c:
                 score_c = result_c.get(pid, 75.0)
-                diff_ab = abs(score_a - score_b)
-                diff_ac = abs(score_a - score_c)
-                diff_bc = abs(score_b - score_c)
+                mean_ab = (score_a + score_b) / 2
+                diff_c = abs(score_c - mean_ab)
 
-                # 找出差值最小的两个取平均
-                if diff_ab <= diff_ac and diff_ab <= diff_bc:
-                    final_score = (score_a + score_b) / 2
-                elif diff_ac <= diff_ab and diff_ac <= diff_bc:
-                    final_score = (score_a + score_c) / 2
+                # C 验证 A/B 共识是否稳定
+                if diff_c <= DUAL_EVAL_THRESHOLD:
+                    # C 与 A/B 共识一致，三次平均
+                    final_score = (score_a + score_b + score_c) / 3
                 else:
-                    final_score = (score_b + score_c) / 2
-
-                min_diff = min(diff_ab, diff_ac, diff_bc)
-                if min_diff > DUAL_EVAL_THRESHOLD:
+                    # 三次评估太分散，以 A/B 共识为准，标记待复审
+                    final_score = mean_ab
                     need_review = True
-                    print(f"[Quality] 警告: 项目 {pid} 三次评估差异仍然较大 ({min_diff:.1f}分)，标记待复审")
+                    print(f"[Quality] 警告: 项目 {pid} 三次评估差异较大 (C与均值差{diff_c:.1f}分)，标记待复审")
             else:
                 final_score = (score_a + score_b) / 2
                 if diff > DUAL_EVAL_THRESHOLD:
@@ -256,7 +252,7 @@ class QualityAssessor:
             # 保存结果到 _detail_cache
             detail_a = self._detail_cache.get(f"_batch_a_{pid}", {})
             detail_b = self._detail_cache.get(f"_batch_b_{pid}", {})
-            detail_c = result_c.get(pid, {}) if pid in unstable_pids else {}
+            detail_c = self._detail_cache.get(f"_batch_c_{pid}", {}) if pid in unstable_pids else {}
 
             self._detail_cache[pid] = {
                 "total": final_score,

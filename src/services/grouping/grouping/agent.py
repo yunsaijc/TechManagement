@@ -781,8 +781,8 @@ class GroupingAgent:
         for p in projects:
             if p.id in _QUALITY_CACHE:
                 entry = _QUALITY_CACHE[p.id]
-                # 必须是 dict 格式且有有效 comment 才算完整
-                if isinstance(entry, dict) and entry.get("comment"):
+                # 必须是 dict 格式且有 result_a.comment（双重评估之一有效）才算完整
+                if isinstance(entry, dict) and (entry.get("result_a", {}).get("comment") or entry.get("result_b", {}).get("comment")):
                     quality_scores[p.id] = entry.get("total", 75.0)
                 else:
                     # 缓存不完整，需要重新评估
