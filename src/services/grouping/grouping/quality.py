@@ -158,18 +158,25 @@ class QualityAssessor:
   ...
 ]"""
 
-        # 调用 LLM
+        # 调用 LLM（失败重试）
         import asyncio
-        try:
-            response_a, response_b = await asyncio.gather(
-                asyncio.wait_for(self.llm.ainvoke(prompt_a), timeout=60.0),
-                asyncio.wait_for(self.llm.ainvoke(prompt_b), timeout=60.0)
-            )
-            content_a = response_a.content if hasattr(response_a, 'content') else str(response_a)
-            content_b = response_b.content if hasattr(response_b, 'content') else str(response_b)
-        except Exception as e:
-            print(f"[Quality] 批量评估失败: {e}")
-            return {p.id: 75.0 for p in projects}
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response_a, response_b = await asyncio.gather(
+                    asyncio.wait_for(self.llm.ainvoke(prompt_a), timeout=60.0),
+                    asyncio.wait_for(self.llm.ainvoke(prompt_b), timeout=60.0)
+                )
+                content_a = response_a.content if hasattr(response_a, 'content') else str(response_a)
+                content_b = response_b.content if hasattr(response_b, 'content') else str(response_b)
+                break  # 成功，跳出重试循环
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"[Quality] 批量评估失败 (尝试 {attempt+1}/{max_retries}): {e}，重试...")
+                    await asyncio.sleep(2)  # 等待2秒后重试
+                else:
+                    print(f"[Quality] 批量评估失败 (已重试 {max_retries} 次): {e}")
+                    raise  # 最后一次也失败则抛出异常
 
         # 解析两次结果
         result_a = self._parse_batch_result(projects, content_a, "a")
@@ -189,22 +196,22 @@ class QualityAssessor:
         result_c = {}
         if unstable_pids and MAX_EVAL_RETRY > 0:
             unstable_projects = [p for p in projects if p.id in unstable_pids]
-            prompt_c = "根据项目标题和简介评估以下科研项目质量（0-100分制），输出JSON数组：\n\n"
+            prompt_c = "请对以下科研项目进行质量评估（0-100分制），返回JSON数组：\n\n"
             for i, p in enumerate(unstable_projects):
-                prompt_c += f"{i+1}. {p.xmmc}\n"
+                prompt_c += f"{i+1}. 项目名称: {p.xmmc}\n"
                 if p.gjc:
                     prompt_c += f"   关键词: {p.gjc}\n"
                 if p.xmjj:
                     clean = self._clean_html(p.xmjj)[:800]
                     prompt_c += f"   简介: {clean}\n"
                 prompt_c += "\n"
-            prompt_c += """JSON格式：
+            prompt_c += """请按以下JSON格式返回（只需JSON数组，不要其他内容）：
 [
   {"index": 1, "innovation": 80, "difficulty": 70, "value": 75, "total": 75,
-   "comment": "综合评价内容",
-   "innovation_comment": "创新性说明",
-   "difficulty_comment": "难度说明",
-   "value_comment": "价值说明"},
+   "comment": "综合评价，如'该项目总体质量较高，具备较好的发展潜力'",
+   "innovation_comment": "简要评价创新性，如'技术路线具有原创性，在XX领域有突破'或'属于跟踪性研究，创新点不足'",
+   "difficulty_comment": "简要评价技术难度，如'涉及多学科交叉，实现难度大'或'技术方案成熟，实施难度较低'",
+   "value_comment": "简要评价应用价值，如'成果可直接转化应用，市场前景广阔'或'偏基础研究，实际应用尚需时日'"},
   ...
 ]"""
             try:

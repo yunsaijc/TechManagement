@@ -1026,14 +1026,14 @@ class GroupingAgent:
         total_projects = len(projects)
         total_groups = len(result_groups)
         
-        # 计算质量分数统计
-        quality_stats = _calculate_quality_stats(_QUALITY_CACHE)
-        balance_metrics = _calculate_balance_metrics(result_groups, _QUALITY_CACHE)
+        # 计算质量分数统计（只统计当前分组的项目）
+        quality_stats = _calculate_quality_stats(current_quality)
+        balance_metrics = _calculate_balance_metrics(result_groups, current_quality)
         
-        # 获取详细分数缓存并评估可靠性
+        # 获取详细分数缓存并评估可靠性（只评估当前分组项目）
         detail_cache = self.quality_assessor._detail_cache if hasattr(self.quality_assessor, '_detail_cache') else {}
         dual_eval_results = self.quality_assessor._dual_eval_results if hasattr(self.quality_assessor, '_dual_eval_results') else {}
-        reliability = _assess_reliability(_QUALITY_CACHE, detail_cache, dual_eval_results)
+        reliability = _assess_reliability(current_quality, detail_cache, dual_eval_results)
         
         # 打印可靠性报告
         print(f"[Grouping] 可靠性评估:")
@@ -1099,11 +1099,14 @@ class GroupingAgent:
             created_at=time.strftime("%Y-%m-%d %H:%M:%S")
         )
         
+        # 构建当前分组的项目质量分数（只包含本次分组的项目）
+        current_quality = {p.id: _QUALITY_CACHE.get(p.id, {"total": 75.0}) for p in projects}
+
         # 保存分组结果到文件
         _save_grouping_result(request.year, result, reliability)
-        
-        # 生成质量统计图表
-        _generate_quality_charts(_QUALITY_CACHE, result_groups, request.year, reliability)
+
+        # 生成质量统计图表（只统计当前分组的项目）
+        _generate_quality_charts(current_quality, result_groups, request.year, reliability)
         
         # 保存质量分数缓存
         _save_quality_cache()

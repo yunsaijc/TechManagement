@@ -22,8 +22,13 @@ class FieldExtractor:
     """字段提取器 - 先定位 bbox 再 OCR 转写"""
 
     def __init__(self):
-        self._paddle_ocr = None
         self._llm_client = None
+
+    @property
+    def ocr(self):
+        """获取全局 OCR 实例"""
+        from src.services.review.extractor import get_global_ocr
+        return get_global_ocr()
 
     async def extract(
         self,
@@ -200,11 +205,8 @@ class FieldExtractor:
         import logging as _logging
         _logging.getLogger("ppocr").setLevel(_logging.ERROR)
 
-        from paddleocr import PaddleOCR
-
-        if self._paddle_ocr is None:
-            # 使用默认参数
-            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang='ch')
+        # 使用全局 OCR 实例
+        paddle_ocr = self.ocr
 
         fields = {"__fields": field_names}
         llm = self._get_llm()
@@ -271,7 +273,7 @@ class FieldExtractor:
             if use_ocr:
                 try:
                     cropped_np = np.array(cropped_img)
-                    ocr_result = self._paddle_ocr.ocr(cropped_np)
+                    ocr_result = paddle_ocr.ocr(cropped_np)
                     
                     # 兼容 PaddleOCR 不同版本的返回格式
                     if ocr_result and ocr_result[0]:

@@ -42,9 +42,17 @@ class WorkUnitConsistencyRule(BaseRule):
         work_unit = fields.get("工作单位", "").strip()
         completion_unit = fields.get("完成单位", "").strip()
         
-        # 从印章描述中提取盖章单位
-        stamps_desc = llm_analysis.get("stamps_description", "")
-        stamp_units = self._parse_stamp_units(stamps_desc)
+        # 从印章提取结果获取结构化印章单位
+        stamp_result = llm_analysis.get("stamps_result", {})
+        stamps = stamp_result.get("stamps", []) if stamp_result else []
+        
+        # 优先使用结构化印章数据，其次回退到解析描述文本
+        if stamps:
+            stamp_units = [s.get("unit", "") for s in stamps if s.get("unit")]
+            stamp_source = "structure"
+        else:
+            stamp_units = self._parse_stamp_units(stamps_desc)
+            stamp_source = "parse"
         
         if not work_unit and not completion_unit:
             return CheckResult(
@@ -70,11 +78,14 @@ class WorkUnitConsistencyRule(BaseRule):
             if work_unit not in completion_unit and completion_unit not in work_unit:
                 issues.append(f"工作单位'{work_unit}'与完成单位'{completion_unit}'不一致")
         
-        # 检查4：盖章单位是否与完成单位一致
+        # 检查4：盖章单位应与完成单位一致
         if stamp_units and completion_unit:
             for stamp_unit in stamp_units:
-                if stamp_unit not in completion_unit and completion_unit not in stamp_unit:
+                if stamp_unit and stamp_unit not in completion_unit and completion_unit not in stamp_unit:
                     issues.append(f"盖章单位'{stamp_unit}'与完成单位'{completion_unit}'不一致")
+        
+        # 注意：印章可能盖的是完成单位公章，不是工作单位公章
+        # 因此不检查印章与工作单位的一致性
         
         if issues:
             return CheckResult(
@@ -85,6 +96,7 @@ class WorkUnitConsistencyRule(BaseRule):
                     "work_unit": work_unit,
                     "completion_unit": completion_unit,
                     "stamp_units": stamp_units,
+                    "stamp_source": stamp_source,
                     "issues": issues,
                 },
             )
@@ -97,6 +109,7 @@ class WorkUnitConsistencyRule(BaseRule):
                 "work_unit": work_unit,
                 "completion_unit": completion_unit,
                 "stamp_units": stamp_units,
+                "stamp_source": stamp_source,
             },
         )
     
