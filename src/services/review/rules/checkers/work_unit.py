@@ -51,6 +51,7 @@ class WorkUnitConsistencyRule(BaseRule):
             stamp_units = [s.get("unit", "") for s in stamps if s.get("unit")]
             stamp_source = "structure"
         else:
+            stamps_desc = llm_analysis.get("stamps_description", "")
             stamp_units = self._parse_stamp_units(stamps_desc)
             stamp_source = "parse"
         

@@ -323,13 +323,13 @@ class FieldExtractor:
 直接返回文字，不要其他内容。"""
 
         try:
-            # 转 base64
+            # 转 base64（压缩图片避免超过 LLM 10MB 限制）
             buf = io.BytesIO()
-            cropped_img.save(buf, format="PNG")
+            cropped_img.save(buf, format="JPEG", quality=85, optimize=True)
             img_base64 = base64.b64encode(buf.getvalue()).decode()
 
             result = await multi_llm.generate([
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}},
                 {"type": "text", "text": prompt}
             ])
             return result.content if hasattr(result, 'content') else str(result)

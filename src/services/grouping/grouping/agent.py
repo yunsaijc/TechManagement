@@ -569,11 +569,75 @@ def _save_grouping_result(year: str, result: GroupingResult, reliability: dict =
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
+        # 同时保存 CSV 格式的汇总表
+        csv_filename = filename.replace('.json', '.csv')
+        csv_filepath = os.path.join(DEBUG_DIR, csv_filename)
+        _save_grouping_result_csv(data, csv_filepath)
+        
         print(f"[Grouping] 已保存分组结果到 {filename}")
         return filename
     except Exception as e:
         print(f"[Grouping] 保存分组结果失败: {e}")
         return None
+
+
+def _save_grouping_result_csv(data: dict, csv_path: str):
+    """保存分组结果到 CSV 文件
+    
+    CSV 包含每个 group 的项目数量和分数汇总，以及每个项目的详细信息
+    """
+    try:
+        import csv
+        
+        with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+            
+            # 写入汇总信息
+            writer.writerow(['分组结果汇总'])
+            writer.writerow(['总项目数', data['statistics']['total_projects']])
+            writer.writerow(['总组数', data['statistics']['group_count']])
+            writer.writerow(['平均每组项目数', f"{data['statistics']['avg_projects_per_group']:.2f}"])
+            writer.writerow(['平均质量分', f"{data['statistics']['avg_quality_per_group']:.2f}"])
+            writer.writerow(['质量分均值', f"{data['statistics']['quality_mean']:.2f}"])
+            writer.writerow(['质量分中位数', f"{data['statistics']['quality_median']:.2f}"])
+            writer.writerow(['质量分标准差', f"{data['statistics']['quality_std']:.2f}"])
+            writer.writerow(['质量分范围', f"{data['statistics']['quality_min']:.1f} - {data['statistics']['quality_max']:.1f}"])
+            writer.writerow([])
+            
+            # 写入分组汇总表
+            writer.writerow(['分组汇总'])
+            writer.writerow(['组号', '学科代码', '学科名称', '项目数', '平均分', '最高分', '最低分'])
+            for g in data['groups']:
+                writer.writerow([
+                    g['group_id'],
+                    g['subject_code'],
+                    g['subject_name'],
+                    g['count'],
+                    f"{g['avg_quality']:.1f}",
+                    f"{g['max_quality']:.1f}",
+                    f"{g['min_quality']:.1f}"
+                ])
+            
+            writer.writerow([])
+            
+            # 写入每个项目的详细信息
+            writer.writerow(['项目明细'])
+            writer.writerow(['组号', '学科代码', '学科名称', '项目ID', '项目名称', '质量分', '分组理由'])
+            for g in data['groups']:
+                for p in g['projects']:
+                    writer.writerow([
+                        g['group_id'],
+                        g['subject_code'],
+                        g['subject_name'],
+                        p['project_id'],
+                        p['xmmc'],
+                        f"{p['quality_score']:.1f}" if p['quality_score'] else '',
+                        p.get('reason', '')
+                    ])
+        
+        print(f"[Grouping] 已保存 CSV 到 {csv_path}")
+    except Exception as e:
+        print(f"[Grouping] 保存 CSV 失败: {e}")
 
 
 # 启动时加载缓存
@@ -689,16 +753,18 @@ class GroupingAgent:
     def _merge_small_groups(
         self, 
         subject_groups: Dict[str, List[Project]], 
-        min_per_group: int = 3
+        min_per_group: int = 3,
+        max_per_group: int = 15
     ) -> Dict[str, List[Project]]:
         """合并项目太少的学科组
         
         策略：只合并一级学科(前3位)相同的组
-        7位 → 5位 → 3位
+        合并条件：合并后 <= max_per_group
         
         Args:
             subject_groups: 原始学科分组
             min_per_group: 每组最少项目数
+            max_per_group: 每组最大项目数
         
         Returns:
             合并后的学科分组
@@ -722,7 +788,7 @@ class GroupingAgent:
             # 只尝试用前3位（一级学科）匹配
             prefix_3 = code[:3] if len(code) >= 3 else code
             
-            # 找到同样一级学科（前3位）且也小于最小值的组
+            # 找到同样一级学科（前3位）且合并后不超过 max_per_group 的组
             merged = False
             for other_code in list(subject_groups.keys()):
                 if other_code == code:
@@ -731,19 +797,270 @@ class GroupingAgent:
                 if other_prefix_3 == prefix_3:
                     # 一级学科相同，可以合并
                     other_count = len(subject_groups[other_code])
-                    if other_count < min_per_group:
+                    # 合并条件：合并后不超过 max_per_group
+                    if other_count + len(projects) <= max_per_group:
                         # 合并
                         subject_groups[other_code].extend(projects)
                         del subject_groups[code]
-                        print(f"[Grouping] 合并 {code}({len(projects)}项) → {other_code}(同{prefix_3}学科)")
+                        print(f"[Grouping] 合并 {code}({len(projects)}项) → {other_code}(同{prefix_3}学科，合并后{other_count+len(projects)}项)")
                         merged = True
                         break
             
             if not merged:
-                print(f"[Grouping] 无法合并 {code}({len(projects)}项)，无相近学科")
+                print(f"[Grouping] 无法合并 {code}({len(projects)}项)，无相近学科或合并后会超过{max_per_group}项")
         
         return subject_groups
-    
+
+    def _build_group_keywords(self, groups: Dict[str, List[Project]]) -> Dict[str, set]:
+        """构建大组关键词索引（用于跨学科归并预筛）
+        
+        Args:
+            groups: {学科代码: [项目列表]}
+        
+        Returns:
+            {学科代码: set(关键词集合)}
+        """
+        group_keywords = {}
+        for code, projects in groups.items():
+            keywords = set()
+            for p in projects:
+                if p.gjc:
+                    # 逗号分隔的关键词
+                    for kw in p.gjc.replace('，', ',').split(','):
+                        kw = kw.strip()
+                        if kw:
+                            keywords.add(kw)
+            group_keywords[code] = keywords
+        return group_keywords
+
+    def _filter_by_keywords(
+        self,
+        project: Project,
+        large_group_keywords: Dict[str, set]
+    ) -> List[str]:
+        """关键词预筛：找出与项目有重叠关键词的大组
+        
+        Args:
+            project: 待归并的项目
+            large_group_keywords: 大组关键词索引
+        
+        Returns:
+            有重叠关键词的大组代码列表
+        """
+        if not project.gjc:
+            return []
+        
+        # 提取项目关键词集合
+        project_keywords = set()
+        for kw in project.gjc.replace('，', ',').split(','):
+            kw = kw.strip()
+            if kw:
+                project_keywords.add(kw)
+        
+        if not project_keywords:
+            return []
+        
+        # 找有重叠的大组
+        candidates = []
+        for code, keywords in large_group_keywords.items():
+            overlap = project_keywords & keywords
+            if len(overlap) >= 1:  # 重叠词 >= 1
+                candidates.append(code)
+        
+        return candidates
+
+    async def _llm_batch_assign_projects(
+        self,
+        projects_with_candidates: List[tuple],
+        large_groups: Dict[str, List[Project]]
+    ) -> List[tuple]:
+        """批量 LLM 判断多个项目归属
+        
+        Args:
+            projects_with_candidates: [(project, candidate_codes, from_code), ...]
+            large_groups: 大组字典
+        
+        Returns:
+            [(project, target_code, from_code), ...] 成功归并的列表
+        """
+        if not projects_with_candidates:
+            return []
+        
+        # 构建候选大组信息
+        large_group_info = {}
+        for code in large_groups.keys():
+            projects = large_groups.get(code, [])
+            keywords = set()
+            for p in projects:
+                if p.gjc:
+                    for kw in p.gjc.replace('，', ',').split(','):
+                        kw = kw.strip()
+                        if kw:
+                            keywords.add(kw)
+            subject_name = self._get_subject_name(code)
+            large_group_info[code] = {
+                "index": list(large_groups.keys()).index(code) + 1,
+                "name": subject_name,
+                "keywords": list(keywords)[:10],
+                "count": len(projects)
+            }
+        
+        # 构建批量 prompt
+        project_items = []
+        for idx, (project, candidate_codes, from_code) in enumerate(projects_with_candidates):
+            clean_xmjj = _clean_html_text(project.xmjj)[:200] if project.xmjj else "无"
+            candidates_detail = []
+            for code in candidate_codes:
+                info = large_group_info.get(code, {})
+                candidates_detail.append(f'{info.get("index", "?")}. {info.get("name", code)}({code})')
+            
+            project_items.append({
+                "idx": idx,
+                "project_id": project.id,
+                "xmmc": project.xmmc[:30],
+                "gjc": project.gjc or '无',
+                "xmjj": clean_xmjj,
+                "candidates": candidates_detail,
+                "candidate_codes": candidate_codes
+            })
+        
+        # 构造批量 prompt
+        items_text = "\n".join([
+            f'项目{i+1}: {p["xmmc"]}\n  关键词: {p["gjc"]}\n  简介: {p["xmjj"]}\n  可选组: {", ".join(p["candidates"])}'
+            for i, p in enumerate(project_items)
+        ])
+        
+        prompt = f"""你是一个学科分类专家。判断以下多个项目各自更适合放入哪个评审组。
+
+{len(project_items)} 个项目：
+{items_text}
+
+对每个项目，判断其最适合放入哪个组（只能选一个），或者选择"不合并"（如果项目主题特殊，无法归入任何现有组）。
+
+输出格式（只需JSON数组，不要其他内容）：
+[
+  {{"idx": 项目序号(从0开始), "decision": "组序号或组代码" | "不合并", "reason": "简要理由"}},
+  ...
+]
+"""
+        
+        try:
+            response = await self.llm.ainvoke(prompt)
+            content = response.content if hasattr(response, 'content') else str(response)
+            
+            # 解析 JSON 数组
+            import json
+            start = content.find('[')
+            end = content.rfind(']') + 1
+            if start >= 0 and end > start:
+                results = json.loads(content[start:end])
+                
+                moves = []
+                for res in results:
+                    idx = res.get("idx", -1)
+                    decision = res.get("decision", "不合并")
+                    reason = res.get("reason", "")
+                    
+                    if idx < 0 or idx >= len(projects_with_candidates):
+                        continue
+                    
+                    project, candidate_codes, from_code = projects_with_candidates[idx]
+                    
+                    if decision == "不合并":
+                        print(f"[Grouping] 项目 {project.xmmc[:20]} → 不合并 ({reason})")
+                        continue
+                    
+                    # 尝试解析组代码
+                    target_code = None
+                    if decision.isdigit():
+                        c_idx = int(decision) - 1
+                        for code in candidate_codes:
+                            info = large_group_info.get(code, {})
+                            if info.get("index", -1) == c_idx + 1:
+                                target_code = code
+                                break
+                    
+                    if not target_code:
+                        for code in candidate_codes:
+                            if str(code) in str(decision) or decision in str(code):
+                                target_code = code
+                                break
+                    
+                    if target_code:
+                        print(f"[Grouping] 项目 {project.xmmc[:20]} → {target_code} ({reason})")
+                        moves.append((project, target_code, from_code))
+                    else:
+                        print(f"[Grouping] 项目 {project.xmmc[:20]} → 无法解析decision '{decision}'，不合并")
+                
+                return moves
+            else:
+                print(f"[Grouping] 批量LLM返回格式错误，不合并任何项目")
+                return []
+        except Exception as e:
+            print(f"[Grouping] 批量LLM判断失败: {e}，不合并任何项目")
+            return []
+
+    async def _merge_cross_disciplinary(
+        self,
+        subject_groups: Dict[str, List[Project]],
+        min_per_group: int = 5
+    ) -> Dict[str, List[Project]]:
+        """跨学科小项目归并
+        
+        策略：
+        1. 关键词预筛：快速过滤出有重叠关键词的大组
+        2. LLM 逐项目判断：精细化归并决策
+        
+        Args:
+            subject_groups: 学科分组（会被原地修改）
+            min_per_group: 每组最小项目数
+        
+        Returns:
+            合并后的学科分组
+        """
+        # 1. 识别小组合大组
+        small_groups = {k: v for k, v in subject_groups.items() if len(v) < min_per_group}
+        large_groups = {k: v for k, v in subject_groups.items() if len(v) >= min_per_group}
+        
+        if not small_groups or not large_groups:
+            print(f"[Grouping] 跨学科归并跳过（小组{len(small_groups)}个，大组{len(large_groups)}个）")
+            return subject_groups
+        
+        print(f"[Grouping] 开始跨学科归并：{len(small_groups)} 个小组，{len(large_groups)} 个大组")
+        
+        # 2. 构建大组关键词索引
+        large_group_keywords = self._build_group_keywords(large_groups)
+        
+        # 3. 收集所有有候选的小项目
+        projects_with_candidates = []  # [(project, candidate_codes, from_code), ...]
+        
+        for small_code, small_projects in small_groups.items():
+            for project in small_projects:
+                # 3.1 关键词预筛得到候选大组
+                candidates = self._filter_by_keywords(project, large_group_keywords)
+                
+                if candidates:
+                    projects_with_candidates.append((project, candidates, small_code))
+        
+        # 3.2 批量 LLM 判断（一次调用处理所有项目）
+        if projects_with_candidates:
+            print(f"[Grouping] 批量LLM判断 {len(projects_with_candidates)} 个跨学科项目...")
+            projects_to_move = await self._llm_batch_assign_projects(projects_with_candidates, large_groups)
+        else:
+            projects_to_move = []
+        
+        # 4. 执行移动
+        for project, target_code, from_code in projects_to_move:
+            subject_groups[from_code].remove(project)
+            subject_groups[target_code].append(project)
+            print(f"[Grouping] 跨学科归并: {project.xmmc[:20]} 从 {from_code} → {target_code}")
+        
+        # 5. 清理空小组
+        subject_groups = {k: v for k, v in subject_groups.items() if v}
+        
+        print(f"[Grouping] 跨学科归并完成，移动 {len(projects_to_move)} 个项目")
+        return subject_groups
+
     def _group_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         """按三级学科分组
         
@@ -933,9 +1250,12 @@ class GroupingAgent:
         subject_groups = self._group_by_subject(projects)
         print(f"[Grouping] 按学科分为 {len(subject_groups)} 个学科组")
         
-        # 2.1 合并项目太少的学科组
-        subject_groups = self._merge_small_groups(subject_groups, self.min_per_group)
-        
+        # 2.1 合并项目太少的学科组（同学科小合并）
+        subject_groups = self._merge_small_groups(subject_groups, self.min_per_group, self.max_per_group)
+
+        # 2.2 跨学科小项目归并（关键词预筛 + LLM 逐项目判断）
+        subject_groups = await self._merge_cross_disciplinary(subject_groups, self.min_per_group)
+
         # 3. 先对所有项目统一评估质量（只评估一次，并发批量）
         print(f"[Grouping] 开始评估所有项目质量...")
         all_quality_scores = await self._assess_quality(projects)
@@ -1026,6 +1346,9 @@ class GroupingAgent:
         total_projects = len(projects)
         total_groups = len(result_groups)
         
+        # 构建当前分组的项目质量分数（只包含本次分组的项目）
+        current_quality = {p.id: _QUALITY_CACHE.get(p.id, {"total": 75.0}) for p in projects}
+        
         # 计算质量分数统计（只统计当前分组的项目）
         quality_stats = _calculate_quality_stats(current_quality)
         balance_metrics = _calculate_balance_metrics(result_groups, current_quality)
@@ -1099,9 +1422,6 @@ class GroupingAgent:
             created_at=time.strftime("%Y-%m-%d %H:%M:%S")
         )
         
-        # 构建当前分组的项目质量分数（只包含本次分组的项目）
-        current_quality = {p.id: _QUALITY_CACHE.get(p.id, {"total": 75.0}) for p in projects}
-
         # 保存分组结果到文件
         _save_grouping_result(request.year, result, reliability)
 

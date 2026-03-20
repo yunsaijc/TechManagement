@@ -193,6 +193,7 @@ class ResultAggregator:
                 }],
                 "char_count": len(match.text),
                 "ngram_count": match.ngram_count,
+                "similarity_score": round(match.similarity_score, 4) if match.similarity_score else 0,
                 "is_template": template_reason is not None,
                 "template_reason": template_reason,
             })
@@ -388,6 +389,7 @@ class ResultAggregator:
                     "similarity_pair": f"{r.doc_a} vs {r.doc_b}",
                     "char_count": len(match.text),
                     "ngram_count": match.ngram_count,
+                    "similarity_score": round(match.similarity_score, 4) if match.similarity_score else 0,
                     "is_template": is_template,
                     "template_reason": template_reason,
                 }
