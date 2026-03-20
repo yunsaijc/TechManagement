@@ -79,11 +79,11 @@ class WorkUnitConsistencyRule(BaseRule):
             if work_unit not in completion_unit and completion_unit not in work_unit:
                 issues.append(f"工作单位'{work_unit}'与完成单位'{completion_unit}'不一致")
         
-        # 检查4：盖章单位应与完成单位一致
+        # 检查4：盖章单位应与填写单位完全一致（印章文字必须等于填写单位）
         if stamp_units and completion_unit:
             for stamp_unit in stamp_units:
-                if stamp_unit and stamp_unit not in completion_unit and completion_unit not in stamp_unit:
-                    issues.append(f"盖章单位'{stamp_unit}'与完成单位'{completion_unit}'不一致")
+                if stamp_unit and stamp_unit != completion_unit:
+                    issues.append(f"盖章单位'{stamp_unit}'与填写单位'{completion_unit}'不一致（印章文字应与填写单位完全一致）")
         
         # 注意：印章可能盖的是完成单位公章，不是工作单位公章
         # 因此不检查印章与工作单位的一致性

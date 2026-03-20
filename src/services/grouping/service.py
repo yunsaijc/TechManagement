@@ -93,7 +93,7 @@ class GroupingService:
             year=request.year,
             category=request.category,
             max_per_group=request.max_per_group,
-            strategy=GroupingStrategy.BALANCED
+            strategy=GroupingStrategy.SEMANTIC
         )
         grouping_result = await self.group_projects(grouping_request)
         

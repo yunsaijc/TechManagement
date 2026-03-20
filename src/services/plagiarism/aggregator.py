@@ -3,6 +3,7 @@
 将比对引擎的结果聚合成最终的查重报告。
 支持位置追溯、片段合并、分类输出。
 """
+import difflib
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -19,6 +20,7 @@ class PlagiarismResult:
     medium_similarity: List[dict]
     low_similarity: List[dict]
     processing_time: float
+    filtered_pairs: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -32,6 +34,13 @@ class DuplicateSegmentDetail:
 
 class ResultAggregator:
     """查重结果聚合器 - 后置过滤模式"""
+
+    MIN_EFFECTIVE_CHARS = 30
+    MIN_EFFECTIVE_RATIO = 0.35
+    MIN_SEGMENT_LENGTH = 20
+    MAX_TEMPLATE_RATIO = 0.7
+    MIN_SOURCE_COVERAGE = 0.8
+    MIN_LEXICAL_SIMILARITY = 0.30
 
     def __init__(self, section_extractor=None, template_filter=None):
         """
@@ -77,6 +86,7 @@ class ResultAggregator:
         high = []
         medium = []
         low = []
+        filtered_pairs = []
 
         for r in results:
             # 分离模板片段和有效片段
@@ -90,10 +100,21 @@ class ResultAggregator:
                 else:
                     effective_segments.append(m)
 
+            effective_segments, rejected_segments = self._filter_low_quality_segments(effective_segments)
+            template_segments.extend(rejected_segments)
+
             # 计算有效重复字符数（排除模板）
             effective_chars = sum(len(m.text) for m in effective_segments)
             total_chars = sum(len(m.text) for m in r.duplicate_segments)
             effective_similarity = effective_chars / r.total_chars if r.total_chars > 0 else 0
+
+            pair_filter_reason = self._get_pair_filter_reason(
+                effective_segments=effective_segments,
+                template_segments=template_segments,
+                effective_chars=effective_chars,
+                total_chars=total_chars,
+                effective_similarity=effective_similarity,
+            )
 
             result_dict = {
                 "doc_a": r.doc_a,
@@ -118,7 +139,12 @@ class ResultAggregator:
                     doc_texts,
                     filter_obj,
                 ) if template_segments else [],
+                "filter_reason": pair_filter_reason,
             }
+
+            if pair_filter_reason:
+                filtered_pairs.append(result_dict)
+                continue
 
             if r.type == "high":
                 high.append(result_dict)
@@ -134,7 +160,85 @@ class ResultAggregator:
             medium_similarity=medium,
             low_similarity=low,
             processing_time=0,  # 由外部计时
+            filtered_pairs=filtered_pairs,
         )
+
+    def _get_pair_filter_reason(
+        self,
+        effective_segments: List[Match],
+        template_segments: List[Match],
+        effective_chars: int,
+        total_chars: int,
+        effective_similarity: float,
+    ) -> Optional[str]:
+        """判断 pair 是否应被过滤，并返回原因。"""
+        if not effective_segments:
+            return "no_effective_segments"
+
+        source_coverage = self._source_coverage_ratio(effective_segments)
+        if source_coverage < self.MIN_SOURCE_COVERAGE:
+            return "source_text_coverage_too_low"
+
+        lexical_similarity = self._avg_lexical_similarity(effective_segments)
+        if lexical_similarity < self.MIN_LEXICAL_SIMILARITY:
+            return "lexical_similarity_too_low"
+
+        if effective_chars < self.MIN_EFFECTIVE_CHARS:
+            return "too_few_effective_chars"
+
+        if effective_similarity < self.MIN_EFFECTIVE_RATIO:
+            return "effective_similarity_too_low"
+
+        if total_chars > 0:
+            template_ratio = len(template_segments) / max(len(effective_segments) + len(template_segments), 1)
+            if template_ratio >= self.MAX_TEMPLATE_RATIO:
+                return "template_ratio_too_high"
+
+        max_segment_len = max((len(m.text) for m in effective_segments), default=0)
+        if max_segment_len < self.MIN_SEGMENT_LENGTH:
+            return "segment_too_short"
+
+        return None
+
+    def _filter_low_quality_segments(self, segments: List[Match]) -> Tuple[List[Match], List[Match]]:
+        """将明显错配的片段从有效片段中剔除。"""
+        kept = []
+        rejected = []
+        for seg in segments:
+            source_text = (seg.source_text or "").strip()
+            if not source_text:
+                rejected.append(seg)
+                continue
+            score = self._lexical_ratio(seg.text, source_text)
+            if score < self.MIN_LEXICAL_SIMILARITY:
+                rejected.append(seg)
+                continue
+            kept.append(seg)
+        return kept, rejected
+
+    def _source_coverage_ratio(self, segments: List[Match]) -> float:
+        if not segments:
+            return 0.0
+        ok = sum(1 for s in segments if (s.source_text or "").strip())
+        return ok / len(segments)
+
+    def _avg_lexical_similarity(self, segments: List[Match]) -> float:
+        if not segments:
+            return 0.0
+        scores = [
+            self._lexical_ratio(s.text, s.source_text)
+            for s in segments
+            if (s.source_text or "").strip()
+        ]
+        if not scores:
+            return 0.0
+        return sum(scores) / len(scores)
+
+    @staticmethod
+    def _lexical_ratio(text_a: str, text_b: str) -> float:
+        if not text_a or not text_b:
+            return 0.0
+        return difflib.SequenceMatcher(None, text_a, text_b).ratio()
 
     def _format_segments(
         self,
@@ -360,7 +464,15 @@ class ResultAggregator:
         total_effective_chars = 0
         total_template_chars = 0
 
+        filtered_pairs = []
+
         for r in results:
+            pair_effective_segments = []
+            pair_template_segments = []
+            pair_effective_chars = 0
+            pair_template_chars = 0
+
+            pair_filter_reason = None
             for match in r.duplicate_segments[:50]:
                 # 获取位置信息
                 primary_line, primary_text_seg = self._get_line_info(
@@ -396,18 +508,48 @@ class ResultAggregator:
 
                 if is_template:
                     template_segments.append(seg_info)
-                    total_template_chars += len(match.text)
+                    pair_template_segments.append(match)
+                    pair_template_chars += len(match.text)
                 else:
-                    effective_segments.append(seg_info)
-                    total_effective_chars += len(match.text)
+                    source_text_raw = (match.source_text or "").strip()
+                    lexical_score = self._lexical_ratio(match.text, source_text_raw)
+                    if source_text_raw and lexical_score >= self.MIN_LEXICAL_SIMILARITY:
+                        effective_segments.append(seg_info)
+                        pair_effective_segments.append(match)
+                        pair_effective_chars += len(match.text)
+                    else:
+                        seg_info["is_template"] = True
+                        seg_info["template_reason"] = "lexical_mismatch"
+                        template_segments.append(seg_info)
+                        pair_template_segments.append(match)
+                        pair_template_chars += len(match.text)
+
+            pair_filter_reason = self._get_pair_filter_reason(
+                effective_segments=pair_effective_segments,
+                template_segments=pair_template_segments,
+                effective_chars=pair_effective_chars,
+                total_chars=sum(len(m.text) for m in r.duplicate_segments),
+                effective_similarity=(pair_effective_chars / sum(len(m.text) for m in r.duplicate_segments)) if r.duplicate_segments else 0,
+            )
+
+            if pair_filter_reason:
+                filtered_pairs.append({
+                    "pair": f"{r.doc_a} vs {r.doc_b}",
+                    "reason": pair_filter_reason,
+                })
+
+            total_effective_chars += pair_effective_chars
+            total_template_chars += pair_template_chars
 
         output["duplicate_segments"] = effective_segments
         output["template_segments"] = template_segments
+        output["filtered_pairs"] = filtered_pairs
         output["summary"] = {
             "total_effective_segments": len(effective_segments),
             "total_template_segments": len(template_segments),
             "total_effective_chars": total_effective_chars,
             "total_template_chars": total_template_chars,
+            "total_filtered_pairs": len(filtered_pairs),
         }
 
         return output

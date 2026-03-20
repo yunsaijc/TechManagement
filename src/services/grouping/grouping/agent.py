@@ -1,523 +1,80 @@
-"""
-分组 Agent
+"""分组 Agent
 
-重构版：按学科分组 + 质量评估 + 均衡分配
-
-逻辑：
-1. 按三级学科初步分组
-2. 数量 ≤15 → 保留原分组
-3. 数量 >15 → 质量评估 + 均衡分配
-4. 合并结果
+语义优先版本：基于项目名称/简介理解项目在做什么，再进行分组。
+不再使用质量评价，也不把学科代码当作硬分区；学科代码仅作辅助信息。
 """
-import asyncio
+from __future__ import annotations
+
 import json
+import math
 import os
 import re
 import time
 import uuid
-from collections import defaultdict
+from collections import defaultdict, Counter
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import matplotlib
-matplotlib.use('Agg')  # 非交互式后端
-import matplotlib.pyplot as plt
 import numpy as np
 
-from src.common.llm import get_default_llm_client
+from src.common.llm import get_default_embedding_client, get_default_llm_client
 from src.common.models.grouping import (
+    FullGroupingRequest,
+    FullGroupingResult,
+    FullStatistics,
     GroupingRequest,
     GroupingResult,
     GroupingStatistics,
     GroupSummary,
+    GroupingStrategy,
     Project,
     ProjectGroup,
     ProjectInGroup,
-    ProjectQuality,
 )
-from src.services.grouping.grouping.quality import QualityAssessor
-from src.services.grouping.grouping.quality import (
-    _eval_count,
-    AUDIT_SAMPLE_THRESHOLD,
-    AUDIT_SAMPLE_SIZE,
-    DUAL_EVAL_THRESHOLD
-)
+from src.services.grouping.matching.agent import MatchingAgent
 from src.services.grouping.storage.project_repo import ProjectRepository
 from src.common.database import get_xkfl_repo
 
 
-# 缓存目录
 CACHE_DIR = "/home/tdkx/workspace/tech/.cache"
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-# 质量分数缓存（内存）- 存储完整评估结果
-_QUALITY_CACHE: Dict[str, dict] = {}
-
-# 缓存文件路径
-_QUALITY_CACHE_FILE = os.path.join(CACHE_DIR, "grouping_quality.json")
-
 
 def _clean_html_text(text: Optional[str]) -> str:
-    """清洗 HTML 标签和实体（模块级函数）"""
     if not text:
         return ""
-    # 移除 HTML 标签
-    clean = re.sub(r'<[^>]+>', '', text)
-    # 替换 HTML 实体
-    clean = clean.replace('&nbsp;', ' ')
-    clean = clean.replace('&amp;', '&')
-    clean = clean.replace('&lt;', '<')
-    clean = clean.replace('&gt;', '>')
-    clean = clean.replace('&quot;', '"')
-    # 移除多余空白
-    clean = re.sub(r'\s+', ' ', clean)
+    clean = re.sub(r"<[^>]+>", "", text)
+    clean = clean.replace("&nbsp;", " ")
+    clean = clean.replace("&amp;", "&")
+    clean = clean.replace("&lt;", "<")
+    clean = clean.replace("&gt;", ">")
+    clean = clean.replace("&quot;", '"')
+    clean = re.sub(r"\s+", " ", clean)
     return clean.strip()
 
 
-def _calculate_quality_stats(quality_scores: Dict[str, dict]) -> dict:
-    """计算质量分数统计信息
-    
-    Args:
-        quality_scores: {project_id: {"total": float, "innovation": float, ...}}
-    
-    Returns:
-        {
-            mean, median, std, min, max,
-            distribution: {score_range: count}
-        }
-    """
-    if not quality_scores:
-        return {}
-    
-    # 提取总分
-    scores = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
-    
-    # 基本统计
-    mean = np.mean(scores)
-    median = np.median(scores)
-    std = np.std(scores)
-    min_score = min(scores)
-    max_score = max(scores)
-    
-    # 分布统计（每10分一段）
-    distribution = {}
-    for score in scores:
-        bucket = int(score // 10) * 10
-        distribution[f"{bucket}-{bucket+9}"] = distribution.get(f"{bucket}-{bucket+9}", 0) + 1
-    
-    return {
-        "mean": round(mean, 2),
-        "median": round(median, 2),
-        "std": round(std, 2),
-        "min": round(min_score, 2),
-        "max": round(max_score, 2),
-        "distribution": distribution
-    }
+def _text_for_project(project: Project, include_abstract: bool = True) -> str:
+    parts = [project.xmmc or ""]
+    if project.gjc:
+        parts.append(project.gjc)
+    if include_abstract and project.xmjj:
+        parts.append(_clean_html_text(project.xmjj)[:800])
+    return "。".join([part for part in parts if part])
 
 
-def _assess_reliability(
-    quality_scores: Dict[str, dict],
-    detail_cache: Dict[str, dict],
-    dual_eval_results: Dict[str, dict] = None
-) -> dict:
-    """评估LLM分数的可靠性
-
-    Args:
-        quality_scores: {project_id: {"total": float, ...}}
-        detail_cache: {project_id: {innovation, difficulty, value, total, comment}}
-        dual_eval_results: 双重评估结果 {project_id: {score_a, score_b, diff, is_stable}}
-
-    Returns:
-        {
-            is_anomaly: bool,  # 是否存在异常
-            anomaly_type: str,  # 异常类型
-            anomaly_details: str,  # 异常详情
-            consistency_score: float,  # 一致性分数 (0-1)
-            dimension_correlation: dict,  # 维度相关性
-            distribution_quality: str,  # 分布质量评价
-            # 双重评估统计
-            dual_eval_count: int,  # 双重评估项目数
-            dual_eval_unstable_count: int,  # 不稳定项目数
-            dual_eval_unstable_rate: float,  # 不稳定率
-            dual_eval_avg_diff: float,  # 平均差异
-            dual_eval_max_diff: float,  # 最大差异
-        }
-    """
-    if not quality_scores or len(quality_scores) < 5:
-        return {"is_anomaly": False, "reason": "样本不足"}
-    
-    # 提取总分
-    scores = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
-    
-    # 1. 异常检测
-    anomaly_type = None
-    anomaly_details = []
-    
-    # 1.1 全相同分数
-    unique_scores = set(scores)
-    if len(unique_scores) == 1:
-        anomaly_type = "all_same"
-        anomaly_details.append(f"所有项目分数相同: {scores[0]}")
-    
-    # 1.2 分数集中在极窄范围
-    score_range = max(scores) - min(scores)
-    if score_range < 5:
-        anomaly_type = "too_narrow"
-        anomaly_details.append(f"分数范围过窄: {score_range}分")
-    
-    # 1.3 分布不自然（过多相同分数）
-    from collections import Counter
-    score_counts = Counter(scores)
-    most_common_count = score_counts.most_common(1)[0][1]
-    if most_common_count / len(scores) > 0.5:
-        anomaly_type = "unnatural_distribution"
-        anomaly_details.append(f"分数 {score_counts.most_common(1)[0][0]} 出现 {most_common_count} 次 ({most_common_count/len(scores)*100:.1f}%)")
-    
-    # 2. 分布质量评价
-    mean = np.mean(scores)
-    std = np.std(scores)
-    if std < 5:
-        distribution_quality = "过于集中，建议检查"
-    elif std > 25:
-        distribution_quality = "分散度较大，可能存在评分不一致"
-    else:
-        distribution_quality = "正常"
-    
-    # 3. 维度相关性分析
-    dimension_correlation = {}
-    if detail_cache:
-        innovations = []
-        difficulties = []
-        values = []
-        for d in detail_cache.values():
-            if all(k in d for k in ['innovation', 'difficulty', 'value']):
-                innovations.append(d['innovation'])
-                difficulties.append(d['difficulty'])
-                values.append(d['value'])
-        
-        if len(innovations) > 5:
-            # 计算相关系数
-            try:
-                dimension_correlation['innovation_difficulty'] = round(np.corrcoef(innovations, difficulties)[0,1], 3)
-                dimension_correlation['innovation_value'] = round(np.corrcoef(innovations, values)[0,1], 3)
-                dimension_correlation['difficulty_value'] = round(np.corrcoef(difficulties, values)[0,1], 3)
-            except:
-                pass
-    
-    # 4. 一致性评估（基于方差）- 标准差越大一致性越低
-    consistency_score = max(0, 1 - std / 30)  # 标准差30分时一致性为0，标准差0时一致性为1
-
-    # 5. 双重评估统计分析
-    dual_eval_count = 0
-    dual_eval_unstable_count = 0
-    dual_eval_avg_diff = 0.0
-    dual_eval_max_diff = 0.0
-    unstable_items = []
-
-    if dual_eval_results:
-        dual_eval_count = len(dual_eval_results)
-        diffs = []
-        for pid, result in dual_eval_results.items():
-            diff = result.get('diff', 0)
-            diffs.append(diff)
-            if not result.get('is_stable', True):
-                dual_eval_unstable_count += 1
-                unstable_items.append({"project_id": pid, "diff": diff})
-
-        if diffs:
-            dual_eval_avg_diff = round(np.mean(diffs), 2)
-            dual_eval_max_diff = round(max(diffs), 2)
-
-    return {
-        "is_anomaly": anomaly_type is not None,
-        "anomaly_type": anomaly_type,
-        "anomaly_details": anomaly_details,
-        "consistency_score": round(consistency_score, 3),
-        "distribution_quality": distribution_quality,
-        "dimension_correlation": dimension_correlation,
-        "sample_size": len(scores),
-        # 双重评估统计
-        "dual_eval_count": dual_eval_count,
-        "dual_eval_unstable_count": dual_eval_unstable_count,
-        "dual_eval_unstable_rate": round(dual_eval_unstable_count / dual_eval_count, 3) if dual_eval_count > 0 else 0,
-        "dual_eval_avg_diff": dual_eval_avg_diff,
-        "dual_eval_max_diff": dual_eval_max_diff,
-        "unstable_items": unstable_items[:10] if unstable_items else []  # 最多显示10个
-    }
+def _safe_mean(values: List[float]) -> float:
+    return float(np.mean(values)) if values else 0.0
 
 
-def _generate_quality_charts(
-    quality_scores: Dict[str, dict], 
-    groups: List[ProjectGroup], 
-    year: str,
-    reliability: dict = None
-):
-    """生成质量统计图表并保存
-    
-    Args:
-        quality_scores: 所有项目质量分数
-        groups: 分组列表
-        year: 年份
-        reliability: 可靠性评估结果
-    """
-    try:
-        # 设置中文字体
-        plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial Unicode MS', 'SimHei']
-        plt.rcParams['axes.unicode_minus'] = False
-        
-        fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-        fig.suptitle(f'Grouping Quality Report - {year}', fontsize=14)
-        
-        # 1. 质量分数分布直方图
-        ax1 = axes[0, 0]
-        raw_values = list(quality_scores.values())
-        scores = [v.get("total", 75) if isinstance(v, dict) else v for v in raw_values]
-        if scores:
-            ax1.hist(scores, bins=10, edgecolor='black', alpha=0.7, color='steelblue')
-            ax1.axvline(np.mean(scores), color='red', linestyle='--', label=f'Mean: {np.mean(scores):.1f}')
-            ax1.axvline(np.median(scores), color='green', linestyle='--', label=f'Median: {np.median(scores):.1f}')
-            ax1.set_xlabel('Quality Score')
-            ax1.set_ylabel('Count')
-            ax1.set_title('Quality Score Distribution')
-            ax1.legend()
-        
-        # 2. 各组项目数分布
-        ax2 = axes[0, 1]
-        group_counts = [g.count for g in groups]
-        if group_counts:
-            ax2.bar(range(1, len(group_counts)+1), group_counts, color='coral', alpha=0.7)
-            avg_count = np.mean(group_counts)
-            ax2.axhline(avg_count, color='red', linestyle='--', label=f'Avg: {avg_count:.1f}')
-            ax2.set_xlabel('Group ID')
-            ax2.set_ylabel('Project Count')
-            ax2.set_title('Projects per Group')
-            ax2.legend()
-        
-        # 3. 各组平均质量
-        ax3 = axes[0, 2]
-        group_means = [g.avg_quality for g in groups]
-        if group_means:
-            ax3.bar(range(1, len(group_means)+1), group_means, color='mediumseagreen', alpha=0.7)
-            avg_quality = np.mean(group_means)
-            ax3.axhline(avg_quality, color='red', linestyle='--', label=f'Avg: {avg_quality:.1f}')
-            ax3.set_xlabel('Group ID')
-            ax3.set_ylabel('Avg Quality')
-            ax3.set_title('Average Quality per Group')
-            ax3.legend()
-        
-        # 4. 分组质量指标
-        ax4 = axes[1, 0]
-        metrics = ['Quantity\nBalance', 'Quality\nBalance', 'Subject\nPurity', 'Split\nCorrectness']
-        values = [
-            np.mean(group_counts) / max(group_counts) if max(group_counts) > 0 else 1,
-            1 - (np.std(group_means) / 100) if group_means else 1,
-            1 - (len([g for g in groups if '(' in (g.subject_name or '')]) / len(groups)) if groups else 1,
-            1.0
-        ]
-        values = [max(0, min(1, v)) for v in values]
-        
-        x = np.arange(len(metrics))
-        bars = ax4.bar(x, values, color=['steelblue', 'coral', 'mediumseagreen', 'gold'], alpha=0.7)
-        ax4.set_xticks(x)
-        ax4.set_xticklabels(metrics)
-        ax4.set_ylim(0, 1.1)
-        ax4.set_ylabel('Score (0-1)')
-        ax4.set_title('Grouping Quality Metrics')
-        
-        for bar, val in zip(bars, values):
-            ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02, 
-                    f'{val:.2f}', ha='center', va='bottom', fontsize=9)
-        
-        # 5. LLM可靠性评估 - 改为仪表盘风格
-        ax5 = axes[1, 1]
-        if reliability:
-            # 一致性分数进度条
-            consistency = reliability.get('consistency_score', 0.5)
-            is_anomaly = reliability.get('is_anomaly', False)
-            
-            # 绘制进度条背景
-            ax5.barh(['Consistency'], [1], color='lightgray', height=0.4, alpha=0.5)
-            # 绘制实际分数
-            color = 'green' if consistency > 0.7 else 'orange' if consistency > 0.4 else 'red'
-            ax5.barh(['Consistency'], [consistency], color=color, height=0.4)
-            ax5.set_xlim(0, 1)
-            ax5.set_title('LLM Consistency Score')
-            ax5.text(consistency + 0.05, 0, f'{consistency:.2f}', va='center', fontsize=10)
-            
-            # 添加状态标记
-            status = "Normal" if not is_anomaly else "ANOMALY"
-            status_color = 'green' if not is_anomaly else 'red'
-            ax5.text(0.5, -0.3, f'Status: {status}', ha='center', fontsize=9, color=status_color)
-            
-            ax5.set_ylabel('')
-            ax5.set_yticks([])
-        else:
-            ax5.text(0.5, 0.5, "No Reliability Data", ha='center')
-            ax5.axis('off')
-            ax5.set_title('LLM Reliability')
-        
-        # 6. 分数分布柱状图（每5分一段）
-        ax6 = axes[1, 2]
-        if quality_scores:
-            # 提取总分（兼容 dict 和 float）
-            scores = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
-            # 每5分一段
-            ranges = ['0-4', '5-9', '10-14', '15-19', '20-24', '25-29', '30-34', '35-39', 
-                     '40-44', '45-49', '50-54', '55-59', '60-64', '65-69', 
-                     '70-74', '75-79', '80-84', '85-89', '90-94', '95-100']
-            counts = [0] * 20
-            for s in scores:
-                idx = min(int(s // 5), 19)
-                counts[idx] += 1
-            
-            # 只显示有数据的区间
-            nonzero_indices = [i for i, c in enumerate(counts) if c > 0]
-            if nonzero_indices:
-                nonzero_ranges = [ranges[i] for i in nonzero_indices]
-                nonzero_counts = [counts[i] for i in nonzero_indices]
-                
-                colors = plt.cm.RdYlGn(np.linspace(0.2, 0.8, len(nonzero_ranges)))
-                ax6.bar(range(len(nonzero_ranges)), nonzero_counts, color=colors, edgecolor='black', alpha=0.8)
-                ax6.set_xticks(range(len(nonzero_ranges)))
-                ax6.set_xticklabels(nonzero_ranges, rotation=45, ha='right', fontsize=7)
-                ax6.set_ylabel('Count')
-                ax6.set_title('Score Distribution (per 5)')
-            else:
-                ax6.text(0.5, 0.5, "No Data", ha='center')
-                ax6.set_title('Score Distribution')
-        else:
-            ax6.text(0.5, 0.5, "No Data", ha='center')
-            ax6.axis('off')
-            ax6.set_title('Score Distribution')
-        
-        plt.tight_layout()
-        
-        # 保存图片
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"quality_charts_{year}_{timestamp}.png"
-        filepath = os.path.join(DEBUG_DIR, filename)
-        plt.savefig(filepath, dpi=150, bbox_inches='tight')
-        plt.close()
-        
-        print(f"[Grouping] 已保存质量图表: {filename}")
-        
-    except Exception as e:
-        print(f"[Grouping] 生成图表失败: {e}")
-
-
-def _calculate_balance_metrics(
-    groups: List[ProjectGroup],
-    quality_scores: Dict[str, dict]
-) -> dict:
-    """计算分组均衡度指标
-    
-    Args:
-        groups: 分组列表
-        quality_scores: 所有项目的质量分数
-    
-    Returns:
-        {
-            quantity_balance: 数量均衡度 (0-1),
-            quality_balance: 质量均衡度 (0-1),
-            subject_purity: 学科纯度 (0-1),
-            split_correctness: 拆分正确率 (0-1)
-        }
-    """
-    if not groups:
-        return {}
-    
-    # 1. 数量均衡度
-    counts = [g.count for g in groups]
-    avg_count = np.mean(counts)
-    if avg_count > 0:
-        count_deviation = np.mean([abs(c - avg_count) / avg_count for c in counts])
-        quantity_balance = max(0, 1 - count_deviation)
-    else:
-        quantity_balance = 1.0
-    
-    # 2. 质量均衡度
-    group_avgs = [g.avg_quality for g in groups if g.count > 0]
-    if group_avgs:
-        # 从 dict 中提取总分
-        all_totals = [v.get("total", 75) if isinstance(v, dict) else v for v in quality_scores.values()]
-        overall_avg = np.mean(all_totals)
-        quality_deviation = np.mean([abs(ga - overall_avg) / overall_avg for ga in group_avgs])
-        quality_balance = max(0, 1 - quality_deviation)
-    else:
-        quality_balance = 1.0
-    
-    # 3. 学科纯度（每组内同学科项目占比）
-    # 简化：检查组名是否包含拆分标记 (1), (2) 等
-    pure_groups = 0
-    for g in groups:
-        # 如果组名不含 (数字) 标记，认为是纯学科组
-        if not re.search(r'\(\d+\)$', g.subject_name or ""):
-            pure_groups += 1
-    subject_purity = pure_groups / len(groups) if groups else 1.0
-    
-    # 4. 拆分正确率（应拆分的学科是否都拆分了）
-    # 检查 >15 项的学科是否被拆分
-    # 由于拆分后组名会包含 (1), (2)，这里简化处理
-    split_correctness = 1.0  # 简化：假设拆分逻辑正确
-    
-    return {
-        "quantity_balance": round(quantity_balance, 3),
-        "quality_balance": round(quality_balance, 3),
-        "subject_purity": round(subject_purity, 3),
-        "split_correctness": round(split_correctness, 3)
-    }
-
-
-def _load_quality_cache():
-    """从文件加载质量分数缓存"""
-    global _QUALITY_CACHE
-    if os.path.exists(_QUALITY_CACHE_FILE):
-        try:
-            with open(_QUALITY_CACHE_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # 兼容旧格式（float）和新格式（dict）
-                for pid, value in data.items():
-                    if isinstance(value, dict):
-                        _QUALITY_CACHE[pid] = value
-                    else:
-                        # 旧格式：转换为新格式
-                        _QUALITY_CACHE[pid] = {
-                            "total": value,
-                            "innovation": value,
-                            "difficulty": value,
-                            "value": value,
-                            "comment": ""
-                        }
-            print(f"[Grouping] 已加载 {len(_QUALITY_CACHE)} 条质量分数缓存")
-        except Exception as e:
-            print(f"[Grouping] 加载缓存失败: {e}")
-
-
-def _save_quality_cache():
-    """保存质量分数到缓存文件"""
-    try:
-        with open(_QUALITY_CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(_QUALITY_CACHE, f, ensure_ascii=False, indent=2)
-        print(f"[Grouping] 已保存 {len(_QUALITY_CACHE)} 条质量分数到缓存")
-    except Exception as e:
-        print(f"[Grouping] 保存缓存失败: {e}")
-
-
-def _save_grouping_result(year: str, result: GroupingResult, reliability: dict = None):
-    """保存分组结果到文件"""
+def _save_grouping_result(year: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"grouping_{year}_{timestamp}.json"
         filepath = os.path.join(DEBUG_DIR, filename)
-        
-        # 转换 created_at 为字符串
-        created_at = result.created_at
-        if hasattr(created_at, 'strftime'):
-            created_at = created_at.strftime("%Y-%m-%d %H:%M:%S")
-        
-        # 转换为可JSON序列化的格式
+        created_at = result.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(result.created_at, "strftime") else str(result.created_at)
+
         data = {
             "id": result.id,
             "year": result.year,
@@ -528,910 +85,480 @@ def _save_grouping_result(year: str, result: GroupingResult, reliability: dict =
                 "balance_score": result.statistics.balance_score,
                 "avg_projects_per_group": result.statistics.avg_projects_per_group,
                 "avg_quality_per_group": result.statistics.avg_quality_per_group,
-                # 质量分数统计
                 "quality_mean": result.statistics.quality_mean,
                 "quality_median": result.statistics.quality_median,
                 "quality_std": result.statistics.quality_std,
                 "quality_min": result.statistics.quality_min,
                 "quality_max": result.statistics.quality_max,
-                # 分组质量
                 "quantity_balance": result.statistics.quantity_balance,
                 "quality_balance": result.statistics.quality_balance,
                 "subject_purity": result.statistics.subject_purity,
                 "split_correctness": result.statistics.split_correctness,
+                "audit_reminder": result.statistics.audit_reminder,
             },
-            "reliability": reliability or {},
-            "groups": []
+            "meta": meta or {},
+            "groups": [],
         }
-        
-        for g in result.groups:
-            group_data = {
-                "group_id": g.group_id,
-                "subject_code": g.subject_code,
-                "subject_name": g.subject_name,
-                "count": g.count,
-                "avg_quality": g.avg_quality,
-                "max_quality": g.max_quality,
-                "min_quality": g.min_quality,
+
+        for group in result.groups:
+            data["groups"].append({
+                "group_id": group.group_id,
+                "subject_code": group.subject_code,
+                "subject_name": group.subject_name,
+                "count": group.count,
+                "avg_quality": group.avg_quality,
+                "max_quality": group.max_quality,
+                "min_quality": group.min_quality,
                 "projects": [
                     {
-                        "project_id": p.project_id,
-                        "xmmc": p.xmmc,
-                        "xmjj": _clean_html_text(p.xmjj) if p.xmjj else "",
-                        "quality_score": p.quality_score,
-                        "reason": p.reason
+                        "project_id": item.project_id,
+                        "xmmc": item.xmmc,
+                        "xmjj": _clean_html_text(item.xmjj) if item.xmjj else "",
+                        "semantic_score": item.semantic_score,
+                        "quality_score": item.quality_score,
+                        "reason": item.reason,
                     }
-                    for p in g.projects
-                ]
-            }
-            data["groups"].append(group_data)
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
+                    for item in group.projects
+                ],
+            })
+
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        
-        # 同时保存 CSV 格式的汇总表
-        csv_filename = filename.replace('.json', '.csv')
-        csv_filepath = os.path.join(DEBUG_DIR, csv_filename)
-        _save_grouping_result_csv(data, csv_filepath)
-        
-        print(f"[Grouping] 已保存分组结果到 {filename}")
+
         return filename
-    except Exception as e:
-        print(f"[Grouping] 保存分组结果失败: {e}")
-        return None
-
-
-def _save_grouping_result_csv(data: dict, csv_path: str):
-    """保存分组结果到 CSV 文件
-    
-    CSV 包含每个 group 的项目数量和分数汇总，以及每个项目的详细信息
-    """
-    try:
-        import csv
-        
-        with open(csv_path, 'w', encoding='utf-8-sig', newline='') as f:
-            writer = csv.writer(f)
-            
-            # 写入汇总信息
-            writer.writerow(['分组结果汇总'])
-            writer.writerow(['总项目数', data['statistics']['total_projects']])
-            writer.writerow(['总组数', data['statistics']['group_count']])
-            writer.writerow(['平均每组项目数', f"{data['statistics']['avg_projects_per_group']:.2f}"])
-            writer.writerow(['平均质量分', f"{data['statistics']['avg_quality_per_group']:.2f}"])
-            writer.writerow(['质量分均值', f"{data['statistics']['quality_mean']:.2f}"])
-            writer.writerow(['质量分中位数', f"{data['statistics']['quality_median']:.2f}"])
-            writer.writerow(['质量分标准差', f"{data['statistics']['quality_std']:.2f}"])
-            writer.writerow(['质量分范围', f"{data['statistics']['quality_min']:.1f} - {data['statistics']['quality_max']:.1f}"])
-            writer.writerow([])
-            
-            # 写入分组汇总表
-            writer.writerow(['分组汇总'])
-            writer.writerow(['组号', '学科代码', '学科名称', '项目数', '平均分', '最高分', '最低分'])
-            for g in data['groups']:
-                writer.writerow([
-                    g['group_id'],
-                    g['subject_code'],
-                    g['subject_name'],
-                    g['count'],
-                    f"{g['avg_quality']:.1f}",
-                    f"{g['max_quality']:.1f}",
-                    f"{g['min_quality']:.1f}"
-                ])
-            
-            writer.writerow([])
-            
-            # 写入每个项目的详细信息
-            writer.writerow(['项目明细'])
-            writer.writerow(['组号', '学科代码', '学科名称', '项目ID', '项目名称', '质量分', '分组理由'])
-            for g in data['groups']:
-                for p in g['projects']:
-                    writer.writerow([
-                        g['group_id'],
-                        g['subject_code'],
-                        g['subject_name'],
-                        p['project_id'],
-                        p['xmmc'],
-                        f"{p['quality_score']:.1f}" if p['quality_score'] else '',
-                        p.get('reason', '')
-                    ])
-        
-        print(f"[Grouping] 已保存 CSV 到 {csv_path}")
-    except Exception as e:
-        print(f"[Grouping] 保存 CSV 失败: {e}")
-
-
-# 启动时加载缓存
-_load_quality_cache()
+    except Exception as exc:
+        print(f"[Grouping] 保存分组结果失败: {exc}")
+        return ""
 
 
 class GroupingAgent:
-    """分组 Agent (重构版)
-    
-    按学科分组 + 质量评估 + 均衡分配
-    """
-    
+    """语义优先分组 Agent"""
+
     def __init__(
         self,
         llm: Any = None,
+        embedder: Any = None,
         max_per_group: int = 15,
         min_per_group: int = 5,
-        quality_weights: List[float] = None,
-        concurrency: int = 10
+        concurrency: int = 10,
     ):
-        """初始化
-        
-        Args:
-            llm: LLM 客户端
-            max_per_group: 每组目标项目数 (默认15)
-            min_per_group: 每组最少项目数 (默认5，低于此值会合并)
-            quality_weights: 质量权重 [创新性, 技术难度, 应用价值]
-            concurrency: LLM 并发数
-        """
         self.llm = llm or get_default_llm_client()
+        self.embedder = embedder or get_default_embedding_client()
         self.max_per_group = max_per_group
         self.min_per_group = min_per_group
-        self.quality_weights = quality_weights or [1.0, 1.0, 1.0]
         self.concurrency = concurrency
-        
-        self.quality_assessor = QualityAssessor(self.llm)
+
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
-        
-        # 加载学科分类缓存
         self._subject_cache: Dict[str, str] = {}
         self._load_subject_cache()
-    
-    def _load_subject_cache(self):
-        """加载学科分类到内存缓存"""
+
+    def _load_subject_cache(self) -> None:
         try:
-            all_xkfl = self.xkfl_repo.list_all()
-            for x in all_xkfl:
-                if x.get("code") and x.get("name"):
-                    self._subject_cache[x["code"]] = x["name"]
+            for row in self.xkfl_repo.list_all():
+                code = row.get("code")
+                name = row.get("name")
+                if code and name:
+                    self._subject_cache[code] = name
+            if hasattr(self.xkfl_repo, "list_all_zrjj"):
+                for row in self.xkfl_repo.list_all_zrjj():
+                    code = row.get("code")
+                    name = row.get("name")
+                    if code and name:
+                        self._subject_cache[code] = name
             print(f"[Grouping] 已加载 {len(self._subject_cache)} 条学科分类缓存")
-        except Exception as e:
-            print(f"[Grouping] 加载学科缓存失败: {e}")
-    
-    def _get_subject_level(self, code: str) -> int:
-        """判断学科层级
-        
-        - code 长度=2 → 一级学科
-        - code 长度=3 → 二级学科
-        - code 长度≥4 → 三级学科
-        """
-        if not code:
-            return 0
-        length = len(code)
-        if length == 2:
-            return 1
-        elif length == 3:
-            return 2
-        elif length >= 4:
-            return 3
-        return 0
-    
-    def _get_subject_code(self, ssxk1: Optional[str]) -> str:
-        """获取学科代码
-        
-        sys_xkfl 编码规则:
-        - 一级学科: 3位 (如 460, 020)
-        - 二级学科: 5位 (如 46010, 46540)
-        - 三级学科: 7位 (如 4654030)
-        
-        优先使用完整代码，不足时逐级 fallback
-        """
-        if not ssxk1:
-            return "unknown"
-        code = ssxk1.strip()
-        return code if code else "unknown"
-    
+        except Exception as exc:
+            print(f"[Grouping] 加载学科缓存失败: {exc}")
+
     def _get_subject_name(self, code: str) -> str:
-        """获取学科名称
-        
-        学科编码映射 (来自 kjjhxm_wlps.sys_xkfl):
-        - 一级学科: 3位 (如 460, 020)
-        - 二级学科: 5位 (如 46010, 46540)
-        - 三级学科: 7位 (如 4654030)
-        
-        使用缓存查询
-        """
-        if code == "unknown":
-            return "未知学科"
-        
-        # 先尝试精确匹配
+        if not code or code == "unknown":
+            return "未知主题"
         if code in self._subject_cache:
             return self._subject_cache[code]
-        
-        # 尝试逐级缩短匹配
-        for i in range(len(code), 2, -1):
+        for i in range(len(code), 1, -1):
             prefix = code[:i]
             if prefix in self._subject_cache:
                 return self._subject_cache[prefix]
-        
         return code
-    
-    def _merge_small_groups(
-        self, 
-        subject_groups: Dict[str, List[Project]], 
-        min_per_group: int = 3,
-        max_per_group: int = 15
-    ) -> Dict[str, List[Project]]:
-        """合并项目太少的学科组
-        
-        策略：只合并一级学科(前3位)相同的组
-        合并条件：合并后 <= max_per_group
-        
-        Args:
-            subject_groups: 原始学科分组
-            min_per_group: 每组最少项目数
-            max_per_group: 每组最大项目数
-        
-        Returns:
-            合并后的学科分组
-        """
-        # 找出需要合并的小组
-        small_groups = {k: v for k, v in subject_groups.items() if len(v) < min_per_group}
-        
-        if not small_groups:
-            return subject_groups
-        
-        print(f"[Grouping] 发现 {len(small_groups)} 个小组项目过少，开始合并...")
-        
-        # 按项目数排序，先处理最大的
-        sorted_codes = sorted(small_groups.keys(), key=lambda x: len(subject_groups[x]), reverse=True)
-        
-        for code in sorted_codes:
-            projects = subject_groups.get(code)
-            if not projects or len(projects) >= min_per_group:
-                continue  # 可能已被合并
-            
-            # 只尝试用前3位（一级学科）匹配
-            prefix_3 = code[:3] if len(code) >= 3 else code
-            
-            # 找到同样一级学科（前3位）且合并后不超过 max_per_group 的组
-            merged = False
-            for other_code in list(subject_groups.keys()):
-                if other_code == code:
-                    continue
-                other_prefix_3 = other_code[:3] if len(other_code) >= 3 else other_code
-                if other_prefix_3 == prefix_3:
-                    # 一级学科相同，可以合并
-                    other_count = len(subject_groups[other_code])
-                    # 合并条件：合并后不超过 max_per_group
-                    if other_count + len(projects) <= max_per_group:
-                        # 合并
-                        subject_groups[other_code].extend(projects)
-                        del subject_groups[code]
-                        print(f"[Grouping] 合并 {code}({len(projects)}项) → {other_code}(同{prefix_3}学科，合并后{other_count+len(projects)}项)")
-                        merged = True
-                        break
-            
-            if not merged:
-                print(f"[Grouping] 无法合并 {code}({len(projects)}项)，无相近学科或合并后会超过{max_per_group}项")
-        
-        return subject_groups
 
-    def _build_group_keywords(self, groups: Dict[str, List[Project]]) -> Dict[str, set]:
-        """构建大组关键词索引（用于跨学科归并预筛）
-        
-        Args:
-            groups: {学科代码: [项目列表]}
-        
-        Returns:
-            {学科代码: set(关键词集合)}
-        """
-        group_keywords = {}
-        for code, projects in groups.items():
-            keywords = set()
-            for p in projects:
-                if p.gjc:
-                    # 逗号分隔的关键词
-                    for kw in p.gjc.replace('，', ',').split(','):
-                        kw = kw.strip()
-                        if kw:
-                            keywords.add(kw)
-            group_keywords[code] = keywords
-        return group_keywords
+    def _normalize_text(self, text: str) -> str:
+        return re.sub(r"\s+", " ", text or "").strip()
 
-    def _filter_by_keywords(
-        self,
-        project: Project,
-        large_group_keywords: Dict[str, set]
-    ) -> List[str]:
-        """关键词预筛：找出与项目有重叠关键词的大组
-        
-        Args:
-            project: 待归并的项目
-            large_group_keywords: 大组关键词索引
-        
-        Returns:
-            有重叠关键词的大组代码列表
-        """
-        if not project.gjc:
-            return []
-        
-        # 提取项目关键词集合
-        project_keywords = set()
-        for kw in project.gjc.replace('，', ',').split(','):
-            kw = kw.strip()
-            if kw:
-                project_keywords.add(kw)
-        
-        if not project_keywords:
-            return []
-        
-        # 找有重叠的大组
-        candidates = []
-        for code, keywords in large_group_keywords.items():
-            overlap = project_keywords & keywords
-            if len(overlap) >= 1:  # 重叠词 >= 1
-                candidates.append(code)
-        
-        return candidates
+    def _build_project_profile(self, project: Project) -> Dict[str, str]:
+        abstract = _clean_html_text(project.xmjj) if project.xmjj else ""
+        subject_name = self._get_subject_name(project.ssxk1 or "unknown")
+        return {
+            "id": project.id,
+            "xmmc": project.xmmc or "",
+            "xmmc_clean": self._normalize_text(project.xmmc or ""),
+            "xmjj": abstract[:800],
+            "subject_code": project.ssxk1 or "",
+            "subject_name": subject_name,
+            "text": _text_for_project(project),
+        }
 
-    async def _llm_batch_assign_projects(
-        self,
-        projects_with_candidates: List[tuple],
-        large_groups: Dict[str, List[Project]]
-    ) -> List[tuple]:
-        """批量 LLM 判断多个项目归属
-        
-        Args:
-            projects_with_candidates: [(project, candidate_codes, from_code), ...]
-            large_groups: 大组字典
-        
-        Returns:
-            [(project, target_code, from_code), ...] 成功归并的列表
-        """
-        if not projects_with_candidates:
-            return []
-        
-        # 构建候选大组信息
-        large_group_info = {}
-        for code in large_groups.keys():
-            projects = large_groups.get(code, [])
-            keywords = set()
-            for p in projects:
-                if p.gjc:
-                    for kw in p.gjc.replace('，', ',').split(','):
-                        kw = kw.strip()
-                        if kw:
-                            keywords.add(kw)
-            subject_name = self._get_subject_name(code)
-            large_group_info[code] = {
-                "index": list(large_groups.keys()).index(code) + 1,
-                "name": subject_name,
-                "keywords": list(keywords)[:10],
-                "count": len(projects)
-            }
-        
-        # 构建批量 prompt
-        project_items = []
-        for idx, (project, candidate_codes, from_code) in enumerate(projects_with_candidates):
-            clean_xmjj = _clean_html_text(project.xmjj)[:200] if project.xmjj else "无"
-            candidates_detail = []
-            for code in candidate_codes:
-                info = large_group_info.get(code, {})
-                candidates_detail.append(f'{info.get("index", "?")}. {info.get("name", code)}({code})')
-            
-            project_items.append({
-                "idx": idx,
-                "project_id": project.id,
-                "xmmc": project.xmmc[:30],
-                "gjc": project.gjc or '无',
-                "xmjj": clean_xmjj,
-                "candidates": candidates_detail,
-                "candidate_codes": candidate_codes
-            })
-        
-        # 构造批量 prompt
-        items_text = "\n".join([
-            f'项目{i+1}: {p["xmmc"]}\n  关键词: {p["gjc"]}\n  简介: {p["xmjj"]}\n  可选组: {", ".join(p["candidates"])}'
-            for i, p in enumerate(project_items)
-        ])
-        
-        prompt = f"""你是一个学科分类专家。判断以下多个项目各自更适合放入哪个评审组。
+    def _infer_target_group_count(self, project_count: int, max_per_group: int) -> int:
+        if project_count <= 0:
+            return 0
+        base = max(1, math.ceil(project_count / max_per_group))
+        if project_count < 20:
+            return max(2 if project_count > 6 else 1, base)
+        if project_count < 60:
+            return max(3, base)
+        return max(4, base)
 
-{len(project_items)} 个项目：
-{items_text}
+    def _safe_embed(self, texts: List[str]) -> np.ndarray:
+        embeddings = self.embedder.embed_documents(texts)
+        return np.asarray(embeddings, dtype=float)
 
-对每个项目，判断其最适合放入哪个组（只能选一个），或者选择"不合并"（如果项目主题特殊，无法归入任何现有组）。
+    def _kmeans(self, vectors: np.ndarray, n_clusters: int) -> np.ndarray:
+        from src.services.grouping.grouping.cluster import ProjectCluster
+        return ProjectCluster("kmeans").fit_predict(vectors, n_clusters)
 
-输出格式（只需JSON数组，不要其他内容）：
-[
-  {{"idx": 项目序号(从0开始), "decision": "组序号或组代码" | "不合并", "reason": "简要理由"}},
-  ...
-]
-"""
-        
-        try:
-            response = await self.llm.ainvoke(prompt)
-            content = response.content if hasattr(response, 'content') else str(response)
-            
-            # 解析 JSON 数组
-            import json
-            start = content.find('[')
-            end = content.rfind(']') + 1
-            if start >= 0 and end > start:
-                results = json.loads(content[start:end])
-                
-                moves = []
-                for res in results:
-                    idx = res.get("idx", -1)
-                    decision = res.get("decision", "不合并")
-                    reason = res.get("reason", "")
-                    
-                    if idx < 0 or idx >= len(projects_with_candidates):
-                        continue
-                    
-                    project, candidate_codes, from_code = projects_with_candidates[idx]
-                    
-                    if decision == "不合并":
-                        print(f"[Grouping] 项目 {project.xmmc[:20]} → 不合并 ({reason})")
-                        continue
-                    
-                    # 尝试解析组代码
-                    target_code = None
-                    if decision.isdigit():
-                        c_idx = int(decision) - 1
-                        for code in candidate_codes:
-                            info = large_group_info.get(code, {})
-                            if info.get("index", -1) == c_idx + 1:
-                                target_code = code
-                                break
-                    
-                    if not target_code:
-                        for code in candidate_codes:
-                            if str(code) in str(decision) or decision in str(code):
-                                target_code = code
-                                break
-                    
-                    if target_code:
-                        print(f"[Grouping] 项目 {project.xmmc[:20]} → {target_code} ({reason})")
-                        moves.append((project, target_code, from_code))
-                    else:
-                        print(f"[Grouping] 项目 {project.xmmc[:20]} → 无法解析decision '{decision}'，不合并")
-                
-                return moves
-            else:
-                print(f"[Grouping] 批量LLM返回格式错误，不合并任何项目")
-                return []
-        except Exception as e:
-            print(f"[Grouping] 批量LLM判断失败: {e}，不合并任何项目")
-            return []
-
-    async def _merge_cross_disciplinary(
-        self,
-        subject_groups: Dict[str, List[Project]],
-        min_per_group: int = 5
-    ) -> Dict[str, List[Project]]:
-        """跨学科小项目归并
-        
-        策略：
-        1. 关键词预筛：快速过滤出有重叠关键词的大组
-        2. LLM 逐项目判断：精细化归并决策
-        
-        Args:
-            subject_groups: 学科分组（会被原地修改）
-            min_per_group: 每组最小项目数
-        
-        Returns:
-            合并后的学科分组
-        """
-        # 1. 识别小组合大组
-        small_groups = {k: v for k, v in subject_groups.items() if len(v) < min_per_group}
-        large_groups = {k: v for k, v in subject_groups.items() if len(v) >= min_per_group}
-        
-        if not small_groups or not large_groups:
-            print(f"[Grouping] 跨学科归并跳过（小组{len(small_groups)}个，大组{len(large_groups)}个）")
-            return subject_groups
-        
-        print(f"[Grouping] 开始跨学科归并：{len(small_groups)} 个小组，{len(large_groups)} 个大组")
-        
-        # 2. 构建大组关键词索引
-        large_group_keywords = self._build_group_keywords(large_groups)
-        
-        # 3. 收集所有有候选的小项目
-        projects_with_candidates = []  # [(project, candidate_codes, from_code), ...]
-        
-        for small_code, small_projects in small_groups.items():
-            for project in small_projects:
-                # 3.1 关键词预筛得到候选大组
-                candidates = self._filter_by_keywords(project, large_group_keywords)
-                
-                if candidates:
-                    projects_with_candidates.append((project, candidates, small_code))
-        
-        # 3.2 批量 LLM 判断（一次调用处理所有项目）
-        if projects_with_candidates:
-            print(f"[Grouping] 批量LLM判断 {len(projects_with_candidates)} 个跨学科项目...")
-            projects_to_move = await self._llm_batch_assign_projects(projects_with_candidates, large_groups)
-        else:
-            projects_to_move = []
-        
-        # 4. 执行移动
-        for project, target_code, from_code in projects_to_move:
-            subject_groups[from_code].remove(project)
-            subject_groups[target_code].append(project)
-            print(f"[Grouping] 跨学科归并: {project.xmmc[:20]} 从 {from_code} → {target_code}")
-        
-        # 5. 清理空小组
-        subject_groups = {k: v for k, v in subject_groups.items() if v}
-        
-        print(f"[Grouping] 跨学科归并完成，移动 {len(projects_to_move)} 个项目")
-        return subject_groups
-
-    def _group_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
-        """按三级学科分组
-        
-        Returns:
-            {subject_code: [Project, ...]}
-        """
-        subject_groups = defaultdict(list)
-        
-        for project in projects:
-            subject_code = self._get_subject_code(project.ssxk1)
-            subject_groups[subject_code].append(project)
-        
-        return dict(subject_groups)
-    
-    def _clean_html(self, text: Optional[str]) -> str:
-        """清洗 HTML 标签"""
-        if not text:
-            return ""
-        clean = re.sub(r'<[^>]+>', '', text)
-        clean = re.sub(r'\s+', ' ', clean)
-        return clean.strip()
-    
-    async def _assess_quality(
-        self, 
-        projects: List[Project]
-    ) -> Dict[str, float]:
-        """评估所有项目质量（统一分批 + 真正并发）
-        
-        把所有项目统一分批，然后并发处理所有批次
-        """
-        quality_scores = {}
-        
-        # 过滤已缓存且完整（有效comment）的项目
-        uncached = []
-        for p in projects:
-            if p.id in _QUALITY_CACHE:
-                entry = _QUALITY_CACHE[p.id]
-                # 必须是 dict 格式且有 result_a.comment（双重评估之一有效）才算完整
-                if isinstance(entry, dict) and (entry.get("result_a", {}).get("comment") or entry.get("result_b", {}).get("comment")):
-                    quality_scores[p.id] = entry.get("total", 75.0)
-                else:
-                    # 缓存不完整，需要重新评估
-                    uncached.append(p)
-            else:
-                uncached.append(p)
-        
-        if not uncached:
-            return quality_scores
-        
-        # 统一分批（不按学科）
-        batch_size = 10
-        all_batches = []
-        for i in range(0, len(uncached), batch_size):
-            all_batches.append(uncached[i:i+batch_size])
-        
-        print(f"[Grouping] 共 {len(uncached)} 项目，分 {len(all_batches)} 批，并发 {min(10, len(all_batches))} 批")
-        
-        # 真正并发：同时处理所有批次
-        concurrency = 10
-        semaphore = asyncio.Semaphore(concurrency)
-        
-        async def process_batch(batch: List[Project]):
-            async with semaphore:
-                try:
-                    # 批量评估（返回详细分数）
-                    result = await self.quality_assessor.batch_assess(batch)
-                    # 每批完成后立即更新缓存（存储完整评估结果）
-                    detail_cache = self.quality_assessor._detail_cache
-                    for p in batch:
-                        pid = p.id
-                        score = result.get(pid, 75.0)
-                        # 存储完整信息：总分 + 各维度分数 + 双重评估结果
-                        detail = detail_cache.get(pid, {})
-                        _QUALITY_CACHE[pid] = {
-                            "xmmc": p.xmmc,
-                            "xmjj": _clean_html_text(p.xmjj)[:500] if p.xmjj else "",
-                            "total": score,
-                            "innovation": detail.get("innovation", score),
-                            "difficulty": detail.get("difficulty", score),
-                            "value": detail.get("value", score),
-                            # 双重评估结果
-                            "result_a": detail.get("result_a", {}),
-                            "result_b": detail.get("result_b", {}),
-                            "result_c": detail.get("result_c", {}),
-                            "diff": detail.get("diff", 0),
-                            "need_review": detail.get("need_review", False)
-                        }
-                    _save_quality_cache()  # 实时保存
-                    return result
-                except Exception as e:
-                    return {p.id: 75.0 for p in batch}
-        
-        tasks = [process_batch(b) for b in all_batches]
-        results = await asyncio.gather(*tasks)
-        
-        # 合并
-        for r in results:
-            quality_scores.update(r)
-        
-        # 获取详细分数（包含各维度）
-        detail_cache = self.quality_assessor._detail_cache
-        
-        return quality_scores
-    
-    def _balanced_distribute(
-        self,
-        projects: List[Project],
-        quality_scores: Dict[str, float],
-        target_groups: int = None
-    ) -> List[List[Project]]:
-        """质量均衡分配算法
-        
-        目标: 每组数量均衡 + 质量总分均衡
-        方法: 贪心分配（先按质量排序，然后轮转分配）
-        
-        Args:
-            projects: 项目列表
-            quality_scores: {project_id: score}
-            target_groups: 目标分组数（默认根据 max_per_group 计算）
-        
-        Returns:
-            [[Project, ...], ...]
-        """
+    def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
         if not projects:
             return []
-        
-        # 计算目标组数（尽量均衡）
-        if target_groups is None:
-            target_groups = max(1, round(len(projects) / self.max_per_group))
-        
-        # 按质量降序排序
-        sorted_projects = sorted(
-            projects,
-            key=lambda p: quality_scores.get(p.id, 75.0),
-            reverse=True
+        if len(projects) <= max_per_group:
+            return [projects]
+
+        profiles = [self._build_project_profile(project) for project in projects]
+        texts = [profile["text"] or profile["xmmc"] for profile in profiles]
+        vectors = self._safe_embed(texts)
+        n_clusters = self._infer_target_group_count(len(projects), max_per_group)
+        labels = self._kmeans(vectors, n_clusters)
+
+        grouped: Dict[int, List[Tuple[Project, np.ndarray]]] = defaultdict(list)
+        for idx, label in enumerate(labels):
+            grouped[int(label)].append((projects[idx], vectors[idx]))
+
+        clusters = [members for _, members in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))]
+
+        flattened: List[List[Project]] = []
+        for members in clusters:
+            flattened.append([project for project, _ in members])
+
+        return self._rebalance_clusters(flattened, max_per_group)
+
+    def _rebalance_clusters(self, clusters: List[List[Project]], max_per_group: int) -> List[List[Project]]:
+        if not clusters:
+            return clusters
+
+        changed = True
+        while changed:
+            changed = False
+            clusters = [cluster for cluster in clusters if cluster]
+
+            # 拆分过大簇
+            for idx, cluster in list(enumerate(clusters)):
+                if len(cluster) <= max_per_group:
+                    continue
+                split_count = max(2, math.ceil(len(cluster) / max_per_group))
+                profiles = [self._build_project_profile(project) for project in cluster]
+                vectors = self._safe_embed([profile["text"] or profile["xmmc"] for profile in profiles])
+                labels = self._kmeans(vectors, split_count)
+                buckets: Dict[int, List[Project]] = defaultdict(list)
+                for item_idx, label in enumerate(labels):
+                    buckets[int(label)].append(cluster[item_idx])
+                replacement = [bucket for _, bucket in sorted(buckets.items(), key=lambda item: (-len(item[1]), item[0]))]
+                clusters[idx:idx + 1] = replacement
+                changed = True
+                break
+
+            if changed:
+                continue
+
+            # 合并过小簇
+            small_indices = [idx for idx, cluster in enumerate(clusters) if 0 < len(cluster) < self.min_per_group]
+            if not small_indices:
+                break
+
+            for idx in small_indices:
+                if idx >= len(clusters):
+                    continue
+                cluster = clusters[idx]
+                if not cluster:
+                    continue
+                target_idx = None
+                best_similarity = -1.0
+                current_vec = self._safe_embed([self._build_project_profile(project)["text"] or project.xmmc for project in cluster]).mean(axis=0)
+                for other_idx, other_cluster in enumerate(clusters):
+                    if other_idx == idx or not other_cluster:
+                        continue
+                    if len(other_cluster) + len(cluster) > max_per_group:
+                        continue
+                    other_vec = self._safe_embed([self._build_project_profile(project)["text"] or project.xmmc for project in other_cluster]).mean(axis=0)
+                    denom = (np.linalg.norm(current_vec) * np.linalg.norm(other_vec)) + 1e-8
+                    similarity = float(np.dot(current_vec, other_vec) / denom)
+                    if similarity > best_similarity:
+                        best_similarity = similarity
+                        target_idx = other_idx
+                if target_idx is not None:
+                    clusters[target_idx].extend(cluster)
+                    clusters[idx] = []
+                    changed = True
+                    break
+
+        return [cluster for cluster in clusters if cluster]
+
+    async def _select_group_title(self, cluster: List[Project]) -> Tuple[str, str]:
+        subject_codes = [project.ssxk1 for project in cluster if project.ssxk1]
+        subject_name = ""
+        if subject_codes:
+            common = Counter(subject_codes).most_common(1)[0][0]
+            subject_name = self._get_subject_name(common)
+
+        text_samples = []
+        for project in cluster[:5]:
+            text_samples.append(_text_for_project(project)[:180])
+
+        prompt = f"""你是项目分组专家。请根据以下项目，给这个组一个简短的中文主题名称，并用一句话概括这一组在做什么。
+
+项目样例：
+{chr(10).join(f'- {sample}' for sample in text_samples)}
+
+请严格输出 JSON：
+{{"title":"...","summary":"..."}}
+"""
+
+        title = subject_name or "综合主题"
+        summary = "按项目语义自动聚合形成的分组"
+        try:
+            response = await self.llm.ainvoke(prompt)
+            content = response.content if hasattr(response, "content") else str(response)
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start >= 0 and end > start:
+                payload = json.loads(content[start:end])
+                title = (payload.get("title") or title or "综合主题").strip()
+                summary = (payload.get("summary") or summary).strip()
+        except Exception:
+            pass
+
+        return title or "综合主题", summary
+
+    def _build_group_summary(self, cluster: List[Project], title: str) -> GroupSummary:
+        themes = []
+        for project in cluster[:3]:
+            themes.append(project.xmmc[:12])
+        return GroupSummary(
+            count=len(cluster),
+            avg_score=0.0,
+            main_themes=themes or [title],
         )
-        
-        # 初始化分组
-        groups = [[] for _ in range(target_groups)]
-        group_scores = [0.0] * target_groups
-        
-        # 贪心分配：总是加入分数最低的组
-        for p in sorted_projects:
-            min_idx = group_scores.index(min(group_scores))
-            groups[min_idx].append(p)
-            group_scores[min_idx] += quality_scores.get(p.id, 75.0)
-        
+
+    async def _build_groups(self, clusters: List[List[Project]]) -> List[ProjectGroup]:
+        groups: List[ProjectGroup] = []
+        for index, cluster in enumerate(clusters, start=1):
+            title, summary = await self._select_group_title(cluster)
+            project_items = []
+            scores = []
+            for project in cluster:
+                score = 1.0
+                scores.append(score)
+                project_items.append(
+                    ProjectInGroup(
+                        project_id=project.id,
+                        xmmc=project.xmmc,
+                        xmjj=project.xmjj or "",
+                        subject_code=project.ssxk1,
+                        subject_name=self._get_subject_name(project.ssxk1 or "unknown"),
+                        semantic_score=score,
+                        quality_score=score,
+                        reason=summary or f"语义归入：{title}",
+                    )
+                )
+
+            groups.append(
+                ProjectGroup(
+                    group_id=index,
+                    subject_code=cluster[0].ssxk1 if cluster and cluster[0].ssxk1 else None,
+                    subject_name=title,
+                    projects=project_items,
+                    count=len(cluster),
+                    avg_quality=round(_safe_mean(scores), 2),
+                    max_quality=round(max(scores), 2) if scores else 0.0,
+                    min_quality=round(min(scores), 2) if scores else 0.0,
+                    summary=self._build_group_summary(cluster, title),
+                )
+            )
+
         return groups
-    
-    async def group_projects(
-        self,
-        request: GroupingRequest
-    ) -> GroupingResult:
-        """执行项目分组 (重构版)
-        
-        流程：
-        1. 获取项目列表
-        2. 按三级学科初步分组
-        3. 数量≤15 → 保留原分组
-        4. 数量>30 → 质量评估 + 均衡分配
-        5. 合并结果
-        """
+
+    def _balance_metrics(self, groups: List[ProjectGroup]) -> Dict[str, float]:
+        if not groups:
+            return {
+                "quantity_balance": 1.0,
+                "quality_balance": 1.0,
+                "subject_purity": 1.0,
+                "split_correctness": 1.0,
+            }
+
+        counts = [group.count for group in groups]
+        avg_count = _safe_mean(counts)
+        quantity_balance = 1.0 if not counts or avg_count == 0 else max(0.0, 1 - (np.std(counts) / (avg_count + 1e-8)))
+
+        group_sizes = [group.avg_quality for group in groups if group.count > 0]
+        quality_balance = 1.0 if not group_sizes else max(0.0, 1 - np.std(group_sizes))
+
+        subject_purity_scores = []
+        for group in groups:
+            codes = [item.subject_code for item in group.projects if item.subject_code]
+            if not codes:
+                continue
+            dominant = Counter(codes).most_common(1)[0][1]
+            subject_purity_scores.append(dominant / len(codes))
+        subject_purity = _safe_mean(subject_purity_scores) if subject_purity_scores else 1.0
+
+        split_correctness = 1.0
+        return {
+            "quantity_balance": round(float(quantity_balance), 3),
+            "quality_balance": round(float(quality_balance), 3),
+            "subject_purity": round(float(subject_purity), 3),
+            "split_correctness": round(float(split_correctness), 3),
+        }
+
+    async def group_projects(self, request: GroupingRequest) -> GroupingResult:
         start_time = time.time()
-        
-        # 更新参数
         self.max_per_group = request.max_per_group
-        
-        # 1. 获取项目列表
-        limit = request.limit
+
         projects = self.project_repo.get_projects_by_year(
             year=request.year,
             category=request.category,
-            limit=limit
+            limit=request.limit,
         )
-        
         if not projects:
             raise ValueError(f"没有找到 {request.year} 年度的项目")
-        
-        # 过滤掉没有学科代码的项目
-        original_count = len(projects)
-        projects = [p for p in projects if p.ssxk1 and p.ssxk1.strip()]
-        filtered_count = original_count - len(projects)
-        
-        print(f"[Grouping] 获取到 {original_count} 个项目，过滤 {filtered_count} 个无学科代码项目")
-        
-        # 2. 按学科初步分组
-        subject_groups = self._group_by_subject(projects)
-        print(f"[Grouping] 按学科分为 {len(subject_groups)} 个学科组")
-        
-        # 2.1 合并项目太少的学科组（同学科小合并）
-        subject_groups = self._merge_small_groups(subject_groups, self.min_per_group, self.max_per_group)
 
-        # 2.2 跨学科小项目归并（关键词预筛 + LLM 逐项目判断）
-        subject_groups = await self._merge_cross_disciplinary(subject_groups, self.min_per_group)
+        projects = [project for project in projects if project.xmmc and project.xmmc.strip()]
+        if not projects:
+            raise ValueError("没有可用于分组的项目名称")
 
-        # 3. 先对所有项目统一评估质量（只评估一次，并发批量）
-        print(f"[Grouping] 开始评估所有项目质量...")
-        all_quality_scores = await self._assess_quality(projects)
-        print(f"[Grouping] 质量评估完成")
-        
-        # 4. 处理每个学科
-        all_groups = []  # 最终分组
-        
-        for subject_code, subject_projects in subject_groups.items():
-            count = len(subject_projects)
-            subject_name = self._get_subject_name(subject_code)
-            
-            # 获取该学科的质量分数
-            subject_quality = {p.id: all_quality_scores.get(p.id, 75.0) for p in subject_projects}
-            
-            if count > self.max_per_group:
-                # 数量>max，需要拆分
-                print(f"[Grouping] 学科 {subject_code}({subject_name}) 有 {count} 项，超过 {self.max_per_group}，拆分")
-                
-                # 计算拆分后的组数（尽量均衡）
-                target_groups = max(1, round(count / self.max_per_group))
-                
-                # 均衡分配
-                split_groups = self._balanced_distribute(subject_projects, subject_quality, target_groups)
-                
-                for i, group in enumerate(split_groups):
-                    all_groups.append({
-                        "subject_code": f"{subject_code}_{i+1}",
-                        "subject_name": f"{subject_name}({i+1})",
-                        "projects": group,
-                        "need_split": True
-                    })
-            else:
-                # 数量≤max，直接保留
-                all_groups.append({
-                    "subject_code": subject_code,
-                    "subject_name": subject_name,
-                    "projects": subject_projects,
-                    "need_split": False
-                })
-        
-        # 4. 构建结果
-        result_groups = []
-        group_id = 1
-        
-        for g in all_groups:
-            projects_in_group = g["projects"]
-            
-            # 计算质量分数
-            scores = []
-            for p in projects_in_group:
-                entry = _QUALITY_CACHE.get(p.id, {"total": 75.0})
-                score = entry.get("total", 75.0) if isinstance(entry, dict) else entry
-                scores.append(score)
-            
-            # 构建 ProjectInGroup
-            project_items = [
-                ProjectInGroup(
-                    project_id=p.id,
-                    xmmc=p.xmmc,
-                    xmjj=p.xmjj or "",
-                    quality_score=_QUALITY_CACHE.get(p.id, {"total": 75.0}).get("total", 75.0) if isinstance(_QUALITY_CACHE.get(p.id), dict) else _QUALITY_CACHE.get(p.id, 75.0),
-                    reason=f"学科: {g['subject_name']}"
-                )
-                for p in projects_in_group
-            ]
-            
-            # 统计信息
-            avg_score = np.mean(scores) if scores else 0
-            max_score = max(scores) if scores else 0
-            min_score = min(scores) if scores else 0
-            
-            result_groups.append(
-                ProjectGroup(
-                    group_id=group_id,
-                    subject_code=g["subject_code"],
-                    subject_name=g["subject_name"],
-                    projects=project_items,
-                    count=len(projects_in_group),
-                    avg_quality=round(avg_score, 2),
-                    max_quality=round(max_score, 2),
-                    min_quality=round(min_score, 2)
-                )
-            )
-            group_id += 1
-        
-        # 5. 统计信息
-        total_projects = len(projects)
-        total_groups = len(result_groups)
-        
-        # 构建当前分组的项目质量分数（只包含本次分组的项目）
-        current_quality = {p.id: _QUALITY_CACHE.get(p.id, {"total": 75.0}) for p in projects}
-        
-        # 计算质量分数统计（只统计当前分组的项目）
-        quality_stats = _calculate_quality_stats(current_quality)
-        balance_metrics = _calculate_balance_metrics(result_groups, current_quality)
-        
-        # 获取详细分数缓存并评估可靠性（只评估当前分组项目）
-        detail_cache = self.quality_assessor._detail_cache if hasattr(self.quality_assessor, '_detail_cache') else {}
-        dual_eval_results = self.quality_assessor._dual_eval_results if hasattr(self.quality_assessor, '_dual_eval_results') else {}
-        reliability = _assess_reliability(current_quality, detail_cache, dual_eval_results)
-        
-        # 打印可靠性报告
-        print(f"[Grouping] 可靠性评估:")
-        print(f"  - 样本量: {reliability.get('sample_size', 0)}")
-        print(f"  - 是否异常: {reliability.get('is_anomaly', False)}")
-        if reliability.get('anomaly_details'):
-            for d in reliability.get('anomaly_details', []):
-                print(f"  - {d}")
-        print(f"  - 分布质量: {reliability.get('distribution_quality', 'N/A')}")
-        print(f"  - 一致性分数: {reliability.get('consistency_score', 'N/A')}")
-        if reliability.get('dimension_correlation'):
-            print(f"  - 维度相关性: {reliability['dimension_correlation']}")
-        # 双重评估统计
-        if reliability.get('dual_eval_count', 0) > 0:
-            print(f"  - 双重评估: {reliability.get('dual_eval_count', 0)} 个项目")
-            print(f"    - 不稳定: {reliability.get('dual_eval_unstable_count', 0)} 个 ({reliability.get('dual_eval_unstable_rate', 0)*100:.1f}%)")
-            print(f"    - 平均差异: {reliability.get('dual_eval_avg_diff', 0):.1f} 分")
-            print(f"    - 最大差异: {reliability.get('dual_eval_max_diff', 0):.1f} 分")
-        
-        # 综合均衡分数
+        print(f"[Grouping] 获取到 {len(projects)} 个项目，开始语义分组")
+
+        clusters = self._cluster_projects(projects, self.max_per_group)
+        print(f"[Grouping] 初步生成 {len(clusters)} 个语义簇")
+
+        groups = await self._build_groups(clusters)
+
+        counts = [group.count for group in groups]
+        avg_scores = [group.avg_quality for group in groups]
+        metrics = self._balance_metrics(groups)
         balance_score = (
-            balance_metrics.get("quantity_balance", 0.85) * 0.3 +
-            balance_metrics.get("quality_balance", 0.85) * 0.4 +
-            balance_metrics.get("subject_purity", 0.85) * 0.3
+            metrics["quantity_balance"] * 0.4
+            + metrics["quality_balance"] * 0.2
+            + metrics["subject_purity"] * 0.4
         )
-
-        # 计算是否需要人工复审提醒
-        audit_reminder = None
-        if _eval_count >= AUDIT_SAMPLE_THRESHOLD:
-            audit_reminder = (
-                f"建议人工复审：已累计评估 {_eval_count} 个项目，"
-                f"请随机抽取 {AUDIT_SAMPLE_SIZE} 个项目进行人工复核，"
-                f"对比 LLM 评分与人工判断的一致性。"
-            )
-            print(f"[Grouping] 提醒: {audit_reminder}")
 
         stats = GroupingStatistics(
-            total_projects=total_projects,
-            group_count=total_groups,
+            total_projects=len(projects),
+            group_count=len(groups),
             balance_score=round(balance_score, 3),
-            avg_projects_per_group=round(total_projects / total_groups, 2) if total_groups else 0,
-            avg_quality_per_group=round(np.mean([g.avg_quality for g in result_groups]), 2) if result_groups else 0,
-            # 质量分数统计
-            quality_mean=quality_stats.get("mean"),
-            quality_median=quality_stats.get("median"),
-            quality_std=quality_stats.get("std"),
-            quality_min=quality_stats.get("min"),
-            quality_max=quality_stats.get("max"),
-            # 分组质量
-            quantity_balance=balance_metrics.get("quantity_balance"),
-            quality_balance=balance_metrics.get("quality_balance"),
-            subject_purity=balance_metrics.get("subject_purity"),
-            split_correctness=balance_metrics.get("split_correctness"),
-            # 人工复审提醒
-            audit_reminder=audit_reminder
+            avg_projects_per_group=round(_safe_mean(counts), 2),
+            avg_quality_per_group=round(_safe_mean(avg_scores), 2),
+            quality_mean=round(_safe_mean(avg_scores), 2) if avg_scores else 0.0,
+            quality_median=round(float(np.median(avg_scores)), 2) if avg_scores else 0.0,
+            quality_std=round(float(np.std(avg_scores)), 2) if avg_scores else 0.0,
+            quality_min=round(float(min(avg_scores)), 2) if avg_scores else 0.0,
+            quality_max=round(float(max(avg_scores)), 2) if avg_scores else 0.0,
+            quantity_balance=metrics["quantity_balance"],
+            quality_balance=metrics["quality_balance"],
+            subject_purity=metrics["subject_purity"],
+            split_correctness=metrics["split_correctness"],
+            audit_reminder=None,
         )
-        
+
         result = GroupingResult(
             id=str(uuid.uuid4()),
             year=request.year,
-            groups=result_groups,
+            groups=groups,
             statistics=stats,
-            created_at=time.strftime("%Y-%m-%d %H:%M:%S")
+            created_at=datetime.now(),
         )
-        
-        # 保存分组结果到文件
-        _save_grouping_result(request.year, result, reliability)
 
-        # 生成质量统计图表（只统计当前分组的项目）
-        _generate_quality_charts(current_quality, result_groups, request.year, reliability)
-        
-        # 保存质量分数缓存
-        _save_quality_cache()
-        
+        _save_grouping_result(request.year, result, meta={
+            "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
+            "input": {
+                "year": request.year,
+                "category": request.category,
+                "max_per_group": request.max_per_group,
+                "limit": request.limit,
+            },
+        })
+
         elapsed = time.time() - start_time
-        print(f"[Grouping] 完成，用时 {elapsed:.2f}秒，分组 {total_groups} 个")
-        
+        print(f"[Grouping] 完成，用时 {elapsed:.2f} 秒，分组 {len(groups)} 个")
         return result
+
+    async def match_experts(self, group: ProjectGroup, group_id: int, request: Any):
+        matching_agent = MatchingAgent(self.llm, self.embedder)
+        return await matching_agent.match_experts(group, group_id, request)
+
+    async def full_grouping(self, request: FullGroupingRequest) -> FullGroupingResult:
+        grouping_request = GroupingRequest(
+            year=request.year,
+            category=request.category,
+            max_per_group=request.max_per_group,
+            strategy=GroupingStrategy.SEMANTIC,
+        )
+        grouping_result = await self.group_projects(grouping_request)
+
+        matches = {}
+        warnings: List[str] = []
+        for group in grouping_result.groups:
+            matching_request = request.model_copy(update={"group_id": group.group_id}) if hasattr(request, "model_copy") else None
+            from src.common.models.grouping import MatchingRequest
+            mr = MatchingRequest(
+                group_id=group.group_id,
+                experts_per_project=request.experts_per_project,
+                min_experts_per_group=request.min_experts_per_group,
+                avoid_relations=request.avoid_relations,
+                max_reviews_per_expert=request.max_reviews_per_expert,
+            )
+            match_result = await self.match_experts(group, group.group_id, mr)
+            matches[group.group_id] = match_result
+            warnings.extend(match_result.warnings)
+
+        total_projects = grouping_result.statistics.total_projects
+        total_groups = grouping_result.statistics.group_count
+        total_experts = set()
+        avg_match_score = 0.0
+        match_count = 0
+
+        for match_result in matches.values():
+            for assignment in match_result.matches:
+                for expert in assignment.experts:
+                    total_experts.add(expert.expert_id)
+                    avg_match_score += expert.match_score
+                    match_count += 1
+
+        if match_count > 0:
+            avg_match_score /= match_count
+
+        statistics = FullStatistics(
+            total_projects=total_projects,
+            total_groups=total_groups,
+            total_experts=len(total_experts),
+            avg_match_score=avg_match_score,
+            balance_score=grouping_result.statistics.balance_score,
+        )
+
+        report = (
+            f"分组与匹配完成。共{total_projects}个项目分成{total_groups}组，"
+            f"平均每组{total_projects // max(1, total_groups)}个项目。"
+        )
+        if total_experts:
+            report += f" 共涉及{len(total_experts)}位专家。"
+        if avg_match_score > 0:
+            report += f" 平均匹配度{avg_match_score:.1f}分。"
+        if warnings:
+            report += f" 检测到{len(warnings)}条提示。"
+
+        return FullGroupingResult(
+            id=f"full_{grouping_result.id}",
+            year=request.year,
+            category=request.category,
+            groups=grouping_result.groups,
+            matches=matches,
+            statistics=statistics,
+            report=report,
+        )

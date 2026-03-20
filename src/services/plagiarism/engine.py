@@ -136,9 +136,17 @@ class ComparisonEngine:
                     excluded_ranges.get(doc_a, []),
                     excluded_ranges.get(doc_b, []),
                 )
+
+                text_a = doc_texts.get(doc_a, "")
+                text_b = doc_texts.get(doc_b, "")
                 
                 # 合并相邻/重叠的区间
                 merged_ranges = self._merge_continuous_ranges(continuous_ranges)
+
+                merged_ranges = [
+                    self._expand_continuous_range(r, text_a, text_b)
+                    for r in merged_ranges
+                ]
                 
                 # 转换为 Match 对象
                 matches = self._ranges_to_matches(
@@ -218,14 +226,14 @@ class ComparisonEngine:
         ngrams_a = doc_ngrams[doc_a]
         ngrams_b = doc_ngrams[doc_b]
         
-        # 构建 doc_b 的指纹位置映射
-        fp_to_positions_b: Dict[int, List[int]] = defaultdict(list)
-        for ng in ngrams_b:
+        # 构建 doc_b 的指纹到 N-gram 下标映射
+        fp_to_indices_b: Dict[int, List[int]] = defaultdict(list)
+        for idx_b, ng in enumerate(ngrams_b):
             fp = self._generate_fingerprint(ng.text)
-            fp_to_positions_b[fp].append(ng.position)
+            fp_to_indices_b[fp].append(idx_b)
         
         # 查找所有匹配的指纹位置对
-        matched_positions: List[Tuple[int, int]] = []  # [(pos_a, pos_b), ...]
+        matched_positions: List[Tuple[int, int]] = []  # [(idx_a, idx_b), ...]
         
         for i, ng in enumerate(ngrams_a):
             fp = self._generate_fingerprint(ng.text)
@@ -234,19 +242,26 @@ class ComparisonEngine:
             if self._is_position_excluded(ng.position, excluded_a):
                 continue
             
-            if fp in fp_to_positions_b and doc_b in fingerprint_index.get(fp, {}):
-                for pos_b in fp_to_positions_b[fp]:
-                    # 检查 doc_b 的位置是否在排除区间内
+            if fp in fp_to_indices_b and doc_b in fingerprint_index.get(fp, {}):
+                for idx_b in fp_to_indices_b[fp]:
+                    # 检查 doc_b 的字符位置是否在排除区间内
+                    pos_b = ngrams_b[idx_b].position
                     if not self._is_position_excluded(pos_b, excluded_b):
-                        matched_positions.append((i, pos_b))
+                        matched_positions.append((i, idx_b))
                         break  # 只取第一个匹配位置
         
         # 使用滑动窗口检测连续匹配
         continuous_ranges = self._winnowing_window(
             matched_positions,
             ngrams_a,
+            ngrams_b,
             self.min_continuous_match,
         )
+
+        continuous_ranges = [
+            r
+            for r in continuous_ranges
+        ]
         
         return continuous_ranges
     
@@ -254,6 +269,7 @@ class ComparisonEngine:
         self,
         matched_positions: List[Tuple[int, int]],
         ngrams_a: List[NGram],
+        ngrams_b: List[NGram],
         min_continuous: int,
     ) -> List[ContinuousMatch]:
         """
@@ -282,44 +298,86 @@ class ComparisonEngine:
         window_size = self.winnowing_window
         
         i = 0
-        while i <= len(sorted_matches) - min_continuous:
-            # 检查从 i 开始的连续 min_continuous 个位置是否"连续"
-            # "连续"意味着：位置差值 <= 滑动窗口大小
-            window = sorted_matches[i:i + min_continuous]
-            
-            # 检查窗口内是否所有位置都来自 doc_a 的连续位置
-            pos_a_list = [m[0] for m in window]
-            pos_b_list = [m[1] for m in window]
-            
-            # 计算相邻位置的间隔
-            gaps_a = [pos_a_list[j+1] - pos_a_list[j] for j in range(len(pos_a_list) - 1)]
-            gaps_b = [pos_b_list[j+1] - pos_b_list[j] for j in range(len(pos_b_list) - 1)]
-            
-            # 如果所有间隔都 <= window_size，认为是连续匹配
-            max_gap_a = max(gaps_a) if gaps_a else 0
-            max_gap_b = max(gaps_b) if gaps_b else 0
-            
-            if max_gap_a <= window_size and max_gap_b <= window_size:
-                # 找到一个连续匹配区间
+        while i < len(sorted_matches):
+            run = [sorted_matches[i]]
+            j = i + 1
+
+            while j < len(sorted_matches):
+                prev_a, prev_b = run[-1]
+                curr_a, curr_b = sorted_matches[j]
+
+                gap_a = curr_a - prev_a
+                gap_b = curr_b - prev_b
+
+                if gap_a <= window_size and gap_b <= window_size:
+                    run.append(sorted_matches[j])
+                    j += 1
+                    continue
+                break
+
+            if len(run) >= min_continuous:
+                pos_a_list = [m[0] for m in run]
+                pos_b_list = [m[1] for m in run]
                 start_a = ngrams_a[pos_a_list[0]].position
                 end_a = ngrams_a[pos_a_list[-1]].position + self.ngram_size
-                start_b = pos_b_list[0]
-                end_b = pos_b_list[-1] + self.ngram_size
-                
+                start_b = ngrams_b[pos_b_list[0]].position
+                end_b = ngrams_b[pos_b_list[-1]].position + self.ngram_size
+
                 ranges.append(ContinuousMatch(
                     start_a=start_a,
                     end_a=end_a,
                     start_b=start_b,
                     end_b=end_b,
-                    match_count=len(window),
+                    match_count=len(run),
                 ))
-                
-                # 跳过这个窗口，继续查找下一个
-                i += min_continuous
-            else:
-                i += 1
+
+            i = j if len(run) > 1 else i + 1
         
         return ranges
+
+    def _expand_continuous_range(
+        self,
+        match_range: ContinuousMatch,
+        text_a: str,
+        text_b: str,
+    ) -> ContinuousMatch:
+        """把锚点片段向两侧扩展到更自然的边界。"""
+        boundary_chars = '。！？；;\n\r'
+
+        def expand(text: str, start: int, end: int) -> Tuple[int, int]:
+            if not text:
+                return start, end
+
+            start = max(0, min(start, len(text)))
+            end = max(start, min(end, len(text)))
+
+            left_steps = 0
+            while start > 0 and left_steps < max_expand:
+                if text[start - 1] in boundary_chars:
+                    break
+                start -= 1
+                left_steps += 1
+
+            right_steps = 0
+            while end < len(text) and right_steps < max_expand:
+                current = text[end]
+                end += 1
+                right_steps += 1
+                if current in boundary_chars:
+                    break
+
+            return start, end
+
+        start_a, end_a = expand(text_a, match_range.start_a, match_range.end_a)
+        start_b, end_b = expand(text_b, match_range.start_b, match_range.end_b)
+
+        return ContinuousMatch(
+            start_a=start_a,
+            end_a=end_a,
+            start_b=start_b,
+            end_b=end_b,
+            match_count=match_range.match_count,
+        )
     
     def _is_position_excluded(
         self,
@@ -456,7 +514,7 @@ class ComparisonEngine:
         
         # 确保不越界
         actual_end = min(end_b, len(text_b))
-        
+
         # 向后扩展到句子边界（句号、换行等）
         while actual_end < len(text_b):
             c = text_b[actual_end]
