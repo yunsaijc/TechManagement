@@ -42,6 +42,19 @@ class TemplatePreFilter:
         self._table_row_pattern = self.template_filter._table_compiled[0] if self.template_filter._table_compiled else None
         self._vertical_bar_pattern = self.template_filter._table_compiled[1] if len(self.template_filter._table_compiled) > 1 else None
         
+        # 前置过滤专用的额外模式
+        import re
+        self._prefilter_patterns = [
+            re.compile(r'^填写说明'),
+            re.compile(r'^一{1,3}、|^二{1,3}、|^三{1,3}、'),  # 一、二、三
+            re.compile(r'^\d+[、\.]+\s*\S+'),  # 1、项目  2. 内容
+            re.compile(r'^进度安排'),
+            re.compile(r'^预期成果'),
+            re.compile(r'^省级财政'),
+            re.compile(r'^项目名称'),
+            re.compile(r'^申报单位'),
+        ]
+        
     def mark_excluded_ranges(
         self, 
         sentences: List[Sentence],
@@ -93,6 +106,21 @@ class TemplatePreFilter:
                     end=sent.end_pos,
                     reason="heading",
                 ))
+                continue
+            
+            # 前置过滤专用模板模式
+            matched_prefilter = False
+            for pattern in self._prefilter_patterns:
+                if pattern.match(sent.text.strip()):
+                    excluded.append(ExcludedRange(
+                        start=sent.start_pos,
+                        end=sent.end_pos,
+                        reason="prefilter_template",
+                    ))
+                    matched_prefilter = True
+                    break
+            
+            if matched_prefilter:
                 continue
             
             # 表格行标记

@@ -284,7 +284,8 @@ class FieldExtractor:
                         if isinstance(first_item, dict):
                             rec_texts = first_item.get("rec_texts") or first_item.get("text") or []
                             if isinstance(rec_texts, list):
-                                trans = rec_texts[0] if rec_texts else ""
+                                # 拼接所有文本行（处理 OCR 合并到一个 box 但包含多行文字的情况）
+                                trans = "".join(rec_texts) if rec_texts else ""
                             else:
                                 trans = str(rec_texts).strip()
                         # 旧格式常见: [[box], ('text', score)]
@@ -296,7 +297,7 @@ class FieldExtractor:
                         ):
                             trans = str(first_item[1][0]).strip()
                         
-                        logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:20]}...")
+                        logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:30]}...")
                 except Exception as e:
                     logger.warning(f"[FieldExtractor] OCR 识别失败: {e}")
 

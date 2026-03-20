@@ -62,8 +62,13 @@ class PlagiarismAgent:
         self.tokenizer = SentenceTokenizer()
         self.template_filter = TemplateFilter()
         self.template_prefilter = TemplatePreFilter(template_filter=self.template_filter)
-        # 使用更长的 N-gram (8-gram) 减少碎片化，连续匹配阈值 3
-        self.comparison_engine = ComparisonEngine(min_continuous_match=3, ngram_size=8)
+        # Winnowing 参数优化：减少碎片化
+        self.comparison_engine = ComparisonEngine(
+            min_continuous_match=5,
+            ngram_size=8,
+            winnowing_window=8,
+            min_match_length=30,
+        )
         self.result_aggregator = ResultAggregator(section_extractor=self.section_extractor)
 
     async def check(

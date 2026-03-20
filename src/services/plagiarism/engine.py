@@ -62,9 +62,9 @@ class ComparisonEngine:
     def __init__(
         self,
         min_continuous_match: int = 5,
-        ngram_size: int = 5,
-        winnowing_window: int = 4,
-        min_match_length: int = 20,
+        ngram_size: int = 8,
+        winnowing_window: int = 8,
+        min_match_length: int = 30,
     ):
         """
         初始化比对引擎
@@ -335,7 +335,7 @@ class ComparisonEngine:
     def _merge_continuous_ranges(
         self,
         ranges: List[ContinuousMatch],
-        max_gap: int = 10,
+        max_gap: int = 20,
     ) -> List[ContinuousMatch]:
         """
         合并相邻/重叠的连续匹配区间
@@ -417,10 +417,8 @@ class ComparisonEngine:
             # 计算相似度分数
             score = r.match_count * self.ngram_size / (r.end_a - r.start_a) if r.end_a > r.start_a else 0
             
-            # 获取 doc_b 的对应文本
-            source_text = ""
-            if r.start_b < len(text_b) and r.end_b <= len(text_b):
-                source_text = text_b[r.start_b:r.end_b].replace('\n', ' ').strip()
+            # 获取 doc_b 的对应文本（扩展到句子边界）
+            source_text = self._extract_source_text(text_b, r.start_b, r.end_b)
             
             matches.append(Match(
                 text=text,
@@ -435,6 +433,41 @@ class ComparisonEngine:
             ))
         
         return matches
+
+    def _extract_source_text(
+        self,
+        text_b: str,
+        start_b: int,
+        end_b: int,
+    ) -> str:
+        """
+        提取来源文档文本，扩展到完整句子边界
+        
+        Args:
+            text_b: 来源文档全文
+            start_b: 起始位置
+            end_b: 结束位置
+            
+        Returns:
+            扩展到完整句子的文本
+        """
+        if start_b >= len(text_b):
+            return ""
+        
+        # 确保不越界
+        actual_end = min(end_b, len(text_b))
+        
+        # 向后扩展到句子边界（句号、换行等）
+        while actual_end < len(text_b):
+            c = text_b[actual_end]
+            if c in '。！？；\n':
+                actual_end += 1
+                break
+            actual_end += 1
+        
+        if actual_end > start_b:
+            return text_b[start_b:actual_end].replace('\n', ' ').strip()
+        return ""
 
     def _generate_fingerprint(self, text: str) -> int:
         """生成指纹"""
