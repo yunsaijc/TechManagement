@@ -273,6 +273,9 @@ class DocumentExtractor:
             return {"has_stamp": False, "stamps": []}
         
         try:
+            # 压缩图片避免超过 LLM 10MB 限制
+            compressed_data = self._compress_image(image_data)
+            
             prompt = """这是一张科技项目文档的图片。
 请仔细查找是否存在红色的印章/公章？
 如果存在，请读取印章上的单位名称。
@@ -281,7 +284,7 @@ class DocumentExtractor:
 {"has_stamp": true/false, "stamps": [{"unit": "印章上的单位名称"}]}
 如果没有印章，返回 {"has_stamp": false, "stamps": []}"""
             
-            result = await self.multi_llm.analyze_image(image_data, prompt)
+            result = await self.multi_llm.analyze_image(compressed_data, prompt)
             
             # 解析 JSON
             import json
@@ -301,6 +304,9 @@ class DocumentExtractor:
             return {"has_signature": False, "signatures": []}
         
         try:
+            # 压缩图片避免超过 LLM 10MB 限制
+            compressed_data = self._compress_image(image_data)
+            
             prompt = """这是一张科技项目文档的图片。
 请仔细查找是否存在手写签名/签字？
 
@@ -308,7 +314,7 @@ class DocumentExtractor:
 {"has_signature": true/false, "signatures": [{"name": "签字人姓名"}]}
 如果没有签名，返回 {"has_signature": false, "signatures": []}"""
             
-            result = await self.multi_llm.analyze_image(image_data, prompt)
+            result = await self.multi_llm.analyze_image(compressed_data, prompt)
             
             # 解析 JSON
             import json

@@ -12,7 +12,6 @@ from src.common.models.grouping import (
     GroupingStrategy,
     ProjectGroup,
     ProjectInGroup,
-    ProjectQuality,
 )
 
 
@@ -91,6 +90,7 @@ class GroupOptimizer:
                     cluster_projects.append(ProjectInGroup(
                         project_id=project_id,
                         xmmc=project.get("xmmc", ""),
+                        semantic_score=quality,
                         quality_score=quality,
                         reason="基于内容聚类"
                     ))

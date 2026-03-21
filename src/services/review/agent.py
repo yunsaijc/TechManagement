@@ -153,6 +153,23 @@ class ReviewAgent:
         print(f"[REVIEW] 处理完成，总耗时: {result.processing_time:.2f}s", flush=True)
         return result
 
+    def _compress_image_for_llm(self, img_data: bytes, max_size: int = 2000000) -> bytes:
+        """压缩图片到合理大小，避免超过 LLM 10MB 限制"""
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(img_data))
+            max_dim = 2048
+            if max(img.size) > max_dim:
+                ratio = max_dim / max(img.size)
+                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=85, optimize=True)
+            return buf.getvalue()
+        except Exception:
+            return img_data
+
     async def _analyze_image_with_timeout(
         self,
         multi_llm: MultimodalLLM,
@@ -162,6 +179,8 @@ class ReviewAgent:
         timeout_sec: Optional[int] = None,
     ) -> str:
         """统一的多模态调用封装：带超时和步骤日志。"""
+        # 压缩图片避免超过 LLM 10MB 限制
+        image_data = self._compress_image_for_llm(image_data)
         timeout = timeout_sec or int(os.getenv("LLM_STEP_TIMEOUT", "45"))
         logger.info(f"[LLM] {stage} 开始 (timeout={timeout}s)")
         print(f"[LLM] {stage} 开始", flush=True)
