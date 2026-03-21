@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -151,6 +152,7 @@ class GroupingAgent:
         self.max_per_group = max_per_group
         self.min_per_group = min_per_group
         self.concurrency = concurrency
+        self.title_concurrency = 4
 
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
@@ -482,13 +484,18 @@ class GroupingAgent:
         )
 
     async def _build_groups(self, clusters: List[List[Project]]) -> List[ProjectGroup]:
-        groups: List[ProjectGroup] = []
         total_clusters = len(clusters)
         build_start = time.time()
-        for index, cluster in enumerate(clusters, start=1):
+
+        semaphore = asyncio.Semaphore(self.title_concurrency)
+
+        async def build_one(index: int, cluster: List[Project]) -> ProjectGroup:
             cluster_start = time.time()
             print(f"[Grouping] 生成分组标题进度 {index}/{total_clusters}，簇内项目 {len(cluster)} 个")
-            title, summary = await self._select_group_title(cluster)
+
+            async with semaphore:
+                title, summary = await self._select_group_title(cluster)
+
             project_items = []
             scores = []
             for project in cluster:
@@ -507,27 +514,30 @@ class GroupingAgent:
                     )
                 )
 
-            groups.append(
-                ProjectGroup(
-                    group_id=index,
-                    subject_code=cluster[0].ssxk1 if cluster and cluster[0].ssxk1 else None,
-                    subject_name=title,
-                    projects=project_items,
-                    count=len(cluster),
-                    avg_quality=round(_safe_mean(scores), 2),
-                    max_quality=round(max(scores), 2) if scores else 0.0,
-                    min_quality=round(min(scores), 2) if scores else 0.0,
-                    summary=self._build_group_summary(cluster, title),
-                )
+            group = ProjectGroup(
+                group_id=index,
+                subject_code=cluster[0].ssxk1 if cluster and cluster[0].ssxk1 else None,
+                subject_name=title,
+                projects=project_items,
+                count=len(cluster),
+                avg_quality=round(_safe_mean(scores), 2),
+                max_quality=round(max(scores), 2) if scores else 0.0,
+                min_quality=round(min(scores), 2) if scores else 0.0,
+                summary=self._build_group_summary(cluster, title),
             )
 
             print(
                 f"[Grouping] 分组标题完成 {index}/{total_clusters}：{title}，"
                 f"用时 {time.time() - cluster_start:.2f} 秒"
             )
+            return group
+
+        groups = await asyncio.gather(
+            *(build_one(index, cluster) for index, cluster in enumerate(clusters, start=1))
+        )
 
         print(f"[Grouping] 所有分组标题生成完成，用时 {time.time() - build_start:.2f} 秒")
-        return groups
+        return list(groups)
 
     def _balance_metrics(self, groups: List[ProjectGroup]) -> Dict[str, float]:
         if not groups:

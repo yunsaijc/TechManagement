@@ -21,7 +21,7 @@
 
 **POST** `/api/v1/grouping/projects`
 
-对申报项目进行语义分组。
+对申报项目进行代码优先、语义辅助的分组。
 
 #### 请求参数
 
@@ -32,7 +32,7 @@
 | `max_per_group` | Integer | 否 | 每组最大项目数（默认15） |
 | `top_k_candidates` | Integer | 否 | 每个项目保留的候选组数（默认3） |
 | `enable_embedding` | Boolean | 否 | 是否启用 embedding 召回（默认true） |
-| `enable_llm` | Boolean | 否 | 是否启用 LLM 复核（默认true） |
+| `enable_llm` | Boolean | 否 | 是否启用 LLM 复核/标题生成（默认true） |
 | `needs_review_threshold` | Number | 否 | 低于该置信度标记复核（默认0.65） |
 
 #### 请求示例
@@ -200,8 +200,10 @@ curl -X POST "http://localhost:8000/api/v1/grouping/full" \
 
 ## 设计说明
 
-- 输入以 `xmmc` 为主，`xmjj` 为辅
-- 学科代码只作为辅助信息，不作为主分组依据
+- 输入以学科代码 + `xmmc` 为主，`xmjj` 为辅
+- 学科代码用于粗分和相似性判断，但不是绝对硬约束
+- 默认测试数据来自固定业务批次下的审核通过项目子集
+- 对外文档不披露真实业务批次标识与敏感过滤条件
 - 字母开头代码与 7 位数字代码不能混组
 - 低置信度结果会标记为 `needs_review`
 

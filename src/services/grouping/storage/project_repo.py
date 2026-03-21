@@ -1,8 +1,10 @@
 """
 项目数据访问层
 
-负责从项目评审数据库 (SQL Server) 读取项目数据
+负责从项目评审数据库 (SQL Server) 读取项目数据。
+分组功能默认只使用固定业务批次下、审核通过的项目子集。
 """
+import os
 from typing import List, Optional
 
 from src.common.database.connection import project_execute
@@ -13,11 +15,31 @@ class ProjectRepository:
     """项目数据仓库
     
     对应数据库: kjjhxm_wlps (SQL Server)
-    表: Sb_Jbxx, Sb_Jj
+    表: Sb_Jbxx, Sb_Jj, Sb_Sbzt
     """
+
+    GROUPING_TEST_GUIDE_CODE = os.getenv(
+        "GROUPING_TEST_GUIDE_CODE",
+        "c2f3b7b1f9534463ad726e6936c91859",
+    )
+    GROUPING_TEST_AUDIT_STATUS = os.getenv("GROUPING_TEST_AUDIT_STATUS", "1")
+
+    @classmethod
+    def _grouping_dataset_where(cls) -> str:
+        return """
+            b.year = ?
+            AND s.onlysign IS NOT NULL
+            AND b.zndm = ?
+            AND s.gkAudit = ?
+        """
+
+    @classmethod
+    def _grouping_dataset_params(cls, year: str) -> List[str]:
+        return [year, cls.GROUPING_TEST_GUIDE_CODE, cls.GROUPING_TEST_AUDIT_STATUS]
     
-    @staticmethod
+    @classmethod
     def get_projects_by_year(
+        cls,
         year: str,
         category: Optional[str] = None,
         limit: Optional[int] = None
@@ -32,7 +54,7 @@ class ProjectRepository:
         Returns:
             项目列表
         """
-        params = [year]
+        params = cls._grouping_dataset_params(year)
         
         # 构建查询SQL
         if limit:
@@ -42,21 +64,23 @@ class ProjectRepository:
                     b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2, 
                     j.xmjj, j.lxbj, b.cddwMc, b.year
                 FROM Sb_Jbxx b
+                LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
                 LEFT JOIN Sb_Jj j ON b.id = j.onlysign
-                WHERE b.year = ?
+                WHERE {cls._grouping_dataset_where()}
             """
             if category:
                 sql += " AND b.jhlb = ?"
                 params.append(category)
             sql += " ORDER BY b.id"
         else:
-            sql = """
+            sql = f"""
                 SELECT 
                     b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2, 
                     j.xmjj, j.lxbj, b.cddwMc, b.year
                 FROM Sb_Jbxx b
+                LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
                 LEFT JOIN Sb_Jj j ON b.id = j.onlysign
-                WHERE b.year = ?
+                WHERE {cls._grouping_dataset_where()}
             """
             if category:
                 sql += " AND b.jhlb = ?"
@@ -84,8 +108,8 @@ class ProjectRepository:
         
         return projects
     
-    @staticmethod
-    def get_project_by_id(project_id: str) -> Optional[Project]:
+    @classmethod
+    def get_project_by_id(cls, project_id: str) -> Optional[Project]:
         """根据ID获取项目
         
         Args:
@@ -99,11 +123,17 @@ class ProjectRepository:
                 b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2, 
                 j.xmjj, j.lxbj, b.cddwMc, b.year
             FROM Sb_Jbxx b
+            LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
             LEFT JOIN Sb_Jj j ON b.id = j.onlysign
             WHERE b.id = ?
+              AND b.zndm = ?
+              AND s.gkAudit = ?
         """
         
-        rows = project_execute(sql, (project_id,))
+        rows = project_execute(
+            sql,
+            (project_id, cls.GROUPING_TEST_GUIDE_CODE, cls.GROUPING_TEST_AUDIT_STATUS),
+        )
         
         if not rows:
             return None
@@ -121,8 +151,8 @@ class ProjectRepository:
             year=row.year,
         )
     
-    @staticmethod
-    def count_projects_by_year(year: str, category: Optional[str] = None) -> int:
+    @classmethod
+    def count_projects_by_year(cls, year: str, category: Optional[str] = None) -> int:
         """统计年度项目数量
         
         Args:
@@ -132,11 +162,16 @@ class ProjectRepository:
         Returns:
             项目数量
         """
-        sql = "SELECT COUNT(*) as cnt FROM Sb_Jbxx WHERE year = ?"
-        params = [year]
+        sql = f"""
+            SELECT COUNT(*) as cnt
+            FROM Sb_Jbxx b
+            LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
+            WHERE {cls._grouping_dataset_where()}
+        """
+        params = cls._grouping_dataset_params(year)
         
         if category:
-            sql += " AND jhlb = ?"
+            sql += " AND b.jhlb = ?"
             params.append(category)
         
         rows = project_execute(sql, tuple(params))

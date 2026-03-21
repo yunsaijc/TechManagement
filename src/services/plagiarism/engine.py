@@ -235,6 +235,7 @@ class ComparisonEngine:
         
         # 查找所有匹配的指纹位置对
         matched_positions: List[Tuple[int, int]] = []  # [(idx_a, idx_b), ...]
+        last_idx_b = -1
         
         for i, ng in enumerate(ngrams_a):
             fp = self._generate_fingerprint(ng.text)
@@ -244,12 +245,24 @@ class ComparisonEngine:
                 continue
             
             if fp in fp_to_indices_b and doc_b in fingerprint_index.get(fp, {}):
+                selected_idx_b = None
+
                 for idx_b in fp_to_indices_b[fp]:
                     # 检查 doc_b 的字符位置是否在排除区间内
                     pos_b = ngrams_b[idx_b].position
-                    if not self._is_position_excluded(pos_b, excluded_b):
-                        matched_positions.append((i, idx_b))
-                        break  # 只取第一个匹配位置
+                    if self._is_position_excluded(pos_b, excluded_b):
+                        continue
+
+                    if idx_b >= last_idx_b:
+                        selected_idx_b = idx_b
+                        break
+
+                    if selected_idx_b is None:
+                        selected_idx_b = idx_b
+
+                if selected_idx_b is not None:
+                    matched_positions.append((i, selected_idx_b))
+                    last_idx_b = selected_idx_b
         
         # 使用滑动窗口检测连续匹配
         continuous_ranges = self._winnowing_window(
@@ -537,7 +550,7 @@ class ComparisonEngine:
                     start_a=last.start_a,
                     end_a=current.end_a,
                     start_b=last.start_b,
-                    end_b=current.end_b,
+                    end_b=max(last.end_b, current.end_b),
                     match_count=last.match_count + current.match_count,
                 )
             else:
@@ -546,6 +559,7 @@ class ComparisonEngine:
         # 过滤长度不足的
         return [
             r for r in merged 
+            if r.end_b >= r.start_b
             if r.end_a - r.start_a >= self.min_match_length
         ]
     

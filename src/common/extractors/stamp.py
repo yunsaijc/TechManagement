@@ -60,8 +60,12 @@ class StampExtractor:
 }
 
 要求：
-- 只填写印章上明确可见的文字，不要猜测
-- 看不清时可以把 text 设为空字符串
+- 只读取印章轮廓内部明确可见的文字
+- 严禁把印章外部相邻的正文、表格字段、日期、签字、表头文字当作印章文字
+- 不允许根据印章附近文字推测或补全印章内容
+- 每个印章单独识别，不要合并多个印章
+- bbox 尽量只覆盖印章本体，不要包含周围正文
+- 看不清时可以把 text 设为空字符串，不要猜测
 - 没有印章时返回 {"stamps": []}"""
 
             multi_llm = MultimodalLLM(self._get_llm_client())
@@ -158,6 +162,7 @@ class StampExtractor:
             })
 
         return {"stamps": stamps}
+
 
     def _extract_json(self, text: str) -> Optional[str]:
         """从模型输出中提取 JSON 片段"""

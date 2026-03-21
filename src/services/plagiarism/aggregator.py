@@ -42,6 +42,17 @@ class ResultAggregator:
     MIN_SOURCE_COVERAGE = 0.8
     MIN_LEXICAL_SIMILARITY = 0.30
     MIN_COMMON_SUBSTRING_RATIO = 0.18
+    MIN_LOW_CONFIDENCE_SIMILARITY = 0.6
+    LOW_CONFIDENCE_BUDGET_KEYWORDS = (
+        "万元",
+        "样品",
+        "单价",
+        "预算",
+        "费用",
+        "亩",
+        "kg",
+        "元/",
+    )
 
     def __init__(self, section_extractor=None, template_filter=None):
         """
@@ -289,8 +300,29 @@ class ResultAggregator:
             if overlap_ratio < self.MIN_COMMON_SUBSTRING_RATIO:
                 rejected.append(seg)
                 continue
+            if self._should_reject_low_confidence_budget_segment(seg.text, source_text, score):
+                rejected.append(seg)
+                continue
             kept.append(seg)
         return kept, rejected
+
+    def _should_reject_low_confidence_budget_segment(
+        self,
+        primary_text: str,
+        source_text: str,
+        lexical_score: float,
+    ) -> bool:
+        """过滤预算/清单类的弱相似片段，避免被算作有效重复。"""
+        if lexical_score >= self.MIN_LOW_CONFIDENCE_SIMILARITY:
+            return False
+
+        combined = f"{primary_text} {source_text}"
+        keyword_hits = sum(1 for kw in self.LOW_CONFIDENCE_BUDGET_KEYWORDS if kw in combined)
+        if keyword_hits < 3:
+            return False
+
+        digit_count = sum(ch.isdigit() for ch in combined)
+        return digit_count >= 6
 
     def _source_coverage_ratio(self, segments: List[Match]) -> float:
         if not segments:
