@@ -13,6 +13,7 @@ import time
 import uuid
 from collections import defaultdict, Counter
 from datetime import datetime
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -36,9 +37,7 @@ from src.services.grouping.storage.project_repo import ProjectRepository
 from src.common.database import get_xkfl_repo
 
 
-CACHE_DIR = "/home/tdkx/workspace/tech/.cache"
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
-os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
 
@@ -66,6 +65,11 @@ def _text_for_project(project: Project, include_abstract: bool = True) -> str:
 
 def _safe_mean(values: List[float]) -> float:
     return float(np.mean(values)) if values else 0.0
+
+
+def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
+    denom = (np.linalg.norm(vec_a) * np.linalg.norm(vec_b)) + 1e-8
+    return float(np.dot(vec_a, vec_b) / denom)
 
 
 def _save_grouping_result(year: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
@@ -150,36 +154,74 @@ class GroupingAgent:
 
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
-        self._subject_cache: Dict[str, str] = {}
-        self._load_subject_cache()
+        self._subject_cache = self._load_subject_cache()
 
-    def _load_subject_cache(self) -> None:
+    def _load_subject_cache(self) -> Dict[str, str]:
         try:
-            for row in self.xkfl_repo.list_all():
-                code = row.get("code")
-                name = row.get("name")
-                if code and name:
-                    self._subject_cache[code] = name
-            if hasattr(self.xkfl_repo, "list_all_zrjj"):
-                for row in self.xkfl_repo.list_all_zrjj():
-                    code = row.get("code")
-                    name = row.get("name")
-                    if code and name:
-                        self._subject_cache[code] = name
-            print(f"[Grouping] 已加载 {len(self._subject_cache)} 条学科分类缓存")
-        except Exception as exc:
-            print(f"[Grouping] 加载学科缓存失败: {exc}")
+            rows = self.xkfl_repo.list_all()
+            return {str(row.get("code") or "").strip(): str(row.get("name") or "").strip() for row in rows if row.get("code")}
+        except Exception:
+            return {}
 
     def _get_subject_name(self, code: str) -> str:
         if not code or code == "unknown":
             return "未知主题"
-        if code in self._subject_cache:
-            return self._subject_cache[code]
-        for i in range(len(code), 1, -1):
-            prefix = code[:i]
-            if prefix in self._subject_cache:
-                return self._subject_cache[prefix]
-        return code
+        return self._subject_cache.get(code, code)
+
+    @staticmethod
+    def _subject_prefixes(code: str) -> List[str]:
+        code = (code or "").strip()
+        if not code:
+            return []
+
+        prefixes = []
+        if code[0].isalpha():
+            if len(code) >= 1:
+                prefixes.append(code[:1])
+            if len(code) >= 3:
+                prefixes.append(code[:3])
+            if len(code) >= 5:
+                prefixes.append(code[:5])
+            prefixes.append(code)
+        else:
+            for size in (2, 4, 6, len(code)):
+                if len(code) >= size:
+                    prefixes.append(code[:size])
+
+        ordered = []
+        seen = set()
+        for item in prefixes:
+            if item and item not in seen:
+                seen.add(item)
+                ordered.append(item)
+        return ordered
+
+    def _subject_similarity(self, code_a: str, code_b: str) -> float:
+        a = (code_a or "").strip()
+        b = (code_b or "").strip()
+        if not a or not b:
+            return 0.15
+        if a == b:
+            return 1.0
+
+        prefixes_a = self._subject_prefixes(a)
+        prefixes_b = self._subject_prefixes(b)
+        common = [p for p in prefixes_a if p in prefixes_b]
+        if not common:
+            return 0.0
+
+        longest = max(len(item) for item in common)
+        max_len = max(len(a), len(b), 1)
+        return min(0.95, 0.35 + 0.6 * (longest / max_len))
+
+    def _subject_group_key(self, project: Project) -> str:
+        code = (project.ssxk1 or project.ssxk2 or "unknown").strip()
+        prefixes = self._subject_prefixes(code)
+        if len(prefixes) >= 3:
+            return prefixes[2]
+        if prefixes:
+            return prefixes[-1]
+        return "unknown"
 
     def _normalize_text(self, text: str) -> str:
         return re.sub(r"\s+", " ", text or "").strip()
@@ -196,6 +238,102 @@ class GroupingAgent:
             "subject_name": subject_name,
             "text": _text_for_project(project),
         }
+
+    @lru_cache(maxsize=4096)
+    def _project_text_key(self, project_id: str, xmmc: str, gjc: str, xmjj: str) -> str:
+        parts = [xmmc or "", gjc or "", (xmjj or "")[:800]]
+        return "。".join([part for part in parts if part])
+
+    def _project_text(self, project: Project) -> str:
+        return self._project_text_key(project.id, project.xmmc or "", project.gjc or "", _clean_html_text(project.xmjj or ""))
+
+    def _embed_projects(self, projects: List[Project]) -> Dict[str, np.ndarray]:
+        if not projects:
+            return {}
+        texts = [self._project_text(project) for project in projects]
+        print(f"[Grouping] 开始生成 embedding: {len(projects)} 个项目")
+        embed_start = time.time()
+        vectors = self._safe_embed(texts)
+        print(f"[Grouping] embedding 完成: {len(projects)} 个项目，用时 {time.time() - embed_start:.2f} 秒")
+        return {project.id: vectors[idx] for idx, project in enumerate(projects)}
+
+    def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
+        buckets: Dict[str, List[Project]] = defaultdict(list)
+        for project in projects:
+            buckets[self._subject_group_key(project)].append(project)
+        return buckets
+
+    def _embed_large_buckets_only(self, buckets: Dict[str, List[Project]], max_per_group: int) -> Dict[str, np.ndarray]:
+        large_projects: List[Project] = []
+        large_bucket_count = 0
+        for bucket in buckets.values():
+            if len(bucket) > max_per_group:
+                large_bucket_count += 1
+                large_projects.extend(bucket)
+        print(f"[Grouping] 学科粗分完成: {len(buckets)} 个桶，其中 {large_bucket_count} 个大桶需要 embedding，共 {len(large_projects)} 个项目")
+        return self._embed_projects(large_projects)
+
+    def _split_bucket_by_text(self, bucket: List[Project], max_per_group: int, vector_map: Dict[str, np.ndarray]) -> List[List[Project]]:
+        if len(bucket) <= max_per_group:
+            return [bucket]
+
+        n_clusters = max(2, math.ceil(len(bucket) / max_per_group))
+        vectors = np.asarray([vector_map[project.id] for project in bucket], dtype=float)
+        labels = self._kmeans(vectors, n_clusters)
+        grouped: Dict[int, List[Project]] = defaultdict(list)
+        for idx, label in enumerate(labels):
+            grouped[int(label)].append(bucket[idx])
+
+        result: List[List[Project]] = []
+        for _, members in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0])):
+            if len(members) > max_per_group:
+                result.extend(self._split_bucket_by_text(members, max_per_group, vector_map))
+            else:
+                result.append(members)
+        return result
+
+    def _merge_small_clusters(self, clusters: List[List[Project]], vector_map: Dict[str, np.ndarray], max_per_group: int) -> List[List[Project]]:
+        clusters = [cluster[:] for cluster in clusters if cluster]
+        changed = True
+        while changed:
+            changed = False
+            small_index = next((idx for idx, cluster in enumerate(clusters) if 0 < len(cluster) < self.min_per_group), None)
+            if small_index is None:
+                break
+
+            cluster = clusters[small_index]
+            code_a = cluster[0].ssxk1 or cluster[0].ssxk2 or ""
+            cluster_vectors = [vector_map[item.id] for item in cluster if item.id in vector_map]
+            center_a = np.mean(cluster_vectors, axis=0) if cluster_vectors else None
+
+            best_idx = None
+            best_score = -1.0
+            for idx, other in enumerate(clusters):
+                if idx == small_index:
+                    continue
+                if len(other) + len(cluster) > max_per_group:
+                    continue
+                code_b = other[0].ssxk1 or other[0].ssxk2 or ""
+                subject_score = self._subject_similarity(code_a, code_b)
+                other_vectors = [vector_map[item.id] for item in other if item.id in vector_map]
+                if center_a is not None and other_vectors:
+                    center_b = np.mean(other_vectors, axis=0)
+                    text_score = _cosine_similarity(center_a, center_b)
+                else:
+                    text_score = 0.0
+                total_score = 0.75 * subject_score + 0.25 * text_score
+                if total_score > best_score:
+                    best_score = total_score
+                    best_idx = idx
+
+            if best_idx is None:
+                break
+
+            clusters[best_idx].extend(cluster)
+            clusters.pop(small_index)
+            changed = True
+
+        return clusters
 
     def _infer_target_group_count(self, project_count: int, max_per_group: int) -> int:
         if project_count <= 0:
@@ -221,27 +359,25 @@ class GroupingAgent:
         if len(projects) <= max_per_group:
             return [projects]
 
-        profiles = [self._build_project_profile(project) for project in projects]
-        texts = [profile["text"] or profile["xmmc"] for profile in profiles]
-        vectors = self._safe_embed(texts)
-        n_clusters = self._infer_target_group_count(len(projects), max_per_group)
-        labels = self._kmeans(vectors, n_clusters)
+        buckets = self._bucket_projects_by_subject(projects)
+        vector_map = self._embed_large_buckets_only(buckets, max_per_group)
 
-        grouped: Dict[int, List[Tuple[Project, np.ndarray]]] = defaultdict(list)
-        for idx, label in enumerate(labels):
-            grouped[int(label)].append((projects[idx], vectors[idx]))
+        clusters: List[List[Project]] = []
+        for _, bucket in sorted(buckets.items(), key=lambda item: (-len(item[1]), item[0])):
+            if len(bucket) <= max_per_group:
+                clusters.append(bucket)
+                continue
+            clusters.extend(self._split_bucket_by_text(bucket, max_per_group, vector_map))
 
-        clusters = [members for _, members in sorted(grouped.items(), key=lambda item: (-len(item[1]), item[0]))]
+        if vector_map:
+            clusters = self._merge_small_clusters(clusters, vector_map, max_per_group)
+        return self._rebalance_clusters(clusters, max_per_group, vector_map)
 
-        flattened: List[List[Project]] = []
-        for members in clusters:
-            flattened.append([project for project, _ in members])
-
-        return self._rebalance_clusters(flattened, max_per_group)
-
-    def _rebalance_clusters(self, clusters: List[List[Project]], max_per_group: int) -> List[List[Project]]:
+    def _rebalance_clusters(self, clusters: List[List[Project]], max_per_group: int, vector_map: Optional[Dict[str, np.ndarray]] = None) -> List[List[Project]]:
         if not clusters:
             return clusters
+
+        vector_map = vector_map or self._embed_projects([project for cluster in clusters for project in cluster])
 
         changed = True
         while changed:
@@ -252,14 +388,7 @@ class GroupingAgent:
             for idx, cluster in list(enumerate(clusters)):
                 if len(cluster) <= max_per_group:
                     continue
-                split_count = max(2, math.ceil(len(cluster) / max_per_group))
-                profiles = [self._build_project_profile(project) for project in cluster]
-                vectors = self._safe_embed([profile["text"] or profile["xmmc"] for profile in profiles])
-                labels = self._kmeans(vectors, split_count)
-                buckets: Dict[int, List[Project]] = defaultdict(list)
-                for item_idx, label in enumerate(labels):
-                    buckets[int(label)].append(cluster[item_idx])
-                replacement = [bucket for _, bucket in sorted(buckets.items(), key=lambda item: (-len(item[1]), item[0]))]
+                replacement = self._split_bucket_by_text(cluster, max_per_group, vector_map)
                 clusters[idx:idx + 1] = replacement
                 changed = True
                 break
@@ -280,15 +409,21 @@ class GroupingAgent:
                     continue
                 target_idx = None
                 best_similarity = -1.0
-                current_vec = self._safe_embed([self._build_project_profile(project)["text"] or project.xmmc for project in cluster]).mean(axis=0)
+                current_vectors = [vector_map[project.id] for project in cluster if project.id in vector_map]
+                current_vec = np.mean(current_vectors, axis=0) if current_vectors else None
+                current_code = cluster[0].ssxk1 or cluster[0].ssxk2 or ""
                 for other_idx, other_cluster in enumerate(clusters):
                     if other_idx == idx or not other_cluster:
                         continue
                     if len(other_cluster) + len(cluster) > max_per_group:
                         continue
-                    other_vec = self._safe_embed([self._build_project_profile(project)["text"] or project.xmmc for project in other_cluster]).mean(axis=0)
-                    denom = (np.linalg.norm(current_vec) * np.linalg.norm(other_vec)) + 1e-8
-                    similarity = float(np.dot(current_vec, other_vec) / denom)
+                    other_vectors = [vector_map[project.id] for project in other_cluster if project.id in vector_map]
+                    other_code = other_cluster[0].ssxk1 or other_cluster[0].ssxk2 or ""
+                    text_similarity = 0.0
+                    if current_vec is not None and other_vectors:
+                        other_vec = np.mean(other_vectors, axis=0)
+                        text_similarity = _cosine_similarity(current_vec, other_vec)
+                    similarity = 0.75 * self._subject_similarity(current_code, other_code) + 0.25 * text_similarity
                     if similarity > best_similarity:
                         best_similarity = similarity
                         target_idx = other_idx
@@ -348,7 +483,11 @@ class GroupingAgent:
 
     async def _build_groups(self, clusters: List[List[Project]]) -> List[ProjectGroup]:
         groups: List[ProjectGroup] = []
+        total_clusters = len(clusters)
+        build_start = time.time()
         for index, cluster in enumerate(clusters, start=1):
+            cluster_start = time.time()
+            print(f"[Grouping] 生成分组标题进度 {index}/{total_clusters}，簇内项目 {len(cluster)} 个")
             title, summary = await self._select_group_title(cluster)
             project_items = []
             scores = []
@@ -382,6 +521,12 @@ class GroupingAgent:
                 )
             )
 
+            print(
+                f"[Grouping] 分组标题完成 {index}/{total_clusters}：{title}，"
+                f"用时 {time.time() - cluster_start:.2f} 秒"
+            )
+
+        print(f"[Grouping] 所有分组标题生成完成，用时 {time.time() - build_start:.2f} 秒")
         return groups
 
     def _balance_metrics(self, groups: List[ProjectGroup]) -> Dict[str, float]:
@@ -435,10 +580,13 @@ class GroupingAgent:
 
         print(f"[Grouping] 获取到 {len(projects)} 个项目，开始语义分组")
 
+        cluster_start = time.time()
         clusters = self._cluster_projects(projects, self.max_per_group)
-        print(f"[Grouping] 初步生成 {len(clusters)} 个语义簇")
+        print(f"[Grouping] 初步生成 {len(clusters)} 个语义簇，用时 {time.time() - cluster_start:.2f} 秒")
 
+        build_group_start = time.time()
         groups = await self._build_groups(clusters)
+        print(f"[Grouping] ProjectGroup 构建完成，用时 {time.time() - build_group_start:.2f} 秒")
 
         counts = [group.count for group in groups]
         avg_scores = [group.avg_quality for group in groups]
@@ -475,7 +623,8 @@ class GroupingAgent:
             created_at=datetime.now(),
         )
 
-        _save_grouping_result(request.year, result, meta={
+        save_start = time.time()
+        filename = _save_grouping_result(request.year, result, meta={
             "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
             "input": {
                 "year": request.year,
@@ -484,6 +633,8 @@ class GroupingAgent:
                 "limit": request.limit,
             },
         })
+        if filename:
+            print(f"[Grouping] 结果已保存: {filename}，用时 {time.time() - save_start:.2f} 秒")
 
         elapsed = time.time() - start_time
         print(f"[Grouping] 完成，用时 {elapsed:.2f} 秒，分组 {len(groups)} 个")

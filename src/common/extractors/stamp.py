@@ -35,15 +35,15 @@ class StampExtractor:
             min_regions: 最少印章区域数
 
         Returns:
-                        印章字典 {"stamps": [{"text": "xxx", "bbox": {...}, "confidence": 0.0}], ...}
-                        未提取到返回 None
+            印章字典 {"stamps": [{"text": "xxx", "bbox": {...}, "confidence": 0.0}], ...}
+            未提取到返回 None
         """
         try:
             # 1. PDF 转图片
             image_data = self._pdf_to_image(file_data)
 
-                        # 2. LLM 直接分析印章位置和内容，返回结构化 JSON
-                        prompt = """这是一张科技项目文档图片。
+            # 2. LLM 直接分析印章位置和内容，返回结构化 JSON
+            prompt = """这是一张科技项目文档图片。
 请识别所有印章，返回严格 JSON，不要输出任何解释、代码块或多余文本。
 
 返回格式：

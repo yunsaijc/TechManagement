@@ -4,6 +4,7 @@
 采用 Winnowing 算法确保检测到连续的重复内容。
 """
 import hashlib
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -342,34 +343,17 @@ class ComparisonEngine:
         text_b: str,
     ) -> ContinuousMatch:
         """把锚点片段向两侧扩展到更自然的边界。"""
-        boundary_chars = '。！？；;\n\r'
+        start_a, end_a = self._expand_to_sentence_boundary(text_a, match_range.start_a, match_range.end_a)
+        start_b, end_b = self._expand_to_sentence_boundary(text_b, match_range.start_b, match_range.end_b)
 
-        def expand(text: str, start: int, end: int) -> Tuple[int, int]:
-            if not text:
-                return start, end
-
-            start = max(0, min(start, len(text)))
-            end = max(start, min(end, len(text)))
-
-            left_steps = 0
-            while start > 0 and left_steps < max_expand:
-                if text[start - 1] in boundary_chars:
-                    break
-                start -= 1
-                left_steps += 1
-
-            right_steps = 0
-            while end < len(text) and right_steps < max_expand:
-                current = text[end]
-                end += 1
-                right_steps += 1
-                if current in boundary_chars:
-                    break
-
-            return start, end
-
-        start_a, end_a = expand(text_a, match_range.start_a, match_range.end_a)
-        start_b, end_b = expand(text_b, match_range.start_b, match_range.end_b)
+        start_a, end_a, start_b, end_b = self._trim_to_shared_core(
+            text_a,
+            start_a,
+            end_a,
+            text_b,
+            start_b,
+            end_b,
+        )
 
         return ContinuousMatch(
             start_a=start_a,
@@ -378,6 +362,130 @@ class ComparisonEngine:
             end_b=end_b,
             match_count=match_range.match_count,
         )
+
+    def _expand_to_sentence_boundary(
+        self,
+        text: str,
+        start: int,
+        end: int,
+        max_expand: int = 60,
+    ) -> Tuple[int, int]:
+        """向两侧扩展到更自然的句子/段落边界。"""
+        if not text:
+            return start, end
+
+        boundary_chars = '。！？；;：:\n\r'
+        start = max(0, min(start, len(text)))
+        end = max(start, min(end, len(text)))
+
+        left_bound = start
+        left_limit = max(0, start - max_expand)
+        for idx in range(start - 1, left_limit - 1, -1):
+            if text[idx] in boundary_chars:
+                left_bound = idx + 1
+                break
+        else:
+            left_bound = left_limit
+
+        right_bound = end
+        right_limit = min(len(text), end + max_expand)
+        for idx in range(end, right_limit):
+            if text[idx] in boundary_chars:
+                right_bound = idx + 1
+                break
+        else:
+            right_bound = right_limit
+
+        while left_bound < right_bound and text[left_bound] in '、，,：:；; ':
+            left_bound += 1
+
+        return left_bound, right_bound
+
+    def _trim_to_shared_core(
+        self,
+        text_a: str,
+        start_a: int,
+        end_a: int,
+        text_b: str,
+        start_b: int,
+        end_b: int,
+    ) -> Tuple[int, int, int, int]:
+        """按双边共有的前后缀收紧边界，避免一边扩得过长。"""
+        segment_a = text_a[start_a:end_a]
+        segment_b = text_b[start_b:end_b]
+
+        norm_a = self._normalize_for_alignment(segment_a)
+        norm_b = self._normalize_for_alignment(segment_b)
+        if not norm_a or not norm_b:
+            return start_a, end_a, start_b, end_b
+
+        prefix_len = self._common_prefix_length(norm_a, norm_b)
+        suffix_len = self._common_suffix_length(norm_a[prefix_len:], norm_b[prefix_len:])
+
+        min_anchor = max(self.ngram_size * 2, 12)
+        shared_core = len(norm_a) - prefix_len - suffix_len
+        if prefix_len < min_anchor and suffix_len < min_anchor and shared_core < min_anchor:
+            return start_a, end_a, start_b, end_b
+
+        trim_left_a = self._map_normalized_offset_to_original(segment_a, prefix_len)
+        trim_left_b = self._map_normalized_offset_to_original(segment_b, prefix_len)
+
+        keep_end_a = self._map_normalized_suffix_to_original_end(segment_a, suffix_len)
+        keep_end_b = self._map_normalized_suffix_to_original_end(segment_b, suffix_len)
+
+        new_start_a = start_a + trim_left_a
+        new_start_b = start_b + trim_left_b
+        new_end_a = start_a + keep_end_a
+        new_end_b = start_b + keep_end_b
+
+        if new_end_a - new_start_a < self.min_match_length or new_end_b - new_start_b < self.min_match_length:
+            return start_a, end_a, start_b, end_b
+
+        return new_start_a, new_end_a, new_start_b, new_end_b
+
+    def _normalize_for_alignment(self, text: str) -> str:
+        """归一化文本，用于比较共同前后缀。"""
+        return re.sub(r'\s+', '', text)
+
+    def _common_prefix_length(self, a: str, b: str) -> int:
+        limit = min(len(a), len(b))
+        i = 0
+        while i < limit and a[i] == b[i]:
+            i += 1
+        return i
+
+    def _common_suffix_length(self, a: str, b: str) -> int:
+        limit = min(len(a), len(b))
+        i = 0
+        while i < limit and a[-(i + 1)] == b[-(i + 1)]:
+            i += 1
+        return i
+
+    def _map_normalized_offset_to_original(self, text: str, normalized_offset: int) -> int:
+        if normalized_offset <= 0:
+            return 0
+
+        count = 0
+        for idx, char in enumerate(text):
+            if char.isspace():
+                continue
+            count += 1
+            if count >= normalized_offset:
+                return idx + 1
+        return len(text)
+
+    def _map_normalized_suffix_to_original_end(self, text: str, normalized_suffix_len: int) -> int:
+        if normalized_suffix_len <= 0:
+            return len(text)
+
+        count = 0
+        for idx in range(len(text) - 1, -1, -1):
+            if text[idx].isspace():
+                continue
+            count += 1
+            if count >= normalized_suffix_len:
+                return idx
+        return 0
     
     def _is_position_excluded(
         self,
@@ -511,20 +619,10 @@ class ComparisonEngine:
         """
         if start_b >= len(text_b):
             return ""
-        
-        # 确保不越界
-        actual_end = min(end_b, len(text_b))
 
-        # 向后扩展到句子边界（句号、换行等）
-        while actual_end < len(text_b):
-            c = text_b[actual_end]
-            if c in '。！？；\n':
-                actual_end += 1
-                break
-            actual_end += 1
-        
-        if actual_end > start_b:
-            return text_b[start_b:actual_end].replace('\n', ' ').strip()
+        start, end = self._expand_to_sentence_boundary(text_b, start_b, end_b)
+        if end > start:
+            return text_b[start:end].replace('\n', ' ').strip()
         return ""
 
     def _generate_fingerprint(self, text: str) -> int:
