@@ -3,6 +3,7 @@
 将比对引擎的结果聚合成最终的查重报告。
 支持位置追溯、片段合并、分类输出。
 """
+import difflib
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -19,6 +20,7 @@ class PlagiarismResult:
     medium_similarity: List[dict]
     low_similarity: List[dict]
     processing_time: float
+    filtered_pairs: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -33,6 +35,25 @@ class DuplicateSegmentDetail:
 class ResultAggregator:
     """查重结果聚合器 - 后置过滤模式"""
 
+    MIN_EFFECTIVE_CHARS = 30
+    MIN_EFFECTIVE_RATIO = 0.35
+    MIN_SEGMENT_LENGTH = 20
+    MAX_TEMPLATE_RATIO = 0.7
+    MIN_SOURCE_COVERAGE = 0.8
+    MIN_LEXICAL_SIMILARITY = 0.30
+    MIN_COMMON_SUBSTRING_RATIO = 0.18
+    MIN_LOW_CONFIDENCE_SIMILARITY = 0.6
+    LOW_CONFIDENCE_BUDGET_KEYWORDS = (
+        "万元",
+        "样品",
+        "单价",
+        "预算",
+        "费用",
+        "亩",
+        "kg",
+        "元/",
+    )
+
     def __init__(self, section_extractor=None, template_filter=None):
         """
         初始化聚合器
@@ -43,6 +64,70 @@ class ResultAggregator:
         """
         self.section_extractor = section_extractor
         self.template_filter = template_filter
+
+    def _merge_adjacent_matches(self, matches: List[Match], max_gap: int = 25) -> List[Match]:
+        """合并同一来源下相邻或轻微间隔的匹配片段。"""
+        if not matches:
+            return []
+
+        sorted_matches = sorted(matches, key=lambda m: (m.start_pos, m.source_start))
+        merged: List[Match] = [sorted_matches[0]]
+
+        for current in sorted_matches[1:]:
+            last = merged[-1]
+            if current.source_doc != last.source_doc:
+                merged.append(current)
+                continue
+
+            gap_primary = current.start_pos - last.end_pos
+            gap_source = current.source_start - last.source_end
+
+            if gap_primary <= max_gap and gap_source <= max_gap:
+                merged[-1] = Match(
+                    text=(last.text + " " + current.text).strip(),
+                    start_pos=min(last.start_pos, current.start_pos),
+                    end_pos=max(last.end_pos, current.end_pos),
+                    ngram_count=last.ngram_count + current.ngram_count,
+                    source_doc=last.source_doc,
+                    source_start=min(last.source_start, current.source_start),
+                    source_end=max(last.source_end, current.source_end),
+                    source_text=(last.source_text + " " + current.source_text).strip(),
+                    similarity_score=min(
+                        ((last.ngram_count + current.ngram_count) * 1.0) / max(max(last.end_pos, current.end_pos) - min(last.start_pos, current.start_pos), 1),
+                        1.0,
+                    ),
+                )
+            else:
+                merged.append(current)
+
+        return merged
+
+    def _build_report_groups(
+        self,
+        formatted_segments: List[dict],
+    ) -> List[dict]:
+        """按 section 组织成更像查重报告的分组结构。"""
+        groups: Dict[str, dict] = {}
+
+        for segment in formatted_segments:
+            section = segment.get("primary_section") or "未分组"
+            group = groups.setdefault(section, {
+                "primary_section": section,
+                "segment_count": 0,
+                "total_chars": 0,
+                "segments": [],
+            })
+            group["segments"].append(segment)
+            group["segment_count"] += 1
+            group["total_chars"] += segment.get("char_count", 0)
+
+        ordered_groups = sorted(
+            groups.values(),
+            key=lambda item: (-item["total_chars"], item["primary_section"]),
+        )
+        for group in ordered_groups:
+            group["segments"] = sorted(group["segments"], key=lambda seg: (seg.get("primary_line", 0), seg.get("char_count", 0)))
+        return ordered_groups
 
     def aggregate(
         self,
@@ -77,6 +162,7 @@ class ResultAggregator:
         high = []
         medium = []
         low = []
+        filtered_pairs = []
 
         for r in results:
             # 分离模板片段和有效片段
@@ -90,10 +176,39 @@ class ResultAggregator:
                 else:
                     effective_segments.append(m)
 
+            effective_segments = self._merge_adjacent_matches(effective_segments)
+            template_segments = self._merge_adjacent_matches(template_segments)
+
+            effective_segments, rejected_segments = self._filter_low_quality_segments(effective_segments)
+            template_segments.extend(rejected_segments)
+
             # 计算有效重复字符数（排除模板）
             effective_chars = sum(len(m.text) for m in effective_segments)
             total_chars = sum(len(m.text) for m in r.duplicate_segments)
             effective_similarity = effective_chars / r.total_chars if r.total_chars > 0 else 0
+
+            pair_filter_reason = self._get_pair_filter_reason(
+                effective_segments=effective_segments,
+                template_segments=template_segments,
+                effective_chars=effective_chars,
+                total_chars=total_chars,
+                effective_similarity=effective_similarity,
+            )
+
+            formatted_effective_segments = self._format_segments(
+                effective_segments,
+                r.doc_a,
+                r.doc_b,
+                doc_texts,
+                filter_obj,
+            )
+            formatted_template_segments = self._format_segments(
+                template_segments,
+                r.doc_a,
+                r.doc_b,
+                doc_texts,
+                filter_obj,
+            ) if template_segments else []
 
             result_dict = {
                 "doc_a": r.doc_a,
@@ -104,21 +219,15 @@ class ResultAggregator:
                 "total_chars": r.total_chars,
                 "effective_chars": effective_chars,  # 有效重复字符
                 "template_chars": total_chars - effective_chars if total_chars > 0 else 0,  # 模板重复字符
-                "duplicate_segments": self._format_segments(
-                    effective_segments,  # 只包含有效片段
-                    r.doc_a,
-                    r.doc_b,
-                    doc_texts,
-                    filter_obj,
-                ),
-                "template_segments": self._format_segments(
-                    template_segments,  # 模板片段
-                    r.doc_a,
-                    r.doc_b,
-                    doc_texts,
-                    filter_obj,
-                ) if template_segments else [],
+                "duplicate_segments": formatted_effective_segments,
+                "template_segments": formatted_template_segments,
+                "report_groups": self._build_report_groups(formatted_effective_segments),
+                "filter_reason": pair_filter_reason,
             }
+
+            if pair_filter_reason:
+                filtered_pairs.append(result_dict)
+                continue
 
             if r.type == "high":
                 high.append(result_dict)
@@ -134,7 +243,123 @@ class ResultAggregator:
             medium_similarity=medium,
             low_similarity=low,
             processing_time=0,  # 由外部计时
+            filtered_pairs=filtered_pairs,
         )
+
+    def _get_pair_filter_reason(
+        self,
+        effective_segments: List[Match],
+        template_segments: List[Match],
+        effective_chars: int,
+        total_chars: int,
+        effective_similarity: float,
+    ) -> Optional[str]:
+        """判断 pair 是否应被过滤，并返回原因。"""
+        if not effective_segments:
+            return "no_effective_segments"
+
+        source_coverage = self._source_coverage_ratio(effective_segments)
+        if source_coverage < self.MIN_SOURCE_COVERAGE:
+            return "source_text_coverage_too_low"
+
+        lexical_similarity = self._avg_lexical_similarity(effective_segments)
+        if lexical_similarity < self.MIN_LEXICAL_SIMILARITY:
+            return "lexical_similarity_too_low"
+
+        if effective_chars < self.MIN_EFFECTIVE_CHARS:
+            return "too_few_effective_chars"
+
+        if effective_similarity < self.MIN_EFFECTIVE_RATIO:
+            return "effective_similarity_too_low"
+
+        if total_chars > 0:
+            template_ratio = len(template_segments) / max(len(effective_segments) + len(template_segments), 1)
+            if template_ratio >= self.MAX_TEMPLATE_RATIO:
+                return "template_ratio_too_high"
+
+        max_segment_len = max((len(m.text) for m in effective_segments), default=0)
+        if max_segment_len < self.MIN_SEGMENT_LENGTH:
+            return "segment_too_short"
+
+        return None
+
+    def _filter_low_quality_segments(self, segments: List[Match]) -> Tuple[List[Match], List[Match]]:
+        """将明显错配的片段从有效片段中剔除。"""
+        kept = []
+        rejected = []
+        for seg in segments:
+            source_text = (seg.source_text or "").strip()
+            if not source_text:
+                rejected.append(seg)
+                continue
+            score = self._lexical_ratio(seg.text, source_text)
+            if score < self.MIN_LEXICAL_SIMILARITY:
+                rejected.append(seg)
+                continue
+            overlap_ratio = self._common_substring_ratio(seg.text, source_text)
+            if overlap_ratio < self.MIN_COMMON_SUBSTRING_RATIO:
+                rejected.append(seg)
+                continue
+            if self._should_reject_low_confidence_budget_segment(seg.text, source_text, score):
+                rejected.append(seg)
+                continue
+            kept.append(seg)
+        return kept, rejected
+
+    def _should_reject_low_confidence_budget_segment(
+        self,
+        primary_text: str,
+        source_text: str,
+        lexical_score: float,
+    ) -> bool:
+        """过滤预算/清单类的弱相似片段，避免被算作有效重复。"""
+        if lexical_score >= self.MIN_LOW_CONFIDENCE_SIMILARITY:
+            return False
+
+        combined = f"{primary_text} {source_text}"
+        keyword_hits = sum(1 for kw in self.LOW_CONFIDENCE_BUDGET_KEYWORDS if kw in combined)
+        if keyword_hits < 3:
+            return False
+
+        digit_count = sum(ch.isdigit() for ch in combined)
+        return digit_count >= 6
+
+    def _source_coverage_ratio(self, segments: List[Match]) -> float:
+        if not segments:
+            return 0.0
+        ok = sum(1 for s in segments if (s.source_text or "").strip())
+        return ok / len(segments)
+
+    def _avg_lexical_similarity(self, segments: List[Match]) -> float:
+        if not segments:
+            return 0.0
+        scores = [
+            self._lexical_ratio(s.text, s.source_text)
+            for s in segments
+            if (s.source_text or "").strip()
+        ]
+        if not scores:
+            return 0.0
+        return sum(scores) / len(scores)
+
+    @staticmethod
+    def _lexical_ratio(text_a: str, text_b: str) -> float:
+        if not text_a or not text_b:
+            return 0.0
+        return difflib.SequenceMatcher(None, text_a, text_b).ratio()
+
+    @staticmethod
+    def _common_substring_ratio(text_a: str, text_b: str) -> float:
+        if not text_a or not text_b:
+            return 0.0
+
+        matcher = difflib.SequenceMatcher(None, text_a, text_b)
+        match = matcher.find_longest_match(0, len(text_a), 0, len(text_b))
+        if match.size <= 0:
+            return 0.0
+
+        base = max(min(len(text_a), len(text_b)), 1)
+        return match.size / base
 
     def _format_segments(
         self,
@@ -166,8 +391,8 @@ class ResultAggregator:
             )
 
             # 获取来源文档位置信息
-            source_line, source_text = self._get_line_info(
-                doc_b, match.source_start, match.source_end, doc_texts
+            source_line, source_text = self._get_source_info(
+                doc_b, match, doc_texts
             )
 
             # 获取主文档 Section 信息
@@ -193,11 +418,52 @@ class ResultAggregator:
                 }],
                 "char_count": len(match.text),
                 "ngram_count": match.ngram_count,
+                "similarity_score": round(match.similarity_score, 4) if match.similarity_score else 0,
                 "is_template": template_reason is not None,
                 "template_reason": template_reason,
             })
 
         return formatted
+
+    def _get_source_info(
+        self,
+        doc_id: str,
+        match: Match,
+        doc_texts: Optional[Dict[str, str]],
+    ) -> Tuple[int, str]:
+        """获取来源文档行号和文本，优先与过滤阶段保持一致。"""
+        if match.source_text:
+            source_text = match.source_text.replace('\n', ' ').strip()
+            source_line = self._find_source_line_by_text(doc_id, match, doc_texts)
+            return source_line, source_text
+
+        return self._get_line_info(doc_id, match.source_start, match.source_end, doc_texts)
+
+    def _find_source_line_by_text(
+        self,
+        doc_id: str,
+        match: Match,
+        doc_texts: Optional[Dict[str, str]],
+    ) -> int:
+        """根据扩边界后的来源文本反查更可信的起始行号。"""
+        if not doc_texts or doc_id not in doc_texts:
+            return 0
+
+        text = doc_texts[doc_id]
+        candidate = match.source_text.replace('\n', ' ').strip()
+        if not candidate:
+            return text[:match.source_start].count('\n') + 1 if match.source_start > 0 else 1
+
+        start_idx = text.find(candidate)
+        if start_idx == -1:
+            anchor = text[match.source_start:match.source_end].replace('\n', ' ').strip()
+            if anchor:
+                anchor_idx = text.find(anchor)
+                if anchor_idx != -1:
+                    return text[:anchor_idx].count('\n') + 1 if anchor_idx > 0 else 1
+            return text[:match.source_start].count('\n') + 1 if match.source_start > 0 else 1
+
+        return text[:start_idx].count('\n') + 1 if start_idx > 0 else 1
 
     def _get_line_info(
         self,
@@ -359,53 +625,77 @@ class ResultAggregator:
         total_effective_chars = 0
         total_template_chars = 0
 
+        filtered_pairs = []
+
         for r in results:
+            raw_template_segments = []
+            raw_effective_segments = []
+
             for match in r.duplicate_segments[:50]:
-                # 获取位置信息
-                primary_line, primary_text_seg = self._get_line_info(
-                    primary_doc_id, match.start_pos, match.end_pos, doc_texts
-                )
-
-                source_line, source_text = self._get_line_info(
-                    match.source_doc, match.source_start, match.source_end, doc_texts
-                )
-
-                # 检测是否是模板
-                is_template = False
-                template_reason = None
-                if template_filter:
-                    template_reason = template_filter.get_template_reason(match.text)
-                    is_template = template_reason is not None
-
-                seg_info = {
-                    "primary_line": primary_line,
-                    "primary_text": primary_text_seg,
-                    "sources": [{
-                        "doc": match.source_doc,
-                        "line": source_line,
-                        "text": source_text,
-                    }],
-                    "similarity_pair": f"{r.doc_a} vs {r.doc_b}",
-                    "char_count": len(match.text),
-                    "ngram_count": match.ngram_count,
-                    "is_template": is_template,
-                    "template_reason": template_reason,
-                }
-
-                if is_template:
-                    template_segments.append(seg_info)
-                    total_template_chars += len(match.text)
+                if template_filter and template_filter.is_template(match.text):
+                    raw_template_segments.append(match)
                 else:
-                    effective_segments.append(seg_info)
-                    total_effective_chars += len(match.text)
+                    raw_effective_segments.append(match)
+
+            raw_effective_segments = self._merge_adjacent_matches(raw_effective_segments)
+            raw_template_segments = self._merge_adjacent_matches(raw_template_segments)
+
+            pair_effective_segments, rejected_segments = self._filter_low_quality_segments(raw_effective_segments)
+            pair_template_segments = raw_template_segments + rejected_segments
+
+            pair_effective_chars = sum(len(m.text) for m in pair_effective_segments)
+            pair_template_chars = sum(len(m.text) for m in pair_template_segments)
+
+            formatted_effective_segments = self._format_segments(
+                pair_effective_segments,
+                r.doc_a,
+                r.doc_b,
+                doc_texts,
+                template_filter,
+            )
+            formatted_template_segments = self._format_segments(
+                pair_template_segments,
+                r.doc_a,
+                r.doc_b,
+                doc_texts,
+                template_filter,
+            ) if pair_template_segments else []
+
+            for seg_info in formatted_effective_segments:
+                seg_info["similarity_pair"] = f"{r.doc_a} vs {r.doc_b}"
+                effective_segments.append(seg_info)
+
+            for seg_info in formatted_template_segments:
+                seg_info["similarity_pair"] = f"{r.doc_a} vs {r.doc_b}"
+                template_segments.append(seg_info)
+
+            pair_filter_reason = self._get_pair_filter_reason(
+                effective_segments=pair_effective_segments,
+                template_segments=pair_template_segments,
+                effective_chars=pair_effective_chars,
+                total_chars=sum(len(m.text) for m in r.duplicate_segments),
+                effective_similarity=(pair_effective_chars / sum(len(m.text) for m in r.duplicate_segments)) if r.duplicate_segments else 0,
+            )
+
+            if pair_filter_reason:
+                filtered_pairs.append({
+                    "pair": f"{r.doc_a} vs {r.doc_b}",
+                    "reason": pair_filter_reason,
+                })
+
+            total_effective_chars += pair_effective_chars
+            total_template_chars += pair_template_chars
 
         output["duplicate_segments"] = effective_segments
         output["template_segments"] = template_segments
+        output["report_groups"] = self._build_report_groups(effective_segments)
+        output["filtered_pairs"] = filtered_pairs
         output["summary"] = {
             "total_effective_segments": len(effective_segments),
             "total_template_segments": len(template_segments),
             "total_effective_chars": total_effective_chars,
             "total_template_chars": total_template_chars,
+            "total_filtered_pairs": len(filtered_pairs),
         }
 
         return output

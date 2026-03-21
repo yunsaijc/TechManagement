@@ -139,9 +139,13 @@ class MatchingAgent:
         Returns:
             学科代码列表
         """
-        # 简化实现：从项目ID或其他方式获取
-        # 实际应该从项目信息中获取
-        return []
+        subject_codes = []
+        for project in group.projects:
+            if getattr(project, "subject_code", None):
+                subject_codes.append(project.subject_code)
+
+        # 若分组项目跨学科，允许为空，后续专家库按全量召回
+        return list(dict.fromkeys(subject_codes))
     
     def _generate_vectors(
         self,

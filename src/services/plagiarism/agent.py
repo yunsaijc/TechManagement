@@ -22,6 +22,7 @@ from src.services.plagiarism.aggregator import ResultAggregator, PlagiarismResul
 from src.services.plagiarism.engine import ComparisonEngine
 from src.services.plagiarism.section_extractor import SectionExtractor
 from src.services.plagiarism.template_filter import TemplateFilter
+from src.services.plagiarism.template_prefilter import TemplatePreFilter
 from src.services.plagiarism.tokenizer import SentenceTokenizer
 
 
@@ -60,8 +61,14 @@ class PlagiarismAgent:
         # 初始化 Layer 5 组件
         self.tokenizer = SentenceTokenizer()
         self.template_filter = TemplateFilter()
-        # 使用更长的 N-gram (8-gram) 减少碎片化，连续匹配阈值 3
-        self.comparison_engine = ComparisonEngine(min_continuous_match=3, ngram_size=8)
+        self.template_prefilter = TemplatePreFilter(template_filter=self.template_filter)
+        # Winnowing 参数优化：减少碎片化
+        self.comparison_engine = ComparisonEngine(
+            min_continuous_match=5,
+            ngram_size=8,
+            winnowing_window=8,
+            min_match_length=30,
+        )
         self.result_aggregator = ResultAggregator(section_extractor=self.section_extractor)
 
     async def check(
@@ -146,9 +153,18 @@ class PlagiarismAgent:
             # 保留原始句子，用换行分隔（供后续追溯用）
             processed_texts[doc_id] = '\n'.join(s.text for s in sentences)
 
-        # 5. N-gram 比对
+        # 5. 前置模板过滤 - 标记应排除的位置区间
+        excluded_ranges = {}
+        for doc_id, sentences in sentences_map.items():
+            ranges = self.template_prefilter.mark_excluded_ranges(sentences)
+            if ranges:
+                excluded_ranges[doc_id] = ranges
+                print(f"[Plagiarism] 前置过滤排除 {len(ranges)} 个区间 for {doc_id}")
+        
+        # 6. N-gram 比对（传入排除区间）
         similarities = self.comparison_engine.compare(
             sentences_map,
+            excluded_ranges,
             self.threshold_high,
             self.threshold_medium,
         )
