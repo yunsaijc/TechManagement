@@ -1,11 +1,15 @@
 """分组 Agent
 
-语义优先版本：基于项目名称/简介理解项目在做什么，再进行分组。
-不再使用质量评价，也不把学科代码当作硬分区；学科代码仅作辅助信息。
+当前版本采用关键词Embedding主导 + 学科代码辅助分组策略：
+1. 构造文本（关键词重复3次 + 项目名）确保关键词权重最高
+2. 计算全局Embedding，建立语义空间
+3. 基于Embedding相似度进行全局层次聚类
+4. 对过大组/过小组合并基于Embedding再平衡
+
+分组数据固定来自指定业务批次下、审核通过的项目子集。
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 import os
@@ -56,12 +60,39 @@ def _clean_html_text(text: Optional[str]) -> str:
 
 
 def _text_for_project(project: Project, include_abstract: bool = True) -> str:
-    parts = [project.xmmc or ""]
-    if project.gjc:
-        parts.append(project.gjc)
-    if include_abstract and project.xmjj:
-        parts.append(_clean_html_text(project.xmjj)[:800])
-    return "。".join([part for part in parts if part])
+    """构造用于Embedding的文本，关键词重复3次确保权重最高"""
+    # 解析关键词
+    keywords = _parse_keywords_to_list(project.gjc)
+    
+    # 无关键词时从项目名提取
+    if not keywords and project.xmmc:
+        keywords = _extract_keywords_from_title_to_list(project.xmmc)
+    
+    # 构造文本：关键词重复3次 + 项目名
+    if keywords:
+        keyword_str = "；".join(keywords)
+        return f"{keyword_str}。研究主题：{keyword_str}。核心内容：{keyword_str}。项目名称：{project.xmmc or ''}"
+    else:
+        # 最后fallback：使用项目名
+        return project.xmmc or ""
+
+
+def _parse_keywords_to_list(gjc: Optional[str]) -> List[str]:
+    """解析关键词字段为列表"""
+    if not gjc:
+        return []
+    separators = r'[;；,，]'
+    keywords = re.split(separators, gjc)
+    return [kw.strip() for kw in keywords if kw.strip()]
+
+
+def _extract_keywords_from_title_to_list(title: str) -> List[str]:
+    """从项目标题提取关键词列表"""
+    if not title:
+        return []
+    tokens = re.findall(r'[\u4e00-\u9fff]{2,8}', title)
+    stopwords = {'项目', '研究', '技术', '系统', '方法', '应用', '开发', '平台', '基于', '及其'}
+    return [t for t in tokens if t not in stopwords][:5]  # 最多取5个
 
 
 def _safe_mean(values: List[float]) -> float:
@@ -73,10 +104,10 @@ def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
     return float(np.dot(vec_a, vec_b) / denom)
 
 
-def _save_grouping_result(year: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
+def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"grouping_{year}_{timestamp}.json"
+        filename = f"grouping_{dataset_tag}_{timestamp}.json"
         filepath = os.path.join(DEBUG_DIR, filename)
         created_at = result.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(result.created_at, "strftime") else str(result.created_at)
 
@@ -144,7 +175,7 @@ class GroupingAgent:
         llm: Any = None,
         embedder: Any = None,
         max_per_group: int = 15,
-        min_per_group: int = 5,
+        min_per_group: int = 3,
         concurrency: int = 10,
     ):
         self.llm = llm or get_default_llm_client()
@@ -152,16 +183,29 @@ class GroupingAgent:
         self.max_per_group = max_per_group
         self.min_per_group = min_per_group
         self.concurrency = concurrency
-        self.title_concurrency = 4
-
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
 
     def _load_subject_cache(self) -> Dict[str, str]:
         try:
+            subject_cache: Dict[str, str] = {}
+
+            zrjj_rows = self.xkfl_repo.list_all_zrjj()
+            for row in zrjj_rows:
+                code = str(row.get("code") or "").strip()
+                name = str(row.get("name") or "").strip()
+                if code and name:
+                    subject_cache[code] = name
+
             rows = self.xkfl_repo.list_all()
-            return {str(row.get("code") or "").strip(): str(row.get("name") or "").strip() for row in rows if row.get("code")}
+            for row in rows:
+                code = str(row.get("code") or "").strip()
+                name = str(row.get("name") or "").strip()
+                if code and name and code not in subject_cache:
+                    subject_cache[code] = name
+
+            return subject_cache
         except Exception:
             return {}
 
@@ -253,11 +297,49 @@ class GroupingAgent:
         if not projects:
             return {}
         texts = [self._project_text(project) for project in projects]
-        print(f"[Grouping] 开始生成 embedding: {len(projects)} 个项目")
+        total = len(projects)
+        batch_size = 25  # 与embedding_factory一致
+        total_batches = (total + batch_size - 1) // batch_size
+        print(f"[Grouping] 开始生成 embedding: {total} 个项目，分 {total_batches} 批，每批 {batch_size} 个")
+        
         embed_start = time.time()
-        vectors = self._safe_embed(texts)
-        print(f"[Grouping] embedding 完成: {len(projects)} 个项目，用时 {time.time() - embed_start:.2f} 秒")
+        vectors = self._safe_embed_with_progress(texts, batch_size)
+        
+        elapsed = time.time() - embed_start
+        print(f"[Grouping] embedding 完成: {total} 个项目，{total_batches} 批，用时 {elapsed:.2f} 秒，平均每批 {elapsed/total_batches:.2f} 秒")
         return {project.id: vectors[idx] for idx, project in enumerate(projects)}
+    
+    def _safe_embed_with_progress(self, texts: List[str], batch_size: int = 25) -> np.ndarray:
+        """带进度显示的embedding计算"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        total = len(texts)
+        total_batches = (total + batch_size - 1) // batch_size
+        results = {}
+        completed = 0
+        
+        def embed_batch(start_idx: int) -> tuple[int, np.ndarray]:
+            batch = texts[start_idx:start_idx + batch_size]
+            embeddings = self.embedder.embed_documents(batch)
+            return start_idx, np.array(embeddings)
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(embed_batch, start): start 
+                      for start in range(0, total, batch_size)}
+            
+            for future in as_completed(futures):
+                start_idx, embeddings = future.result()
+                results[start_idx] = embeddings
+                completed += 1
+                if completed % 10 == 0 or completed == total_batches:
+                    print(f"[Grouping] embedding 进度: {completed}/{total_batches} 批 ({completed*100//total_batches}%)")
+        
+        # 按顺序合并结果
+        all_embeddings = []
+        for start in range(0, total, batch_size):
+            all_embeddings.extend(results[start])
+        
+        return np.array(all_embeddings)
 
     def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         buckets: Dict[str, List[Project]] = defaultdict(list)
@@ -356,24 +438,36 @@ class GroupingAgent:
         return ProjectCluster("kmeans").fit_predict(vectors, n_clusters)
 
     def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
+        """基于关键词Embedding主导的全局层次聚类分组"""
         if not projects:
             return []
         if len(projects) <= max_per_group:
             return [projects]
 
-        buckets = self._bucket_projects_by_subject(projects)
-        vector_map = self._embed_large_buckets_only(buckets, max_per_group)
-
-        clusters: List[List[Project]] = []
-        for _, bucket in sorted(buckets.items(), key=lambda item: (-len(item[1]), item[0])):
-            if len(bucket) <= max_per_group:
-                clusters.append(bucket)
-                continue
-            clusters.extend(self._split_bucket_by_text(bucket, max_per_group, vector_map))
-
-        if vector_map:
-            clusters = self._merge_small_clusters(clusters, vector_map, max_per_group)
-        return self._rebalance_clusters(clusters, max_per_group, vector_map)
+        print(f"[Grouping] 开始关键词Embedding主导分组，共 {len(projects)} 个项目")
+        
+        # 1. 计算全局Embedding
+        print(f"[Grouping] 计算全局Embedding...")
+        vector_map = self._embed_projects(projects)
+        print(f"[Grouping] Embedding计算完成，共 {len(vector_map)} 个项目")
+        
+        # 2. 基于Embedding相似度进行全局层次聚类
+        print(f"[Grouping] 进行全局层次聚类...")
+        clusters = self._hierarchical_cluster_by_embedding(projects, vector_map, similarity_threshold=0.7)
+        print(f"[Grouping] 初始聚类完成，生成 {len(clusters)} 个组")
+        
+        # 3. 处理过大组（基于Embedding重新聚类拆分）
+        print(f"[Grouping] 处理过大组...")
+        clusters = self._split_large_clusters_by_embedding(clusters, max_per_group, vector_map)
+        print(f"[Grouping] 过大组拆分完成，共 {len(clusters)} 个组")
+        
+        # 4. 处理过小组合并到最相似的组
+        print(f"[Grouping] 处理过小组合并...")
+        clusters = self._merge_small_clusters_by_embedding(clusters, self.min_per_group, max_per_group, vector_map)
+        print(f"[Grouping] 过小组合并完成，共 {len(clusters)} 个组")
+        
+        print(f"[Grouping] 最终分组完成，共 {len(clusters)} 个组")
+        return clusters
 
     def _rebalance_clusters(self, clusters: List[List[Project]], max_per_group: int, vector_map: Optional[Dict[str, np.ndarray]] = None) -> List[List[Project]]:
         if not clusters:
@@ -437,41 +531,41 @@ class GroupingAgent:
 
         return [cluster for cluster in clusters if cluster]
 
-    async def _select_group_title(self, cluster: List[Project]) -> Tuple[str, str]:
+    def _extract_keywords(self, text: str) -> List[str]:
+        tokens = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]{2,}", text or "")
+        stopwords = {
+            "项目", "研究", "技术", "系统", "方法", "应用", "开发", "平台", "关键", "实现",
+            "相关", "面向", "基于", "一种", "及其", "关键技术", "理论", "模型", "机制",
+        }
+        return [token for token in tokens if token not in stopwords]
+
+    def _select_group_title(self, cluster: List[Project]) -> Tuple[str, str, str]:
         subject_codes = [project.ssxk1 for project in cluster if project.ssxk1]
         subject_name = ""
         if subject_codes:
             common = Counter(subject_codes).most_common(1)[0][0]
             subject_name = self._get_subject_name(common)
 
-        text_samples = []
-        for project in cluster[:5]:
-            text_samples.append(_text_for_project(project)[:180])
+        keyword_counter: Counter[str] = Counter()
+        for project in cluster[:10]:
+            keyword_counter.update(self._extract_keywords(project.xmmc or ""))
 
-        prompt = f"""你是项目分组专家。请根据以下项目，给这个组一个简短的中文主题名称，并用一句话概括这一组在做什么。
+        top_keywords = [word for word, _ in keyword_counter.most_common(2)]
+        if subject_name and top_keywords:
+            title = f"{subject_name}-{''.join(top_keywords)}"
+        elif subject_name:
+            title = subject_name
+        elif top_keywords:
+            title = "-".join(top_keywords)
+        else:
+            title = "综合主题"
 
-项目样例：
-{chr(10).join(f'- {sample}' for sample in text_samples)}
+        sample_names = "、".join((project.xmmc or "")[:20] for project in cluster[:3] if project.xmmc)
+        summary = f"按学科与项目主题聚合形成的分组"
+        if sample_names:
+            summary += f"，代表项目包括：{sample_names}"
 
-请严格输出 JSON：
-{{"title":"...","summary":"..."}}
-"""
-
-        title = subject_name or "综合主题"
-        summary = "按项目语义自动聚合形成的分组"
-        try:
-            response = await self.llm.ainvoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start >= 0 and end > start:
-                payload = json.loads(content[start:end])
-                title = (payload.get("title") or title or "综合主题").strip()
-                summary = (payload.get("summary") or summary).strip()
-        except Exception:
-            pass
-
-        return title or "综合主题", summary
+        return title[:40] or "综合主题", summary[:120], subject_name
 
     def _build_group_summary(self, cluster: List[Project], title: str) -> GroupSummary:
         themes = []
@@ -487,14 +581,11 @@ class GroupingAgent:
         total_clusters = len(clusters)
         build_start = time.time()
 
-        semaphore = asyncio.Semaphore(self.title_concurrency)
-
         async def build_one(index: int, cluster: List[Project]) -> ProjectGroup:
             cluster_start = time.time()
             print(f"[Grouping] 生成分组标题进度 {index}/{total_clusters}，簇内项目 {len(cluster)} 个")
 
-            async with semaphore:
-                title, summary = await self._select_group_title(cluster)
+            title, summary, subject_name = self._select_group_title(cluster)
 
             project_items = []
             scores = []
@@ -507,7 +598,7 @@ class GroupingAgent:
                         xmmc=project.xmmc,
                         xmjj=project.xmjj or "",
                         subject_code=project.ssxk1,
-                        subject_name=self._get_subject_name(project.ssxk1 or "unknown"),
+                        subject_name=subject_name or self._get_subject_name(project.ssxk1 or "unknown"),
                         semantic_score=score,
                         quality_score=score,
                         reason=summary or f"语义归入：{title}",
@@ -517,7 +608,7 @@ class GroupingAgent:
             group = ProjectGroup(
                 group_id=index,
                 subject_code=cluster[0].ssxk1 if cluster and cluster[0].ssxk1 else None,
-                subject_name=title,
+                subject_name=subject_name or title,
                 projects=project_items,
                 count=len(cluster),
                 avg_quality=round(_safe_mean(scores), 2),
@@ -532,9 +623,9 @@ class GroupingAgent:
             )
             return group
 
-        groups = await asyncio.gather(
-            *(build_one(index, cluster) for index, cluster in enumerate(clusters, start=1))
-        )
+        groups = []
+        for index, cluster in enumerate(clusters, start=1):
+            groups.append(await build_one(index, cluster))
 
         print(f"[Grouping] 所有分组标题生成完成，用时 {time.time() - build_start:.2f} 秒")
         return list(groups)
@@ -576,19 +667,19 @@ class GroupingAgent:
         start_time = time.time()
         self.max_per_group = request.max_per_group
 
-        projects = self.project_repo.get_projects_by_year(
-            year=request.year,
-            category=request.category,
-            limit=request.limit,
-        )
+        projects = self.project_repo.get_grouping_test_projects(category=request.category)
         if not projects:
-            raise ValueError(f"没有找到 {request.year} 年度的项目")
+            raise ValueError("固定分组测试数据集中没有可用项目")
 
         projects = [project for project in projects if project.xmmc and project.xmmc.strip()]
         if not projects:
             raise ValueError("没有可用于分组的项目名称")
 
-        print(f"[Grouping] 获取到 {len(projects)} 个项目，开始语义分组")
+        dataset_filter = self.project_repo.get_grouping_dataset_filter()
+        print(
+            f"[Grouping] 获取到 {len(projects)} 个项目，"
+            f"使用固定测试数据集 guide={dataset_filter['guide_code']} audit={dataset_filter['audit_status']}，开始分组"
+        )
 
         cluster_start = time.time()
         clusters = self._cluster_projects(projects, self.max_per_group)
@@ -627,20 +718,19 @@ class GroupingAgent:
 
         result = GroupingResult(
             id=str(uuid.uuid4()),
-            year=request.year,
+            year="fixed",
             groups=groups,
             statistics=stats,
             created_at=datetime.now(),
         )
 
         save_start = time.time()
-        filename = _save_grouping_result(request.year, result, meta={
+        filename = _save_grouping_result("fixed", result, meta={
             "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
+            "dataset_filter": dataset_filter,
             "input": {
-                "year": request.year,
                 "category": request.category,
                 "max_per_group": request.max_per_group,
-                "limit": request.limit,
             },
         })
         if filename:
@@ -656,7 +746,6 @@ class GroupingAgent:
 
     async def full_grouping(self, request: FullGroupingRequest) -> FullGroupingResult:
         grouping_request = GroupingRequest(
-            year=request.year,
             category=request.category,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC,
@@ -716,10 +805,401 @@ class GroupingAgent:
 
         return FullGroupingResult(
             id=f"full_{grouping_result.id}",
-            year=request.year,
+            year="fixed",
             category=request.category,
             groups=grouping_result.groups,
             matches=matches,
             statistics=statistics,
             report=report,
         )
+
+
+# ========== 关键词分组相关方法 ==========
+
+    def _get_code_prefix(self, code: str) -> str:
+        """提取完整学科代码作为分组桶键（使用全部6位代码进行粗分）"""
+        code = (code or "").strip()
+        if not code:
+            return "unknown"
+        # 使用完整代码进行粗分，如 F020202、B010303
+        return code
+
+    def _parse_keywords(self, gjc: Optional[str]) -> set:
+        """解析关键词字段为集合"""
+        if not gjc:
+            return set()
+        # 支持分号、逗号分隔
+        separators = r'[;；,，]'
+        keywords = re.split(separators, gjc)
+        # 清洗：去空格、统一小写
+        return {kw.strip().lower() for kw in keywords if kw.strip()}
+
+    def _jaccard_similarity(self, set_a: set, set_b: set) -> float:
+        """计算两个集合的Jaccard相似度"""
+        if not set_a or not set_b:
+            return 0.0
+        intersection = len(set_a & set_b)
+        union = len(set_a | set_b)
+        return intersection / union if union > 0 else 0.0
+
+    def _compute_keyword_similarity_matrix(self, projects: List[Project]) -> np.ndarray:
+        """计算项目间的关键词相似度矩阵"""
+        n = len(projects)
+        matrix = np.zeros((n, n))
+        
+        # 提取所有项目的关键词，gjc为空时从项目名提取
+        keywords_list = []
+        for p in projects:
+            kw = self._parse_keywords(p.gjc)
+            if not kw and p.xmmc:
+                # 从项目名提取关键词作为fallback
+                kw = self._extract_keywords_from_title(p.xmmc)
+            keywords_list.append(kw)
+        
+        # 计算相似度矩阵（对称矩阵，只计算上三角）
+        for i in range(n):
+            for j in range(i + 1, n):
+                sim = self._jaccard_similarity(keywords_list[i], keywords_list[j])
+                matrix[i, j] = matrix[j, i] = sim
+        
+        return matrix
+
+    def _extract_keywords_from_title(self, title: str) -> set:
+        """从项目标题提取关键词"""
+        if not title:
+            return set()
+        # 提取2-8字的中文词组
+        tokens = re.findall(r'[\u4e00-\u9fff]{2,8}', title)
+        # 过滤停用词
+        stopwords = {'项目', '研究', '技术', '系统', '方法', '应用', '开发', '平台', '基于', '及其'}
+        return {t for t in tokens if t not in stopwords}
+
+    def _hierarchical_cluster_by_keywords(
+        self, 
+        projects: List[Project], 
+        similarity_matrix: np.ndarray,
+        similarity_threshold: float = 0.3
+    ) -> List[List[Project]]:
+        """基于关键词相似度进行层次聚类"""
+        n = len(projects)
+        if n == 0:
+            return []
+        if n == 1:
+            return [projects]
+        
+        # 初始化：每个项目为一个簇
+        clusters = [[i] for i in range(n)]
+        
+        # 层次聚类：不断合并相似度最高的簇
+        while len(clusters) > 1:
+            best_sim = -1.0
+            best_pair = None
+            
+            # 找出相似度最高的一对簇
+            for i in range(len(clusters)):
+                for j in range(i + 1, len(clusters)):
+                    # 计算两个簇之间的平均相似度
+                    sim_sum = 0.0
+                    count = 0
+                    for idx_a in clusters[i]:
+                        for idx_b in clusters[j]:
+                            sim_sum += similarity_matrix[idx_a, idx_b]
+                            count += 1
+                    avg_sim = sim_sum / count if count > 0 else 0.0
+                    
+                    if avg_sim > best_sim:
+                        best_sim = avg_sim
+                        best_pair = (i, j)
+            
+            # 如果最高相似度低于阈值，停止合并
+            if best_sim < similarity_threshold:
+                break
+            
+            # 合并最相似的两个簇
+            if best_pair:
+                i, j = best_pair
+                clusters[i].extend(clusters[j])
+                clusters.pop(j)
+        
+        # 将索引转换为项目对象
+        return [[projects[idx] for idx in cluster] for cluster in clusters]
+
+    def _group_by_code_prefix(self, projects: List[Project]) -> Dict[str, List[Project]]:
+        """按完整学科代码分组"""
+        buckets: Dict[str, List[Project]] = defaultdict(list)
+        for project in projects:
+            prefix = self._get_code_prefix(project.ssxk1)
+            buckets[prefix].append(project)
+        return dict(buckets)
+
+    def _cluster_by_keywords(
+        self, 
+        projects: List[Project], 
+        max_per_group: int = 15,
+        similarity_threshold: float = 0.3
+    ) -> List[List[Project]]:
+        """基于关键词的完整聚类流程"""
+        if not projects:
+            return []
+        if len(projects) <= max_per_group:
+            return [projects]
+        
+        # 计算相似度矩阵
+        similarity_matrix = self._compute_keyword_similarity_matrix(projects)
+        
+        # 层次聚类
+        clusters = self._hierarchical_cluster_by_keywords(
+            projects, similarity_matrix, similarity_threshold
+        )
+        
+        # 处理过大的组：按相似度继续拆分
+        result = []
+        for cluster in clusters:
+            if len(cluster) > max_per_group:
+                # 递归拆分
+                sub_clusters = self._cluster_by_keywords(
+                    cluster, max_per_group, similarity_threshold
+                )
+                result.extend(sub_clusters)
+            else:
+                result.append(cluster)
+        
+        return result
+
+    def _rebalance_by_keywords(
+        self, 
+        clusters: List[List[Project]], 
+        max_per_group: int
+    ) -> List[List[Project]]:
+        """基于关键词相似度再平衡分组"""
+        if not clusters:
+            return clusters
+        
+        changed = True
+        while changed:
+            changed = False
+            clusters = [c for c in clusters if c]
+            
+            # 拆分过大组
+            for idx, cluster in list(enumerate(clusters)):
+                if len(cluster) <= max_per_group:
+                    continue
+                # 重新聚类
+                sub_clusters = self._cluster_by_keywords(cluster, max_per_group, 0.3)
+                clusters[idx:idx + 1] = sub_clusters
+                changed = True
+                break
+            
+            if changed:
+                continue
+            
+            # 合并过小组
+            small_indices = [i for i, c in enumerate(clusters) if 0 < len(c) < self.min_per_group]
+            if not small_indices:
+                break
+            
+            for idx in small_indices:
+                if idx >= len(clusters):
+                    continue
+                cluster = clusters[idx]
+                if not cluster:
+                    continue
+                
+                # 计算与哪个组最相似
+                cluster_keywords = set()
+                for p in cluster:
+                    cluster_keywords.update(self._parse_keywords(p.gjc))
+                
+                best_idx = None
+                best_sim = -1.0
+                current_code = self._get_code_prefix(cluster[0].ssxk1)
+                
+                for other_idx, other in enumerate(clusters):
+                    if other_idx == idx or not other:
+                        continue
+                    if len(other) + len(cluster) > max_per_group:
+                        continue
+                    
+                    # 代码前缀必须相同
+                    other_code = self._get_code_prefix(other[0].ssxk1)
+                    if current_code != other_code:
+                        continue
+                    
+                    # 计算关键词相似度
+                    other_keywords = set()
+                    for p in other:
+                        other_keywords.update(self._parse_keywords(p.gjc))
+                    
+                    sim = self._jaccard_similarity(cluster_keywords, other_keywords)
+                    if sim > best_sim:
+                        best_sim = sim
+                        best_idx = other_idx
+                
+                if best_idx is not None:
+                    clusters[best_idx].extend(cluster)
+                    clusters[idx] = []
+                    changed = True
+                    break
+        
+        return [c for c in clusters if c]
+
+
+# ========== Embedding主导分组新方法 ==========
+    
+    def _hierarchical_cluster_by_embedding(
+        self,
+        projects: List[Project],
+        vector_map: Dict[str, np.ndarray],
+        similarity_threshold: float = 0.7
+    ) -> List[List[Project]]:
+        """基于Embedding相似度进行全局层次聚类（使用scipy优化版本）"""
+        n = len(projects)
+        if n == 0:
+            return []
+        if n == 1:
+            return [projects]
+        
+        # 获取所有embedding向量
+        vectors = np.array([vector_map.get(p.id, np.zeros(1536)) for p in projects])
+        
+        # 使用scipy的层次聚类（C实现，比Python快100倍+）
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import pdist
+        
+        # 计算距离矩阵并聚类（向量化，比Python循环快）
+        distances = pdist(vectors, metric='cosine')
+        linkage_matrix = linkage(distances, method='average')
+        
+        # 根据相似度阈值确定聚类
+        distance_threshold = 1 - similarity_threshold
+        labels = fcluster(linkage_matrix, t=distance_threshold, criterion='distance')
+        
+        # 按标签分组
+        clusters_dict: Dict[int, List[int]] = {}
+        for idx, label in enumerate(labels):
+            if label not in clusters_dict:
+                clusters_dict[label] = []
+            clusters_dict[label].append(idx)
+        
+        # 将索引转换为项目对象
+        return [[projects[idx] for idx in cluster] for cluster in clusters_dict.values()]
+    
+    def _split_large_clusters_by_embedding(
+        self,
+        clusters: List[List[Project]],
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """基于Embedding重新聚类拆分过大组"""
+        result = []
+        
+        for cluster in clusters:
+            if len(cluster) <= max_per_group:
+                result.append(cluster)
+            else:
+                # 对过大组重新聚类，使用更高的阈值进行更细的拆分
+                sub_clusters = self._hierarchical_cluster_by_embedding(
+                    cluster, vector_map, similarity_threshold=0.75
+                )
+                
+                # 如果拆分后还有过大的，继续递归拆分
+                for sub in sub_clusters:
+                    if len(sub) > max_per_group:
+                        # 使用K-means进行强制拆分
+                        sub_sub_clusters = self._force_split_by_kmeans(sub, max_per_group, vector_map)
+                        result.extend(sub_sub_clusters)
+                    else:
+                        result.append(sub)
+        
+        return result
+    
+    def _force_split_by_kmeans(
+        self,
+        projects: List[Project],
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """使用K-means强制拆分过大组"""
+        n = len(projects)
+        n_clusters = math.ceil(n / max_per_group)
+        
+        # 获取embedding矩阵
+        vectors = np.array([vector_map.get(p.id, np.zeros(1536)) for p in projects])
+        
+        # 使用K-means聚类
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(vectors)
+        
+        # 按标签分组
+        clusters_dict: Dict[int, List[Project]] = {}
+        for idx, label in enumerate(labels):
+            if label not in clusters_dict:
+                clusters_dict[label] = []
+            clusters_dict[label].append(projects[idx])
+        
+        return list(clusters_dict.values())
+    
+    def _merge_small_clusters_by_embedding(
+        self,
+        clusters: List[List[Project]],
+        min_per_group: int,
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """基于Embedding相似度合并过小组合并到最相似的组"""
+        if not clusters:
+            return clusters
+        
+        changed = True
+        while changed:
+            changed = False
+            clusters = [c for c in clusters if c]
+            
+            # 找出小组合并
+            small_indices = [i for i, c in enumerate(clusters) if 0 < len(c) < min_per_group]
+            if not small_indices:
+                break
+            
+            for idx in small_indices:
+                if idx >= len(clusters):
+                    continue
+                cluster = clusters[idx]
+                if not cluster:
+                    continue
+                
+                # 计算该组的平均embedding
+                cluster_vectors = [vector_map.get(p.id) for p in cluster if p.id in vector_map]
+                if not cluster_vectors:
+                    continue
+                cluster_vec = np.mean(cluster_vectors, axis=0)
+                
+                # 找最相似的目标组
+                best_idx = None
+                best_sim = -1.0
+                
+                for other_idx, other in enumerate(clusters):
+                    if other_idx == idx or not other:
+                        continue
+                    if len(other) + len(cluster) > max_per_group:
+                        continue
+                    
+                    # 计算目标组的平均embedding
+                    other_vectors = [vector_map.get(p.id) for p in other if p.id in vector_map]
+                    if not other_vectors:
+                        continue
+                    other_vec = np.mean(other_vectors, axis=0)
+                    
+                    # 计算相似度
+                    sim = _cosine_similarity(cluster_vec, other_vec)
+                    if sim > best_sim:
+                        best_sim = sim
+                        best_idx = other_idx
+                
+                if best_idx is not None:
+                    clusters[best_idx].extend(cluster)
+                    clusters[idx] = []
+                    changed = True
+                    break
+        
+        return [c for c in clusters if c]

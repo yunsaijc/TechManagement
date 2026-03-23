@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Tuple
 from src.common.file_handler import get_parser
 from src.services.plagiarism.aggregator import ResultAggregator, PlagiarismResult
 from src.services.plagiarism.engine import ComparisonEngine
+from src.services.plagiarism.report_builder import PlagiarismHtmlReportBuilder
 from src.services.plagiarism.section_extractor import SectionExtractor
 from src.services.plagiarism.template_filter import TemplateFilter
 from src.services.plagiarism.template_prefilter import TemplatePreFilter
@@ -62,6 +63,7 @@ class PlagiarismAgent:
         self.tokenizer = SentenceTokenizer()
         self.template_filter = TemplateFilter()
         self.template_prefilter = TemplatePreFilter(template_filter=self.template_filter)
+        self.report_builder = PlagiarismHtmlReportBuilder()
         # Winnowing 参数优化：减少碎片化
         self.comparison_engine = ComparisonEngine(
             min_continuous_match=5,
@@ -251,9 +253,14 @@ class PlagiarismAgent:
             primary_doc_id,
             template_filter=self.template_filter,
         )
+        output["documents"] = processed_texts
 
         filename = debug_dir / "plagiarism_debug.json"
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
+        html_filename = debug_dir / "plagiarism_report.html"
+        self.report_builder.build_from_debug_file(filename, html_filename)
+
         print(f"[Plagiarism] Debug: 保存查重详情到 {filename}")
+        print(f"[Plagiarism] Debug: 保存HTML报告到 {html_filename}")
