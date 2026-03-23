@@ -616,9 +616,30 @@ class PerfCheckDetector:
         prompt = ALIGNMENT_REFINEMENT_PROMPT.format(item_a=item_a, item_b=item_b)
         try:
             response = await self.llm.ainvoke(prompt)
-            content = response.content
+            raw_content = response.content
+
+            # 兼容不同 SDK：content 可能是 str 或分段列表。
+            if isinstance(raw_content, str):
+                content = raw_content
+            elif isinstance(raw_content, list):
+                chunks: list[str] = []
+                for part in raw_content:
+                    if isinstance(part, str):
+                        chunks.append(part)
+                    elif isinstance(part, dict):
+                        text_part = part.get("text")
+                        if isinstance(text_part, str):
+                            chunks.append(text_part)
+                        else:
+                            chunks.append(str(part))
+                    else:
+                        chunks.append(str(part))
+                content = "\n".join(chunks)
+            else:
+                content = str(raw_content)
+
             if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
+                content = content.split("```json", 1)[1].split("```", 1)[0].strip()
             return json.loads(content)
         except Exception as e:
             logger.error(f"Refinement failed: {e}")

@@ -2,11 +2,11 @@ import json
 import logging
 import asyncio
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Dict, Mapping, Optional
 
 from src.common.file_handler.factory import get_parser
 from src.common.llm import get_llm_client, llm_config
-from src.common.models.perfcheck import DocumentSchema
+from src.common.models.perfcheck import Budget, DocumentSchema
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class PerfCheckParser:
 
     async def _run_extract_tasks_fail_fast(
         self,
-        task_builders: Dict[str, asyncio.Future],
+        task_builders: Mapping[str, Awaitable[Dict[str, Any]]],
         *,
         core_keys: set[str],
     ) -> Dict[str, Dict[str, Any]]:
@@ -457,7 +457,7 @@ class PerfCheckParser:
                 project_name="",
                 research_contents=[],
                 performance_targets=[],
-                budget={"total": 0.0, "items": []},
+                budget=Budget(total=0.0, items=[]),
                 basic_info=None,
                 units_budget=[],
             )
