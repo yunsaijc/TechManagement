@@ -8,7 +8,6 @@ source .venv/bin/activate
 uv add xxx
 
 
-
 启动后端（同时承载前端演示页）
 python -m uvicorn src.app.main:app --host 0.0.0.0 --port 8005 --reload
 
