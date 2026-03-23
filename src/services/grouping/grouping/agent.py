@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 import os
@@ -152,16 +151,29 @@ class GroupingAgent:
         self.max_per_group = max_per_group
         self.min_per_group = min_per_group
         self.concurrency = concurrency
-        self.title_concurrency = 4
-
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
 
     def _load_subject_cache(self) -> Dict[str, str]:
         try:
+            subject_cache: Dict[str, str] = {}
+
+            zrjj_rows = self.xkfl_repo.list_all_zrjj()
+            for row in zrjj_rows:
+                code = str(row.get("code") or "").strip()
+                name = str(row.get("name") or "").strip()
+                if code and name:
+                    subject_cache[code] = name
+
             rows = self.xkfl_repo.list_all()
-            return {str(row.get("code") or "").strip(): str(row.get("name") or "").strip() for row in rows if row.get("code")}
+            for row in rows:
+                code = str(row.get("code") or "").strip()
+                name = str(row.get("name") or "").strip()
+                if code and name and code not in subject_cache:
+                    subject_cache[code] = name
+
+            return subject_cache
         except Exception:
             return {}
 
@@ -437,41 +449,41 @@ class GroupingAgent:
 
         return [cluster for cluster in clusters if cluster]
 
-    async def _select_group_title(self, cluster: List[Project]) -> Tuple[str, str]:
+    def _extract_keywords(self, text: str) -> List[str]:
+        tokens = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]{2,}", text or "")
+        stopwords = {
+            "项目", "研究", "技术", "系统", "方法", "应用", "开发", "平台", "关键", "实现",
+            "相关", "面向", "基于", "一种", "及其", "关键技术", "理论", "模型", "机制",
+        }
+        return [token for token in tokens if token not in stopwords]
+
+    def _select_group_title(self, cluster: List[Project]) -> Tuple[str, str]:
         subject_codes = [project.ssxk1 for project in cluster if project.ssxk1]
         subject_name = ""
         if subject_codes:
             common = Counter(subject_codes).most_common(1)[0][0]
             subject_name = self._get_subject_name(common)
 
-        text_samples = []
-        for project in cluster[:5]:
-            text_samples.append(_text_for_project(project)[:180])
+        keyword_counter: Counter[str] = Counter()
+        for project in cluster[:10]:
+            keyword_counter.update(self._extract_keywords(project.xmmc or ""))
 
-        prompt = f"""你是项目分组专家。请根据以下项目，给这个组一个简短的中文主题名称，并用一句话概括这一组在做什么。
+        top_keywords = [word for word, _ in keyword_counter.most_common(2)]
+        if subject_name and top_keywords:
+            title = f"{subject_name}-{''.join(top_keywords)}"
+        elif subject_name:
+            title = subject_name
+        elif top_keywords:
+            title = "-".join(top_keywords)
+        else:
+            title = "综合主题"
 
-项目样例：
-{chr(10).join(f'- {sample}' for sample in text_samples)}
+        sample_names = "、".join((project.xmmc or "")[:20] for project in cluster[:3] if project.xmmc)
+        summary = f"按学科与项目主题聚合形成的分组"
+        if sample_names:
+            summary += f"，代表项目包括：{sample_names}"
 
-请严格输出 JSON：
-{{"title":"...","summary":"..."}}
-"""
-
-        title = subject_name or "综合主题"
-        summary = "按项目语义自动聚合形成的分组"
-        try:
-            response = await self.llm.ainvoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start >= 0 and end > start:
-                payload = json.loads(content[start:end])
-                title = (payload.get("title") or title or "综合主题").strip()
-                summary = (payload.get("summary") or summary).strip()
-        except Exception:
-            pass
-
-        return title or "综合主题", summary
+        return title[:40] or "综合主题", summary[:120]
 
     def _build_group_summary(self, cluster: List[Project], title: str) -> GroupSummary:
         themes = []
@@ -487,14 +499,11 @@ class GroupingAgent:
         total_clusters = len(clusters)
         build_start = time.time()
 
-        semaphore = asyncio.Semaphore(self.title_concurrency)
-
         async def build_one(index: int, cluster: List[Project]) -> ProjectGroup:
             cluster_start = time.time()
             print(f"[Grouping] 生成分组标题进度 {index}/{total_clusters}，簇内项目 {len(cluster)} 个")
 
-            async with semaphore:
-                title, summary = await self._select_group_title(cluster)
+            title, summary = self._select_group_title(cluster)
 
             project_items = []
             scores = []
@@ -532,9 +541,9 @@ class GroupingAgent:
             )
             return group
 
-        groups = await asyncio.gather(
-            *(build_one(index, cluster) for index, cluster in enumerate(clusters, start=1))
-        )
+        groups = []
+        for index, cluster in enumerate(clusters, start=1):
+            groups.append(await build_one(index, cluster))
 
         print(f"[Grouping] 所有分组标题生成完成，用时 {time.time() - build_start:.2f} 秒")
         return list(groups)
