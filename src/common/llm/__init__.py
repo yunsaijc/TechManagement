@@ -32,6 +32,8 @@ def get_default_llm_client():
         base_url=llm_config.base_url or None,
         temperature=llm_config.temperature,
         max_tokens=llm_config.max_tokens,
+        timeout=llm_config.timeout,
+        max_retries=llm_config.max_retries,
     )
 
 
