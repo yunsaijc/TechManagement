@@ -8,15 +8,6 @@ source .venv/bin/activate
 uv add xxx
 
 
-进入项目目录
-cd /home/tdkx/ljh/Tech
-
-激活虚拟环境
-source .venv/bin/activate
-
-安装依赖（首次或依赖变更时）
-uv sync
-
 启动后端（同时承载前端演示页）
 python -m uvicorn src.app.main:app --host 0.0.0.0 --port 8005 --reload
 
