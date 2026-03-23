@@ -1,9 +1,10 @@
 """分组 Agent
 
-当前版本采用学科代码 + 关键词联合分组策略：
-1. 按完整学科代码（6位）粗分桶
-2. 在桶内基于关键词Jaccard相似度进行层次聚类
-3. 组内主题一致性由关键词重叠度保证
+当前版本采用关键词Embedding主导 + 学科代码辅助分组策略：
+1. 构造文本（关键词重复3次 + 项目名）确保关键词权重最高
+2. 计算全局Embedding，建立语义空间
+3. 基于Embedding相似度进行全局层次聚类
+4. 对过大组/过小组合并基于Embedding再平衡
 
 分组数据固定来自指定业务批次下、审核通过的项目子集。
 """
@@ -59,12 +60,39 @@ def _clean_html_text(text: Optional[str]) -> str:
 
 
 def _text_for_project(project: Project, include_abstract: bool = True) -> str:
-    parts = [project.xmmc or ""]
-    if project.gjc:
-        parts.append(project.gjc)
-    if include_abstract and project.xmjj:
-        parts.append(_clean_html_text(project.xmjj)[:800])
-    return "。".join([part for part in parts if part])
+    """构造用于Embedding的文本，关键词重复3次确保权重最高"""
+    # 解析关键词
+    keywords = _parse_keywords_to_list(project.gjc)
+    
+    # 无关键词时从项目名提取
+    if not keywords and project.xmmc:
+        keywords = _extract_keywords_from_title_to_list(project.xmmc)
+    
+    # 构造文本：关键词重复3次 + 项目名
+    if keywords:
+        keyword_str = "；".join(keywords)
+        return f"{keyword_str}。研究主题：{keyword_str}。核心内容：{keyword_str}。项目名称：{project.xmmc or ''}"
+    else:
+        # 最后fallback：使用项目名
+        return project.xmmc or ""
+
+
+def _parse_keywords_to_list(gjc: Optional[str]) -> List[str]:
+    """解析关键词字段为列表"""
+    if not gjc:
+        return []
+    separators = r'[;；,，]'
+    keywords = re.split(separators, gjc)
+    return [kw.strip() for kw in keywords if kw.strip()]
+
+
+def _extract_keywords_from_title_to_list(title: str) -> List[str]:
+    """从项目标题提取关键词列表"""
+    if not title:
+        return []
+    tokens = re.findall(r'[\u4e00-\u9fff]{2,8}', title)
+    stopwords = {'项目', '研究', '技术', '系统', '方法', '应用', '开发', '平台', '基于', '及其'}
+    return [t for t in tokens if t not in stopwords][:5]  # 最多取5个
 
 
 def _safe_mean(values: List[float]) -> float:
@@ -147,7 +175,7 @@ class GroupingAgent:
         llm: Any = None,
         embedder: Any = None,
         max_per_group: int = 15,
-        min_per_group: int = 5,
+        min_per_group: int = 3,
         concurrency: int = 10,
     ):
         self.llm = llm or get_default_llm_client()
@@ -269,11 +297,49 @@ class GroupingAgent:
         if not projects:
             return {}
         texts = [self._project_text(project) for project in projects]
-        print(f"[Grouping] 开始生成 embedding: {len(projects)} 个项目")
+        total = len(projects)
+        batch_size = 25  # 与embedding_factory一致
+        total_batches = (total + batch_size - 1) // batch_size
+        print(f"[Grouping] 开始生成 embedding: {total} 个项目，分 {total_batches} 批，每批 {batch_size} 个")
+        
         embed_start = time.time()
-        vectors = self._safe_embed(texts)
-        print(f"[Grouping] embedding 完成: {len(projects)} 个项目，用时 {time.time() - embed_start:.2f} 秒")
+        vectors = self._safe_embed_with_progress(texts, batch_size)
+        
+        elapsed = time.time() - embed_start
+        print(f"[Grouping] embedding 完成: {total} 个项目，{total_batches} 批，用时 {elapsed:.2f} 秒，平均每批 {elapsed/total_batches:.2f} 秒")
         return {project.id: vectors[idx] for idx, project in enumerate(projects)}
+    
+    def _safe_embed_with_progress(self, texts: List[str], batch_size: int = 25) -> np.ndarray:
+        """带进度显示的embedding计算"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        total = len(texts)
+        total_batches = (total + batch_size - 1) // batch_size
+        results = {}
+        completed = 0
+        
+        def embed_batch(start_idx: int) -> tuple[int, np.ndarray]:
+            batch = texts[start_idx:start_idx + batch_size]
+            embeddings = self.embedder.embed_documents(batch)
+            return start_idx, np.array(embeddings)
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {executor.submit(embed_batch, start): start 
+                      for start in range(0, total, batch_size)}
+            
+            for future in as_completed(futures):
+                start_idx, embeddings = future.result()
+                results[start_idx] = embeddings
+                completed += 1
+                if completed % 10 == 0 or completed == total_batches:
+                    print(f"[Grouping] embedding 进度: {completed}/{total_batches} 批 ({completed*100//total_batches}%)")
+        
+        # 按顺序合并结果
+        all_embeddings = []
+        for start in range(0, total, batch_size):
+            all_embeddings.extend(results[start])
+        
+        return np.array(all_embeddings)
 
     def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         buckets: Dict[str, List[Project]] = defaultdict(list)
@@ -372,29 +438,33 @@ class GroupingAgent:
         return ProjectCluster("kmeans").fit_predict(vectors, n_clusters)
 
     def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
-        """基于代码+关键词的联合分组"""
+        """基于关键词Embedding主导的全局层次聚类分组"""
         if not projects:
             return []
         if len(projects) <= max_per_group:
             return [projects]
 
-        print(f"[Grouping] 开始代码+关键词联合分组，共 {len(projects)} 个项目")
+        print(f"[Grouping] 开始关键词Embedding主导分组，共 {len(projects)} 个项目")
         
-        # 1. 按完整学科代码粗分
-        buckets = self._group_by_code_prefix(projects)
-        print(f"[Grouping] 按完整代码粗分为 {len(buckets)} 个桶")
+        # 1. 计算全局Embedding
+        print(f"[Grouping] 计算全局Embedding...")
+        vector_map = self._embed_projects(projects)
+        print(f"[Grouping] Embedding计算完成，共 {len(vector_map)} 个项目")
         
-        # 2. 对每个桶进行关键词聚类
-        all_clusters: List[List[Project]] = []
-        for prefix, bucket in buckets.items():
-            print(f"[Grouping] 处理代码桶 {prefix}，共 {len(bucket)} 个项目")
-            clusters = self._cluster_by_keywords(bucket, max_per_group, similarity_threshold=0.3)
-            all_clusters.extend(clusters)
+        # 2. 基于Embedding相似度进行全局层次聚类
+        print(f"[Grouping] 进行全局层次聚类...")
+        clusters = self._hierarchical_cluster_by_embedding(projects, vector_map, similarity_threshold=0.7)
+        print(f"[Grouping] 初始聚类完成，生成 {len(clusters)} 个组")
         
-        print(f"[Grouping] 关键词聚类完成，生成 {len(all_clusters)} 个初始组")
+        # 3. 处理过大组（基于Embedding重新聚类拆分）
+        print(f"[Grouping] 处理过大组...")
+        clusters = self._split_large_clusters_by_embedding(clusters, max_per_group, vector_map)
+        print(f"[Grouping] 过大组拆分完成，共 {len(clusters)} 个组")
         
-        # 3. 处理过小/过大组
-        clusters = self._rebalance_by_keywords(all_clusters, max_per_group)
+        # 4. 处理过小组合并到最相似的组
+        print(f"[Grouping] 处理过小组合并...")
+        clusters = self._merge_small_clusters_by_embedding(clusters, self.min_per_group, max_per_group, vector_map)
+        print(f"[Grouping] 过小组合并完成，共 {len(clusters)} 个组")
         
         print(f"[Grouping] 最终分组完成，共 {len(clusters)} 个组")
         return clusters
@@ -961,6 +1031,167 @@ class GroupingAgent:
                         other_keywords.update(self._parse_keywords(p.gjc))
                     
                     sim = self._jaccard_similarity(cluster_keywords, other_keywords)
+                    if sim > best_sim:
+                        best_sim = sim
+                        best_idx = other_idx
+                
+                if best_idx is not None:
+                    clusters[best_idx].extend(cluster)
+                    clusters[idx] = []
+                    changed = True
+                    break
+        
+        return [c for c in clusters if c]
+
+
+# ========== Embedding主导分组新方法 ==========
+    
+    def _hierarchical_cluster_by_embedding(
+        self,
+        projects: List[Project],
+        vector_map: Dict[str, np.ndarray],
+        similarity_threshold: float = 0.7
+    ) -> List[List[Project]]:
+        """基于Embedding相似度进行全局层次聚类（使用scipy优化版本）"""
+        n = len(projects)
+        if n == 0:
+            return []
+        if n == 1:
+            return [projects]
+        
+        # 获取所有embedding向量
+        vectors = np.array([vector_map.get(p.id, np.zeros(1536)) for p in projects])
+        
+        # 使用scipy的层次聚类（C实现，比Python快100倍+）
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import pdist
+        
+        # 计算距离矩阵并聚类（向量化，比Python循环快）
+        distances = pdist(vectors, metric='cosine')
+        linkage_matrix = linkage(distances, method='average')
+        
+        # 根据相似度阈值确定聚类
+        distance_threshold = 1 - similarity_threshold
+        labels = fcluster(linkage_matrix, t=distance_threshold, criterion='distance')
+        
+        # 按标签分组
+        clusters_dict: Dict[int, List[int]] = {}
+        for idx, label in enumerate(labels):
+            if label not in clusters_dict:
+                clusters_dict[label] = []
+            clusters_dict[label].append(idx)
+        
+        # 将索引转换为项目对象
+        return [[projects[idx] for idx in cluster] for cluster in clusters_dict.values()]
+    
+    def _split_large_clusters_by_embedding(
+        self,
+        clusters: List[List[Project]],
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """基于Embedding重新聚类拆分过大组"""
+        result = []
+        
+        for cluster in clusters:
+            if len(cluster) <= max_per_group:
+                result.append(cluster)
+            else:
+                # 对过大组重新聚类，使用更高的阈值进行更细的拆分
+                sub_clusters = self._hierarchical_cluster_by_embedding(
+                    cluster, vector_map, similarity_threshold=0.75
+                )
+                
+                # 如果拆分后还有过大的，继续递归拆分
+                for sub in sub_clusters:
+                    if len(sub) > max_per_group:
+                        # 使用K-means进行强制拆分
+                        sub_sub_clusters = self._force_split_by_kmeans(sub, max_per_group, vector_map)
+                        result.extend(sub_sub_clusters)
+                    else:
+                        result.append(sub)
+        
+        return result
+    
+    def _force_split_by_kmeans(
+        self,
+        projects: List[Project],
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """使用K-means强制拆分过大组"""
+        n = len(projects)
+        n_clusters = math.ceil(n / max_per_group)
+        
+        # 获取embedding矩阵
+        vectors = np.array([vector_map.get(p.id, np.zeros(1536)) for p in projects])
+        
+        # 使用K-means聚类
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(vectors)
+        
+        # 按标签分组
+        clusters_dict: Dict[int, List[Project]] = {}
+        for idx, label in enumerate(labels):
+            if label not in clusters_dict:
+                clusters_dict[label] = []
+            clusters_dict[label].append(projects[idx])
+        
+        return list(clusters_dict.values())
+    
+    def _merge_small_clusters_by_embedding(
+        self,
+        clusters: List[List[Project]],
+        min_per_group: int,
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """基于Embedding相似度合并过小组合并到最相似的组"""
+        if not clusters:
+            return clusters
+        
+        changed = True
+        while changed:
+            changed = False
+            clusters = [c for c in clusters if c]
+            
+            # 找出小组合并
+            small_indices = [i for i, c in enumerate(clusters) if 0 < len(c) < min_per_group]
+            if not small_indices:
+                break
+            
+            for idx in small_indices:
+                if idx >= len(clusters):
+                    continue
+                cluster = clusters[idx]
+                if not cluster:
+                    continue
+                
+                # 计算该组的平均embedding
+                cluster_vectors = [vector_map.get(p.id) for p in cluster if p.id in vector_map]
+                if not cluster_vectors:
+                    continue
+                cluster_vec = np.mean(cluster_vectors, axis=0)
+                
+                # 找最相似的目标组
+                best_idx = None
+                best_sim = -1.0
+                
+                for other_idx, other in enumerate(clusters):
+                    if other_idx == idx or not other:
+                        continue
+                    if len(other) + len(cluster) > max_per_group:
+                        continue
+                    
+                    # 计算目标组的平均embedding
+                    other_vectors = [vector_map.get(p.id) for p in other if p.id in vector_map]
+                    if not other_vectors:
+                        continue
+                    other_vec = np.mean(other_vectors, axis=0)
+                    
+                    # 计算相似度
+                    sim = _cosine_similarity(cluster_vec, other_vec)
                     if sim > best_sim:
                         best_sim = sim
                         best_idx = other_idx
