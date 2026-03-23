@@ -194,6 +194,7 @@ class PlagiarismAgent:
                 processed_texts,
                 primary_doc_id,
                 similarities,
+                excluded_ranges,  # 传入排除区间
             )
 
         return result
@@ -241,6 +242,7 @@ class PlagiarismAgent:
         processed_texts: Dict[str, str],
         primary_doc_id: str,
         similarities,
+        excluded_ranges: Dict[str, list] = None,  # 添加排除区间参数
     ):
         """保存查重详细debug信息"""
         debug_dir = Path("debug_plagiarism")
@@ -254,6 +256,13 @@ class PlagiarismAgent:
             template_filter=self.template_filter,
         )
         output["documents"] = processed_texts
+        
+        # 添加排除区间信息
+        if excluded_ranges:
+            output["excluded_ranges"] = {
+                doc_id: [{"start": r.start, "end": r.end, "reason": r.reason} for r in ranges]
+                for doc_id, ranges in excluded_ranges.items()
+            }
 
         filename = debug_dir / "plagiarism_debug.json"
         with open(filename, "w", encoding="utf-8") as f:

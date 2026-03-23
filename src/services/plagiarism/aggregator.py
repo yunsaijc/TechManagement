@@ -44,6 +44,7 @@ class ResultAggregator:
     MIN_COMMON_SUBSTRING_RATIO = 0.50
     MIN_MATCHED_CONTENT_RATIO = 0.55
 
+
     def __init__(self, section_extractor=None, template_filter=None):
         """
         初始化聚合器

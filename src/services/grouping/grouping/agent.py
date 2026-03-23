@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
@@ -22,6 +23,9 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+# 配置 logger
+logger = logging.getLogger(__name__)
 
 from src.common.llm import get_default_embedding_client, get_default_llm_client
 from src.common.models.grouping import (
@@ -298,48 +302,16 @@ class GroupingAgent:
             return {}
         texts = [self._project_text(project) for project in projects]
         total = len(projects)
-        batch_size = 25  # 与embedding_factory一致
-        total_batches = (total + batch_size - 1) // batch_size
-        print(f"[Grouping] 开始生成 embedding: {total} 个项目，分 {total_batches} 批，每批 {batch_size} 个")
+        logger.info(f"[Grouping] 开始生成 embedding: {total} 个项目")
         
         embed_start = time.time()
-        vectors = self._safe_embed_with_progress(texts, batch_size)
+        # 直接使用 embedder 的批量+并发功能，带进度回调
+        embeddings = self.embedder.embed_documents(texts, progress_callback=lambda done, total_batch: logger.info(f"[Grouping] embedding 进度: {done}/{total_batch} 批次完成"))
+        vectors = np.array(embeddings)
         
         elapsed = time.time() - embed_start
-        print(f"[Grouping] embedding 完成: {total} 个项目，{total_batches} 批，用时 {elapsed:.2f} 秒，平均每批 {elapsed/total_batches:.2f} 秒")
+        logger.info(f"[Grouping] embedding 完成: {total} 个项目，用时 {elapsed:.2f} 秒")
         return {project.id: vectors[idx] for idx, project in enumerate(projects)}
-    
-    def _safe_embed_with_progress(self, texts: List[str], batch_size: int = 25) -> np.ndarray:
-        """带进度显示的embedding计算"""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        
-        total = len(texts)
-        total_batches = (total + batch_size - 1) // batch_size
-        results = {}
-        completed = 0
-        
-        def embed_batch(start_idx: int) -> tuple[int, np.ndarray]:
-            batch = texts[start_idx:start_idx + batch_size]
-            embeddings = self.embedder.embed_documents(batch)
-            return start_idx, np.array(embeddings)
-        
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(embed_batch, start): start 
-                      for start in range(0, total, batch_size)}
-            
-            for future in as_completed(futures):
-                start_idx, embeddings = future.result()
-                results[start_idx] = embeddings
-                completed += 1
-                if completed % 10 == 0 or completed == total_batches:
-                    print(f"[Grouping] embedding 进度: {completed}/{total_batches} 批 ({completed*100//total_batches}%)")
-        
-        # 按顺序合并结果
-        all_embeddings = []
-        for start in range(0, total, batch_size):
-            all_embeddings.extend(results[start])
-        
-        return np.array(all_embeddings)
 
     def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         buckets: Dict[str, List[Project]] = defaultdict(list)
