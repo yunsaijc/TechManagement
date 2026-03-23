@@ -199,6 +199,9 @@ def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[Proj
         
     except Exception as e:
         print(f"[Grouping] 生成图表失败: {e}")
+
+
+def _calculate_balance_metrics(
     groups: List[ProjectGroup],
     quality_scores: Dict[str, float]
 ) -> dict:

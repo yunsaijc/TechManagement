@@ -1,0 +1,10 @@
+{
+  "venvPath": "/home/tdkx/ljh/Tech",
+  "venv": ".venv",
+  "include": [
+    "src",
+    "scripts",
+    "tests"
+  ],
+  "pythonVersion": "3.12"
+}
