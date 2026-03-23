@@ -16,8 +16,8 @@ class DashscopeEmbeddings:
         self.base_url = base_url
         self.model = model
         self.dimension = dimension
-        self.batch_size = 1
-        self.max_workers = 2
+        self.batch_size = 25  # Dashscope支持批量，一次最多25条
+        self.max_workers = 10  # 增加并发
         self.max_retries = 3
 
     def _embed_batch(self, batch: List[str]) -> List[List[float]]:
@@ -27,9 +27,10 @@ class DashscopeEmbeddings:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+        # 支持真正的批量请求
         data = {
             "model": self.model,
-            "input": batch[0]
+            "input": batch  # 传入列表，不是单条
         }
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries):
@@ -38,7 +39,7 @@ class DashscopeEmbeddings:
                     f"{self.base_url}/embeddings",
                     json=data,
                     headers=headers,
-                    timeout=60
+                    timeout=120  # 批量请求需要更长时间
                 )
                 if resp.status_code == 429:
                     wait_seconds = 2 ** attempt
@@ -47,8 +48,8 @@ class DashscopeEmbeddings:
                 resp.raise_for_status()
                 result = resp.json()
                 items = result.get("data", [])
-                if len(items) != 1:
-                    raise RuntimeError("Dashscope embedding response missing embeddings")
+                if len(items) != len(batch):
+                    raise RuntimeError(f"Dashscope embedding response mismatch: expected {len(batch)}, got {len(items)}")
                 return [item["embedding"] for item in items]
             except requests.HTTPError as exc:
                 last_error = exc
