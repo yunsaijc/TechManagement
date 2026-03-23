@@ -41,18 +41,8 @@ class ResultAggregator:
     MAX_TEMPLATE_RATIO = 0.7
     MIN_SOURCE_COVERAGE = 0.8
     MIN_LEXICAL_SIMILARITY = 0.30
-    MIN_COMMON_SUBSTRING_RATIO = 0.18
-    MIN_LOW_CONFIDENCE_SIMILARITY = 0.6
-    LOW_CONFIDENCE_BUDGET_KEYWORDS = (
-        "万元",
-        "样品",
-        "单价",
-        "预算",
-        "费用",
-        "亩",
-        "kg",
-        "元/",
-    )
+    MIN_COMMON_SUBSTRING_RATIO = 0.50
+    MIN_MATCHED_CONTENT_RATIO = 0.55
 
     def __init__(self, section_extractor=None, template_filter=None):
         """
@@ -300,29 +290,12 @@ class ResultAggregator:
             if overlap_ratio < self.MIN_COMMON_SUBSTRING_RATIO:
                 rejected.append(seg)
                 continue
-            if self._should_reject_low_confidence_budget_segment(seg.text, source_text, score):
+            matched_content_ratio = self._matched_content_ratio(seg.text, source_text)
+            if matched_content_ratio < self.MIN_MATCHED_CONTENT_RATIO:
                 rejected.append(seg)
                 continue
             kept.append(seg)
         return kept, rejected
-
-    def _should_reject_low_confidence_budget_segment(
-        self,
-        primary_text: str,
-        source_text: str,
-        lexical_score: float,
-    ) -> bool:
-        """过滤预算/清单类的弱相似片段，避免被算作有效重复。"""
-        if lexical_score >= self.MIN_LOW_CONFIDENCE_SIMILARITY:
-            return False
-
-        combined = f"{primary_text} {source_text}"
-        keyword_hits = sum(1 for kw in self.LOW_CONFIDENCE_BUDGET_KEYWORDS if kw in combined)
-        if keyword_hits < 3:
-            return False
-
-        digit_count = sum(ch.isdigit() for ch in combined)
-        return digit_count >= 6
 
     def _source_coverage_ratio(self, segments: List[Match]) -> float:
         if not segments:
@@ -360,6 +333,19 @@ class ResultAggregator:
 
         base = max(min(len(text_a), len(text_b)), 1)
         return match.size / base
+
+    @staticmethod
+    def _matched_content_ratio(text_a: str, text_b: str) -> float:
+        if not text_a or not text_b:
+            return 0.0
+
+        matcher = difflib.SequenceMatcher(None, text_a, text_b)
+        matched_size = sum(block.size for block in matcher.get_matching_blocks())
+        if matched_size <= 0:
+            return 0.0
+
+        base = max(min(len(text_a), len(text_b)), 1)
+        return matched_size / base
 
     def _format_segments(
         self,

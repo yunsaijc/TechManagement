@@ -1,7 +1,7 @@
 """分组 Agent
 
-语义优先版本：基于项目名称/简介理解项目在做什么，再进行分组。
-不再使用质量评价，也不把学科代码当作硬分区；学科代码仅作辅助信息。
+当前版本采用代码优先、语义辅助的分组方式。
+分组数据固定来自指定业务批次下、审核通过的项目子集。
 """
 from __future__ import annotations
 
@@ -73,10 +73,10 @@ def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
     return float(np.dot(vec_a, vec_b) / denom)
 
 
-def _save_grouping_result(year: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
+def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"grouping_{year}_{timestamp}.json"
+        filename = f"grouping_{dataset_tag}_{timestamp}.json"
         filepath = os.path.join(DEBUG_DIR, filename)
         created_at = result.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(result.created_at, "strftime") else str(result.created_at)
 
@@ -576,19 +576,19 @@ class GroupingAgent:
         start_time = time.time()
         self.max_per_group = request.max_per_group
 
-        projects = self.project_repo.get_projects_by_year(
-            year=request.year,
-            category=request.category,
-            limit=request.limit,
-        )
+        projects = self.project_repo.get_grouping_test_projects(category=request.category)
         if not projects:
-            raise ValueError(f"没有找到 {request.year} 年度的项目")
+            raise ValueError("固定分组测试数据集中没有可用项目")
 
         projects = [project for project in projects if project.xmmc and project.xmmc.strip()]
         if not projects:
             raise ValueError("没有可用于分组的项目名称")
 
-        print(f"[Grouping] 获取到 {len(projects)} 个项目，开始语义分组")
+        dataset_filter = self.project_repo.get_grouping_dataset_filter()
+        print(
+            f"[Grouping] 获取到 {len(projects)} 个项目，"
+            f"使用固定测试数据集 guide={dataset_filter['guide_code']} audit={dataset_filter['audit_status']}，开始分组"
+        )
 
         cluster_start = time.time()
         clusters = self._cluster_projects(projects, self.max_per_group)
@@ -627,20 +627,19 @@ class GroupingAgent:
 
         result = GroupingResult(
             id=str(uuid.uuid4()),
-            year=request.year,
+            year="fixed",
             groups=groups,
             statistics=stats,
             created_at=datetime.now(),
         )
 
         save_start = time.time()
-        filename = _save_grouping_result(request.year, result, meta={
+        filename = _save_grouping_result("fixed", result, meta={
             "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
+            "dataset_filter": dataset_filter,
             "input": {
-                "year": request.year,
                 "category": request.category,
                 "max_per_group": request.max_per_group,
-                "limit": request.limit,
             },
         })
         if filename:
@@ -656,7 +655,6 @@ class GroupingAgent:
 
     async def full_grouping(self, request: FullGroupingRequest) -> FullGroupingResult:
         grouping_request = GroupingRequest(
-            year=request.year,
             category=request.category,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC,
@@ -716,7 +714,7 @@ class GroupingAgent:
 
         return FullGroupingResult(
             id=f"full_{grouping_result.id}",
-            year=request.year,
+            year="fixed",
             category=request.category,
             groups=grouping_result.groups,
             matches=matches,

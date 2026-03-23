@@ -269,7 +269,7 @@ class FullStatistics(BaseModel):
 class FullGroupingResult(BaseModel):
     """完整分组与匹配结果"""
     id: str = Field(..., description="结果ID")
-    year: str = Field(..., description="年度")
+    year: str = Field("fixed", description="数据集标识")
     category: Optional[str] = Field(None, description="类别")
     groups: List[ProjectGroup] = Field(default_factory=list, description="分组列表")
     matches: Dict[int, MatchingResult] = Field(default_factory=dict, description="匹配结果 (group_id -> 匹配结果)")
@@ -286,11 +286,9 @@ class FullGroupingResult(BaseModel):
 
 class GroupingRequest(BaseModel):
     """分组请求"""
-    year: str = Field(..., description="年度 (必填)")
     category: Optional[str] = Field(None, description="奖种类别")
     max_per_group: int = Field(15, description="每组目标项目数")
     strategy: GroupingStrategy = Field(GroupingStrategy.SEMANTIC, description="分组策略")
-    limit: Optional[int] = Field(None, description="限制项目数量（测试用）")
 
     class Config:
         from_attributes = True
@@ -310,7 +308,6 @@ class MatchingRequest(BaseModel):
 
 class FullGroupingRequest(BaseModel):
     """完整分组与匹配请求"""
-    year: str = Field(..., description="年度 (必填)")
     category: Optional[str] = Field(None, description="奖种类别")
     max_per_group: int = Field(15, description="每组目标项目数")
     experts_per_project: int = Field(5, description="每个项目分配专家数")

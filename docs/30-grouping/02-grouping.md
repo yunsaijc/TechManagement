@@ -147,7 +147,7 @@
 ## 伪代码
 
 ```python
-projects = load_projects(year)
+projects = load_fixed_grouping_test_projects()
 semantics = build_semantics(projects)
 clusters = semantic_cluster(projects, semantics)
 clusters = llm_refine_groups(clusters)

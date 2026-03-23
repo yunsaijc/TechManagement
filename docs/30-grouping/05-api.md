@@ -27,7 +27,6 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `year` | String | 是 | 年度，如 "2024" |
 | `min_per_group` | Integer | 否 | 每组最小项目数（默认5） |
 | `max_per_group` | Integer | 否 | 每组最大项目数（默认15） |
 | `top_k_candidates` | Integer | 否 | 每个项目保留的候选组数（默认3） |
@@ -42,7 +41,6 @@ curl -X POST "http://localhost:8000/api/v1/grouping/projects" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "year": "2024",
     "enable_embedding": true,
     "enable_llm": true,
     "min_per_group": 5,
@@ -57,7 +55,7 @@ curl -X POST "http://localhost:8000/api/v1/grouping/projects" \
   "status": "success",
   "data": {
     "id": "group_1709280000001",
-    "year": "2024",
+    "year": "fixed",
     "groups": [
       {
         "group_id": 1,
@@ -202,7 +200,7 @@ curl -X POST "http://localhost:8000/api/v1/grouping/full" \
 
 - 输入以学科代码 + `xmmc` 为主，`xmjj` 为辅
 - 学科代码用于粗分和相似性判断，但不是绝对硬约束
-- 默认测试数据来自固定业务批次下的审核通过项目子集
+- 默认测试数据来自固定业务批次下的审核通过项目子集，调用方无需再传 `year` 或 `limit`
 - 对外文档不披露真实业务批次标识与敏感过滤条件
 - 字母开头代码与 7 位数字代码不能混组
 - 低置信度结果会标记为 `needs_review`

@@ -90,7 +90,6 @@ class GroupingService:
         """
         # 1. 分组
         grouping_request = GroupingRequest(
-            year=request.year,
             category=request.category,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC
@@ -154,7 +153,7 @@ class GroupingService:
         # 5. 构建结果
         result = FullGroupingResult(
             id=f"full_{grouping_result.id}",
-            year=request.year,
+            year="fixed",
             category=request.category,
             groups=grouping_result.groups,
             matches=matches,
