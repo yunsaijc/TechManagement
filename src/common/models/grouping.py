@@ -116,6 +116,10 @@ class ProjectInGroup(BaseModel):
     semantic_score: float = Field(..., description="语义匹配得分")
     quality_score: Optional[float] = Field(None, description="兼容字段：语义得分")
     reason: Optional[str] = Field(None, description="分配理由")
+    # 新增debug字段
+    original_subject_code: Optional[str] = Field(None, description="原始学科代码")
+    original_subject_name: Optional[str] = Field(None, description="原始学科名称")
+    keywords: List[str] = Field(default_factory=list, description="项目关键词")
 
     class Config:
         from_attributes = True

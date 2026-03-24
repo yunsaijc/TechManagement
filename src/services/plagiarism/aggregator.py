@@ -36,13 +36,13 @@ class ResultAggregator:
     """查重结果聚合器 - 后置过滤模式"""
 
     MIN_EFFECTIVE_CHARS = 30
-    MIN_EFFECTIVE_RATIO = 0.35
+    MIN_EFFECTIVE_RATIO = 0.20  # 降低阈值，保留更多有效匹配
     MIN_SEGMENT_LENGTH = 20
     MAX_TEMPLATE_RATIO = 0.7
     MIN_SOURCE_COVERAGE = 0.8
-    MIN_LEXICAL_SIMILARITY = 0.30
-    MIN_COMMON_SUBSTRING_RATIO = 0.50
-    MIN_MATCHED_CONTENT_RATIO = 0.55
+    MIN_LEXICAL_SIMILARITY = 0.20  # 降低阈值，n-gram匹配已经验证过相似性
+    MIN_COMMON_SUBSTRING_RATIO = 0.10  # 降低阈值，允许更多变体匹配
+    MIN_MATCHED_CONTENT_RATIO = 0.30   # 降低阈值，允许更多变体匹配
 
 
     def __init__(self, section_extractor=None, template_filter=None):
@@ -171,6 +171,9 @@ class ResultAggregator:
             template_segments = self._merge_adjacent_matches(template_segments)
 
             effective_segments, rejected_segments = self._filter_low_quality_segments(effective_segments)
+            # 将被拒绝的片段标记为低质量，而不是模板
+            for seg in rejected_segments:
+                seg.is_low_quality = True
             template_segments.extend(rejected_segments)
 
             # 计算有效重复字符数（排除模板）
@@ -393,6 +396,11 @@ class ResultAggregator:
             template_reason = None
             if template_filter:
                 template_reason = template_filter.get_template_reason(match.text)
+            
+            # 检查是否是低质量片段（被拒绝的匹配）
+            is_low_quality = getattr(match, 'is_low_quality', False)
+            if is_low_quality and template_reason is None:
+                template_reason = "low_quality"
 
             formatted.append({
                 "primary_line": primary_line,

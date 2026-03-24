@@ -64,19 +64,15 @@ class MammothPlagiarismReportBuilder:
 
         if primary_docx_path and Path(primary_docx_path).exists():
             left_html, _ = convert_docx_to_html_mammoth(primary_docx_path)
-            # 添加高亮
-            left_html = self._apply_highlights(
-                left_html, data, "primary"
-            )
+            # 添加高亮（安全方式，不破坏表格结构）
+            left_html = self._apply_highlights(left_html, data, "primary")
         else:
             left_html = self._build_fallback_content(data, "primary")
 
         if source_docx_path and Path(source_docx_path).exists():
             right_html, _ = convert_docx_to_html_mammoth(source_docx_path)
-            # 添加高亮
-            right_html = self._apply_highlights(
-                right_html, data, "source"
-            )
+            # 添加高亮（安全方式，不破坏表格结构）
+            right_html = self._apply_highlights(right_html, data, "source")
         else:
             right_html = self._build_fallback_content(data, "source")
 
@@ -109,23 +105,18 @@ class MammothPlagiarismReportBuilder:
     ) -> str:
         """在HTML内容上应用查重高亮
         
-        使用基于锚点的文本匹配策略，在HTML中定位并高亮重复内容。
+        安全策略：只在文本节点内部添加高亮，绝不跨越HTML标签边界，
+        确保表格等复杂结构不被破坏。
         """
+        from html.parser import HTMLParser
+        
         segments = data.get("duplicate_segments", [])
         if not segments:
             return html_content
 
-        result = html_content
-        
-        # 按文本长度排序（长的先处理，避免短文本干扰）
-        sorted_segments = sorted(
-            enumerate(segments),
-            key=lambda x: len(x[1].get("primary_text", "") if side == "primary" else 
-                          (x[1].get("sources", [{}])[0].get("text", "") if x[1].get("sources") else "")),
-            reverse=True
-        )
-        
-        for seg_idx, segment in sorted_segments:
+        # 收集需要高亮的文本片段
+        highlights = []
+        for seg_idx, segment in enumerate(segments):
             match_id = f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
             
@@ -141,127 +132,238 @@ class MammothPlagiarismReportBuilder:
             if not text or len(text) < 5:
                 continue
             
-            # 清理文本：去除多余空格
+            # 清理文本用于匹配
             clean_text = ' '.join(text.split())
+            highlights.append({
+                'match_id': match_id,
+                'text': clean_text,
+                'is_template': is_template
+            })
+        
+        if not highlights:
+            return html_content
+        
+        # 按文本长度排序（长的先处理）
+        highlights.sort(key=lambda x: len(x['text']), reverse=True)
+        
+        # 使用HTML解析器安全地处理
+        return self._safe_highlight_in_text(html_content, highlights, side)
+    
+    def _safe_highlight_in_text(self, html_content: str, highlights: List[Dict], side: str) -> str:
+        """安全地在HTML文本节点中添加高亮
+        
+        策略：
+        1. 将HTML分割成标签和文本片段
+        2. 在整个文档级别查找匹配（跨片段匹配）
+        3. 标记需要高亮的文本片段范围
+        4. 用span包裹匹配的文本，不破坏标签结构
+        """
+        # 解析HTML，分离标签和文本
+        parts = []
+        i = 0
+        while i < len(html_content):
+            if html_content[i] == '<':
+                end = html_content.find('>', i)
+                if end == -1:
+                    parts.append(('text', html_content[i:]))
+                    break
+                parts.append(('tag', html_content[i:end+1]))
+                i = end + 1
+            else:
+                end = html_content.find('<', i)
+                if end == -1:
+                    parts.append(('text', html_content[i:]))
+                    break
+                parts.append(('text', html_content[i:end]))
+                i = end
+        
+        # 构建字符映射表：记录每个非空格字符来自哪个文本片段和位置
+        char_map = []  # [(part_index, char_index, char), ...]
+        text_parts_indices = []  # 记录哪些part索引是文本片段
+        
+        for part_idx, (part_type, content) in enumerate(parts):
+            if part_type == 'text':
+                text_parts_indices.append(part_idx)
+                for char_idx, c in enumerate(content):
+                    if not c.isspace():
+                        char_map.append((part_idx, char_idx, c))
+        
+        if not char_map:
+            return html_content
+        
+        # 查找所有匹配区间（在整个文档级别）
+        all_matches = []  # [(start_char_idx, end_char_idx, match_id, is_template), ...]
+        
+        for hl in highlights:
+            target = hl['text']
+            match_id = hl['match_id']
+            is_template = hl['is_template']
             
-            # 提取锚点（前20个字符，或整个文本如果较短）
-            anchor_len = min(20, len(clean_text))
-            anchor = clean_text[:anchor_len]
-            
-            # 在HTML中查找锚点
-            anchor_pos = result.find(anchor)
-            if anchor_pos == -1:
-                # 尝试更短的锚点
-                anchor_len = min(10, len(clean_text))
-                anchor = clean_text[:anchor_len]
-                anchor_pos = result.find(anchor)
-                if anchor_pos == -1:
-                    continue
-            
-            # 从锚点开始，向后匹配完整文本
-            # 策略：找到锚点后，向后扩展直到匹配完所有字符
-            match_start = anchor_pos
-            match_end = anchor_pos + anchor_len
-            remaining_text = clean_text[anchor_len:]
-            
-            # 向后扫描，找到剩余文本
-            search_pos = match_end
-            text_pos = 0
-            
-            while text_pos < len(remaining_text) and search_pos < len(result):
-                # 跳过HTML标签
-                if result[search_pos] == '<':
-                    while search_pos < len(result) and result[search_pos] != '>':
-                        search_pos += 1
-                    search_pos += 1  # 跳过 '>'
-                    continue
-                
-                target_char = remaining_text[text_pos]
-                actual_char = result[search_pos]
-                
-                # 检查是否匹配（忽略空格差异）
-                if actual_char == target_char or (actual_char.isspace() and target_char.isspace()):
-                    text_pos += 1
-                    search_pos += 1
-                else:
-                    # 不匹配，可能是格式差异，跳过这个字符
-                    search_pos += 1
-            
-            match_end = search_pos
-            
-            # 提取匹配的HTML
-            matched_html = result[match_start:match_end]
-            
-            # 检查匹配质量
-            matched_text = re.sub(r'<[^>]+>', '', matched_html)
-            matched_text_clean = ''.join(matched_text.split())
-            target_clean = ''.join(clean_text.split())
-            
-            # 计算匹配率
-            match_ratio = len(matched_text_clean) / len(target_clean) if target_clean else 0
-            
-            if match_ratio < 0.3:  # 匹配率太低，跳过
+            if not target or len(target) < 5:
                 continue
             
-            # 确保不切割HTML标签 - 调整边界到标签外
-            # 向前调整
-            while match_start > 0 and result[match_start - 1] != '>' and result[match_start] != '<':
-                # 检查是否在标签内
-                in_tag = False
-                for i in range(match_start - 1, max(0, match_start - 100), -1):
-                    if result[i] == '>':
+            # 提取目标文本的字符序列
+            target_chars = [c for c in target if not c.isspace()]
+            if len(target_chars) < 5:
+                continue
+            
+            # 在整个文档中查找匹配
+            doc_chars = [c for (_, _, c) in char_map]
+            
+            # 滑动窗口查找最佳匹配
+            best_match_len = 0
+            best_start = -1
+            
+            for start in range(len(doc_chars) - len(target_chars) + 1):
+                match_len = 0
+                for j, tc in enumerate(target_chars):
+                    if start + j < len(doc_chars) and doc_chars[start + j] == tc:
+                        match_len += 1
+                    else:
                         break
-                    if result[i] == '<':
-                        in_tag = True
-                        break
-                if in_tag:
-                    # 在标签内，向前移动
-                    while match_start > 0 and result[match_start - 1] != '<':
-                        match_start -= 1
-                    match_start -= 1  # 移动到 '<'
+                
+                # 要求匹配率至少40%（降低阈值以处理相似但不完全相同的文本）
+                if match_len >= len(target_chars) * 0.4 and match_len > best_match_len:
+                    best_match_len = match_len
+                    best_start = start
+            
+            if best_start >= 0:
+                # 记录匹配区间
+                end_char_idx = best_start + best_match_len - 1
+                all_matches.append((best_start, end_char_idx, match_id, is_template))
+        
+        if not all_matches:
+            return html_content
+        
+        # 合并重叠的匹配
+        all_matches.sort(key=lambda x: x[0])
+        merged_matches = []
+        for match in all_matches:
+            if not merged_matches:
+                merged_matches.append(match)
+            else:
+                last = merged_matches[-1]
+                if match[0] <= last[1]:  # 重叠
+                    # 扩展上一个匹配的结束位置
+                    merged_matches[-1] = (last[0], max(last[1], match[1]), last[2], last[3])
                 else:
-                    break
+                    merged_matches.append(match)
+        
+        # 将字符级别的匹配转换为文本片段级别的标记
+        # 对于每个文本片段，记录需要高亮的区间
+        part_highlights = {}  # {part_idx: [(start, end, match_id, is_template), ...]}
+        
+        for match_start, match_end, match_id, is_template in merged_matches:
+            # 找到对应的文本片段
+            start_part_idx = char_map[match_start][0]
+            end_part_idx = char_map[match_end][0]
             
-            # 向后调整
-            while match_end < len(result) and result[match_end - 1] != '>' and result[match_end] != '<':
-                # 检查是否在标签内
-                in_tag = False
-                for i in range(match_end, min(len(result), match_end + 100)):
-                    if result[i] == '<':
-                        in_tag = True
-                        break
-                    if result[i] == '>':
-                        break
-                if in_tag:
-                    # 在标签内，向后移动
-                    while match_end < len(result) and result[match_end] != '>':
-                        match_end += 1
-                    match_end += 1  # 跳过 '>'
+            if start_part_idx == end_part_idx:
+                # 匹配在同一个文本片段内
+                start_in_part = char_map[match_start][1]
+                end_in_part = char_map[match_end][1]
+                if start_part_idx not in part_highlights:
+                    part_highlights[start_part_idx] = []
+                part_highlights[start_part_idx].append((start_in_part, end_in_part + 1, match_id, is_template))
+            else:
+                # 匹配跨越多个文本片段
+                # 第一个片段：从匹配开始到片段结束
+                start_in_part = char_map[match_start][1]
+                part_content = parts[start_part_idx][1]
+                if start_part_idx not in part_highlights:
+                    part_highlights[start_part_idx] = []
+                part_highlights[start_part_idx].append((start_in_part, len(part_content), match_id, is_template))
+                
+                # 中间片段：整个片段
+                for mid_part_idx in range(start_part_idx + 1, end_part_idx):
+                    if mid_part_idx not in part_highlights:
+                        part_highlights[mid_part_idx] = []
+                    mid_content = parts[mid_part_idx][1]
+                    part_highlights[mid_part_idx].append((0, len(mid_content), match_id, is_template))
+                
+                # 最后一个片段：从片段开始到匹配结束
+                end_in_part = char_map[match_end][1]
+                if end_part_idx not in part_highlights:
+                    part_highlights[end_part_idx] = []
+                part_highlights[end_part_idx].append((0, end_in_part + 1, match_id, is_template))
+        
+        # 应用高亮到文本片段
+        result_parts = []
+        for part_idx, (part_type, content) in enumerate(parts):
+            if part_type == 'tag':
+                result_parts.append(content)
+            elif part_idx in part_highlights:
+                # 对这个文本片段应用高亮
+                highlighted = self._apply_highlight_to_part(content, part_highlights[part_idx], side)
+                result_parts.append(highlighted)
+            else:
+                result_parts.append(content)
+        
+        return ''.join(result_parts)
+    
+    def _apply_highlight_to_part(self, text: str, highlights: List[Tuple], side: str) -> str:
+        """对单个文本片段应用高亮标记
+        
+        highlights: [(start, end, match_id, is_template), ...]
+        """
+        if not highlights:
+            return text
+        
+        # 按位置排序
+        highlights.sort(key=lambda x: x[0])
+        
+        # 合并重叠区间
+        merged = []
+        for start, end, match_id, is_template in highlights:
+            if not merged:
+                merged.append((start, end, match_id, is_template))
+            else:
+                last_start, last_end, last_id, last_template = merged[-1]
+                if start <= last_end:
+                    # 重叠，合并
+                    merged[-1] = (last_start, max(last_end, end), last_id, last_template)
                 else:
-                    break
+                    merged.append((start, end, match_id, is_template))
+        
+        # 构建结果
+        result = []
+        last_end = 0
+        for start, end, match_id, is_template in merged:
+            # 添加高亮前的文本
+            if start > last_end:
+                result.append(text[last_end:start])
             
-            # 重新提取
-            matched_html = result[match_start:match_end]
-            
-            # 创建高亮HTML
+            # 添加高亮文本
+            matched_text = text[start:end]
             template_class = " template" if is_template else ""
-            highlight_html = f'<span class="hit{template_class}" data-match-id="{match_id}" data-side="{side}">{matched_html}</span>'
+            highlight_html = f'<span class="hit{template_class}" data-match-id="{match_id}" data-side="{side}">{matched_text}</span>'
+            result.append(highlight_html)
             
-            # 替换
-            result = result[:match_start] + highlight_html + result[match_end:]
-
-        return result
+            last_end = end
+        
+        # 添加剩余文本
+        if last_end < len(text):
+            result.append(text[last_end:])
+        
+        return ''.join(result)
 
     def _build_fallback_content(self, data: Dict, side: str) -> str:
         """构建降级内容（当没有DOCX文件时使用）"""
         documents = data.get("documents", {})
+        primary_doc = data.get("primary_doc", "")
         
         if side == "primary":
-            text = documents.get("primary", "")
-            title = data.get("primary_doc", "主文档")
+            text = documents.get(primary_doc, "")
+            title = primary_doc or "主文档"
         else:
-            text = documents.get("source", "")
-            title = "来源文档"
+            # 找到来源文档（非主文档）
+            source_doc = ""
+            for doc_name in documents.keys():
+                if doc_name != primary_doc:
+                    source_doc = doc_name
+                    break
+            text = documents.get(source_doc, "")
+            title = source_doc or "来源文档"
         
         if not text:
             return f'<div class="docx-content"><p class="empty">无内容</p></div>'
@@ -279,14 +381,24 @@ class MammothPlagiarismReportBuilder:
         """构建统计信息HTML"""
         summary = data.get("summary", {})
         
-        total_rate = summary.get("total_plagiarism_rate", 0)
-        effective_rate = summary.get("effective_plagiarism_rate", 0)
-        template_rate = summary.get("template_plagiarism_rate", 0)
-        total_chars = summary.get("total_chars", 0)
-        duplicate_chars = summary.get("duplicate_chars", 0)
-        effective_chars = summary.get("effective_duplicate_chars", 0)
+        # 从 summary 获取数据
+        total_effective_segments = summary.get("total_effective_segments", 0)
+        total_template_segments = summary.get("total_template_segments", 0)
+        total_effective_chars = summary.get("total_effective_chars", 0)
+        total_template_chars = summary.get("total_template_chars", 0)
+        
+        # 计算重复率
+        documents = data.get("documents", {})
+        primary_doc = data.get("primary_doc", "")
+        primary_text = documents.get(primary_doc, "") if documents else ""
+        total_chars = len(primary_text)
+        
+        total_duplicate_chars = total_effective_chars + total_template_chars
+        total_rate = (total_duplicate_chars / total_chars * 100) if total_chars > 0 else 0
+        effective_rate = (total_effective_chars / total_chars * 100) if total_chars > 0 else 0
+        template_rate = (total_template_chars / total_chars * 100) if total_chars > 0 else 0
 
-        return f"""<div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">{template_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">{total_chars:,}</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">{duplicate_chars:,}</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">{effective_chars:,}</div></div>"""
+        return f"""<div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">{template_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">{total_chars:,}</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">{total_duplicate_chars:,}</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">{total_effective_chars:,}</div></div>"""
 
     def _build_match_nav(self, data: Dict) -> str:
         """构建匹配片段导航"""
@@ -331,9 +443,9 @@ class MammothPlagiarismReportBuilder:
         """渲染完整HTML页面"""
         
         # 计算摘要数据
-        effective_count = summary.get("effective_duplicate_segments", 0)
-        template_count = summary.get("template_segments", 0)
-        effective_chars = summary.get("effective_duplicate_chars", 0)
+        effective_count = summary.get("total_effective_segments", 0)
+        template_count = summary.get("total_template_segments", 0)
+        effective_chars = summary.get("total_effective_chars", 0)
         
         mammoth_styles = get_mammoth_styles()
         
@@ -419,10 +531,11 @@ class MammothPlagiarismReportBuilder:
       function initHighlights() {{
         document.querySelectorAll('.hit[data-match-id]').forEach(el => {{
           const matchId = el.dataset.matchId;
+          const side = el.dataset.side;
           if (!highlightMap.has(matchId)) {{
-            highlightMap.set(matchId, []);
+            highlightMap.set(matchId, {{}});
           }}
-          highlightMap.get(matchId).push(el);
+          highlightMap.get(matchId)[side] = el;
         }});
         console.log('Initialized highlights:', highlightMap.size);
       }}
@@ -435,27 +548,35 @@ class MammothPlagiarismReportBuilder:
         document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
         
         // 激活当前匹配的高亮元素
-        const hits = highlightMap.get(matchId) || [];
-        console.log('Found hits:', hits.length);
-        hits.forEach(el => el.classList.add('active'));
+        const hits = highlightMap.get(matchId) || {{}};
+        const primaryHit = hits['primary'];
+        const sourceHit = hits['source'];
+        
+        console.log('Found hits - primary:', !!primaryHit, 'source:', !!sourceHit);
+        
+        if (primaryHit) primaryHit.classList.add('active');
+        if (sourceHit) sourceHit.classList.add('active');
         
         // 激活导航项
         const navItem = document.querySelector(`.nav-item[data-match-id="${{matchId}}"]`);
         if (navItem) navItem.classList.add('active');
         
-        // 滚动到第一个匹配
-        if (hits.length > 0) {{
-          const firstHit = hits[0];
-          firstHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-          
-          // 同时滚动另一侧的对应元素
-          if (hits.length > 1) {{
-            const secondHit = hits[1];
-            const otherPanel = secondHit.closest('.panel-body');
-            if (otherPanel) {{
-              secondHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-            }}
-          }}
+        // 同步滚动两侧面板
+        const primaryPanel = document.getElementById('primary-panel');
+        const sourcePanel = document.getElementById('source-panel');
+        
+        if (primaryHit && primaryPanel) {{
+          const primaryRect = primaryHit.getBoundingClientRect();
+          const panelRect = primaryPanel.getBoundingClientRect();
+          const scrollTop = primaryPanel.scrollTop + primaryRect.top - panelRect.top - panelRect.height / 2 + primaryRect.height / 2;
+          primaryPanel.scrollTo({{ top: scrollTop, behavior: 'smooth' }});
+        }}
+        
+        if (sourceHit && sourcePanel) {{
+          const sourceRect = sourceHit.getBoundingClientRect();
+          const panelRect = sourcePanel.getBoundingClientRect();
+          const scrollTop = sourcePanel.scrollTop + sourceRect.top - panelRect.top - panelRect.height / 2 + sourceRect.height / 2;
+          sourcePanel.scrollTo({{ top: scrollTop, behavior: 'smooth' }});
         }}
       }};
       

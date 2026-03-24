@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
     "retrieval_report": {
         "labels": ["检索报告"],
-        "rules": ["stamp_check", "signature_check", "stamp_consistency", "completeness"],
+        "rules": ["stamp_check", "signature_check", "prerequisite", "retrieval_report_completeness"],
         "llm_rules": [],
         "llm_extract_fields": [],
     },
