@@ -189,15 +189,22 @@ class MammothPlagiarismReportBuilder:
         plain_text = re.sub(r'<[^>]+>', ' ', html_content)
         plain_text = ' '.join(plain_text.split())
         
-        # 尝试不同长度的搜索文本
-        # 使用更多锚点长度选项，从长到短
+        # 首先尝试匹配完整文本
+        clean_search = ' '.join(search_text.split())
+        match_pos = plain_text.find(clean_search)
+        
+        if match_pos != -1:
+            # 完整匹配，直接映射到HTML
+            return self._map_plain_to_html_exact(html_content, plain_text, match_pos, len(clean_search))
+        
+        # 尝试不同长度的搜索文本（从长到短）
         for search_len in [50, 40, 30, 25, 20, 15, 10, 8, 5]:
             if search_len > len(search_text):
                 continue
             if search_len < 5:
                 continue
             
-            # 尝试从不同偏移位置开始匹配（跳过表头等变化的部分）
+            # 尝试从不同偏移位置开始匹配
             for offset in [0, 10, 15, 20, 25, 30]:
                 if offset + search_len > len(search_text):
                     continue
@@ -205,24 +212,26 @@ class MammothPlagiarismReportBuilder:
                 match_pos = plain_text.find(search_str)
                 
                 if match_pos != -1:
-                    # 找到锚点，现在映射回HTML位置
-                    # 需要调整match_pos以反映实际的起始位置
-                    result = self._map_plain_to_html_range(html_content, plain_text, match_pos, search_text[offset:])
-                    if result:
-                        return result
+                    # 找到锚点，映射回HTML位置
+                    # 使用实际找到的锚点长度
+                    return self._map_plain_to_html_exact(html_content, plain_text, match_pos, search_len)
         
         return None
     
-    def _map_plain_to_html_range(
+    def _map_plain_to_html_exact(
         self,
         html_content: str,
         plain_text: str,
         match_start_plain: int,
-        target_text: str
+        match_length: int
     ) -> Optional[Tuple[int, int]]:
-        """将纯文本位置映射回HTML位置范围
+        """将纯文本位置精确映射回HTML位置
         
-        从匹配起点开始，向后扩展找到完整的目标文本。
+        Args:
+            html_content: HTML内容
+            plain_text: 纯文本（已去除HTML标签）
+            match_start_plain: 匹配在纯文本中的起始位置
+            match_length: 匹配的长度
         """
         # 找到HTML中的起始位置
         html_pos = 0
@@ -245,109 +254,21 @@ class MammothPlagiarismReportBuilder:
         if match_start_html == -1:
             return None
         
-        # 从起始位置向后扩展，匹配完整文本
-        anchor_len = min(20, len(target_text))
-        match_end_html = match_start_html + anchor_len
-        remaining_text = target_text[anchor_len:]
+        # 找到结束位置（匹配match_length个字符）
+        match_end_html = match_start_html
+        chars_matched = 0
         
-        # 向后扫描匹配剩余文本
-        search_pos = match_end_html
-        text_pos = 0
-        
-        while text_pos < len(remaining_text) and search_pos < len(html_content):
-            # 跳过HTML标签
-            if html_content[search_pos] == '<':
-                while search_pos < len(html_content) and html_content[search_pos] != '>':
-                    search_pos += 1
-                search_pos += 1
-                continue
-            
-            target_char = remaining_text[text_pos]
-            actual_char = html_content[search_pos]
-            
-            # 检查是否匹配（忽略空格差异）
-            if actual_char == target_char or (actual_char.isspace() and target_char.isspace()):
-                text_pos += 1
-                search_pos += 1
-            else:
-                # 不匹配，可能是格式差异，跳过这个字符
-                search_pos += 1
-        
-        match_end_html = search_pos
-        
-        # 提取匹配的HTML
-        matched_html = html_content[match_start_html:match_end_html]
-        
-        # 检查匹配质量
-        matched_text = re.sub(r'<[^>]+>', '', matched_html)
-        matched_text_clean = ''.join(matched_text.split())
-        target_clean = ''.join(target_text.split())
-        
-        # 计算匹配率
-        match_ratio = len(matched_text_clean) / len(target_clean) if target_clean else 0
-        
-        if match_ratio < 0.3:  # 匹配率太低
-            return None
-        
-        # 确保不切割HTML标签 - 调整边界到标签外
-        # 向前调整
-        while match_start_html > 0 and html_content[match_start_html - 1] != '>':
-            # 检查是否在标签内
-            in_tag = False
-            for i in range(match_start_html - 1, max(0, match_start_html - 100), -1):
-                if html_content[i] == '>':
-                    break
-                if html_content[i] == '<':
-                    in_tag = True
-                    break
-            if in_tag:
-                # 在标签内，向前移动
-                while match_start_html > 0 and html_content[match_start_html - 1] != '<':
-                    match_start_html -= 1
-                match_start_html -= 1
-            else:
-                break
-        
-        # 向后调整
-        while match_end_html < len(html_content) and html_content[match_end_html - 1] != '>':
-            # 检查是否在标签内
-            in_tag = False
-            for i in range(match_end_html, min(len(html_content), match_end_html + 100)):
-                if html_content[i] == '<':
-                    in_tag = True
-                    break
-                if html_content[i] == '>':
-                    break
-            if in_tag:
-                # 在标签内，向后移动
+        while chars_matched < match_length and match_end_html < len(html_content):
+            if html_content[match_end_html] == '<':
+                # 跳过标签
                 while match_end_html < len(html_content) and html_content[match_end_html] != '>':
                     match_end_html += 1
                 match_end_html += 1
             else:
-                break
+                chars_matched += 1
+                match_end_html += 1
         
         return (match_start_html, match_end_html)
-
-        # 构建统计信息
-        stats = self._build_statistics(data)
-
-        # 构建匹配导航
-        match_cards = self._build_match_nav(data)
-
-        # 渲染完整页面
-        html_page = self._render_html_page(
-            primary_doc=primary_doc,
-            source_doc=source_doc,
-            stats=stats,
-            match_cards=match_cards,
-            left_html=left_html,
-            right_html=right_html,
-            summary=data.get("summary", {})
-        )
-
-        # 写入文件
-        output_html_path.write_text(html_page, encoding="utf-8")
-        return output_html_path
 
     def _apply_highlights(
         self,
