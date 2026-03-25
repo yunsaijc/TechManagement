@@ -116,10 +116,25 @@ Embedding相似度高的项目聚在一组，即使学科代码不同：
 
 ### 6. 过小组合并
 
-对于小于 `min_per_group` 的组：
-- 在全局找Embedding最相似的组
-- 合并后不超过`max_per_group`
-- 优先合并主题相似的组
+对于小于 `min_per_group` 的组，采用**全局最优合并策略**：
+
+#### 合并原则
+- **所有组都参与合并**：不只是小分组，小分组之间、小分组与大分组之间都可以合并
+- **按相似度全局排序**：计算所有可能的组对相似度，优先合并最相似的组对
+- **多对一合并**：一个目标组可以同时接收多个小分组，直到达到`max_per_group`上限
+- **跨学科验证**：对于不同三级学科的组对，使用LLM验证是否应该合并
+
+#### 合并流程
+1. **收集候选**：遍历所有组对，计算Embedding相似度
+2. **过滤约束**：只保留同大类、合并后不超过`max_per_group`的组对
+3. **排序**：按相似度从高到低排序
+4. **批量验证**：对跨学科的组对进行并发LLM验证
+5. **执行合并**：按排序顺序遍历，满足条件的执行合并
+
+#### 迭代控制
+- 每轮尽可能多地执行合并
+- 最多10轮迭代防止无限循环
+- 每轮清理空组后重新计算
 
 ---
 
@@ -158,8 +173,12 @@ clusters = hierarchical_cluster(projects, similarity_matrix, threshold=0.7)
 # 3. 处理过大组（基于Embedding重新聚类拆分）
 clusters = split_large_groups(clusters, max_per_group, vector_map)
 
-# 4. 处理过小组合并到最相似的组
-clusters = merge_small_groups(clusters, min_per_group, vector_map)
+# 4. 处理过小组合并（全局最优策略）
+# - 所有组参与，不只是小分组
+# - 按相似度排序，优先合并最相似的
+# - 一个组可接收多个合并，直到达到max_per_group
+# - 跨学科组对使用LLM验证
+clusters = merge_small_clusters_by_embedding(clusters, min_per_group, max_per_group, vector_map)
 
 return export_result(clusters)
 ```
@@ -177,6 +196,9 @@ return export_result(clusters)
 | `confidence_threshold` | 0.65 | 低于该值标记复核 |
 | `enable_embedding` | true | 启用Embedding计算（关键词主导） |
 | `enable_llm` | false | 是否启用LLM（当前用规则生成标题） |
+| `use_llm_validation` | false | 是否启用LLM验证跨学科合并 |
+| `max_iterations` | 10 | 小组合并最大迭代次数 |
+| `llm_validation_timeout` | 30 | LLM验证超时时间（秒） |
 
 ---
 

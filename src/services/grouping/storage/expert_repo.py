@@ -58,7 +58,8 @@ class ExpertRepository:
                 OR SXXK4 IN ({placeholders})
                 OR SXXK5 IN ({placeholders})
             )"""
-            params.extend(subject_codes)
+            # 每个IN子句都需要一份参数，共5份
+            params.extend(subject_codes * 5)
         
         # SQL Server: TOP 需要在 ORDER BY 之前
         if limit:
