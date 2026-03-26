@@ -154,11 +154,9 @@ class PlagiarismAgent:
 
             sentences_map[doc_id] = sentences
 
-        # 4. 构建用于比对的文本（保留标点）
-        processed_texts = {}
-        for doc_id, sentences in sentences_map.items():
-            # 保留原始句子，用换行分隔（供后续追溯用）
-            processed_texts[doc_id] = '\n'.join(s.text for s in sentences)
+        # 4. 构建用于比对与坐标映射的文本
+        # 统一使用 section 提取后的原始文本，确保 start/end 与文本坐标一致。
+        processed_texts = dict(extracted_texts)
 
         # 5. 前置模板过滤 - 标记应排除的位置区间
         excluded_ranges = {}
@@ -174,6 +172,7 @@ class PlagiarismAgent:
             excluded_ranges,
             self.threshold_high,
             self.threshold_medium,
+            raw_texts=processed_texts,
         )
         print(f"[Plagiarism] 比对完成: {len(similarities)} 对")
 

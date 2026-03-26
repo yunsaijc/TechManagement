@@ -95,6 +95,7 @@ class ComparisonEngine:
         excluded_ranges: Optional[Dict[str, List[ExcludedRange]]] = None,
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
+        raw_texts: Optional[Dict[str, str]] = None,
     ) -> List[DocumentSimilarity]:
         """
         执行文档间比对 - Winnowing 算法
@@ -125,7 +126,10 @@ class ComparisonEngine:
         
         for doc_id, sentences in docs.items():
             doc_ngrams[doc_id] = splitter.split(sentences)
-            doc_texts[doc_id] = '\n'.join(s.text for s in sentences)
+            if raw_texts and isinstance(raw_texts.get(doc_id), str):
+                doc_texts[doc_id] = raw_texts[doc_id]
+            else:
+                doc_texts[doc_id] = '\n'.join(s.text for s in sentences)
         
         # Step 2: 构建指纹倒排索引
         fingerprint_index = self._build_fingerprint_index(doc_ngrams)
@@ -411,15 +415,10 @@ class ComparisonEngine:
         """把锚点片段向两侧扩展到更自然的边界。"""
         start_a, end_a = self._expand_to_sentence_boundary(text_a, match_range.start_a, match_range.end_a)
         start_b, end_b = self._expand_to_sentence_boundary(text_b, match_range.start_b, match_range.end_b)
-
-        start_a, end_a, start_b, end_b = self._trim_to_shared_core(
-            text_a,
-            start_a,
-            end_a,
-            text_b,
-            start_b,
-            end_b,
-        )
+        # 注意：不要在这里裁掉“双边共同前后缀”。
+        # 之前的 _trim_to_shared_core 会把开头/结尾相同句子去掉，导致
+        # “明明整段相同却只命中中间短句”的问题（用户反馈的 m001 场景）。
+        # 这里保留完整扩展边界，后续由句级扩展与聚合阶段再做稳健收敛。
 
         return ContinuousMatch(
             start_a=start_a,

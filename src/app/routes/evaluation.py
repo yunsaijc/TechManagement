@@ -18,6 +18,8 @@ from src.common.models.evaluation import (
     DimensionCheckItem,
     DimensionInfo,
     DimensionsResponse,
+    EvaluationChatAskRequest,
+    EvaluationChatAskResponse,
     EvaluationRequest,
     EvaluationResult,
     WeightValidateRequest,
@@ -55,6 +57,8 @@ async def evaluate_project(request: EvaluationRequest):
             raise HTTPException(status_code=404, detail=detail)
         if detail.startswith("未找到项目申报文档"):
             raise HTTPException(status_code=422, detail=detail)
+        if detail.startswith("PARSE_ERROR"):
+            raise HTTPException(status_code=422, detail=detail)
         raise HTTPException(status_code=400, detail=detail)
 
 
@@ -64,6 +68,11 @@ async def evaluate_file(
     project_id: str = Form(..., description="项目ID"),
     dimensions: Optional[str] = Form(None, description="评审维度，逗号分隔"),
     weights: Optional[str] = Form(None, description="权重配置，JSON格式"),
+    include_sections: Optional[str] = Form(None, description="评审章节，逗号分隔"),
+    enable_highlight: bool = Form(False, description="是否启用划重点"),
+    enable_industry_fit: bool = Form(False, description="是否启用产业指南贴合"),
+    enable_benchmark: bool = Form(False, description="是否启用技术摸底"),
+    enable_chat_index: bool = Form(False, description="是否启用聊天索引"),
 ):
     """通过上传文件执行评审"""
     agent = get_agent()
@@ -77,15 +86,42 @@ async def evaluate_file(
     try:
         dim_list = [d.strip() for d in dimensions.split(",")] if dimensions else None
         weight_dict = json.loads(weights) if weights else None
+        section_list = [s.strip() for s in include_sections.split(",")] if include_sections else []
 
         request = EvaluationRequest(
             project_id=project_id,
             dimensions=dim_list,
             weights=weight_dict,
+            include_sections=section_list,
+            enable_highlight=enable_highlight,
+            enable_industry_fit=enable_industry_fit,
+            enable_benchmark=enable_benchmark,
+            enable_chat_index=enable_chat_index,
         )
-        return await agent.evaluate(request, file_path=tmp_path)
+        return await agent.evaluate(request, file_path=tmp_path, source_name=file.filename or "")
+    except ValueError as e:
+        detail = str(e)
+        if detail.startswith("PARSE_ERROR"):
+            raise HTTPException(status_code=422, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
     finally:
         os.unlink(tmp_path)
+
+
+@router.post("/chat/ask", response_model=EvaluationChatAskResponse)
+async def ask_question(request: EvaluationChatAskRequest):
+    """基于评审结果执行问答"""
+    agent = get_agent()
+    try:
+        return await agent.ask(
+            evaluation_id=request.evaluation_id,
+            question=request.question,
+        )
+    except ValueError as e:
+        detail = str(e)
+        if detail.startswith("评审记录不存在"):
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=422, detail=detail)
 
 
 @router.post("/batch", response_model=BatchEvaluationResult)

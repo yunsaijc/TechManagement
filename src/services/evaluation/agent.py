@@ -1,47 +1,49 @@
-"""
-评审智能体
+"""评审智能体
 
-正文评审服务的核心控制器，协调解析器、检查器和评分器完成评审任务。
+正文评审服务的统一编排器，融合九维评审、划重点、产业贴合、技术摸底与聊天索引。
 """
 import asyncio
+import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.common.llm import get_default_llm_client
 from src.common.models.evaluation import (
+    BenchmarkResult,
+    CheckResult,
+    EvaluationChatAskResponse,
+    EvaluationError,
     EvaluationRequest,
     EvaluationResult,
-    CheckResult,
-    DimensionScore,
+    IndustryFitResult,
+    StructuredHighlights,
 )
-from .config import EvaluationConfig, evaluation_config
+
+from .benchmark import BenchmarkAnalyzer, BenchmarkRetriever
 from .checkers import (
     BaseChecker,
+    ComplianceChecker,
+    EconomicBenefitChecker,
     FeasibilityChecker,
     InnovationChecker,
-    TeamChecker,
     OutcomeChecker,
-    SocialBenefitChecker,
-    EconomicBenefitChecker,
     RiskControlChecker,
     ScheduleChecker,
-    ComplianceChecker,
+    SocialBenefitChecker,
+    TeamChecker,
 )
+from .config import EvaluationConfig, evaluation_config
+from .chat import ChatIndexer, EvaluationQAAgent
+from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
 from .scorers import EvaluationScorer
 from .storage import EvaluationProjectRepository, EvaluationStorage
+from .tools import ToolGateway, ToolUnavailableError
 
 
 class EvaluationAgent:
-    """评审智能体
-    
-    负责：
-    1. 协调文档解析
-    2. 调度检查器执行
-    3. 综合评分结果
-    4. 生成评审报告
-    """
-    
-    # 维度到检查器的映射
+    """正文评审编排器"""
+
     DIMENSION_CHECKERS = {
         "feasibility": FeasibilityChecker,
         "innovation": InnovationChecker,
@@ -53,104 +55,98 @@ class EvaluationAgent:
         "schedule": ScheduleChecker,
         "compliance": ComplianceChecker,
     }
-    
-    def __init__(
-        self,
-        config: Optional[EvaluationConfig] = None,
-        llm: Optional[Any] = None,
-    ):
-        """初始化评审智能体
-        
-        Args:
-            config: 配置实例
-            llm: LLM实例
-        """
+
+    def __init__(self, config: Optional[EvaluationConfig] = None, llm: Optional[Any] = None):
         self.config = config or evaluation_config
         self.llm = llm or get_default_llm_client()
+
         self.parser = DocumentParser()
         self.scorer = EvaluationScorer()
         self.storage = EvaluationStorage()
         self.project_repo = EvaluationProjectRepository()
-        
-        # 初始化检查器实例（延迟加载）
+
+        self.tool_gateway = ToolGateway()
+        self.highlight_extractor = HighlightExtractor()
+        self.industry_fit_analyzer = IndustryFitAnalyzer(self.tool_gateway)
+        self.benchmark_analyzer = BenchmarkAnalyzer(BenchmarkRetriever(self.tool_gateway))
+        self.chat_indexer = ChatIndexer()
+        self.qa_agent = EvaluationQAAgent(llm=self.llm, indexer=self.chat_indexer)
+
         self._checkers: Dict[str, BaseChecker] = {}
-    
+        self._task_semaphore = asyncio.Semaphore(max(1, self.config.concurrency))
+
     def get_checker(self, dimension: str) -> Optional[BaseChecker]:
-        """获取指定维度的检查器
-        
-        Args:
-            dimension: 维度代码
-            
-        Returns:
-            Optional[BaseChecker]: 检查器实例
-        """
+        """获取指定维度检查器"""
         if dimension in self._checkers:
             return self._checkers[dimension]
-        
+
         checker_class = self.DIMENSION_CHECKERS.get(dimension)
-        if checker_class:
-            checker = checker_class(llm=self.llm)
-            self._checkers[dimension] = checker
-            return checker
-        
-        return None
-    
+        if not checker_class:
+            return None
+
+        checker = checker_class(llm=self.llm)
+        self._checkers[dimension] = checker
+        return checker
+
     async def evaluate(
         self,
         request: EvaluationRequest,
         file_path: Optional[str] = None,
         content: Optional[Dict[str, Any]] = None,
+        source_name: str = "",
     ) -> EvaluationResult:
-        """执行评审
-        
-        Args:
-            request: 评审请求
-            file_path: 文档路径（与content二选一）
-            content: 已解析的文档内容（与file_path二选一）
-            
-        Returns:
-            EvaluationResult: 评审结果
-        """
-        # 1. 解析文档（如果提供的是文件路径）
-        if content is None:
-            if file_path is None:
-                raise ValueError("必须提供 file_path 或 content 参数")
-            content = await self.parser.parse(file_path)
-        
-        # 2. 获取要评审的维度
+        """执行融合评审"""
+        parsed = await self._prepare_content(file_path=file_path, content=content, source_name=source_name)
+        sections = parsed.get("sections", {})
+        page_chunks = parsed.get("page_chunks", [])
+        meta = parsed.get("meta", {})
+
+        if request.include_sections:
+            sections = self._filter_sections(sections, request.include_sections)
+
         dimensions = request.get_dimensions()
-        
-        # 3. 验证权重
         weights = request.weights or self.config.default_weights
         valid, message, normalized_weights = self.config.validate_weights(weights)
         if not valid:
             raise ValueError(f"权重验证失败: {message}")
-        
-        # 4. 并行执行检查
-        check_results = await self._run_checks(content, dimensions)
-        
-        # 5. 综合评分
+
+        evaluation_id = self._generate_evaluation_id(request.project_id)
+        module_outputs, module_errors, partial = await self._run_modules(
+            request=request,
+            sections=sections,
+            page_chunks=page_chunks,
+            meta=meta,
+            dimensions=dimensions,
+            evaluation_id=evaluation_id,
+        )
+
+        check_results = module_outputs.get("checks", [])
         result = self.scorer.build_result(
             project_id=request.project_id,
-            project_name=content.get("项目名称"),
+            project_name=sections.get("项目名称") or meta.get("file_name") or None,
             check_results=check_results,
             weights=normalized_weights,
         )
-        
-        # 6. 保存结果
+
+        result.evaluation_id = evaluation_id
+        result.partial = partial
+        result.errors = module_errors
+
+        if "highlights" in module_outputs:
+            result.highlights = module_outputs["highlights"]
+        if "industry_fit" in module_outputs:
+            result.industry_fit = module_outputs["industry_fit"]
+        if "benchmark" in module_outputs:
+            result.benchmark = module_outputs["benchmark"]
+
+        result.evidence = self._merge_evidence(module_outputs)
+        result.chat_ready = bool(module_outputs.get("chat_ready", False))
+
         await self.storage.save(result)
-        
         return result
 
     async def evaluate_by_project(self, request: EvaluationRequest) -> EvaluationResult:
-        """按项目ID执行评审
-
-        Args:
-            request: 评审请求
-
-        Returns:
-            EvaluationResult: 评审结果
-        """
+        """按项目 ID 执行评审"""
         project_info = self.project_repo.get_project_info(request.project_id)
         if not project_info:
             raise ValueError(f"项目不存在: {request.project_id}")
@@ -162,77 +158,237 @@ class EvaluationAgent:
                 "请先配置 EVALUATION_PROJECT_DOC_ROOT，或改用 /api/v1/evaluation/evaluate/file 上传文档评审。"
             )
 
-        content = await self.parser.parse(file_path)
-        content.setdefault("项目名称", project_info.get("xmmc", ""))
-        content.setdefault("项目简介", project_info.get("xmjj", ""))
-
-        if request.include_sections:
-            content = self._filter_sections(content, request.include_sections)
+        parsed = await self.parser.parse(file_path, source_name=os.path.basename(file_path))
+        sections = parsed.get("sections", {})
+        sections.setdefault("项目名称", project_info.get("xmmc", ""))
+        sections.setdefault("项目简介", project_info.get("xmjj", ""))
+        parsed["sections"] = sections
 
         return await self.evaluate(
             request=request,
             file_path=file_path,
-            content=content,
+            content=parsed,
+            source_name=os.path.basename(file_path),
         )
-    
-    async def _run_checks(
+
+    async def ask(self, evaluation_id: str, question: str) -> EvaluationChatAskResponse:
+        """基于历史评审记录进行问答"""
+        result = await self.storage.get_by_evaluation_id(evaluation_id)
+        if not result:
+            raise ValueError(f"评审记录不存在: {evaluation_id}")
+
+        index_payload = await self.storage.load_chat_index(evaluation_id)
+        if not index_payload:
+            raise ValueError("该评审记录未构建聊天索引，请重新评审并启用 enable_chat_index")
+
+        return await self.qa_agent.ask(question=question, index_payload=index_payload)
+
+    async def _prepare_content(
         self,
-        content: Dict[str, Any],
+        file_path: Optional[str],
+        content: Optional[Dict[str, Any]],
+        source_name: str,
+    ) -> Dict[str, Any]:
+        """归一化解析内容结构"""
+        if content is None:
+            if file_path is None:
+                raise ValueError("必须提供 file_path 或 content 参数")
+            return await self.parser.parse(file_path, source_name=source_name)
+
+        if "sections" in content:
+            return content
+
+        # 兼容旧结构：content 直接为章节字典
+        return {
+            "sections": content,
+            "page_chunks": [],
+            "meta": {"file_name": source_name or ""},
+        }
+
+    async def _run_modules(
+        self,
+        request: EvaluationRequest,
+        sections: Dict[str, str],
+        page_chunks: List[Dict[str, Any]],
+        meta: Dict[str, Any],
         dimensions: List[str],
-    ) -> List[CheckResult]:
-        """并行执行各维度检查
-        
-        Args:
-            content: 文档内容
-            dimensions: 要检查的维度列表
-            
-        Returns:
-            List[CheckResult]: 检查结果列表
-        """
-        tasks = []
-        
+        evaluation_id: str,
+    ) -> tuple[Dict[str, Any], List[EvaluationError], bool]:
+        """并发执行评审与增强模块"""
+        outputs: Dict[str, Any] = {}
+        errors: List[EvaluationError] = []
+        partial = False
+
+        module_tasks: Dict[str, asyncio.Task] = {
+            "checks": asyncio.create_task(self._run_task(self._run_checks(sections, dimensions))),
+        }
+
+        if request.enable_highlight:
+            module_tasks["highlight"] = asyncio.create_task(
+                self._run_task(self._run_highlight(sections, page_chunks, meta))
+            )
+
+        if request.enable_industry_fit:
+            module_tasks["industry_fit"] = asyncio.create_task(
+                self._run_task(self._run_industry_fit(sections, page_chunks))
+            )
+
+        if request.enable_benchmark:
+            module_tasks["benchmark"] = asyncio.create_task(
+                self._run_task(self._run_benchmark(sections))
+            )
+
+        if request.enable_chat_index:
+            module_tasks["chat_index"] = asyncio.create_task(
+                self._run_task(self._run_chat_index(evaluation_id, page_chunks))
+            )
+
+        results = await asyncio.gather(*module_tasks.values(), return_exceptions=True)
+
+        for name, module_result in zip(module_tasks.keys(), results):
+            if isinstance(module_result, Exception):
+                partial = True
+                errors.append(self._build_module_error(name, module_result))
+                if name == "checks":
+                    outputs["checks"] = self._build_default_checks(dimensions)
+                if name == "highlight":
+                    outputs["highlights"] = StructuredHighlights()
+                if name == "industry_fit":
+                    outputs["industry_fit"] = IndustryFitResult(
+                        fit_score=0.0,
+                        matched=[],
+                        gaps=["产业指南检索不可用，结果待核验"],
+                        suggestions=["待检索工具恢复后补充指南映射"],
+                    )
+                if name == "benchmark":
+                    outputs["benchmark"] = BenchmarkResult(
+                        novelty_level="unknown",
+                        literature_position="技术摸底工具不可用",
+                        patent_overlap="技术摸底工具不可用",
+                        conclusion="当前仅基于申报书内容，外部对比结论待补充",
+                        references=[],
+                    )
+                if name == "chat_index":
+                    outputs["chat_ready"] = False
+                continue
+
+            if name == "checks":
+                outputs["checks"] = module_result
+            if name == "highlight":
+                outputs["highlights"] = module_result["highlights"]
+                outputs["evidence_highlight"] = module_result["evidence"]
+            if name == "industry_fit":
+                outputs["industry_fit"] = module_result["industry_fit"]
+                outputs["evidence_industry"] = module_result["evidence"]
+            if name == "benchmark":
+                outputs["benchmark"] = module_result["benchmark"]
+                outputs["evidence_benchmark"] = module_result["evidence"]
+            if name == "chat_index":
+                outputs["chat_ready"] = module_result["chat_ready"]
+
+        return outputs, errors, partial
+
+    async def _run_task(self, coro):
+        """统一并发与超时控制"""
+        async with self._task_semaphore:
+            return await asyncio.wait_for(coro, timeout=self.config.timeout)
+
+    async def _run_checks(self, sections: Dict[str, str], dimensions: List[str]) -> List[CheckResult]:
+        """并行执行维度检查"""
+        task_specs: List[tuple[str, asyncio.Task]] = []
+        results: List[CheckResult] = []
+
         for dimension in dimensions:
             checker = self.get_checker(dimension)
-            if checker:
-                tasks.append(self._safe_check(checker, content))
-        
-        # 并行执行
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 处理异常结果
-        check_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                # 检查失败，生成默认结果
-                dimension = dimensions[i] if i < len(dimensions) else "unknown"
-                check_results.append(CheckResult(
-                    dimension=dimension,
-                    score=5.0,
-                    confidence=0.0,
-                    opinion=f"检查异常: {str(result)}",
-                    issues=["检查过程发生错误"],
-                    highlights=[],
-                    items=[],
-                ))
-            else:
-                check_results.append(result)
-        
-        return check_results
-    
-    async def _safe_check(
+            if not checker:
+                results.append(
+                    CheckResult(
+                        dimension=dimension,
+                        score=5.0,
+                        confidence=0.0,
+                        opinion=f"未找到对应检查器: {dimension}",
+                        issues=["检查器未配置"],
+                        highlights=[],
+                        items=[],
+                    )
+                )
+                continue
+            task_specs.append((dimension, asyncio.create_task(self._safe_check(checker, sections))))
+
+        if task_specs:
+            raw = await asyncio.gather(*[task for _, task in task_specs], return_exceptions=True)
+            for (dimension, _), item in zip(task_specs, raw):
+                if isinstance(item, Exception):
+                    results.append(
+                        CheckResult(
+                            dimension=dimension,
+                            score=5.0,
+                            confidence=0.0,
+                            opinion=f"检查异常: {str(item)}",
+                            issues=["检查过程发生错误"],
+                            highlights=[],
+                            items=[],
+                        )
+                    )
+                else:
+                    results.append(item)
+
+        return results
+
+    async def _run_highlight(
         self,
-        checker: BaseChecker,
-        content: Dict[str, Any],
-    ) -> CheckResult:
-        """安全执行检查（带异常处理）
-        
-        Args:
-            checker: 检查器
-            content: 文档内容
-            
-        Returns:
-            CheckResult: 检查结果
-        """
+        sections: Dict[str, str],
+        page_chunks: List[Dict[str, Any]],
+        meta: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """执行划重点"""
+        highlights, evidence = await self.highlight_extractor.extract(
+            sections=sections,
+            page_chunks=page_chunks,
+            file_name=str(meta.get("file_name", "")),
+        )
+        return {"highlights": highlights, "evidence": evidence}
+
+    async def _run_industry_fit(
+        self,
+        sections: Dict[str, str],
+        page_chunks: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """执行产业贴合分析"""
+        query_text = "\n".join(
+            [
+                sections.get("研究目标", ""),
+                sections.get("创新点", ""),
+                sections.get("技术路线", ""),
+            ]
+        ).strip()
+
+        industry_fit, evidence = await self.industry_fit_analyzer.analyze(
+            sections=sections,
+            page_chunks=page_chunks,
+            query_text=query_text,
+        )
+        return {"industry_fit": industry_fit, "evidence": evidence}
+
+    async def _run_benchmark(self, sections: Dict[str, str]) -> Dict[str, Any]:
+        """执行技术摸底"""
+        benchmark, evidence = await self.benchmark_analyzer.analyze(
+            sections=sections,
+            highlights=None,
+        )
+        return {"benchmark": benchmark, "evidence": evidence}
+
+    async def _run_chat_index(self, evaluation_id: str, page_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """构建并保存聊天索引"""
+        if not page_chunks:
+            return {"chat_ready": False}
+
+        payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+        await self.storage.save_chat_index(evaluation_id=evaluation_id, payload=payload)
+        return {"chat_ready": bool(payload.get("chunk_count", 0) > 0)}
+
+    async def _safe_check(self, checker: BaseChecker, content: Dict[str, Any]) -> CheckResult:
+        """安全执行检查"""
         try:
             return await checker.check(content)
         except Exception as e:
@@ -246,92 +402,82 @@ class EvaluationAgent:
                 highlights=[],
                 items=[],
             )
-    
-    async def batch_evaluate(
-        self,
-        requests: List[EvaluationRequest],
-        file_paths: Optional[Dict[str, str]] = None,
-        concurrency: int = 3,
-    ) -> List[EvaluationResult]:
-        """批量评审
-        
-        Args:
-            requests: 评审请求列表
-            file_paths: 项目ID到文件路径的映射
-            concurrency: 并发数
-            
-        Returns:
-            List[EvaluationResult]: 评审结果列表
-        """
-        semaphore = asyncio.Semaphore(concurrency)
-        
-        async def _evaluate_with_semaphore(request: EvaluationRequest):
-            async with semaphore:
-                file_path = file_paths.get(request.project_id) if file_paths else None
-                return await self.evaluate(request, file_path=file_path)
-        
-        tasks = [_evaluate_with_semaphore(req) for req in requests]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 处理异常
-        final_results = []
-        for result in results:
-            if isinstance(result, Exception):
-                # 创建空结果
-                final_results.append(EvaluationResult(
-                    project_id="unknown",
-                    overall_score=0,
-                    grade="E",
-                    dimension_scores=[],
-                    summary=f"评审失败: {str(result)}",
-                    recommendations=[],
-                ))
-            else:
-                final_results.append(result)
-        
-        return final_results
 
-    def _filter_sections(
-        self,
-        content: Dict[str, Any],
-        include_sections: List[str],
-    ) -> Dict[str, Any]:
+    def _filter_sections(self, sections: Dict[str, Any], include_sections: List[str]) -> Dict[str, Any]:
         """按 include_sections 过滤章节"""
-        if not include_sections:
-            return content
-
-        normalized = [s.strip() for s in include_sections if s.strip()]
+        normalized = [item.strip() for item in include_sections if item.strip()]
         if not normalized:
-            return content
+            return sections
 
         filtered: Dict[str, Any] = {}
         for section in normalized:
-            for key, value in content.items():
+            for key, value in sections.items():
                 if key in ("项目名称", "项目简介"):
                     continue
                 if key == section or section in key or key in section:
                     filtered[key] = value
 
-        if "项目名称" in content:
-            filtered["项目名称"] = content["项目名称"]
-        if "项目简介" in content:
-            filtered["项目简介"] = content["项目简介"]
+        if "项目名称" in sections:
+            filtered["项目名称"] = sections["项目名称"]
+        if "项目简介" in sections:
+            filtered["项目简介"] = sections["项目简介"]
 
-        return filtered
-    
+        return filtered or sections
+
+    def _merge_evidence(self, outputs: Dict[str, Any]) -> List:
+        """合并并去重证据"""
+        merged = []
+        seen = set()
+
+        for key in ("evidence_highlight", "evidence_industry", "evidence_benchmark"):
+            for item in outputs.get(key, []):
+                unique_key = (item.source, item.file, item.page, item.snippet)
+                if unique_key in seen:
+                    continue
+                seen.add(unique_key)
+                merged.append(item)
+
+        return merged
+
+    def _build_module_error(self, module: str, exc: Exception) -> EvaluationError:
+        """构建模块错误对象"""
+        if isinstance(exc, ToolUnavailableError):
+            code = "TOOL_UNAVAILABLE"
+        elif isinstance(exc, asyncio.TimeoutError):
+            code = "TASK_TIMEOUT"
+        else:
+            code = "INTERNAL_ERROR"
+
+        return EvaluationError(code=code, message=str(exc), module=module)
+
+    def _build_default_checks(self, dimensions: List[str]) -> List[CheckResult]:
+        """构建默认检查结果"""
+        defaults: List[CheckResult] = []
+        for dimension in dimensions:
+            defaults.append(
+                CheckResult(
+                    dimension=dimension,
+                    score=5.0,
+                    confidence=0.0,
+                    opinion="检查未执行，已降级为默认分",
+                    issues=["检查模块异常"],
+                    highlights=[],
+                    items=[],
+                )
+            )
+        return defaults
+
+    def _generate_evaluation_id(self, project_id: str) -> str:
+        """生成评审记录ID"""
+        now = datetime.now().strftime("%Y%m%d%H%M%S%f")
+        return f"EVAL_{project_id}_{now}"
+
     async def get_dimension_info(self, dimension: str) -> Optional[Dict[str, Any]]:
-        """获取维度信息
-        
-        Args:
-            dimension: 维度代码
-            
-        Returns:
-            Optional[Dict[str, Any]]: 维度信息
-        """
+        """获取维度信息"""
         config = self.config.get_dimension_config(dimension)
         if not config:
             return None
-        
+
         return {
             "code": config.code,
             "name": config.name,
@@ -341,17 +487,15 @@ class EvaluationAgent:
             "check_items": config.check_items,
             "required_sections": config.required_sections,
         }
-    
+
     async def list_dimensions(self) -> List[Dict[str, Any]]:
-        """列出所有维度
-        
-        Returns:
-            List[Dict[str, Any]]: 维度信息列表
-        """
+        """列出所有维度"""
         dimensions = []
-        for code, config in self.config.dimensions.items():
-            if config.enabled:
-                dimensions.append({
+        for _, config in self.config.dimensions.items():
+            if not config.enabled:
+                continue
+            dimensions.append(
+                {
                     "code": config.code,
                     "name": config.name,
                     "category": config.category,
@@ -359,20 +503,50 @@ class EvaluationAgent:
                     "default_weight": config.default_weight,
                     "check_items": config.check_items,
                     "required_sections": config.required_sections,
-                })
-        
+                }
+            )
+
         return dimensions
-    
-    async def get_evaluation_history(
-        self,
-        project_id: str,
-    ) -> List[EvaluationResult]:
-        """获取评审历史
-        
-        Args:
-            project_id: 项目ID
-            
-        Returns:
-            List[EvaluationResult]: 历史评审结果
-        """
+
+    async def get_evaluation_history(self, project_id: str) -> List[EvaluationResult]:
+        """获取评审历史"""
         return await self.storage.list_by_project(project_id)
+
+    async def batch_evaluate(
+        self,
+        requests: List[EvaluationRequest],
+        file_paths: Optional[Dict[str, str]] = None,
+        concurrency: int = 3,
+    ) -> List[EvaluationResult]:
+        """批量评审"""
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _evaluate_with_semaphore(request: EvaluationRequest):
+            async with semaphore:
+                file_path = file_paths.get(request.project_id) if file_paths else None
+                if file_path:
+                    return await self.evaluate(request, file_path=file_path)
+                return await self.evaluate_by_project(request)
+
+        tasks = [_evaluate_with_semaphore(req) for req in requests]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        final_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                final_results.append(
+                    EvaluationResult(
+                        project_id="unknown",
+                        overall_score=0,
+                        grade="E",
+                        dimension_scores=[],
+                        summary=f"评审失败: {str(result)}",
+                        recommendations=[],
+                        partial=True,
+                        errors=[EvaluationError(code="INTERNAL_ERROR", message=str(result), module="batch")],
+                    )
+                )
+            else:
+                final_results.append(result)
+
+        return final_results
