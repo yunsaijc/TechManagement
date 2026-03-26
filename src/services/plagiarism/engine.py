@@ -89,9 +89,14 @@ class ComparisonEngine:
         self.sentence_expand_window = 6
         self.sentence_similarity_threshold = 0.40
         self.gap_block_min_length = 50
+        self.gap_sentence_block_min_length = 35
         self._hard_boundary_pattern = re.compile(
-            r"\[表格行\d+\]\s*(项目简介|项目立项背景及意义|第一部分|第二部分|第三部分|一、|二、|三、)[^\n]*\n?"
-            r"|(?:^|\n)\s*(项目简介|项目立项背景及意义|第一部分|第二部分|第三部分|一、|二、|三、)[^\n]*\n?",
+            r"\[表格行\d+\]\s*(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|"
+            r"[一二三四五六七八九十]+[、\.．]|"
+            r"\d+[、\.．])[^\n]*\n?"
+            r"|(?:^|\n)\s*(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|"
+            r"[一二三四五六七八九十]+[、\.．]|"
+            r"\d+[、\.．])[^\n]*\n?",
             re.MULTILINE,
         )
 
@@ -442,6 +447,8 @@ class ComparisonEngine:
         start_b, end_b = self._expand_to_sentence_boundary(text_b, match_range.start_b, match_range.end_b)
         start_a = self._clip_start_after_hard_boundary(text_a, start_a, end_a)
         start_b = self._clip_start_after_hard_boundary(text_b, start_b, end_b)
+        end_a = self._clip_end_before_hard_boundary(text_a, start_a, end_a)
+        end_b = self._clip_end_before_hard_boundary(text_b, start_b, end_b)
         # 注意：不要在这里裁掉“双边共同前后缀”。
         # 之前的 _trim_to_shared_core 会把开头/结尾相同句子去掉，导致
         # “明明整段相同却只命中中间短句”的问题（用户反馈的 m001 场景）。
@@ -662,7 +669,13 @@ class ComparisonEngine:
                 return True
         return False
 
-    def _clip_start_after_hard_boundary(self, text: str, start: int, end: int) -> int:
+    def _clip_start_after_hard_boundary(
+        self,
+        text: str,
+        start: int,
+        end: int,
+        lookahead: int = 80,
+    ) -> int:
         """如果片段跨越章节/标题硬边界，则把起点收敛到边界之后。"""
         if not text or end <= start:
             return start
@@ -671,7 +684,7 @@ class ComparisonEngine:
 
         clipped = start
         for m in self._hard_boundary_pattern.finditer(text):
-            if start <= m.start() < end:
+            if start <= m.start() < min(end, start + lookahead):
                 clipped = max(clipped, m.end())
         return min(clipped, end)
     
@@ -924,9 +937,6 @@ class ComparisonEngine:
             if gap_end - gap_start < self.gap_block_min_length:
                 continue
             for block_start, block_end in self._build_gap_blocks(text_a, gap_start, gap_end):
-                block_text = text_a[block_start:block_end].strip()
-                if not block_text:
-                    continue
                 search_start, search_end = self._source_search_window(
                     text_b,
                     prev_match,
@@ -934,38 +944,54 @@ class ComparisonEngine:
                 )
                 if search_end - search_start < 60:
                     continue
-                best = self._find_best_source_window_for_block(
-                    primary_text=block_text,
-                    source_text=text_b,
-                    search_start=search_start,
-                    search_end=search_end,
+
+                candidate_spans = [(block_start, block_end)]
+                candidate_spans.extend(
+                    self._build_sentence_subblocks(text_a, block_start, block_end)
                 )
-                if not best:
-                    continue
 
-                source_start, source_end, best_score = best
-                source_segment = text_b[source_start:source_end].replace("\n", " ").strip()
-                if not source_segment:
-                    continue
+                seen_spans = set()
+                for cand_start, cand_end in candidate_spans:
+                    if (cand_start, cand_end) in seen_spans:
+                        continue
+                    seen_spans.add((cand_start, cand_end))
 
-                similarity = self._segment_similarity(block_text, source_segment)
-                threshold = self._gap_rescue_threshold(block_text)
-                if similarity < threshold:
-                    continue
+                    block_text = text_a[cand_start:cand_end].strip()
+                    if not block_text:
+                        continue
 
-                rescued.append(Match(
-                    text=block_text.replace("\n", " ").strip(),
-                    start_pos=block_start,
-                    end_pos=block_end,
-                    ngram_count=max(len(block_text) // max(self.ngram_size, 1), 1),
-                    source_doc=source_doc,
-                    source_start=source_start,
-                    source_end=source_end,
-                    source_text=source_segment,
-                    similarity_score=max(best_score, similarity),
-                    match_type="paraphrase",
-                    confidence=max(best_score, similarity),
-                ))
+                    best = self._find_best_source_window_for_block(
+                        primary_text=block_text,
+                        source_text=text_b,
+                        search_start=search_start,
+                        search_end=search_end,
+                    )
+                    if not best:
+                        continue
+
+                    source_start, source_end, best_score = best
+                    source_segment = text_b[source_start:source_end].replace("\n", " ").strip()
+                    if not source_segment:
+                        continue
+
+                    similarity = self._segment_similarity(block_text, source_segment)
+                    threshold = self._gap_rescue_threshold(block_text)
+                    if similarity < threshold:
+                        continue
+
+                    rescued.append(Match(
+                        text=block_text.replace("\n", " ").strip(),
+                        start_pos=cand_start,
+                        end_pos=cand_end,
+                        ngram_count=max(len(block_text) // max(self.ngram_size, 1), 1),
+                        source_doc=source_doc,
+                        source_start=source_start,
+                        source_end=source_end,
+                        source_text=source_segment,
+                        similarity_score=max(best_score, similarity),
+                        match_type="paraphrase",
+                        confidence=max(best_score, similarity),
+                    ))
         return rescued
 
     def _build_gap_blocks(
@@ -1061,6 +1087,55 @@ class ComparisonEngine:
             return start, end
 
         return 0, len(text_b)
+
+    def _build_sentence_subblocks(
+        self,
+        text: str,
+        block_start: int,
+        block_end: int,
+    ) -> List[Tuple[int, int]]:
+        if block_end - block_start < 80:
+            return []
+
+        content_start = block_start
+        first_break = text.find("\n", block_start, block_end)
+        if first_break != -1:
+            first_line = text[block_start:first_break].strip()
+            if self._looks_like_heading(first_line):
+                content_start = first_break + 1
+
+        if block_end - content_start < self.gap_sentence_block_min_length:
+            return []
+
+        sentence_spans: List[Tuple[int, int]] = []
+        cursor = content_start
+        sent_start = content_start
+        endings = {"。", "！", "？", "；"}
+        while cursor < block_end:
+            if text[cursor] in endings:
+                sent_end = cursor + 1
+                sentence_spans.append((sent_start, sent_end))
+                sent_start = sent_end
+            cursor += 1
+        if sent_start < block_end:
+            sentence_spans.append((sent_start, block_end))
+
+        filtered = [
+            (start, end)
+            for start, end in sentence_spans
+            if len(self._normalize_sentence(text[start:end])) >= self.gap_sentence_block_min_length
+            and not self._looks_like_heading(text[start:end].strip())
+        ]
+
+        windows: List[Tuple[int, int]] = []
+        for idx, (start, end) in enumerate(filtered):
+            windows.append((start, end))
+            if idx + 1 < len(filtered):
+                pair_start = start
+                pair_end = filtered[idx + 1][1]
+                if len(self._normalize_sentence(text[pair_start:pair_end])) >= self.gap_block_min_length:
+                    windows.append((pair_start, pair_end))
+        return windows
 
     def _find_best_source_window_for_block(
         self,
@@ -1205,7 +1280,7 @@ class ComparisonEngine:
         b_start, b_end = anchor_b
         anchor_text_a = " ".join(s.text for s in sentences_a[a_start:a_end + 1])
         anchor_text_b = " ".join(s.text for s in sentences_b[b_start:b_end + 1])
-        if not self._is_narrative_sentence(anchor_text_a) or not self._is_narrative_sentence(anchor_text_b):
+        if not self._is_expandable_match_context(anchor_text_a) or not self._is_expandable_match_context(anchor_text_b):
             return match
 
         new_a_start, new_a_end = a_start, a_end
@@ -1296,9 +1371,11 @@ class ComparisonEngine:
 
         expanded_text = text_a[new_start_a:new_end_a].replace("\n", " ").strip()
         expanded_source = self._extract_source_text(text_b, new_start_b, new_end_b)
-        if not self._is_narrative_sentence(expanded_text) or not self._is_narrative_sentence(expanded_source):
-            return match
         if not step_scores:
+            return match
+
+        combined_similarity = self._segment_similarity(expanded_text, expanded_source)
+        if combined_similarity < 0.42 and (sum(step_scores) / len(step_scores)) < 0.55:
             return match
         confidence = sum(step_scores) / max(len(step_scores), 1)
 
@@ -1311,9 +1388,9 @@ class ComparisonEngine:
             source_start=new_start_b,
             source_end=new_end_b,
             source_text=expanded_source,
-            similarity_score=max(match.similarity_score, min(confidence, 1.0)),
+            similarity_score=max(match.similarity_score, min(max(confidence, combined_similarity), 1.0)),
             match_type="paraphrase" if (new_end_a - new_start_a) > (match.end_pos - match.start_pos) + 40 else match.match_type,
-            confidence=min(confidence, 1.0),
+            confidence=min(max(confidence, combined_similarity), 1.0),
             parent_match_id=match.parent_match_id,
         )
 
@@ -1419,6 +1496,20 @@ class ComparisonEngine:
         if cjk_chars < max(12, int(len(cleaned) * 0.4)):
             return False
         return True
+
+    def _is_expandable_match_context(self, text: str) -> bool:
+        if self._is_narrative_sentence(text):
+            return True
+
+        cleaned = self._clean_sentence_for_semantic_match(text)
+        cleaned = re.sub(r"\s+", "", cleaned)
+        if len(cleaned) < 60:
+            return False
+        if len(re.findall(r"\d", cleaned)) > max(20, len(cleaned) // 2):
+            return False
+
+        cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", cleaned))
+        return cjk_chars >= max(24, int(len(cleaned) * 0.4))
 
     def _clean_sentence_for_semantic_match(self, text: str) -> str:
         """清洗句子中的结构噪声，仅用于语义判断/扩边，不影响坐标。"""

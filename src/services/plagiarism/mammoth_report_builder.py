@@ -8,6 +8,7 @@ import html
 import json
 import re
 import sys
+from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
@@ -21,6 +22,7 @@ from common.file_handler.mammoth_converter import (
     get_mammoth_styles
 )
 from src.services.plagiarism.coordinate_map import build_coordinate_map
+from src.services.plagiarism.text_repairs import repair_mammoth_html_artifacts
 
 
 class MammothPlagiarismReportBuilder:
@@ -61,6 +63,9 @@ class MammothPlagiarismReportBuilder:
 
         # 获取文档信息
         primary_doc = data.get("primary_doc", "Unknown")
+        documents = data.get("documents", {})
+        primary_scope = data.get("primary_scope") or {}
+        primary_canonical = documents.get(primary_doc, "") if primary_doc else ""
         source_doc = ""
         for segment in data.get("duplicate_segments", []):
             sources = segment.get("sources", [])
@@ -81,6 +86,12 @@ class MammothPlagiarismReportBuilder:
             right_html, _ = convert_docx_to_html_mammoth(source_docx_path)
         else:
             right_html = self._build_fallback_content(data, "source")
+
+        left_html = repair_mammoth_html_artifacts(left_html)
+        right_html = repair_mammoth_html_artifacts(right_html)
+
+        if primary_canonical and primary_scope:
+            left_html = self._clip_primary_html_to_scope(left_html, primary_canonical)
         
         # 同时处理两侧高亮，确保每个片段都有两侧匹配
         left_html, right_html, match_results = self._apply_highlights_both_sides(
@@ -165,6 +176,11 @@ class MammothPlagiarismReportBuilder:
             if not left_fragments or not right_fragments:
                 continue
 
+            left_fragments = self._clean_fragments_for_side(left_fragments, left_html, "primary")
+            right_fragments = self._clean_fragments_for_side(right_fragments, right_html, "source")
+            if not left_fragments or not right_fragments:
+                continue
+
             left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
             right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
             if not left_filtered or not right_filtered:
@@ -204,6 +220,172 @@ class MammothPlagiarismReportBuilder:
                 continue
             filtered.append((start, end))
         return filtered
+
+    def _clean_fragments_for_side(
+        self,
+        fragments: List[Tuple[int, int]],
+        html_content: str,
+        side: str,
+    ) -> List[Tuple[int, int]]:
+        if len(fragments) <= 1:
+            return fragments
+
+        annotated = []
+        for start, end in fragments:
+            text = self._fragment_text(html_content[start:end])
+            annotated.append((start, end, text, self._looks_like_heading_text(text)))
+
+        if side == "source":
+            has_narrative = any((not is_heading) and len(text) >= 40 for _, _, text, is_heading in annotated)
+            if has_narrative:
+                cleaned = [
+                    (start, end)
+                    for start, end, text, is_heading in annotated
+                    if not (is_heading and len(text) <= 40)
+                ]
+                if cleaned:
+                    return cleaned
+
+        return [(start, end) for start, end, _, _ in annotated]
+
+    def _fragment_text(self, html_fragment: str) -> str:
+        text = re.sub(r"<[^>]+>", "", html_fragment or "")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _looks_like_heading_text(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "")
+        if not normalized:
+            return False
+        return bool(re.match(
+            r"^(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|第六部分|"
+            r"[一二三四五六七八九十]+[、\.．]|"
+            r"\d+[、\.．])",
+            normalized,
+        )) and len(normalized) <= 50
+
+    def _clip_primary_html_to_scope(self, html_content: str, canonical_text: str) -> str:
+        if not html_content or not canonical_text:
+            return html_content
+
+        coord_map = build_coordinate_map(canonical_text, html_content)
+        mapped_positions = sorted({pos for pos in coord_map.canonical_to_html if pos >= 0})
+        if not mapped_positions:
+            return html_content
+
+        wrapper_match = re.search(r'<div class="docx-content">', html_content)
+        if not wrapper_match:
+            return html_content
+
+        inner_start = wrapper_match.end()
+        inner_end = html_content.rfind("</div>")
+        if inner_end <= inner_start:
+            return html_content
+
+        prefix = html_content[:inner_start]
+        suffix = html_content[inner_end:]
+        inner_html = html_content[inner_start:inner_end]
+        clipped_inner = self._clip_docx_inner_html(inner_html, inner_start, mapped_positions)
+        if not clipped_inner.strip():
+            return html_content
+        return prefix + clipped_inner + suffix
+
+    def _clip_docx_inner_html(
+        self,
+        inner_html: str,
+        base_offset: int,
+        mapped_positions: List[int],
+    ) -> str:
+        kept_parts: List[str] = []
+        for kind, rel_start, rel_end, payload in self._extract_top_level_blocks(inner_html):
+            abs_start = base_offset + rel_start
+            abs_end = base_offset + rel_end
+            if kind == "table":
+                clipped_table = self._clip_table_block(str(payload), abs_start, mapped_positions)
+                if clipped_table:
+                    kept_parts.append(clipped_table)
+                continue
+            if self._has_mapped_position(mapped_positions, abs_start, abs_end):
+                kept_parts.append(str(payload))
+        return "".join(kept_parts)
+
+    def _extract_top_level_blocks(
+        self,
+        html_fragment: str,
+    ) -> List[Tuple[str, int, int, str]]:
+        blocks: List[Tuple[str, int, int, str]] = []
+        pos = 0
+        while pos < len(html_fragment):
+            if html_fragment[pos] != "<":
+                pos += 1
+                continue
+            if html_fragment.startswith("<p", pos):
+                end = self._find_tag_end(html_fragment, pos, "p")
+                if end != -1:
+                    blocks.append(("p", pos, end, html_fragment[pos:end]))
+                    pos = end
+                    continue
+            if html_fragment.startswith("<table", pos):
+                end = self._find_tag_end(html_fragment, pos, "table")
+                if end != -1:
+                    blocks.append(("table", pos, end, html_fragment[pos:end]))
+                    pos = end
+                    continue
+            pos += 1
+        return blocks
+
+    def _clip_table_block(
+        self,
+        table_html: str,
+        table_abs_start: int,
+        mapped_positions: List[int],
+    ) -> str:
+        open_end = table_html.find(">")
+        close_start = table_html.rfind("</table>")
+        if open_end == -1 or close_start == -1 or close_start <= open_end:
+            if self._has_mapped_position(mapped_positions, table_abs_start, table_abs_start + len(table_html)):
+                return table_html
+            return ""
+
+        open_tag = table_html[:open_end + 1]
+        close_tag = table_html[close_start:]
+        inner_html = table_html[open_end + 1:close_start]
+
+        kept_rows: List[str] = []
+        pos = 0
+        while pos < len(inner_html):
+            row_start = inner_html.find("<tr", pos)
+            if row_start == -1:
+                break
+            row_end = self._find_tag_end(inner_html, row_start, "tr")
+            if row_end == -1:
+                break
+            abs_start = table_abs_start + open_end + 1 + row_start
+            abs_end = table_abs_start + open_end + 1 + row_end
+            if self._has_mapped_position(mapped_positions, abs_start, abs_end):
+                kept_rows.append(inner_html[row_start:row_end])
+            pos = row_end
+
+        if not kept_rows:
+            return ""
+        return open_tag + "".join(kept_rows) + close_tag
+
+    def _find_tag_end(self, html_fragment: str, start: int, tag_name: str) -> int:
+        close_tag = f"</{tag_name}>"
+        close_idx = html_fragment.find(close_tag, start)
+        if close_idx == -1:
+            return -1
+        return close_idx + len(close_tag)
+
+    def _has_mapped_position(
+        self,
+        mapped_positions: List[int],
+        start: int,
+        end: int,
+    ) -> bool:
+        if end <= start or not mapped_positions:
+            return False
+        idx = bisect_left(mapped_positions, start)
+        return idx < len(mapped_positions) and mapped_positions[idx] < end
 
     def _normalize_text(self, text: str) -> str:
         if not text:

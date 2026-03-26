@@ -1,7 +1,7 @@
 """分组 Agent
 
 当前版本采用关键词Embedding主导 + 学科代码辅助分组策略：
-1. 构造文本（关键词 + 标题主导，学科弱提示）突出具体研究方向
+1. 构造文本（关键词重复3次 + 项目名）确保关键词权重最高
 2. 计算全局Embedding，建立语义空间
 3. 基于Embedding相似度进行全局层次聚类
 4. 对过大组/过小组合并基于Embedding再平衡
@@ -51,19 +51,6 @@ from src.common.database import get_xkfl_repo
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
 EMBEDDING_CACHE_FILE = os.path.join(DEBUG_DIR, "embedding_cache.pkl")
-
-EMBEDDING_BASE_STOPWORDS = {
-    "优化", "调度", "系统", "方法", "研究", "技术", "应用",
-    "开发", "平台", "关键", "实现", "相关", "面向", "基于",
-    "一种", "及其", "理论", "模型", "机制", "设计", "分析",
-    "进行", "开展", "提出", "解决", "探索", "建立", "构建",
-}
-
-EMBEDDING_SUMMARY_GENERIC_TERMS = {
-    "人工智能", "智能", "多模态", "大模型", "机器学习", "深度学习",
-    "神经网络", "算法", "数据", "图像", "识别", "检测",
-}
-
 
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
@@ -466,23 +453,9 @@ class GroupingAgent:
             "text": _text_for_project(project),
         }
 
-    def _get_merge_capacity_limit(
-        self,
-        round_idx: int,
-        max_per_group: int,
-        min_per_group: int,
-    ) -> int:
-        """获取当前轮次的小组合并容量上限。"""
-        if round_idx > self.merge_reserve_rounds:
-            return max_per_group
-        effective_ratio = max(0.9, self.merge_reserve_ratio)
-        soft_cap = int(math.floor(max_per_group * effective_ratio))
-        return max(min_per_group, min(max_per_group, soft_cap))
-
-    def _get_merge_candidate_limit(self, src_size: int) -> int:
-        """根据源组大小动态扩大候选数，避免极小组视野过窄。"""
-        extra = max(0, self.min_per_group - src_size)
-        return max(2, int(self.merge_candidate_limit) + extra)
+    def _get_merge_candidate_limit(self) -> int:
+        """返回每个过小组保留的候选目标组数。"""
+        return max(2, int(self.merge_candidate_limit))
 
     def _cluster_keyword_set(self, cluster: List[Project]) -> set[str]:
         keywords: set[str] = set()
@@ -502,26 +475,10 @@ class GroupingAgent:
             return 0.0
         return len(common) / base
 
-    def _merge_target_size(self, current_cap: int, min_per_group: int) -> int:
-        reserved_target = int(round(current_cap * max(0.9, self.merge_reserve_ratio)))
-        return max(min_per_group, min(current_cap, reserved_target))
-
-    def _size_fit_bonus(self, merged_size: int, current_cap: int, min_per_group: int) -> float:
-        target_size = self._merge_target_size(current_cap, min_per_group)
-        if target_size <= 0:
-            return 0.0
-        return max(0.0, 1.0 - abs(merged_size - target_size) / target_size)
-
-    def _capacity_penalty(self, dst_size: int, src_size: int, current_cap: int) -> float:
-        if current_cap <= 0:
-            return 0.0
-        return max(0.0, min(1.0, (dst_size + src_size) / current_cap))
-
     def _build_merge_candidate_edge(
         self,
         src_idx: int,
         dst_idx: int,
-        src_size: int,
         dst_size: int,
         code_a: str,
         code_b: str,
@@ -529,8 +486,6 @@ class GroupingAgent:
         dst_center: Optional[np.ndarray],
         keywords_a: set[str],
         keywords_b: set[str],
-        current_cap: int,
-        min_per_group: int,
     ) -> Dict[str, Any]:
         """构造小组合并候选边。"""
         subject_score = self._subject_similarity(code_a, code_b)
@@ -538,17 +493,7 @@ class GroupingAgent:
         if src_center is not None and dst_center is not None:
             text_score = _cosine_similarity(src_center, dst_center)
         keyword_score = self._keyword_overlap_score(keywords_a, keywords_b)
-        merged_size = src_size + dst_size
-        size_bonus = self._size_fit_bonus(merged_size, current_cap, min_per_group)
-        capacity_penalty = self._capacity_penalty(dst_size, src_size, current_cap)
-        total_score = (
-            0.55 * text_score
-            + 0.20 * keyword_score
-            + 0.15 * subject_score
-            + 0.10 * size_bonus
-            - 0.05 * capacity_penalty
-        )
-        total_score = max(0.0, min(1.0, total_score))
+        total_score = 0.75 * subject_score + 0.25 * text_score
         return {
             "src": src_idx,
             "dst": dst_idx,
@@ -556,50 +501,37 @@ class GroupingAgent:
             "text": text_score,
             "keyword": keyword_score,
             "subject": subject_score,
-            "size_bonus": size_bonus,
-            "capacity_penalty": capacity_penalty,
-            "merged_size": merged_size,
+            "dst_size": dst_size,
             "code_a": code_a,
             "code_b": code_b,
+            "same_code": code_a == code_b,
         }
 
-    def _select_local_merge_candidates(
+    def _select_merge_candidates(
         self,
-        local_candidates: List[Dict[str, Any]],
-        src_size: int,
+        same_code_candidates: List[Dict[str, Any]],
+        cross_code_candidates: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """基于源组自己的候选分布做动态筛选。"""
-        if not local_candidates:
-            return []
+        """同代码优先回收；跨代码仍走阈值兜底。"""
+        top_k = self._get_merge_candidate_limit()
 
-        ordered = sorted(local_candidates, key=lambda item: item["score"], reverse=True)
-        limit = min(len(ordered), self._get_merge_candidate_limit(src_size))
-        limited = ordered[:limit]
+        if same_code_candidates:
+            same_code_candidates.sort(
+                key=lambda item: (item["text"], item["keyword"], item["dst_size"], item["score"]),
+                reverse=True,
+            )
+            return same_code_candidates[:top_k]
 
-        best_score = limited[0]["score"]
-        tail_score = limited[-1]["score"]
-        best_text = max(item["text"] for item in limited)
-        tail_text = min(item["text"] for item in limited)
-
-        score_floor = max(
-            self.merge_min_total_score,
-            best_score - max(0.18, (best_score - tail_score) * 0.9),
+        filtered_cross_code = [
+            item
+            for item in cross_code_candidates
+            if item["score"] >= self.merge_min_total_score and item["text"] >= self.merge_min_text_score
+        ]
+        filtered_cross_code.sort(
+            key=lambda item: (item["score"], item["text"], item["keyword"], item["dst_size"]),
+            reverse=True,
         )
-        text_floor = max(
-            self.merge_min_text_score,
-            best_text - max(0.20, (best_text - tail_text) * 0.9),
-        )
-
-        selected: List[Dict[str, Any]] = []
-        for rank, candidate in enumerate(limited):
-            if candidate["score"] < score_floor or candidate["text"] < text_floor:
-                continue
-
-            candidate["force_same_code_llm"] = False
-            candidate["rank"] = rank
-            selected.append(candidate)
-
-        return selected
+        return filtered_cross_code[:top_k]
 
     @lru_cache(maxsize=4096)
     def _project_text_key(self, project_id: str, xmmc: str, gjc: str, xmjj: str) -> str:
@@ -611,52 +543,55 @@ class GroupingAgent:
         return self._build_enhanced_text(project)
     
     def _build_enhanced_text(self, project: Project) -> str:
-        """构建用于 Embedding 的增强文本，优先突出具体领域词。"""
+        """构建增强文本，提升关键词和学科信息的权重"""
         parts = []
-
-        # 1. 关键词仍是主信息，但不过度重复，避免把泛词放大。
-        keywords = _parse_keywords_to_list(project.gjc)
-        if not keywords and project.xmmc:
-            keywords = _extract_keywords_from_title_to_list(project.xmmc)
-        for kw in keywords:
-            if kw and len(kw) >= 2:
-                parts.extend([kw] * 3)
-
-        # 2. 标题比简介更重要，重复两次突出具体方向词。
-        if project.xmmc:
-            title = self._clean_text_for_embedding(project.xmmc)
-            if title:
-                parts.extend([title] * 2)
-
-        # 3. 简介只作为补充，并额外过滤 AI 泛词，避免大筐学科互相拉近。
-        if project.xmjj:
-            summary = _clean_html_text(project.xmjj)
-            summary = self._clean_text_for_embedding(summary, drop_generic_terms=True)
-            if summary:
-                parts.append(summary[:160])
-
-        # 4. 学科名只保留一次，作为弱提示信息。
+        
+        # 1. 学科信息（高权重：重复3次）
         subject_code = project.ssxk1 or project.ssxk2 or ""
         subject_name = self._get_subject_name(subject_code)
         if subject_name and subject_name != "unknown":
-            parts.append(subject_name)
-
+            parts.extend([subject_name] * 3)
+        
+        # 2. 关键词（最高权重：重复5次）
+        keywords = _parse_keywords_to_list(project.gjc)
+        for kw in keywords:
+            if kw and len(kw) >= 2:
+                parts.extend([kw] * 5)
+        
+        # 3. 项目标题（清洗后）
+        if project.xmmc:
+            title = self._clean_text_for_embedding(project.xmmc)
+            if title:
+                parts.append(title)
+        
+        # 4. 项目简介（低权重：截断并清洗）
+        if project.xmjj:
+            summary = _clean_html_text(project.xmjj)
+            summary = self._clean_text_for_embedding(summary)
+            if summary:
+                parts.append(summary[:200])
+        
         return "。".join(parts)
-
-    def _clean_text_for_embedding(self, text: str, drop_generic_terms: bool = False) -> str:
-        """清洗文本，保留更有区分度的领域词。"""
+    
+    def _clean_text_for_embedding(self, text: str) -> str:
+        """清洗文本，去除通用停用词"""
         if not text:
             return ""
-
+        
+        # 通用停用词表
+        stopwords = {
+            "优化", "调度", "系统", "方法", "研究", "技术", "应用",
+            "开发", "平台", "关键", "实现", "相关", "面向", "基于",
+            "一种", "及其", "理论", "模型", "机制", "设计", "分析",
+            "进行", "开展", "提出", "解决", "探索", "建立", "构建",
+        }
+        
         # 清洗HTML实体
         text = text.replace("&ldquo;", "").replace("&rdquo;", "")
         text = text.replace("&quot;", "").replace("&amp;", "&")
-
+        
         # 分词并去除停用词（提取2-8字的中文词）
         words = re.findall(r"[\u4e00-\u9fff]{2,8}", text)
-        stopwords = set(EMBEDDING_BASE_STOPWORDS)
-        if drop_generic_terms:
-            stopwords.update(EMBEDDING_SUMMARY_GENERIC_TERMS)
         filtered = [w for w in words if w not in stopwords]
         return "。".join(filtered)
 
@@ -859,7 +794,7 @@ class GroupingAgent:
                     break
             prev_small_group_count = current_small_group_count
 
-            current_cap = self._get_merge_capacity_limit(round_idx, max_per_group, min_per_group)
+            current_cap = max_per_group
             print(
                 f"[合并][第{round_idx}轮] 发现{len(small_indices)}个过小组需要处理..."
                 f"（当前容量上限={current_cap}）"
@@ -877,14 +812,15 @@ class GroupingAgent:
                 centers.append(np.mean(cluster_vectors, axis=0) if cluster_vectors else None)
                 keyword_sets.append(self._cluster_keyword_set(cluster))
 
-            # 每个小组先构造完整候选，再按本组分布动态过滤
+            # 每个小组先回收同代码碎片；若无同代码候选，再考虑跨代码候选
             candidate_edges: List[Dict[str, Any]] = []
             for src_idx in small_indices:
                 src_size = sizes[src_idx]
                 src_center = centers[src_idx]
                 code_a = codes[src_idx]
                 keywords_a = keyword_sets[src_idx]
-                local_candidates: List[Dict[str, Any]] = []
+                same_code_candidates: List[Dict[str, Any]] = []
+                cross_code_candidates: List[Dict[str, Any]] = []
 
                 for dst_idx, _ in enumerate(clusters):
                     if dst_idx == src_idx:
@@ -893,30 +829,35 @@ class GroupingAgent:
                         continue
 
                     code_b = codes[dst_idx]
-                    local_candidates.append(
-                        self._build_merge_candidate_edge(
-                            src_idx=src_idx,
-                            dst_idx=dst_idx,
-                            src_size=src_size,
-                            dst_size=sizes[dst_idx],
-                            code_a=code_a,
-                            code_b=code_b,
-                            src_center=src_center,
-                            dst_center=centers[dst_idx],
-                            keywords_a=keywords_a,
-                            keywords_b=keyword_sets[dst_idx],
-                            current_cap=current_cap,
-                            min_per_group=min_per_group,
-                        )
+                    candidate = self._build_merge_candidate_edge(
+                        src_idx=src_idx,
+                        dst_idx=dst_idx,
+                        dst_size=sizes[dst_idx],
+                        code_a=code_a,
+                        code_b=code_b,
+                        src_center=src_center,
+                        dst_center=centers[dst_idx],
+                        keywords_a=keywords_a,
+                        keywords_b=keyword_sets[dst_idx],
                     )
+                    if candidate["same_code"]:
+                        same_code_candidates.append(candidate)
+                    else:
+                        cross_code_candidates.append(candidate)
 
-                candidate_edges.extend(self._select_local_merge_candidates(local_candidates, src_size))
+                candidate_edges.extend(
+                    self._select_merge_candidates(same_code_candidates, cross_code_candidates)
+                )
 
             if not candidate_edges:
                 print(f"[合并][第{round_idx}轮] 无满足门槛的候选，停止")
                 break
 
-            print(f"[合并][第{round_idx}轮] 动态筛选后保留 {len(candidate_edges)} 条候选边")
+            same_code_edge_count = sum(1 for edge in candidate_edges if edge["same_code"])
+            print(
+                f"[合并][第{round_idx}轮] 保留 {len(candidate_edges)} 条候选边"
+                f"（同代码 {same_code_edge_count}，跨代码 {len(candidate_edges) - same_code_edge_count}）"
+            )
 
             # 并发执行跨代码候选的LLM校验（去重）
             need_validate_keys: List[Tuple[int, int]] = []
@@ -948,7 +889,10 @@ class GroupingAgent:
                 self._save_llm_validation_cache()
 
             # 冲突消解：按分数从高到低选择无冲突合并边
-            candidate_edges.sort(key=lambda item: item["score"], reverse=True)
+            candidate_edges.sort(
+                key=lambda item: (item["same_code"], item["score"], item["text"], item["dst_size"]),
+                reverse=True,
+            )
             planned_merges: List[Dict[str, Any]] = []
             used_as_source: set[int] = set()
             used_as_target: set[int] = set()

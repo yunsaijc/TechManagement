@@ -15,6 +15,13 @@ from src.common.file_handler.base import ParseResult
 class DocumentParser:
     """正文文档解析器"""
 
+    INVALID_SECTION_TITLES = {
+        "%",
+        "html",
+        "html.",
+        "万元",
+    }
+
     SECTION_PATTERNS = [
         r"^[一二三四五六七八九十]+[、\.．\s]",
         r"^\d+[、\.．\s]",
@@ -183,6 +190,13 @@ class DocumentParser:
         if len(line) > 32:
             return False
         if any(mark in line for mark in ("。", "；", ";", "？", "！", "，", ",")):
+            return False
+        normalized = self._normalize_section_name(line)
+        if not normalized:
+            return False
+        if normalized.lower() in self.INVALID_SECTION_TITLES:
+            return False
+        if re.fullmatch(r"[0-9A-Za-z%.\-_/]+", normalized):
             return False
         for pattern in self.SECTION_PATTERNS:
             if re.match(pattern, line):
