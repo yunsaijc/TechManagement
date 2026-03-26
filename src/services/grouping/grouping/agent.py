@@ -1,7 +1,7 @@
 """分组 Agent
 
 当前版本采用关键词Embedding主导 + 学科代码辅助分组策略：
-1. 构造文本（关键词重复3次 + 项目名）确保关键词权重最高
+1. 构造文本（关键词 + 标题主导，学科弱提示）突出具体研究方向
 2. 计算全局Embedding，建立语义空间
 3. 基于Embedding相似度进行全局层次聚类
 4. 对过大组/过小组合并基于Embedding再平衡
@@ -15,6 +15,7 @@ import hashlib
 import logging
 import math
 import os
+import pickle
 import re
 import time
 import uuid
@@ -49,6 +50,19 @@ from src.common.database import get_xkfl_repo
 
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
+EMBEDDING_CACHE_FILE = os.path.join(DEBUG_DIR, "embedding_cache.pkl")
+
+EMBEDDING_BASE_STOPWORDS = {
+    "优化", "调度", "系统", "方法", "研究", "技术", "应用",
+    "开发", "平台", "关键", "实现", "相关", "面向", "基于",
+    "一种", "及其", "理论", "模型", "机制", "设计", "分析",
+    "进行", "开展", "提出", "解决", "探索", "建立", "构建",
+}
+
+EMBEDDING_SUMMARY_GENERIC_TERMS = {
+    "人工智能", "智能", "多模态", "大模型", "机器学习", "深度学习",
+    "神经网络", "算法", "数据", "图像", "识别", "检测",
+}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -59,6 +73,23 @@ def _env_float(name: str, default: float) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _clean_html_text(text: Optional[str]) -> str:
@@ -75,7 +106,7 @@ def _clean_html_text(text: Optional[str]) -> str:
 
 
 def _text_for_project(project: Project, include_abstract: bool = True) -> str:
-    """构造用于Embedding的文本，关键词重复3次确保权重最高"""
+    """构造项目语义文本，供调试和验证阶段复用。"""
     # 解析关键词
     keywords = _parse_keywords_to_list(project.gjc)
     
@@ -83,7 +114,7 @@ def _text_for_project(project: Project, include_abstract: bool = True) -> str:
     if not keywords and project.xmmc:
         keywords = _extract_keywords_from_title_to_list(project.xmmc)
     
-    # 构造文本：关键词重复3次 + 项目名
+    # 构造文本：关键词优先，项目名补充
     if keywords:
         keyword_str = "；".join(keywords)
         return f"{keyword_str}。研究主题：{keyword_str}。核心内容：{keyword_str}。项目名称：{project.xmmc or ''}"
@@ -138,14 +169,7 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                 "group_count": result.statistics.group_count,
                 "balance_score": result.statistics.balance_score,
                 "avg_projects_per_group": result.statistics.avg_projects_per_group,
-                "avg_quality_per_group": result.statistics.avg_quality_per_group,
-                "quality_mean": result.statistics.quality_mean,
-                "quality_median": result.statistics.quality_median,
-                "quality_std": result.statistics.quality_std,
-                "quality_min": result.statistics.quality_min,
-                "quality_max": result.statistics.quality_max,
                 "quantity_balance": result.statistics.quantity_balance,
-                "quality_balance": result.statistics.quality_balance,
                 "subject_purity": result.statistics.subject_purity,
                 "split_correctness": result.statistics.split_correctness,
                 "audit_reminder": result.statistics.audit_reminder,
@@ -160,9 +184,6 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                 "subject_code": group.subject_code,
                 "subject_name": group.subject_name,
                 "count": group.count,
-                "avg_quality": group.avg_quality,
-                "max_quality": group.max_quality,
-                "min_quality": group.min_quality,
                 "projects": [
                     {
                         "project_id": item.project_id,
@@ -198,6 +219,9 @@ class GroupingAgent:
         use_llm_validation: bool = False,  # 默认禁用LLM验证以提高速度
         merge_min_total_score: Optional[float] = None,
         merge_min_text_score: Optional[float] = None,
+        merge_reserve_ratio: Optional[float] = None,
+        merge_reserve_rounds: Optional[int] = None,
+        merge_candidate_limit: Optional[int] = None,
     ):
         self.llm = llm or get_default_llm_client()
         self.embedder = embedder or get_default_embedding_client()
@@ -215,10 +239,31 @@ class GroupingAgent:
             if merge_min_text_score is not None
             else _env_float("GROUPING_MERGE_MIN_TEXT_SCORE", 0.45)
         )
+        self.merge_reserve_ratio = (
+            merge_reserve_ratio
+            if merge_reserve_ratio is not None
+            else _env_float("GROUPING_MERGE_RESERVE_RATIO", 0.8)
+        )
+        self.merge_reserve_rounds = (
+            merge_reserve_rounds
+            if merge_reserve_rounds is not None
+            else _env_int("GROUPING_MERGE_RESERVE_ROUNDS", 2)
+        )
+        self.merge_candidate_limit = (
+            merge_candidate_limit
+            if merge_candidate_limit is not None
+            else _env_int("GROUPING_MERGE_CANDIDATE_LIMIT", 6)
+        )
+        self.stop_after_first_merge_round_for_debug = _env_bool(
+            "GROUPING_STOP_AFTER_FIRST_MERGE_ROUND", False
+        )
+        self.merge_max_rounds = max(1, _env_int("GROUPING_MERGE_MAX_ROUNDS", 20))
+        self.merge_stall_rounds = max(1, _env_int("GROUPING_MERGE_STALL_ROUNDS", 2))
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
         self._llm_validation_cache: Dict[str, bool] = self._load_llm_validation_cache()  # 持久化缓存
+        self._embedding_cache: Dict[str, List[float]] = self._load_embedding_cache()
 
     def _load_llm_validation_cache(self) -> Dict[str, bool]:
         """加载LLM验证缓存（持久化到文件）"""
@@ -255,6 +300,32 @@ class GroupingAgent:
             print(f"[缓存] 已保存 {len(self._llm_validation_cache)} 条LLM验证记录")
         except Exception as e:
             print(f"[缓存] 保存LLM验证缓存失败: {e}")
+
+    def _load_embedding_cache(self) -> Dict[str, List[float]]:
+        if not os.path.exists(EMBEDDING_CACHE_FILE):
+            print("[缓存] Embedding缓存文件不存在，创建新缓存")
+            return {}
+        try:
+            with open(EMBEDDING_CACHE_FILE, "rb") as f:
+                cache = pickle.load(f)
+            if isinstance(cache, dict):
+                print(f"[缓存] 加载Embedding缓存: {len(cache)} 条记录")
+                return cache
+        except Exception as e:
+            print(f"[缓存] 加载Embedding缓存失败: {e}")
+        return {}
+
+    def _save_embedding_cache(self):
+        try:
+            with open(EMBEDDING_CACHE_FILE, "wb") as f:
+                pickle.dump(self._embedding_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"[缓存] 已保存Embedding缓存: {len(self._embedding_cache)} 条记录")
+        except Exception as e:
+            print(f"[缓存] 保存Embedding缓存失败: {e}")
+
+    @staticmethod
+    def _embedding_text_cache_key(text: str) -> str:
+        return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
     def _load_subject_cache(self) -> Dict[str, str]:
         try:
@@ -395,6 +466,141 @@ class GroupingAgent:
             "text": _text_for_project(project),
         }
 
+    def _get_merge_capacity_limit(
+        self,
+        round_idx: int,
+        max_per_group: int,
+        min_per_group: int,
+    ) -> int:
+        """获取当前轮次的小组合并容量上限。"""
+        if round_idx > self.merge_reserve_rounds:
+            return max_per_group
+        effective_ratio = max(0.9, self.merge_reserve_ratio)
+        soft_cap = int(math.floor(max_per_group * effective_ratio))
+        return max(min_per_group, min(max_per_group, soft_cap))
+
+    def _get_merge_candidate_limit(self, src_size: int) -> int:
+        """根据源组大小动态扩大候选数，避免极小组视野过窄。"""
+        extra = max(0, self.min_per_group - src_size)
+        return max(2, int(self.merge_candidate_limit) + extra)
+
+    def _cluster_keyword_set(self, cluster: List[Project]) -> set[str]:
+        keywords: set[str] = set()
+        for project in cluster:
+            project_keywords = _parse_keywords_to_list(project.gjc)
+            if not project_keywords:
+                project_keywords = _extract_keywords_from_title_to_list(project.xmmc or "")
+            keywords.update(kw.strip() for kw in project_keywords if kw and kw.strip())
+        return keywords
+
+    def _keyword_overlap_score(self, keywords_a: set[str], keywords_b: set[str]) -> float:
+        if not keywords_a or not keywords_b:
+            return 0.0
+        common = keywords_a & keywords_b
+        base = min(len(keywords_a), len(keywords_b))
+        if base <= 0:
+            return 0.0
+        return len(common) / base
+
+    def _merge_target_size(self, current_cap: int, min_per_group: int) -> int:
+        reserved_target = int(round(current_cap * max(0.9, self.merge_reserve_ratio)))
+        return max(min_per_group, min(current_cap, reserved_target))
+
+    def _size_fit_bonus(self, merged_size: int, current_cap: int, min_per_group: int) -> float:
+        target_size = self._merge_target_size(current_cap, min_per_group)
+        if target_size <= 0:
+            return 0.0
+        return max(0.0, 1.0 - abs(merged_size - target_size) / target_size)
+
+    def _capacity_penalty(self, dst_size: int, src_size: int, current_cap: int) -> float:
+        if current_cap <= 0:
+            return 0.0
+        return max(0.0, min(1.0, (dst_size + src_size) / current_cap))
+
+    def _build_merge_candidate_edge(
+        self,
+        src_idx: int,
+        dst_idx: int,
+        src_size: int,
+        dst_size: int,
+        code_a: str,
+        code_b: str,
+        src_center: Optional[np.ndarray],
+        dst_center: Optional[np.ndarray],
+        keywords_a: set[str],
+        keywords_b: set[str],
+        current_cap: int,
+        min_per_group: int,
+    ) -> Dict[str, Any]:
+        """构造小组合并候选边。"""
+        subject_score = self._subject_similarity(code_a, code_b)
+        text_score = 0.0
+        if src_center is not None and dst_center is not None:
+            text_score = _cosine_similarity(src_center, dst_center)
+        keyword_score = self._keyword_overlap_score(keywords_a, keywords_b)
+        merged_size = src_size + dst_size
+        size_bonus = self._size_fit_bonus(merged_size, current_cap, min_per_group)
+        capacity_penalty = self._capacity_penalty(dst_size, src_size, current_cap)
+        total_score = (
+            0.55 * text_score
+            + 0.20 * keyword_score
+            + 0.15 * subject_score
+            + 0.10 * size_bonus
+            - 0.05 * capacity_penalty
+        )
+        total_score = max(0.0, min(1.0, total_score))
+        return {
+            "src": src_idx,
+            "dst": dst_idx,
+            "score": total_score,
+            "text": text_score,
+            "keyword": keyword_score,
+            "subject": subject_score,
+            "size_bonus": size_bonus,
+            "capacity_penalty": capacity_penalty,
+            "merged_size": merged_size,
+            "code_a": code_a,
+            "code_b": code_b,
+        }
+
+    def _select_local_merge_candidates(
+        self,
+        local_candidates: List[Dict[str, Any]],
+        src_size: int,
+    ) -> List[Dict[str, Any]]:
+        """基于源组自己的候选分布做动态筛选。"""
+        if not local_candidates:
+            return []
+
+        ordered = sorted(local_candidates, key=lambda item: item["score"], reverse=True)
+        limit = min(len(ordered), self._get_merge_candidate_limit(src_size))
+        limited = ordered[:limit]
+
+        best_score = limited[0]["score"]
+        tail_score = limited[-1]["score"]
+        best_text = max(item["text"] for item in limited)
+        tail_text = min(item["text"] for item in limited)
+
+        score_floor = max(
+            self.merge_min_total_score,
+            best_score - max(0.18, (best_score - tail_score) * 0.9),
+        )
+        text_floor = max(
+            self.merge_min_text_score,
+            best_text - max(0.20, (best_text - tail_text) * 0.9),
+        )
+
+        selected: List[Dict[str, Any]] = []
+        for rank, candidate in enumerate(limited):
+            if candidate["score"] < score_floor or candidate["text"] < text_floor:
+                continue
+
+            candidate["force_same_code_llm"] = False
+            candidate["rank"] = rank
+            selected.append(candidate)
+
+        return selected
+
     @lru_cache(maxsize=4096)
     def _project_text_key(self, project_id: str, xmmc: str, gjc: str, xmjj: str) -> str:
         parts = [xmmc or "", gjc or "", (xmjj or "")[:800]]
@@ -405,73 +611,100 @@ class GroupingAgent:
         return self._build_enhanced_text(project)
     
     def _build_enhanced_text(self, project: Project) -> str:
-        """构建增强文本，提升关键词和学科信息的权重"""
+        """构建用于 Embedding 的增强文本，优先突出具体领域词。"""
         parts = []
-        
-        # 1. 学科信息（高权重：重复3次）
-        subject_code = project.ssxk1 or project.ssxk2 or ""
-        subject_name = self._get_subject_name(subject_code)
-        if subject_name and subject_name != "unknown":
-            parts.extend([subject_name] * 3)
-        
-        # 2. 关键词（最高权重：重复5次）
+
+        # 1. 关键词仍是主信息，但不过度重复，避免把泛词放大。
         keywords = _parse_keywords_to_list(project.gjc)
+        if not keywords and project.xmmc:
+            keywords = _extract_keywords_from_title_to_list(project.xmmc)
         for kw in keywords:
             if kw and len(kw) >= 2:
-                parts.extend([kw] * 5)
-        
-        # 3. 项目标题（清洗后）
+                parts.extend([kw] * 3)
+
+        # 2. 标题比简介更重要，重复两次突出具体方向词。
         if project.xmmc:
             title = self._clean_text_for_embedding(project.xmmc)
             if title:
-                parts.append(title)
-        
-        # 4. 项目简介（低权重：截断并清洗）
+                parts.extend([title] * 2)
+
+        # 3. 简介只作为补充，并额外过滤 AI 泛词，避免大筐学科互相拉近。
         if project.xmjj:
             summary = _clean_html_text(project.xmjj)
-            summary = self._clean_text_for_embedding(summary)
+            summary = self._clean_text_for_embedding(summary, drop_generic_terms=True)
             if summary:
-                parts.append(summary[:200])
-        
+                parts.append(summary[:160])
+
+        # 4. 学科名只保留一次，作为弱提示信息。
+        subject_code = project.ssxk1 or project.ssxk2 or ""
+        subject_name = self._get_subject_name(subject_code)
+        if subject_name and subject_name != "unknown":
+            parts.append(subject_name)
+
         return "。".join(parts)
-    
-    def _clean_text_for_embedding(self, text: str) -> str:
-        """清洗文本，去除通用停用词"""
+
+    def _clean_text_for_embedding(self, text: str, drop_generic_terms: bool = False) -> str:
+        """清洗文本，保留更有区分度的领域词。"""
         if not text:
             return ""
-        
-        # 通用停用词表
-        stopwords = {
-            "优化", "调度", "系统", "方法", "研究", "技术", "应用",
-            "开发", "平台", "关键", "实现", "相关", "面向", "基于",
-            "一种", "及其", "理论", "模型", "机制", "设计", "分析",
-            "进行", "开展", "提出", "解决", "探索", "建立", "构建",
-        }
-        
+
         # 清洗HTML实体
         text = text.replace("&ldquo;", "").replace("&rdquo;", "")
         text = text.replace("&quot;", "").replace("&amp;", "&")
-        
+
         # 分词并去除停用词（提取2-8字的中文词）
         words = re.findall(r"[\u4e00-\u9fff]{2,8}", text)
+        stopwords = set(EMBEDDING_BASE_STOPWORDS)
+        if drop_generic_terms:
+            stopwords.update(EMBEDDING_SUMMARY_GENERIC_TERMS)
         filtered = [w for w in words if w not in stopwords]
         return "。".join(filtered)
 
     def _embed_projects(self, projects: List[Project]) -> Dict[str, np.ndarray]:
         if not projects:
             return {}
-        texts = [self._project_text(project) for project in projects]
         total = len(projects)
         logger.info(f"[Grouping] 开始生成 embedding: {total} 个项目")
-        
-        embed_start = time.time()
-        # 直接使用 embedder 的批量+并发功能，带进度回调
-        embeddings = self.embedder.embed_documents(texts, progress_callback=lambda done, total_batch: logger.info(f"[Grouping] embedding 进度: {done}/{total_batch} 批次完成"))
-        vectors = np.array(embeddings)
-        
-        elapsed = time.time() - embed_start
-        logger.info(f"[Grouping] embedding 完成: {total} 个项目，用时 {elapsed:.2f} 秒")
-        return {project.id: vectors[idx] for idx, project in enumerate(projects)}
+
+        texts = [self._project_text(project) for project in projects]
+        keys = [self._embedding_text_cache_key(text) for text in texts]
+
+        vectors_map: Dict[str, np.ndarray] = {}
+        missing_projects: List[Project] = []
+        missing_texts: List[str] = []
+        missing_keys: List[str] = []
+
+        for project, text, key in zip(projects, texts, keys):
+            cached = self._embedding_cache.get(key)
+            if cached is not None:
+                vectors_map[project.id] = np.asarray(cached, dtype=float)
+            else:
+                missing_projects.append(project)
+                missing_texts.append(text)
+                missing_keys.append(key)
+
+        logger.info(
+            f"[Grouping] embedding缓存命中 {len(vectors_map)}/{total}，未命中 {len(missing_projects)}"
+        )
+
+        if missing_projects:
+            embed_start = time.time()
+            embeddings = self.embedder.embed_documents(
+                missing_texts,
+                progress_callback=lambda done, total_batch: logger.info(
+                    f"[Grouping] embedding 进度: {done}/{total_batch} 批次完成"
+                ),
+            )
+            elapsed = time.time() - embed_start
+            logger.info(f"[Grouping] embedding新计算完成: {len(missing_projects)} 个项目，用时 {elapsed:.2f} 秒")
+
+            for project, key, vec in zip(missing_projects, missing_keys, embeddings):
+                vec_list = [float(x) for x in vec]
+                self._embedding_cache[key] = vec_list
+                vectors_map[project.id] = np.asarray(vec_list, dtype=float)
+            self._save_embedding_cache()
+
+        return vectors_map
 
     def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         buckets: Dict[str, List[Project]] = defaultdict(list)
@@ -601,88 +834,254 @@ class GroupingAgent:
         """
         if not clusters:
             return clusters
-        
+
         clusters = [cluster[:] for cluster in clusters if cluster]
-        
-        # 收集所有需要合并的请求
-        changed = True
-        while changed:
-            changed = False
+        max_rounds = self.merge_max_rounds
+        prev_small_group_count: Optional[int] = None
+        stall_rounds = 0
+
+        for round_idx in range(1, max_rounds + 1):
             clusters = [c for c in clusters if c]
-            
-            # 找出过小组
             small_indices = [idx for idx, c in enumerate(clusters) if 0 < len(c) < min_per_group]
             if not small_indices:
                 break
-            
-            print(f"[合并] 发现{len(small_indices)}个过小组需要处理...")
-            
-            for idx in small_indices:
-                if idx >= len(clusters):
-                    continue
-                cluster = clusters[idx]
-                if not cluster:
-                    continue
-                
-                # 找最相似的组合并
-                cluster_vectors = [vector_map[p.id] for p in cluster if p.id in vector_map]
-                center = np.mean(cluster_vectors, axis=0) if cluster_vectors else None
-                code_a = cluster[0].ssxk1 or cluster[0].ssxk2 or ""
-                
-                candidates: List[Tuple[float, int, float, float, str]] = []
-                
-                for other_idx, other in enumerate(clusters):
-                    if other_idx == idx or not other:
-                        continue
-                    if len(other) + len(cluster) > max_per_group:
-                        continue
-                    
-                    # 计算相似度
-                    code_b = other[0].ssxk1 or other[0].ssxk2 or ""
-                    subject_score = self._subject_similarity(code_a, code_b)
-                    
-                    other_vectors = [vector_map[p.id] for p in other if p.id in vector_map]
-                    text_score = 0.0
-                    if center is not None and other_vectors:
-                        other_center = np.mean(other_vectors, axis=0)
-                        text_score = _cosine_similarity(center, other_center)
-                    
-                    total_score = 0.75 * subject_score + 0.25 * text_score
-                    candidates.append((total_score, other_idx, text_score, subject_score, code_b))
-
-                if not candidates:
-                    continue
-
-                candidates.sort(key=lambda item: item[0], reverse=True)
-                merged = False
-
-                for total_score, best_idx, text_score, subject_score, code_b in candidates:
-                    if (
-                        total_score < self.merge_min_total_score
-                        or text_score < self.merge_min_text_score
-                    ):
-                        continue
-
-                    if code_a != code_b:
-                        ok = await self._llm_validate_merge(cluster, clusters[best_idx], code_a, code_b)
-                        if not ok:
-                            print(f"  [合并拒绝] 组{idx+1} -> 组{best_idx+1}，代码{code_a}!={code_b}，LLM拒绝")
-                            continue
-
-                    clusters[best_idx].extend(cluster)
-                    clusters[idx] = []
-                    changed = True
-                    merged = True
+            current_small_group_count = len(small_indices)
+            if prev_small_group_count is not None:
+                if current_small_group_count >= prev_small_group_count:
+                    stall_rounds += 1
+                else:
+                    stall_rounds = 0
+                if stall_rounds >= self.merge_stall_rounds:
                     print(
-                        f"  [合并] 将组{idx+1}({len(cluster)}个项目)合并到组{best_idx+1} "
-                        f"(score={total_score:.3f}, text={text_score:.3f}, subject={subject_score:.3f})"
+                        f"[合并] 连续{stall_rounds}轮过小组数量未下降"
+                        f"（当前{current_small_group_count}），提前停止"
                     )
                     break
+            prev_small_group_count = current_small_group_count
 
-                if merged:
-                    break
-        
+            current_cap = self._get_merge_capacity_limit(round_idx, max_per_group, min_per_group)
+            print(
+                f"[合并][第{round_idx}轮] 发现{len(small_indices)}个过小组需要处理..."
+                f"（当前容量上限={current_cap}）"
+            )
+
+            # 预计算每个簇的中心向量、学科代码与关键词集合
+            centers: List[Optional[np.ndarray]] = []
+            codes: List[str] = []
+            sizes: List[int] = []
+            keyword_sets: List[set[str]] = []
+            for cluster in clusters:
+                sizes.append(len(cluster))
+                codes.append(cluster[0].ssxk1 or cluster[0].ssxk2 or "")
+                cluster_vectors = [vector_map[p.id] for p in cluster if p.id in vector_map]
+                centers.append(np.mean(cluster_vectors, axis=0) if cluster_vectors else None)
+                keyword_sets.append(self._cluster_keyword_set(cluster))
+
+            # 每个小组先构造完整候选，再按本组分布动态过滤
+            candidate_edges: List[Dict[str, Any]] = []
+            for src_idx in small_indices:
+                src_size = sizes[src_idx]
+                src_center = centers[src_idx]
+                code_a = codes[src_idx]
+                keywords_a = keyword_sets[src_idx]
+                local_candidates: List[Dict[str, Any]] = []
+
+                for dst_idx, _ in enumerate(clusters):
+                    if dst_idx == src_idx:
+                        continue
+                    if sizes[dst_idx] + src_size > current_cap:
+                        continue
+
+                    code_b = codes[dst_idx]
+                    local_candidates.append(
+                        self._build_merge_candidate_edge(
+                            src_idx=src_idx,
+                            dst_idx=dst_idx,
+                            src_size=src_size,
+                            dst_size=sizes[dst_idx],
+                            code_a=code_a,
+                            code_b=code_b,
+                            src_center=src_center,
+                            dst_center=centers[dst_idx],
+                            keywords_a=keywords_a,
+                            keywords_b=keyword_sets[dst_idx],
+                            current_cap=current_cap,
+                            min_per_group=min_per_group,
+                        )
+                    )
+
+                candidate_edges.extend(self._select_local_merge_candidates(local_candidates, src_size))
+
+            if not candidate_edges:
+                print(f"[合并][第{round_idx}轮] 无满足门槛的候选，停止")
+                break
+
+            print(f"[合并][第{round_idx}轮] 动态筛选后保留 {len(candidate_edges)} 条候选边")
+
+            # 并发执行跨代码候选的LLM校验（去重）
+            need_validate_keys: List[Tuple[int, int]] = []
+            need_validate_payloads: List[Tuple[List[Project], List[Project], str, str, bool]] = []
+            seen_pairs: set[Tuple[int, int]] = set()
+            for edge in candidate_edges:
+                key = (edge["src"], edge["dst"])
+                needs_llm = edge["code_a"] != edge["code_b"]
+                if not needs_llm or key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                need_validate_keys.append(key)
+                need_validate_payloads.append(
+                    (
+                        clusters[edge["src"]],
+                        clusters[edge["dst"]],
+                        edge["code_a"],
+                        edge["code_b"],
+                        bool(edge.get("force_same_code_llm", False)),
+                    )
+                )
+
+            validation_map: Dict[Tuple[int, int], bool] = {}
+            if need_validate_payloads:
+                results = await self._batch_llm_validate_merges(need_validate_payloads, persist_cache=False)
+                for key, ok in zip(need_validate_keys, results):
+                    validation_map[key] = ok
+                # 按轮次统一写缓存，避免每次校验落盘
+                self._save_llm_validation_cache()
+
+            # 冲突消解：按分数从高到低选择无冲突合并边
+            candidate_edges.sort(key=lambda item: item["score"], reverse=True)
+            planned_merges: List[Dict[str, Any]] = []
+            used_as_source: set[int] = set()
+            used_as_target: set[int] = set()
+            target_loads = sizes[:]
+
+            for edge in candidate_edges:
+                src = edge["src"]
+                dst = edge["dst"]
+
+                # src不能重复，也不能既当target又当source
+                if src in used_as_source or src in used_as_target:
+                    continue
+                # dst若已作为source使用，跳过，避免链式冲突
+                if dst in used_as_source:
+                    continue
+
+                needs_llm = edge["code_a"] != edge["code_b"]
+                if needs_llm:
+                    if not validation_map.get((src, dst), False):
+                        print(
+                            f"  [合并拒绝] 组{src+1} -> 组{dst+1}，代码{edge['code_a']}!={edge['code_b']}，LLM拒绝"
+                        )
+                        continue
+
+                src_size = sizes[src]
+                if target_loads[dst] + src_size > current_cap:
+                    continue
+
+                used_as_source.add(src)
+                used_as_target.add(dst)
+                target_loads[dst] += src_size
+                planned_merges.append(edge)
+
+            if not planned_merges:
+                print(f"[合并][第{round_idx}轮] 无可提交合并计划，停止")
+                break
+
+            # 统一提交本轮合并
+            committed_merges = 0
+            for edge in planned_merges:
+                src = edge["src"]
+                dst = edge["dst"]
+                if src >= len(clusters) or dst >= len(clusters) or not clusters[src] or not clusters[dst]:
+                    continue
+                clusters[dst].extend(clusters[src])
+                clusters[src] = []
+                committed_merges += 1
+                print(
+                    f"  [合并] 将组{src+1}({sizes[src]}个项目)合并到组{dst+1} "
+                    f"(score={edge['score']:.3f}, text={edge['text']:.3f}, "
+                    f"keyword={edge['keyword']:.3f}, subject={edge['subject']:.3f})"
+                )
+            if committed_merges == 0:
+                print(f"[合并][第{round_idx}轮] 计划合并 {len(planned_merges)} 条但实际提交 0 条，停止")
+                break
+
+            clusters = [c for c in clusters if c]
+            print(f"[合并][第{round_idx}轮] 完成 {committed_merges} 次合并，剩余 {len(clusters)} 组")
+
+            if self.stop_after_first_merge_round_for_debug and round_idx == 1:
+                debug_file = self._save_unmerged_groups_for_debug(clusters, min_per_group, round_idx)
+                if debug_file:
+                    print(f"[合并][调试] 已按要求在第1轮后停止，未合并结果已保存: {debug_file}")
+                break
+
         return [c for c in clusters if c]
+
+    def _save_unmerged_groups_for_debug(
+        self,
+        clusters: List[List[Project]],
+        min_per_group: int,
+        round_idx: int,
+    ) -> str:
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"merge_unmerged_round{round_idx}_{timestamp}.json"
+            filepath = os.path.join(DEBUG_DIR, filename)
+
+            groups = []
+            small_group_ids = []
+            counts = []
+            for idx, cluster in enumerate(clusters, start=1):
+                code_counter = Counter((p.ssxk1 or p.ssxk2 or "") for p in cluster if (p.ssxk1 or p.ssxk2))
+                dominant_code = code_counter.most_common(1)[0][0] if code_counter else ""
+                dominant_name = self._get_subject_name(dominant_code) if dominant_code else "未知主题"
+                count = len(cluster)
+                counts.append(count)
+                group_entry = {
+                    "group_id": idx,
+                    "subject_code": dominant_code or None,
+                    "subject_name": dominant_name,
+                    "count": count,
+                    "projects": [
+                        {
+                            "project_id": p.id,
+                            "xmmc": p.xmmc,
+                            "xmjj": _clean_html_text(p.xmjj) if p.xmjj else "",
+                            "original_subject_code": p.ssxk1 or p.ssxk2 or "",
+                            "original_subject_name": self._get_subject_name(p.ssxk1 or p.ssxk2 or ""),
+                            "keywords": _parse_keywords_to_list(p.gjc)[:20],
+                        }
+                        for p in cluster
+                    ],
+                }
+                groups.append(group_entry)
+                if 0 < count < min_per_group:
+                    small_group_ids.append(idx)
+
+            payload = {
+                "id": f"merge_debug_round{round_idx}_{timestamp}",
+                "year": "fixed",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "statistics": {
+                    "round": round_idx,
+                    "total_groups_after_round": len(clusters),
+                    "small_group_count_after_round": len(small_group_ids),
+                    "small_group_ids": small_group_ids,
+                    "min_per_group": min_per_group,
+                    "avg_projects_per_group": round(_safe_mean(counts), 2) if counts else 0.0,
+                    "max_projects_per_group": max(counts) if counts else 0,
+                    "min_projects_per_group": min(counts) if counts else 0,
+                },
+                "meta": {
+                    "type": "merge_debug_after_round",
+                },
+                "groups": groups,
+            }
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            return filename
+        except Exception as exc:
+            print(f"[合并][调试] 保存未合并结果失败: {exc}")
+            return ""
 
     def _infer_target_group_count(self, project_count: int, max_per_group: int) -> int:
         if project_count <= 0:
@@ -877,10 +1276,8 @@ class GroupingAgent:
             title, summary, subject_name = self._select_group_title(cluster)
 
             project_items = []
-            scores = []
             for project in cluster:
                 score = 1.0
-                scores.append(score)
                 # 使用数据库的gjc字段作为关键词
                 keywords = _parse_keywords_to_list(project.gjc)[:10]  # 最多10个
                 
@@ -892,7 +1289,6 @@ class GroupingAgent:
                         subject_code=project.ssxk1,
                         subject_name=subject_name or self._get_subject_name(project.ssxk1 or "unknown"),
                         semantic_score=score,
-                        quality_score=score,
                         reason=summary or f"语义归入：{title}",
                         original_subject_code=project.ssxk1,
                         original_subject_name=self._get_subject_name(project.ssxk1 or ""),
@@ -906,9 +1302,6 @@ class GroupingAgent:
                 subject_name=subject_name or title,
                 projects=project_items,
                 count=len(cluster),
-                avg_quality=round(_safe_mean(scores), 2),
-                max_quality=round(max(scores), 2) if scores else 0.0,
-                min_quality=round(min(scores), 2) if scores else 0.0,
                 summary=self._build_group_summary(cluster, title),
             )
 
@@ -929,7 +1322,6 @@ class GroupingAgent:
         if not groups:
             return {
                 "quantity_balance": 1.0,
-                "quality_balance": 1.0,
                 "subject_purity": 1.0,
                 "split_correctness": 1.0,
             }
@@ -937,9 +1329,6 @@ class GroupingAgent:
         counts = [group.count for group in groups]
         avg_count = _safe_mean(counts)
         quantity_balance = 1.0 if not counts or avg_count == 0 else max(0.0, 1 - (np.std(counts) / (avg_count + 1e-8)))
-
-        group_sizes = [group.avg_quality for group in groups if group.count > 0]
-        quality_balance = 1.0 if not group_sizes else max(0.0, 1 - np.std(group_sizes))
 
         subject_purity_scores = []
         for group in groups:
@@ -953,7 +1342,6 @@ class GroupingAgent:
         split_correctness = 1.0
         return {
             "quantity_balance": round(float(quantity_balance), 3),
-            "quality_balance": round(float(quality_balance), 3),
             "subject_purity": round(float(subject_purity), 3),
             "split_correctness": round(float(split_correctness), 3),
         }
@@ -965,6 +1353,12 @@ class GroupingAgent:
             self.merge_min_total_score = request.merge_min_total_score
         if request.merge_min_text_score is not None:
             self.merge_min_text_score = request.merge_min_text_score
+        if request.merge_reserve_ratio is not None:
+            self.merge_reserve_ratio = request.merge_reserve_ratio
+        if request.merge_reserve_rounds is not None:
+            self.merge_reserve_rounds = request.merge_reserve_rounds
+        if request.merge_candidate_limit is not None:
+            self.merge_candidate_limit = request.merge_candidate_limit
 
         projects = self.project_repo.get_grouping_test_projects(category=request.category)
         if not projects:
@@ -989,12 +1383,10 @@ class GroupingAgent:
         print(f"[Grouping] ProjectGroup 构建完成，用时 {time.time() - build_group_start:.2f} 秒")
 
         counts = [group.count for group in groups]
-        avg_scores = [group.avg_quality for group in groups]
         metrics = self._balance_metrics(groups)
         balance_score = (
-            metrics["quantity_balance"] * 0.4
-            + metrics["quality_balance"] * 0.2
-            + metrics["subject_purity"] * 0.4
+            metrics["quantity_balance"] * 0.5
+            + metrics["subject_purity"] * 0.5
         )
 
         stats = GroupingStatistics(
@@ -1002,14 +1394,7 @@ class GroupingAgent:
             group_count=len(groups),
             balance_score=round(balance_score, 3),
             avg_projects_per_group=round(_safe_mean(counts), 2),
-            avg_quality_per_group=round(_safe_mean(avg_scores), 2),
-            quality_mean=round(_safe_mean(avg_scores), 2) if avg_scores else 0.0,
-            quality_median=round(float(np.median(avg_scores)), 2) if avg_scores else 0.0,
-            quality_std=round(float(np.std(avg_scores)), 2) if avg_scores else 0.0,
-            quality_min=round(float(min(avg_scores)), 2) if avg_scores else 0.0,
-            quality_max=round(float(max(avg_scores)), 2) if avg_scores else 0.0,
             quantity_balance=metrics["quantity_balance"],
-            quality_balance=metrics["quality_balance"],
             subject_purity=metrics["subject_purity"],
             split_correctness=metrics["split_correctness"],
             audit_reminder=None,
@@ -1032,6 +1417,9 @@ class GroupingAgent:
                 "max_per_group": request.max_per_group,
                 "merge_min_total_score": self.merge_min_total_score,
                 "merge_min_text_score": self.merge_min_text_score,
+                "merge_reserve_ratio": self.merge_reserve_ratio,
+                "merge_reserve_rounds": self.merge_reserve_rounds,
+                "merge_candidate_limit": self.merge_candidate_limit,
             },
         })
         if filename:
@@ -1050,6 +1438,11 @@ class GroupingAgent:
             category=request.category,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC,
+            merge_min_total_score=request.merge_min_total_score,
+            merge_min_text_score=request.merge_min_text_score,
+            merge_reserve_ratio=request.merge_reserve_ratio,
+            merge_reserve_rounds=request.merge_reserve_rounds,
+            merge_candidate_limit=request.merge_candidate_limit,
         )
         grouping_result = await self.group_projects(grouping_request)
 
@@ -1628,12 +2021,15 @@ class GroupingAgent:
 
     async def _batch_llm_validate_merges(
         self,
-        validations: List[Tuple[List[Project], List[Project], str, str]]
+        validations: List[Tuple[Any, ...]],
+        persist_cache: bool = True,
     ) -> List[bool]:
         """【P1】批量并发执行LLM验证（限制并发数为10）
         
         Args:
-            validations: 列表，每个元素是 (cluster_a, cluster_b, code_a, code_b)
+            validations: 列表，每个元素是
+                (cluster_a, cluster_b, code_a, code_b)
+                或 (cluster_a, cluster_b, code_a, code_b, force_validate_same_code)
             
         Returns:
             列表，每个元素是对应验证的结果（True=可以合并，False=拒绝合并）
@@ -1643,28 +2039,44 @@ class GroupingAgent:
 
         import asyncio
         
-        # 限制并发数为10
-        sem = asyncio.Semaphore(10)
+        # 使用实例并发配置
+        sem = asyncio.Semaphore(max(1, int(self.concurrency)))
         
         # 打印并发信息
-        print(f"[LLM并发验证] 启动 {len(validations)} 个验证任务（并发限制：10）")
+        print(f"[LLM并发验证] 启动 {len(validations)} 个验证任务（并发限制：{max(1, int(self.concurrency))}）")
 
-        async def validate_one(cluster_a, cluster_b, code_a, code_b, idx):
+        async def validate_one(cluster_a, cluster_b, code_a, code_b, force_validate_same_code, idx):
             async with sem:
                 try:
                     print(f"[LLM并发验证] 启动第{idx+1}/{len(validations)}个任务")
-                    r = await self._llm_validate_merge(cluster_a, cluster_b, code_a, code_b)
+                    r = await self._llm_validate_merge(
+                        cluster_a,
+                        cluster_b,
+                        code_a,
+                        code_b,
+                        persist_cache=persist_cache,
+                        force_validate_same_code=force_validate_same_code,
+                    )
                     print(f"[LLM并发验证] 第{idx+1}/{len(validations)}个任务完成")
                     return r
                 except Exception as e:
                     print(f"[LLM并发验证] 第{idx+1}个异常: {e}，默认允许合并")
                     return True
 
-        # 创建所有任务并同时启动
-        tasks = [
-            validate_one(cluster_a, cluster_b, code_a, code_b, i)
-            for i, (cluster_a, cluster_b, code_a, code_b) in enumerate(validations)
-        ]
+        tasks = []
+        for i, payload in enumerate(validations):
+            cluster_a, cluster_b, code_a, code_b = payload[:4]
+            force_validate_same_code = bool(payload[4]) if len(payload) >= 5 else False
+            tasks.append(
+                validate_one(
+                    cluster_a,
+                    cluster_b,
+                    code_a,
+                    code_b,
+                    force_validate_same_code,
+                    i,
+                )
+            )
 
         # 使用asyncio.gather并发执行（信号量控制实际并发数）
         all_results = await asyncio.gather(*tasks, return_exceptions=False)
@@ -1677,16 +2089,17 @@ class GroupingAgent:
         cluster_b: List[Project],
         code_a: str,
         code_b: str,
+        persist_cache: bool = True,
+        force_validate_same_code: bool = False,
     ) -> bool:
-        """使用LLM验证两个不同三级学科代码的组是否应该合并
+        """使用LLM验证两个候选组是否应该合并。
 
         返回: True 表示应该合并，False 表示不应该合并
         """
         if not self.use_llm_validation:
             return True
 
-        # 如果学科代码相同，不需要LLM验证
-        if code_a == code_b:
+        if code_a == code_b and not force_validate_same_code:
             return True
 
         # 检查缓存（学科代码 + 代表项目上下文）
@@ -1722,7 +2135,10 @@ class GroupingAgent:
                 "abstract": _clean_html_text(p.xmjj)[:200] if p.xmjj else "",
             })
 
-        prompt = f"""你是一位科研项目分组专家。请判断以下两个来自不同三级学科的项目组是否应该分在同一评审组。
+        validation_scope = "同一细分方向复核" if code_a == code_b else "跨学科并组复核"
+        prompt = f"""你是一位科研项目分组专家。请判断以下两个项目组是否应该分在同一评审组。
+
+【复核类型】{validation_scope}
 
 【学科A】{code_a} ({subject_name_a})
 代表项目：
@@ -1767,7 +2183,8 @@ class GroupingAgent:
             # 缓存结果（双向都存）
             self._llm_validation_cache[cache_key] = should_merge
             self._llm_validation_cache[reverse_key] = should_merge
-            self._save_llm_validation_cache()  # 持久化保存
+            if persist_cache:
+                self._save_llm_validation_cache()  # 持久化保存
             print(f"[LLM验证] 学科{code_a} vs {code_b}: {'通过' if should_merge else '拒绝'}合并")
             return should_merge
         except asyncio.TimeoutError:

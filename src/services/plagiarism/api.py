@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from src.common.models import ApiResponse
 from src.services.plagiarism.agent import PlagiarismAgent
 from src.services.plagiarism.config import get_section_config, get_all_doc_types
+from src.services.plagiarism.section_extractor import SectionExtractor
 
 router = APIRouter()
 
@@ -90,6 +91,12 @@ async def check_plagiarism(
     else:
         # 使用 doc_type 加载默认配置
         config = get_section_config(doc_type)
+
+    if not SectionExtractor.validate_config(config):
+        raise HTTPException(
+            status_code=400,
+            detail="section_config 无效：primary 必须配置 start_pattern（可选 end_pattern）",
+        )
     
     # 执行查重
     agent = PlagiarismAgent(

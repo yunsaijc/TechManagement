@@ -32,6 +32,8 @@ class EvaluationStorage:
             self.storage_dir = Path("data/evaluation")
         
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.chat_index_dir = self.storage_dir / "chat_indexes"
+        self.chat_index_dir.mkdir(parents=True, exist_ok=True)
     
     async def save(self, result: EvaluationResult) -> str:
         """保存评审结果
@@ -73,6 +75,15 @@ class EvaluationStorage:
             data = json.load(f)
         
         return EvaluationResult(**data)
+
+    async def get_by_evaluation_id(self, evaluation_id: str) -> Optional[EvaluationResult]:
+        """按评审记录ID查询结果"""
+        files = list(self.storage_dir.glob("*.json"))
+        for file in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
+            result = await self.load(str(file))
+            if result and result.evaluation_id == evaluation_id:
+                return result
+        return None
     
     async def get_latest(self, project_id: str) -> Optional[EvaluationResult]:
         """获取项目最新的评审结果
@@ -156,3 +167,18 @@ class EvaluationStorage:
             "grade_distribution": grade_count,
             "average_score": round(total_score / len(files), 2) if files else 0,
         }
+
+    async def save_chat_index(self, evaluation_id: str, payload: Dict[str, Any]) -> str:
+        """保存聊天索引"""
+        path = self.chat_index_dir / f"{evaluation_id}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return str(path)
+
+    async def load_chat_index(self, evaluation_id: str) -> Optional[Dict[str, Any]]:
+        """加载聊天索引"""
+        path = self.chat_index_dir / f"{evaluation_id}.json"
+        if not path.exists():
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
