@@ -43,32 +43,72 @@ class SectionExtractor:
         if not text:
             return "", -1, -1
 
-        # 推荐路径：single primary scope
+        details = self.extract_with_details(text)
+        if details.get("text"):
+            return details["text"], details["start"], details["end"]
+        return "", -1, -1
+
+    def extract_with_details(self, text: str) -> Dict[str, Any]:
+        """提取主检测区域并返回可调试的详细信息。"""
+        empty = {
+            "mode": "none",
+            "text": "",
+            "start": -1,
+            "end": -1,
+            "start_pattern": None,
+            "end_pattern": None,
+            "start_match_text": None,
+            "end_match_text": None,
+        }
+        if not text:
+            return empty
+
+        # 兼容旧配置：sections 多段拼接
         if self.primary_scope:
             start_pattern = self.primary_scope.get("start_pattern")
             end_pattern = self.primary_scope.get("end_pattern")
-            extracted, start, end = self._extract_single_scope(text, start_pattern, end_pattern)
-            return extracted, start, end
+            details = self._extract_single_scope_details(text, start_pattern, end_pattern)
+            details["mode"] = "primary_scope"
+            return details
 
-        # 兼容旧配置：sections 多段拼接
         if not self.sections:
-            return "", -1, -1
+            return empty
 
         results = []
         global_start = -1
         global_end = -1
+        matched_sections = []
 
         for section in self.sections:
             start_pattern = section.get("start_pattern")
             end_pattern = section.get("end_pattern")
-            section_text, start_pos, end_pos = self._extract_single_scope(text, start_pattern, end_pattern)
-            if section_text:
-                results.append(section_text)
-                if global_start < 0 or start_pos < global_start:
-                    global_start = start_pos
-                global_end = max(global_end, end_pos)
+            details = self._extract_single_scope_details(text, start_pattern, end_pattern)
+            if details["text"]:
+                results.append(details["text"])
+                matched_sections.append({
+                    "name": section.get("name"),
+                    "start": details["start"],
+                    "end": details["end"],
+                    "start_pattern": start_pattern,
+                    "end_pattern": end_pattern,
+                    "start_match_text": details["start_match_text"],
+                    "end_match_text": details["end_match_text"],
+                })
+                if global_start < 0 or details["start"] < global_start:
+                    global_start = details["start"]
+                global_end = max(global_end, details["end"])
 
-        return "\n".join(results), global_start, global_end
+        return {
+            "mode": "sections",
+            "text": "\n".join(results),
+            "start": global_start,
+            "end": global_end,
+            "start_pattern": None,
+            "end_pattern": None,
+            "start_match_text": None,
+            "end_match_text": None,
+            "matched_sections": matched_sections,
+        }
 
     def _extract_single_scope(
         self,
@@ -76,28 +116,88 @@ class SectionExtractor:
         start_pattern: Optional[str],
         end_pattern: Optional[str],
     ) -> Tuple[str, int, int]:
+        details = self._extract_single_scope_details(text, start_pattern, end_pattern)
+        return details["text"], details["start"], details["end"]
+
+    def _extract_single_scope_details(
+        self,
+        text: str,
+        start_pattern: Optional[str],
+        end_pattern: Optional[str],
+    ) -> Dict[str, Any]:
         if not start_pattern:
-            return "", -1, -1
+            return {
+                "text": "",
+                "start": -1,
+                "end": -1,
+                "start_pattern": start_pattern,
+                "end_pattern": end_pattern,
+                "start_match_text": None,
+                "end_match_text": None,
+            }
 
         start_match = re.compile(start_pattern).search(text)
         if not start_match:
-            return "", -1, -1
+            return {
+                "text": "",
+                "start": -1,
+                "end": -1,
+                "start_pattern": start_pattern,
+                "end_pattern": end_pattern,
+                "start_match_text": None,
+                "end_match_text": None,
+            }
         start_pos = start_match.start()
+        start_match_text = start_match.group(0)
 
         if end_pattern:
             end_match = re.compile(end_pattern).search(text[start_pos + 1:])
             if not end_match:
-                return "", -1, -1
+                return {
+                    "text": "",
+                    "start": -1,
+                    "end": -1,
+                    "start_pattern": start_pattern,
+                    "end_pattern": end_pattern,
+                    "start_match_text": start_match_text,
+                    "end_match_text": None,
+                }
             end_pos = start_pos + 1 + end_match.start()
+            end_match_text = end_match.group(0)
         else:
             end_pos = len(text)
+            end_match_text = None
 
         if end_pos <= start_pos:
-            return "", -1, -1
+            return {
+                "text": "",
+                "start": -1,
+                "end": -1,
+                "start_pattern": start_pattern,
+                "end_pattern": end_pattern,
+                "start_match_text": start_match_text,
+                "end_match_text": end_match_text,
+            }
         section_text = text[start_pos:end_pos].strip()
         if not section_text:
-            return "", -1, -1
-        return section_text, start_pos, end_pos
+            return {
+                "text": "",
+                "start": -1,
+                "end": -1,
+                "start_pattern": start_pattern,
+                "end_pattern": end_pattern,
+                "start_match_text": start_match_text,
+                "end_match_text": end_match_text,
+            }
+        return {
+            "text": section_text,
+            "start": start_pos,
+            "end": end_pos,
+            "start_pattern": start_pattern,
+            "end_pattern": end_pattern,
+            "start_match_text": start_match_text,
+            "end_match_text": end_match_text,
+        }
     
     def filter_template_content(self, text: str) -> str:
         """过滤模板内容，只保留正文

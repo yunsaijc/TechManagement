@@ -8,6 +8,9 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List
 
+from src.common.file_handler import detect_file_type, get_parser
+from src.common.file_handler.base import ParseResult
+
 
 class DocumentParser:
     """正文文档解析器"""
@@ -71,45 +74,67 @@ class DocumentParser:
     async def _extract_pages(self, file_path: str) -> tuple[List[str], bool]:
         """按页提取文档文本"""
         lower = file_path.lower()
-        if lower.endswith(".pdf"):
-            return await self._extract_pdf_pages(file_path), False
-        if lower.endswith(".docx"):
-            return await self._extract_docx_pages(file_path), True
         if lower.endswith(".doc"):
             raise ValueError("不支持的文件类型: doc，请先转换为 docx 或 pdf")
-        raise ValueError(f"不支持的文件类型: {file_path}")
+        file_type = detect_file_type(file_path)
+        if file_type not in ("pdf", "docx"):
+            raise ValueError(f"不支持的文件类型: {file_path}")
 
-    async def _extract_pdf_pages(self, file_path: str) -> List[str]:
-        """提取 PDF 每页文本"""
-        import fitz
+        with open(file_path, "rb") as f:
+            file_data = f.read()
 
-        doc = fitz.open(file_path)
-        pages: List[str] = []
-        for page in doc:
-            pages.append(page.get_text() or "")
-        doc.close()
-        return pages
+        parser = get_parser(file_type)
+        parse_result = await parser.parse(file_data)
+        return self._convert_parse_result_to_pages(parse_result, file_type)
 
-    async def _extract_docx_pages(self, file_path: str) -> List[str]:
-        """提取 DOCX 文本并进行近似分页"""
-        import docx
+    def _convert_parse_result_to_pages(
+        self,
+        parse_result: ParseResult,
+        file_type: str,
+    ) -> tuple[List[str], bool]:
+        """将通用解析结果转换为按页文本"""
+        text_blocks = parse_result.content.text_blocks
+        if not text_blocks:
+            return [], file_type == "docx"
 
-        doc = docx.Document(file_path)
+        if file_type == "pdf":
+            return self._build_pdf_pages(text_blocks), False
+
+        return self._build_docx_pages(text_blocks), True
+
+    def _build_pdf_pages(self, text_blocks: List[Any]) -> List[str]:
+        """根据通用 PDF 文本块还原页文本"""
+        pages: Dict[int, List[tuple[float, float, str]]] = {}
+
+        for block in text_blocks:
+            text = self._clean_text(block.text)
+            if not text:
+                continue
+            pages.setdefault(block.page, []).append((block.bbox.y, block.bbox.x, text))
+
+        page_texts: List[str] = []
+        for page_index in sorted(pages):
+            ordered_blocks = sorted(pages[page_index], key=lambda item: (item[0], item[1]))
+            page_texts.append("\n".join(item[2] for item in ordered_blocks))
+
+        return page_texts
+
+    def _build_docx_pages(self, text_blocks: List[Any]) -> List[str]:
+        """根据通用 DOCX 文本块做近似分页"""
         pages: List[str] = []
         current_lines: List[str] = []
         current_chars = 0
 
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            has_page_break = bool(para._p.xpath(".//w:br[@w:type='page']"))
+        for block in text_blocks:
+            text = self._clean_text(block.text)
+            if not text:
+                continue
 
-            if text:
-                current_lines.append(text)
-                current_chars += len(text)
+            current_lines.append(text)
+            current_chars += len(text)
 
-            if has_page_break or current_chars >= self.DOCX_PAGE_CHARS:
-                if current_lines:
-                    pages.append("\n".join(current_lines))
+            if current_chars >= self.DOCX_PAGE_CHARS:
+                pages.append("\n".join(current_lines))
                 current_lines = []
                 current_chars = 0
 
@@ -155,7 +180,9 @@ class DocumentParser:
 
     def _is_section_title(self, line: str) -> bool:
         """判断是否为章节标题"""
-        if len(line) > 40:
+        if len(line) > 32:
+            return False
+        if any(mark in line for mark in ("。", "；", ";", "？", "！", "，", ",")):
             return False
         for pattern in self.SECTION_PATTERNS:
             if re.match(pattern, line):

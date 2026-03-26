@@ -858,18 +858,18 @@ class MammothPlagiarismReportBuilder:
         const navItem = document.querySelector(`.nav-item[data-match-id="${{matchId}}"]`);
         if (navItem) navItem.classList.add('active');
         
-        // 滚动到第一个匹配
+        // 左右两侧分别滚动到首个匹配片段。
+        // 一个 match_id 现在可能被拆成多个 fragment，不能再假设 hits[0]/hits[1] 分别对应左右两侧。
         if (hits.length > 0) {{
-          const firstHit = hits[0];
-          firstHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-          
-          // 同时滚动另一侧的对应元素
-          if (hits.length > 1) {{
-            const secondHit = hits[1];
-            const otherPanel = secondHit.closest('.panel-body');
-            if (otherPanel) {{
-              secondHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-            }}
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {{
+            primaryHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+          }}
+
+          if (sourceHit) {{
+            sourceHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
           }}
         }}
       }};

@@ -7,7 +7,7 @@ import hashlib
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from src.services.plagiarism.ngram import NGram, NGramSplitter
 from src.services.plagiarism.tokenizer import Sentence
@@ -88,6 +88,7 @@ class ComparisonEngine:
         self.max_fingerprint_frequency = max_fingerprint_frequency
         self.sentence_expand_window = 6
         self.sentence_similarity_threshold = 0.40
+        self.gap_block_min_length = 50
         self._hard_boundary_pattern = re.compile(
             r"\[表格行\d+\]\s*(项目简介|项目立项背景及意义|第一部分|第二部分|第三部分|一、|二、|三、)[^\n]*\n?"
             r"|(?:^|\n)\s*(项目简介|项目立项背景及意义|第一部分|第二部分|第三部分|一、|二、|三、)[^\n]*\n?",
@@ -189,6 +190,14 @@ class ComparisonEngine:
                     matches,
                     text_a,
                     text_b,
+                )
+                matches.extend(
+                    self._rescue_unmatched_primary_gaps(
+                        matches,
+                        text_a,
+                        text_b,
+                        doc_b,
+                    )
                 )
                 matches = self._dedupe_and_filter_matches(matches)
                 
@@ -773,16 +782,47 @@ class ComparisonEngine:
             return []
 
         deduped: List[Match] = []
-        seen = set()
-        for m in sorted(matches, key=lambda x: (x.start_pos, x.end_pos, x.source_start, x.source_end)):
+        for m in sorted(
+            matches,
+            key=lambda x: (
+                x.start_pos,
+                -(x.end_pos - x.start_pos),
+                x.source_start,
+                -(x.source_end - x.source_start),
+            ),
+        ):
             if (m.end_pos - m.start_pos) < self.min_match_length:
                 continue
-            key = (m.start_pos, m.end_pos, m.source_start, m.source_end, m.source_doc)
-            if key in seen:
+            if self._is_heading_only_segment(m.text) and self._is_heading_only_segment(m.source_text):
                 continue
-            seen.add(key)
+            replaced = False
+            for i, kept in enumerate(deduped):
+                if kept.source_doc != m.source_doc:
+                    continue
+                overlap_a = min(m.end_pos, kept.end_pos) - max(m.start_pos, kept.start_pos)
+                overlap_b = min(m.source_end, kept.source_end) - max(m.source_start, kept.source_start)
+                if overlap_a <= 0 or overlap_b <= 0:
+                    continue
+                ratio_a = overlap_a / max(min(m.end_pos - m.start_pos, kept.end_pos - kept.start_pos), 1)
+                ratio_b = overlap_b / max(min(m.source_end - m.source_start, kept.source_end - kept.source_start), 1)
+                if ratio_a < 0.85 or ratio_b < 0.70:
+                    continue
+                score_new = self._match_quality_score(m)
+                score_old = self._match_quality_score(kept)
+                if score_new > score_old:
+                    deduped[i] = m
+                replaced = True
+                break
+            if replaced:
+                continue
             deduped.append(m)
         return deduped
+
+    def _match_quality_score(self, match: Match) -> float:
+        primary_len = max(match.end_pos - match.start_pos, 1)
+        source_len = max(match.source_end - match.source_start, 1)
+        lexical = self._segment_similarity(match.text or "", match.source_text or "")
+        return lexical + min(primary_len, source_len) / 1000.0
 
     def _realign_matches_by_source_continuity(
         self,
@@ -853,6 +893,300 @@ class ComparisonEngine:
             ))
 
         return realigned
+
+    def _rescue_unmatched_primary_gaps(
+        self,
+        matches: List[Match],
+        text_a: str,
+        text_b: str,
+        source_doc: str,
+    ) -> List[Match]:
+        """对已有命中之间的大段空白做定向补召回。"""
+        if not text_a or not text_b:
+            return []
+
+        ordered = sorted(matches, key=lambda m: (m.start_pos, m.end_pos))
+        gaps: List[Tuple[int, int, Optional[Match], Optional[Match]]] = []
+        cursor = 0
+
+        for idx, match in enumerate(ordered):
+            if match.start_pos - cursor >= self.gap_block_min_length:
+                prev_match = ordered[idx - 1] if idx > 0 else None
+                gaps.append((cursor, match.start_pos, prev_match, match))
+            cursor = max(cursor, match.end_pos)
+
+        if len(text_a) - cursor >= self.gap_block_min_length:
+            prev_match = ordered[-1] if ordered else None
+            gaps.append((cursor, len(text_a), prev_match, None))
+
+        rescued: List[Match] = []
+        for gap_start, gap_end, prev_match, next_match in gaps:
+            if gap_end - gap_start < self.gap_block_min_length:
+                continue
+            for block_start, block_end in self._build_gap_blocks(text_a, gap_start, gap_end):
+                block_text = text_a[block_start:block_end].strip()
+                if not block_text:
+                    continue
+                search_start, search_end = self._source_search_window(
+                    text_b,
+                    prev_match,
+                    next_match,
+                )
+                if search_end - search_start < 60:
+                    continue
+                best = self._find_best_source_window_for_block(
+                    primary_text=block_text,
+                    source_text=text_b,
+                    search_start=search_start,
+                    search_end=search_end,
+                )
+                if not best:
+                    continue
+
+                source_start, source_end, best_score = best
+                source_segment = text_b[source_start:source_end].replace("\n", " ").strip()
+                if not source_segment:
+                    continue
+
+                similarity = self._segment_similarity(block_text, source_segment)
+                threshold = self._gap_rescue_threshold(block_text)
+                if similarity < threshold:
+                    continue
+
+                rescued.append(Match(
+                    text=block_text.replace("\n", " ").strip(),
+                    start_pos=block_start,
+                    end_pos=block_end,
+                    ngram_count=max(len(block_text) // max(self.ngram_size, 1), 1),
+                    source_doc=source_doc,
+                    source_start=source_start,
+                    source_end=source_end,
+                    source_text=source_segment,
+                    similarity_score=max(best_score, similarity),
+                    match_type="paraphrase",
+                    confidence=max(best_score, similarity),
+                ))
+        return rescued
+
+    def _build_gap_blocks(
+        self,
+        text: str,
+        gap_start: int,
+        gap_end: int,
+    ) -> List[Tuple[int, int]]:
+        lines = list(self._iter_lines(text, gap_start, gap_end))
+        blocks: List[Tuple[int, int]] = []
+        pending_heading: Optional[Tuple[int, int]] = None
+        i = 0
+
+        while i < len(lines):
+            line_start, line_end, line_text = lines[i]
+            stripped = line_text.strip()
+            if not stripped:
+                pending_heading = None
+                i += 1
+                continue
+            if self._is_structural_noise_line(stripped):
+                pending_heading = None
+                i += 1
+                continue
+            if self._looks_like_heading(stripped):
+                pending_heading = (line_start, line_end)
+                i += 1
+                continue
+            if not self._is_gap_block_candidate(stripped):
+                pending_heading = None
+                i += 1
+                continue
+
+            block_start = pending_heading[0] if pending_heading else line_start
+            block_end = line_end
+            j = i + 1
+            while j < len(lines):
+                next_start, next_end, next_text = lines[j]
+                next_stripped = next_text.strip()
+                if not next_stripped:
+                    break
+                if self._is_structural_noise_line(next_stripped) or self._looks_like_heading(next_stripped):
+                    break
+                if not self._is_gap_block_candidate(next_stripped):
+                    break
+                block_end = next_end
+                j += 1
+
+            block_text = text[block_start:block_end].strip()
+            if len(self._normalize_sentence(block_text)) >= self.gap_block_min_length:
+                blocks.append((block_start, block_end))
+            pending_heading = None
+            i = j
+
+        return blocks
+
+    def _iter_lines(
+        self,
+        text: str,
+        start: int,
+        end: int,
+    ) -> Iterable[Tuple[int, int, str]]:
+        cursor = start
+        while cursor < end:
+            next_break = text.find("\n", cursor, end)
+            if next_break == -1:
+                yield cursor, end, text[cursor:end]
+                break
+            line_end = next_break + 1
+            yield cursor, line_end, text[cursor:line_end]
+            cursor = line_end
+
+    def _source_search_window(
+        self,
+        text_b: str,
+        prev_match: Optional[Match],
+        next_match: Optional[Match],
+    ) -> Tuple[int, int]:
+        if prev_match and next_match and prev_match.source_doc == next_match.source_doc:
+            start = max(0, prev_match.source_end - 100)
+            end = min(len(text_b), next_match.source_start + 100)
+            if end - start >= 120:
+                return start, end
+
+        if prev_match:
+            start = max(0, prev_match.source_end - 120)
+            end = min(len(text_b), prev_match.source_end + 2400)
+            return start, end
+
+        if next_match:
+            start = max(0, next_match.source_start - 2400)
+            end = min(len(text_b), next_match.source_start + 120)
+            return start, end
+
+        return 0, len(text_b)
+
+    def _find_best_source_window_for_block(
+        self,
+        primary_text: str,
+        source_text: str,
+        search_start: int,
+        search_end: int,
+    ) -> Optional[Tuple[int, int, float]]:
+        primary_norm = self._normalize_sentence(primary_text)
+        if len(primary_norm) < self.gap_block_min_length:
+            return None
+
+        length = len(primary_text)
+        candidate_lengths = []
+        for factor in (0.70, 0.85, 1.0, 1.15, 1.30):
+            cand_len = int(length * factor)
+            if cand_len >= 40:
+                candidate_lengths.append(cand_len)
+
+        best: Optional[Tuple[int, int, float]] = None
+        max_pos = max(search_start, search_end - 30)
+        for pos in range(search_start, max_pos, 4):
+            for cand_len in candidate_lengths:
+                cand_end = min(search_end, pos + cand_len)
+                if cand_end - pos < 40:
+                    continue
+                if self._has_hard_boundary_inside(source_text, pos, cand_end):
+                    continue
+                candidate = source_text[pos:cand_end]
+                score = self._segment_similarity(primary_text, candidate)
+                if best is None or score > best[2]:
+                    best = (pos, cand_end, score)
+
+        if best is None:
+            return None
+
+        start, end, score = best
+        start, end = self._expand_source_window(source_text, start, end, search_start, search_end)
+        final_text = source_text[start:end]
+        final_score = self._segment_similarity(primary_text, final_text)
+        return start, end, max(score, final_score)
+
+    def _expand_source_window(
+        self,
+        text: str,
+        start: int,
+        end: int,
+        lower_bound: int,
+        upper_bound: int,
+    ) -> Tuple[int, int]:
+        start, end = self._expand_to_sentence_boundary(text, start, end, max_expand=80)
+        start = max(lower_bound, self._clip_start_after_hard_boundary(text, start, end))
+        end = min(upper_bound, self._clip_end_before_hard_boundary(text, start, end))
+        if end <= start:
+            return max(lower_bound, start), min(upper_bound, max(start, end))
+        return start, end
+
+    def _clip_end_before_hard_boundary(self, text: str, start: int, end: int) -> int:
+        if not text or end <= start:
+            return end
+        clipped = end
+        for m in self._hard_boundary_pattern.finditer(text):
+            if start < m.start() < end:
+                clipped = min(clipped, m.start())
+                break
+        return max(start, clipped)
+
+    def _has_hard_boundary_inside(self, text: str, start: int, end: int) -> bool:
+        if end - start <= 1:
+            return False
+        for m in self._hard_boundary_pattern.finditer(text):
+            if start < m.start() < end:
+                return True
+        return False
+
+    def _gap_rescue_threshold(self, text: str) -> float:
+        norm_len = len(self._normalize_sentence(text))
+        if norm_len >= 220:
+            return 0.42
+        if norm_len >= 120:
+            return 0.46
+        return 0.52
+
+    def _looks_like_heading(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "")
+        if not normalized:
+            return False
+        return bool(re.match(
+            r"^(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|"
+            r"[一二三四五六七八九十]+、|\d+[、\.．:：])",
+            normalized,
+        )) and len(normalized) <= 40
+
+    def _is_heading_only_segment(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "")
+        if not normalized:
+            return True
+        return self._looks_like_heading(normalized) and len(normalized) <= 45
+
+    def _is_structural_noise_line(self, text: str) -> bool:
+        if not text:
+            return True
+        if "[表格行" in text:
+            return True
+        if "|" in text:
+            return True
+        cleaned = re.sub(r"\s+", "", text)
+        if len(cleaned) < 8:
+            return True
+        if len(re.findall(r"\d", cleaned)) > max(10, len(cleaned) // 3):
+            return True
+        return False
+
+    def _is_gap_block_candidate(self, text: str) -> bool:
+        cleaned = self._clean_sentence_for_semantic_match(text)
+        cleaned = re.sub(r"\s+", "", cleaned)
+        if len(cleaned) < self.gap_block_min_length:
+            return False
+        if self._looks_like_heading(cleaned):
+            return False
+        if len(re.findall(r"\d", cleaned)) > max(12, len(cleaned) // 3):
+            return False
+        cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", cleaned))
+        if cjk_chars < max(18, int(len(cleaned) * 0.45)):
+            return False
+        return True
 
     def _expand_single_match_by_sentences(
         self,

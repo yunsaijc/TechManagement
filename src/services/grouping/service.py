@@ -92,7 +92,12 @@ class GroupingService:
         grouping_request = GroupingRequest(
             category=request.category,
             max_per_group=request.max_per_group,
-            strategy=GroupingStrategy.SEMANTIC
+            strategy=GroupingStrategy.SEMANTIC,
+            merge_min_total_score=request.merge_min_total_score,
+            merge_min_text_score=request.merge_min_text_score,
+            merge_reserve_ratio=request.merge_reserve_ratio,
+            merge_reserve_rounds=request.merge_reserve_rounds,
+            merge_candidate_limit=request.merge_candidate_limit,
         )
         grouping_result = await self.group_projects(grouping_request)
         

@@ -138,16 +138,28 @@ class PlagiarismAgent:
 
             if idx == 0 and self.section_extractor:
                 # 主文档：仅 primary 执行 section 截取
-                extracted, start_pos, end_pos = self.section_extractor.extract_with_meta(text)
+                scope_details = self.section_extractor.extract_with_details(text)
+                extracted = scope_details.get("text", "")
+                start_pos = int(scope_details.get("start", -1))
+                end_pos = int(scope_details.get("end", -1))
                 if not extracted:
                     raise ValueError(
                         "primary 文档未命中配置的检测区域：请检查 section_config 的 start_pattern/end_pattern"
                     )
                 self.primary_scope_info = {
                     "doc_id": doc_id,
+                    "mode": scope_details.get("mode"),
                     "start": start_pos,
                     "end": end_pos,
                     "char_count": len(extracted),
+                    "start_pattern": scope_details.get("start_pattern"),
+                    "end_pattern": scope_details.get("end_pattern"),
+                    "start_match_text": scope_details.get("start_match_text"),
+                    "end_match_text": scope_details.get("end_match_text"),
+                    "matched_sections": scope_details.get("matched_sections", []),
+                    "prefix_context": text[max(0, start_pos - 120):start_pos],
+                    "suffix_context": text[end_pos:min(len(text), end_pos + 120)],
+                    "text_preview": extracted[:1000],
                 }
                 text = extracted
 
@@ -290,8 +302,17 @@ class PlagiarismAgent:
             template_filter=self.template_filter,
         )
         output["documents"] = processed_texts
+        for doc_id, text in processed_texts.items():
+            safe_name = doc_id.replace("/", "_")
+            (debug_dir / f"{safe_name}.processed.txt").write_text(text, encoding="utf-8")
         if primary_scope_info:
             output["primary_scope"] = primary_scope_info
+            extracted_text = processed_texts.get(primary_doc_id, "")
+            (debug_dir / "primary_scope_extracted.txt").write_text(extracted_text, encoding="utf-8")
+            (debug_dir / "primary_scope_debug.json").write_text(
+                json.dumps(primary_scope_info, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         
         # 添加排除区间信息
         if excluded_ranges:

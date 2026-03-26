@@ -282,6 +282,9 @@ class GroupingRequest(BaseModel):
     strategy: GroupingStrategy = Field(GroupingStrategy.SEMANTIC, description="分组策略")
     merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
     merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")
+    merge_reserve_ratio: Optional[float] = Field(None, description="前几轮小组合并的软上限比例（可选）")
+    merge_reserve_rounds: Optional[int] = Field(None, description="软上限生效轮数（可选）")
+    merge_candidate_limit: Optional[int] = Field(None, description="每个过小组保留的候选目标组数（可选）")
 
     class Config:
         from_attributes = True
@@ -303,6 +306,11 @@ class FullGroupingRequest(BaseModel):
     """完整分组与匹配请求"""
     category: Optional[str] = Field(None, description="奖种类别")
     max_per_group: int = Field(15, description="每组目标项目数")
+    merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
+    merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")
+    merge_reserve_ratio: Optional[float] = Field(None, description="前几轮小组合并的软上限比例（可选）")
+    merge_reserve_rounds: Optional[int] = Field(None, description="软上限生效轮数（可选）")
+    merge_candidate_limit: Optional[int] = Field(None, description="每个过小组保留的候选目标组数（可选）")
     experts_per_project: int = Field(5, description="每个项目分配专家数")
     min_experts_per_group: int = Field(10, description="每组最少懂行专家")
     avoid_relations: bool = Field(True, description="是否回避关系")
