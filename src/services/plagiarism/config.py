@@ -40,10 +40,23 @@ TABLE_PATTERNS: List[str] = [
 PLAGIARISM_SECTION_CONFIG: Dict[str, Dict[str, Any]] = {
     "default": {
         "name": "默认配置",
-        "description": "适用于项目申报书类文档",
+        "description": "适用于当前项目申报书正文查重范围",
         "whitelist_patterns": WHITELIST_TEMPLATE_PATTERNS,
         "heading_patterns": HEADING_PATTERNS,
         "table_patterns": TABLE_PATTERNS,
+        # primary-only：仅抽取用户确认的正文检测区
+        # 范围：
+        # 项目立项背景及意义
+        # 项目简介
+        # 一、项目实施内容
+        # 二、项目实施对受援地产业或相关行业领域带动促进作用
+        # 三、项目实施预期技术指标及创新点
+        # 四、项目实施预期经济社会效益
+        # 到“五、项目实施的预期绩效目标”标题截止（该标题及后续不纳入检测）
+        "primary_scope": {
+            "start_pattern": r"项目立项背景及意义",
+            "end_pattern": r"五\s*[、\.．]\s*项目实施的预期绩效目标",
+        },
         "sections": [
             {
                 "name": "项目立项背景及意义",
@@ -53,22 +66,27 @@ PLAGIARISM_SECTION_CONFIG: Dict[str, Dict[str, Any]] = {
             {
                 "name": "项目简介",
                 "start_pattern": r"项目简介",
-                "end_pattern": r"第一部分 项目实施内容及目标",
+                "end_pattern": r"第一部分\s*项目实施内容及目标",
             },
             {
-                "name": "第一部分 项目实施内容及目标",
-                "start_pattern": r"第一部分\s*项目实施内容及目标",
-                "end_pattern": r"第二部分",
+                "name": "一、项目实施内容",
+                "start_pattern": r"一\s*[、\.．]\s*项目实施内容",
+                "end_pattern": r"二\s*[、\.．]\s*项目实施对受援地产业或相关行业领域带动促进作用",
             },
             {
-                "name": "第二部分 申报单位及合作单位基础",
-                "start_pattern": r"第二部分\s*申报单位及合作单位基础",
-                "end_pattern": r"第三部分",
+                "name": "二、项目实施对受援地产业或相关行业领域带动促进作用",
+                "start_pattern": r"二\s*[、\.．]\s*项目实施对受援地产业或相关行业领域带动促进作用",
+                "end_pattern": r"三\s*[、\.．]\s*项目实施预期技术指标及创新点",
             },
             {
-                "name": "第三部分 项目实施计划及保障措施和风险分析",
-                "start_pattern": r"第三部分\s*项目实施计划及保障措施和风险分析",
-                "end_pattern": None,
+                "name": "三、项目实施预期技术指标及创新点",
+                "start_pattern": r"三\s*[、\.．]\s*项目实施预期技术指标及创新点",
+                "end_pattern": r"四\s*[、\.．]\s*项目实施预期经济社会效益",
+            },
+            {
+                "name": "四、项目实施预期经济社会效益",
+                "start_pattern": r"四\s*[、\.．]\s*项目实施预期经济社会效益",
+                "end_pattern": r"五\s*[、\.．]\s*项目实施的预期绩效目标",
             },
         ]
     },

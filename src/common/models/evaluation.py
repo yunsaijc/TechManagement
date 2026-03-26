@@ -143,6 +143,12 @@ class EvaluationRequest(BaseModel):
         default_factory=list,
         description="指定解析的章节，默认全部"
     )
+
+    # 融合能力开关
+    enable_highlight: bool = Field(default=False, description="是否启用划重点")
+    enable_industry_fit: bool = Field(default=False, description="是否启用产业指南贴合评估")
+    enable_benchmark: bool = Field(default=False, description="是否启用技术摸底")
+    enable_chat_index: bool = Field(default=False, description="是否构建聊天索引")
     
     # 附加选项
     options: Dict[str, Any] = Field(
@@ -162,6 +168,57 @@ class BatchEvaluationRequest(BaseModel):
     project_ids: List[str] = Field(..., max_length=50, description="项目ID列表，最多50个")
     weights: Optional[Dict[str, float]] = Field(default=None, description="统一权重")
     concurrency: int = Field(default=3, ge=1, le=10, description="并发数")
+
+
+# ============ 融合输出模型 ============
+
+class StructuredHighlights(BaseModel):
+    """结构化划重点"""
+    research_goals: List[str] = Field(default_factory=list, description="研究目标")
+    innovations: List[str] = Field(default_factory=list, description="创新点")
+    technical_route: List[str] = Field(default_factory=list, description="技术路线")
+
+
+class IndustryFitResult(BaseModel):
+    """产业指南贴合结果"""
+    fit_score: float = Field(default=0.0, ge=0, le=1, description="贴合度得分")
+    matched: List[str] = Field(default_factory=list, description="匹配项")
+    gaps: List[str] = Field(default_factory=list, description="差距项")
+    suggestions: List[str] = Field(default_factory=list, description="建议")
+
+
+class BenchmarkReference(BaseModel):
+    """技术摸底参考条目"""
+    source: str = Field(..., description="来源类型，例如 literature/patent")
+    title: str = Field(..., description="标题")
+    snippet: str = Field(default="", description="摘要片段")
+    year: Optional[int] = Field(default=None, description="年份")
+    url: Optional[str] = Field(default=None, description="链接")
+    score: Optional[float] = Field(default=None, description="相关度")
+
+
+class BenchmarkResult(BaseModel):
+    """技术摸底结论"""
+    novelty_level: str = Field(default="unknown", description="新颖性等级")
+    literature_position: str = Field(default="", description="文献定位")
+    patent_overlap: str = Field(default="", description="专利重叠")
+    conclusion: str = Field(default="", description="综合结论")
+    references: List[BenchmarkReference] = Field(default_factory=list, description="参考条目")
+
+
+class EvidenceItem(BaseModel):
+    """证据条目"""
+    source: str = Field(..., description="证据来源")
+    file: str = Field(default="", description="文件名")
+    page: int = Field(default=0, ge=0, description="页码")
+    snippet: str = Field(default="", description="证据片段")
+
+
+class EvaluationError(BaseModel):
+    """评审子任务错误"""
+    code: str = Field(..., description="错误码")
+    message: str = Field(..., description="错误信息")
+    module: Optional[str] = Field(default=None, description="模块名")
 
 
 # ============ 评审结果模型 ============
@@ -194,6 +251,18 @@ class EvaluationResult(BaseModel):
         default_factory=list,
         description="修改建议"
     )
+
+    # 评审标识（用于聊天等后续能力）
+    evaluation_id: Optional[str] = Field(default=None, description="评审记录ID")
+
+    # 融合能力输出
+    highlights: Optional[StructuredHighlights] = Field(default=None, description="结构化划重点")
+    industry_fit: Optional[IndustryFitResult] = Field(default=None, description="产业指南贴合")
+    benchmark: Optional[BenchmarkResult] = Field(default=None, description="技术摸底结论")
+    evidence: List[EvidenceItem] = Field(default_factory=list, description="证据链")
+    chat_ready: bool = Field(default=False, description="是否可进行聊天问答")
+    partial: bool = Field(default=False, description="是否为降级结果")
+    errors: List[EvaluationError] = Field(default_factory=list, description="错误列表")
     
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
@@ -279,6 +348,27 @@ class WeightValidateResponse(BaseModel):
     message: str = Field(..., description="消息")
     normalized_weights: Optional[Dict[str, float]] = Field(default=None, description="归一化后的权重")
     errors: Optional[List[Dict[str, Any]]] = Field(default=None, description="错误列表")
+
+
+# ============ 聊天问答模型 ============
+
+class ChatCitation(BaseModel):
+    """问答引用"""
+    file: str = Field(default="", description="文件名")
+    page: int = Field(default=0, ge=0, description="页码")
+    snippet: str = Field(default="", description="引用片段")
+
+
+class EvaluationChatAskRequest(BaseModel):
+    """聊天问答请求"""
+    evaluation_id: str = Field(..., description="评审记录ID")
+    question: str = Field(..., min_length=1, description="问题")
+
+
+class EvaluationChatAskResponse(BaseModel):
+    """聊天问答响应"""
+    answer: str = Field(..., description="回答")
+    citations: List[ChatCitation] = Field(default_factory=list, description="引用")
 
 
 # ============ 辅助函数 ============

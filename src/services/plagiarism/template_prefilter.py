@@ -47,7 +47,7 @@ class TemplatePreFilter:
         self._prefilter_patterns = [
             re.compile(r'^填写说明'),
             re.compile(r'^一{1,3}、|^二{1,3}、|^三{1,3}、'),  # 一、二、三
-            re.compile(r'^\d+[、\.]+\s*\S+'),  # 1、项目  2. 内容
+            re.compile(r'^\d+[、\.]+\s*\S+'),  # 1、项目  2. 内容（仅短行过滤）
             re.compile(r'^进度安排'),
             re.compile(r'^预期成果'),
             re.compile(r'^省级财政'),
@@ -110,8 +110,12 @@ class TemplatePreFilter:
             
             # 前置过滤专用模板模式
             matched_prefilter = False
-            for pattern in self._prefilter_patterns:
+            for idx, pattern in enumerate(self._prefilter_patterns):
                 if pattern.match(sent.text.strip()):
+                    # 枚举句（1、2、3）不能一刀切为模板。
+                    # 仅把“短枚举行/表格化枚举行”排除，长正文枚举保留进入查重。
+                    if idx == 2 and not self._should_exclude_numbered_sentence(sent):
+                        continue
                     excluded.append(ExcludedRange(
                         start=sent.start_pos,
                         end=sent.end_pos,
@@ -161,6 +165,18 @@ class TemplatePreFilter:
         
         # 合并重叠区间
         return self._merge_ranges(excluded)
+
+    def _should_exclude_numbered_sentence(self, sent: Sentence) -> bool:
+        text = sent.text.strip()
+        if len(text) <= 35:
+            return True
+        if sent.is_from_table:
+            return True
+        if "|" in text:
+            return True
+        if "[表格行" in text:
+            return True
+        return False
     
     def _merge_ranges(self, ranges: List[ExcludedRange]) -> List[ExcludedRange]:
         """

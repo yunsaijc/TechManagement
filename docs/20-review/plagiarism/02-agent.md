@@ -14,15 +14,20 @@
 - 调用提取器读取 PDF/DOCX
 - 组织 `doc_id -> text` 与位置映射
 
-2. 预处理与过滤
+2. Primary 检测区控制（配置驱动）
+- 仅 `primary` 执行 Section 截取
+- `source` 文档不截取，保持全文
+- 目的：限定待检区域，避免把 primary 的封面/表格区混入正文检测
+
+3. 预处理与过滤
 - 分句（保留 `start/end`）
 - 前置模板过滤（标题、表格、低信息句）
 
-3. 比对与补强
+4. 比对与补强
 - `exact`：沿用 N-gram + Winnowing 连续区间
 - `paraphrase`：在 `exact` 窗口内补做句级相似对齐
 
-4. 聚合与输出
+5. 聚合与输出
 - 合并片段、去重、分类（有效/模板）
 - 生成 debug JSON
 - 生成最终 `plagiarism_report_mammoth.html`
@@ -51,7 +56,7 @@ Layer 4: Parser
 ```text
 check(files)
   -> extract_text
-  -> section_extract
+  -> section_extract(primary_only)
   -> sentence_tokenize
   -> template_prefilter
   -> exact_detect (engine)
@@ -115,6 +120,24 @@ check(files)
 - 不新增微服务，不改路由协议
 - 不替换 Winnowing 主链路，只做旁路补强
 - 最终可视化只交付 `mammoth` HTML
+- `primary` 必须配置待检区域；`source` 默认全文参与比对
+
+## Primary 区域配置
+
+推荐配置（标题边界）：
+
+```json
+{
+  "section_config": {
+    "start_pattern": "项目立项背景及意义",
+    "end_pattern": "三、项目实施方案"
+  }
+}
+```
+
+执行语义：
+- `primary`：提取 `start_pattern` 到 `end_pattern` 间文本后再分句查重。
+- `source`：不做 section 截取，全文参与候选召回与对齐。
 
 ## 验收标准
 

@@ -7,7 +7,7 @@ import hashlib
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from src.services.plagiarism.ngram import NGram, NGramSplitter
 from src.services.plagiarism.tokenizer import Sentence
@@ -88,6 +88,12 @@ class ComparisonEngine:
         self.max_fingerprint_frequency = max_fingerprint_frequency
         self.sentence_expand_window = 6
         self.sentence_similarity_threshold = 0.40
+        self.gap_block_min_length = 50
+        self._hard_boundary_pattern = re.compile(
+            r"\[表格行\d+\]\s*(项目简介|项目立项背景及意义|第一部分|第二部分|第三部分|一、|二、|三、)[^\n]*\n?"
+            r"|(?:^|\n)\s*(项目简介|项目立项背景及意义|第一部分|第二部分|第三部分|一、|二、|三、)[^\n]*\n?",
+            re.MULTILINE,
+        )
 
     def compare(
         self,
@@ -95,6 +101,7 @@ class ComparisonEngine:
         excluded_ranges: Optional[Dict[str, List[ExcludedRange]]] = None,
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
+        raw_texts: Optional[Dict[str, str]] = None,
     ) -> List[DocumentSimilarity]:
         """
         执行文档间比对 - Winnowing 算法
@@ -125,7 +132,10 @@ class ComparisonEngine:
         
         for doc_id, sentences in docs.items():
             doc_ngrams[doc_id] = splitter.split(sentences)
-            doc_texts[doc_id] = '\n'.join(s.text for s in sentences)
+            if raw_texts and isinstance(raw_texts.get(doc_id), str):
+                doc_texts[doc_id] = raw_texts[doc_id]
+            else:
+                doc_texts[doc_id] = '\n'.join(s.text for s in sentences)
         
         # Step 2: 构建指纹倒排索引
         fingerprint_index = self._build_fingerprint_index(doc_ngrams)
@@ -150,11 +160,16 @@ class ComparisonEngine:
                 text_b = doc_texts.get(doc_b, "")
                 
                 # 合并相邻/重叠的区间
-                merged_ranges = self._merge_continuous_ranges(continuous_ranges)
+                merged_ranges = self._merge_continuous_ranges(continuous_ranges, text_a, text_b)
 
                 merged_ranges = [
                     self._expand_continuous_range(r, text_a, text_b)
                     for r in merged_ranges
+                ]
+                merged_ranges = [
+                    r for r in merged_ranges
+                    if (r.end_a - r.start_a) >= self.min_match_length
+                    and (r.end_b - r.start_b) >= self.min_match_length
                 ]
                 
                 # 转换为 Match 对象
@@ -171,6 +186,20 @@ class ComparisonEngine:
                     text_a,
                     text_b,
                 )
+                matches = self._realign_matches_by_source_continuity(
+                    matches,
+                    text_a,
+                    text_b,
+                )
+                matches.extend(
+                    self._rescue_unmatched_primary_gaps(
+                        matches,
+                        text_a,
+                        text_b,
+                        doc_b,
+                    )
+                )
+                matches = self._dedupe_and_filter_matches(matches)
                 
                 # 计算相似度
                 total_chars = len(doc_texts[doc_a])
@@ -411,15 +440,12 @@ class ComparisonEngine:
         """把锚点片段向两侧扩展到更自然的边界。"""
         start_a, end_a = self._expand_to_sentence_boundary(text_a, match_range.start_a, match_range.end_a)
         start_b, end_b = self._expand_to_sentence_boundary(text_b, match_range.start_b, match_range.end_b)
-
-        start_a, end_a, start_b, end_b = self._trim_to_shared_core(
-            text_a,
-            start_a,
-            end_a,
-            text_b,
-            start_b,
-            end_b,
-        )
+        start_a = self._clip_start_after_hard_boundary(text_a, start_a, end_a)
+        start_b = self._clip_start_after_hard_boundary(text_b, start_b, end_b)
+        # 注意：不要在这里裁掉“双边共同前后缀”。
+        # 之前的 _trim_to_shared_core 会把开头/结尾相同句子去掉，导致
+        # “明明整段相同却只命中中间短句”的问题（用户反馈的 m001 场景）。
+        # 这里保留完整扩展边界，后续由句级扩展与聚合阶段再做稳健收敛。
 
         return ContinuousMatch(
             start_a=start_a,
@@ -567,6 +593,8 @@ class ComparisonEngine:
     def _merge_continuous_ranges(
         self,
         ranges: List[ContinuousMatch],
+        text_a: str,
+        text_b: str,
         max_gap: int = 20,
     ) -> List[ContinuousMatch]:
         """
@@ -596,8 +624,13 @@ class ComparisonEngine:
             # 检查是否可以合并
             gap_a = current.start_a - last.end_a
             gap_b = current.start_b - last.end_b
-            
-            if gap_a <= max_gap and gap_b <= max_gap:
+
+            crosses_boundary = (
+                self._has_hard_boundary_between(text_a, last.end_a, current.start_a)
+                or self._has_hard_boundary_between(text_b, last.end_b, current.start_b)
+            )
+
+            if gap_a <= max_gap and gap_b <= max_gap and not crosses_boundary:
                 # 合并：扩展区间
                 merged[-1] = ContinuousMatch(
                     start_a=last.start_a,
@@ -615,6 +648,32 @@ class ComparisonEngine:
             if r.end_b >= r.start_b
             if r.end_a - r.start_a >= self.min_match_length
         ]
+
+    def _has_hard_boundary_between(self, text: str, left: int, right: int) -> bool:
+        if not text:
+            return False
+        left = max(0, min(left, len(text)))
+        right = max(0, min(right, len(text)))
+        if right <= left:
+            return False
+
+        for m in self._hard_boundary_pattern.finditer(text):
+            if left < m.start() < right:
+                return True
+        return False
+
+    def _clip_start_after_hard_boundary(self, text: str, start: int, end: int) -> int:
+        """如果片段跨越章节/标题硬边界，则把起点收敛到边界之后。"""
+        if not text or end <= start:
+            return start
+        start = max(0, min(start, len(text)))
+        end = max(0, min(end, len(text)))
+
+        clipped = start
+        for m in self._hard_boundary_pattern.finditer(text):
+            if start <= m.start() < end:
+                clipped = max(clipped, m.end())
+        return min(clipped, end)
     
     def _ranges_to_matches(
         self,
@@ -716,6 +775,418 @@ class ComparisonEngine:
                 )
             )
         return expanded
+
+    def _dedupe_and_filter_matches(self, matches: List[Match]) -> List[Match]:
+        """去重并过滤过短片段，减少重复高亮与噪声片段。"""
+        if not matches:
+            return []
+
+        deduped: List[Match] = []
+        for m in sorted(
+            matches,
+            key=lambda x: (
+                x.start_pos,
+                -(x.end_pos - x.start_pos),
+                x.source_start,
+                -(x.source_end - x.source_start),
+            ),
+        ):
+            if (m.end_pos - m.start_pos) < self.min_match_length:
+                continue
+            if self._is_heading_only_segment(m.text) and self._is_heading_only_segment(m.source_text):
+                continue
+            replaced = False
+            for i, kept in enumerate(deduped):
+                if kept.source_doc != m.source_doc:
+                    continue
+                overlap_a = min(m.end_pos, kept.end_pos) - max(m.start_pos, kept.start_pos)
+                overlap_b = min(m.source_end, kept.source_end) - max(m.source_start, kept.source_start)
+                if overlap_a <= 0 or overlap_b <= 0:
+                    continue
+                ratio_a = overlap_a / max(min(m.end_pos - m.start_pos, kept.end_pos - kept.start_pos), 1)
+                ratio_b = overlap_b / max(min(m.source_end - m.source_start, kept.source_end - kept.source_start), 1)
+                if ratio_a < 0.85 or ratio_b < 0.70:
+                    continue
+                score_new = self._match_quality_score(m)
+                score_old = self._match_quality_score(kept)
+                if score_new > score_old:
+                    deduped[i] = m
+                replaced = True
+                break
+            if replaced:
+                continue
+            deduped.append(m)
+        return deduped
+
+    def _match_quality_score(self, match: Match) -> float:
+        primary_len = max(match.end_pos - match.start_pos, 1)
+        source_len = max(match.source_end - match.source_start, 1)
+        lexical = self._segment_similarity(match.text or "", match.source_text or "")
+        return lexical + min(primary_len, source_len) / 1000.0
+
+    def _realign_matches_by_source_continuity(
+        self,
+        matches: List[Match],
+        text_a: str,
+        text_b: str,
+    ) -> List[Match]:
+        """当 primary 相邻而 source 跳段时，优先回贴到 source 邻近连续区。"""
+        if len(matches) < 2 or not text_a or not text_b:
+            return matches
+
+        ordered = sorted(matches, key=lambda m: (m.start_pos, m.end_pos))
+        realigned: List[Match] = [ordered[0]]
+
+        for current in ordered[1:]:
+            previous = realigned[-1]
+            primary_gap = current.start_pos - previous.end_pos
+            source_gap = current.source_start - previous.source_end
+            if (
+                current.source_doc != previous.source_doc
+                or primary_gap < 0
+                or primary_gap > 220
+                or source_gap <= 260
+            ):
+                realigned.append(current)
+                continue
+
+            primary_text = (text_a[current.start_pos:current.end_pos] or "").strip()
+            if len(primary_text) < 40:
+                realigned.append(current)
+                continue
+
+            current_source_text = (text_b[current.source_start:current.source_end] or "").strip()
+            current_score = self._segment_similarity(primary_text, current_source_text)
+
+            best = self._find_best_local_source_window(
+                primary_text=primary_text,
+                source_text=text_b,
+                near_pos=previous.source_end,
+                search_back=40,
+                search_forward=900,
+                step=3,
+            )
+            if not best:
+                realigned.append(current)
+                continue
+
+            best_start, best_end, best_score = best
+            # 仅在明显更优时重锚，避免抖动
+            if best_score < 0.62 or best_score < current_score + 0.12:
+                realigned.append(current)
+                continue
+
+            new_source = text_b[best_start:best_end].replace("\n", " ").strip()
+            realigned.append(Match(
+                text=current.text,
+                start_pos=current.start_pos,
+                end_pos=current.end_pos,
+                ngram_count=current.ngram_count,
+                source_doc=current.source_doc,
+                source_start=best_start,
+                source_end=best_end,
+                source_text=new_source,
+                similarity_score=max(current.similarity_score, best_score),
+                match_type=current.match_type,
+                confidence=max(current.confidence, best_score),
+                parent_match_id=current.parent_match_id,
+            ))
+
+        return realigned
+
+    def _rescue_unmatched_primary_gaps(
+        self,
+        matches: List[Match],
+        text_a: str,
+        text_b: str,
+        source_doc: str,
+    ) -> List[Match]:
+        """对已有命中之间的大段空白做定向补召回。"""
+        if not text_a or not text_b:
+            return []
+
+        ordered = sorted(matches, key=lambda m: (m.start_pos, m.end_pos))
+        gaps: List[Tuple[int, int, Optional[Match], Optional[Match]]] = []
+        cursor = 0
+
+        for idx, match in enumerate(ordered):
+            if match.start_pos - cursor >= self.gap_block_min_length:
+                prev_match = ordered[idx - 1] if idx > 0 else None
+                gaps.append((cursor, match.start_pos, prev_match, match))
+            cursor = max(cursor, match.end_pos)
+
+        if len(text_a) - cursor >= self.gap_block_min_length:
+            prev_match = ordered[-1] if ordered else None
+            gaps.append((cursor, len(text_a), prev_match, None))
+
+        rescued: List[Match] = []
+        for gap_start, gap_end, prev_match, next_match in gaps:
+            if gap_end - gap_start < self.gap_block_min_length:
+                continue
+            for block_start, block_end in self._build_gap_blocks(text_a, gap_start, gap_end):
+                block_text = text_a[block_start:block_end].strip()
+                if not block_text:
+                    continue
+                search_start, search_end = self._source_search_window(
+                    text_b,
+                    prev_match,
+                    next_match,
+                )
+                if search_end - search_start < 60:
+                    continue
+                best = self._find_best_source_window_for_block(
+                    primary_text=block_text,
+                    source_text=text_b,
+                    search_start=search_start,
+                    search_end=search_end,
+                )
+                if not best:
+                    continue
+
+                source_start, source_end, best_score = best
+                source_segment = text_b[source_start:source_end].replace("\n", " ").strip()
+                if not source_segment:
+                    continue
+
+                similarity = self._segment_similarity(block_text, source_segment)
+                threshold = self._gap_rescue_threshold(block_text)
+                if similarity < threshold:
+                    continue
+
+                rescued.append(Match(
+                    text=block_text.replace("\n", " ").strip(),
+                    start_pos=block_start,
+                    end_pos=block_end,
+                    ngram_count=max(len(block_text) // max(self.ngram_size, 1), 1),
+                    source_doc=source_doc,
+                    source_start=source_start,
+                    source_end=source_end,
+                    source_text=source_segment,
+                    similarity_score=max(best_score, similarity),
+                    match_type="paraphrase",
+                    confidence=max(best_score, similarity),
+                ))
+        return rescued
+
+    def _build_gap_blocks(
+        self,
+        text: str,
+        gap_start: int,
+        gap_end: int,
+    ) -> List[Tuple[int, int]]:
+        lines = list(self._iter_lines(text, gap_start, gap_end))
+        blocks: List[Tuple[int, int]] = []
+        pending_heading: Optional[Tuple[int, int]] = None
+        i = 0
+
+        while i < len(lines):
+            line_start, line_end, line_text = lines[i]
+            stripped = line_text.strip()
+            if not stripped:
+                pending_heading = None
+                i += 1
+                continue
+            if self._is_structural_noise_line(stripped):
+                pending_heading = None
+                i += 1
+                continue
+            if self._looks_like_heading(stripped):
+                pending_heading = (line_start, line_end)
+                i += 1
+                continue
+            if not self._is_gap_block_candidate(stripped):
+                pending_heading = None
+                i += 1
+                continue
+
+            block_start = pending_heading[0] if pending_heading else line_start
+            block_end = line_end
+            j = i + 1
+            while j < len(lines):
+                next_start, next_end, next_text = lines[j]
+                next_stripped = next_text.strip()
+                if not next_stripped:
+                    break
+                if self._is_structural_noise_line(next_stripped) or self._looks_like_heading(next_stripped):
+                    break
+                if not self._is_gap_block_candidate(next_stripped):
+                    break
+                block_end = next_end
+                j += 1
+
+            block_text = text[block_start:block_end].strip()
+            if len(self._normalize_sentence(block_text)) >= self.gap_block_min_length:
+                blocks.append((block_start, block_end))
+            pending_heading = None
+            i = j
+
+        return blocks
+
+    def _iter_lines(
+        self,
+        text: str,
+        start: int,
+        end: int,
+    ) -> Iterable[Tuple[int, int, str]]:
+        cursor = start
+        while cursor < end:
+            next_break = text.find("\n", cursor, end)
+            if next_break == -1:
+                yield cursor, end, text[cursor:end]
+                break
+            line_end = next_break + 1
+            yield cursor, line_end, text[cursor:line_end]
+            cursor = line_end
+
+    def _source_search_window(
+        self,
+        text_b: str,
+        prev_match: Optional[Match],
+        next_match: Optional[Match],
+    ) -> Tuple[int, int]:
+        if prev_match and next_match and prev_match.source_doc == next_match.source_doc:
+            start = max(0, prev_match.source_end - 100)
+            end = min(len(text_b), next_match.source_start + 100)
+            if end - start >= 120:
+                return start, end
+
+        if prev_match:
+            start = max(0, prev_match.source_end - 120)
+            end = min(len(text_b), prev_match.source_end + 2400)
+            return start, end
+
+        if next_match:
+            start = max(0, next_match.source_start - 2400)
+            end = min(len(text_b), next_match.source_start + 120)
+            return start, end
+
+        return 0, len(text_b)
+
+    def _find_best_source_window_for_block(
+        self,
+        primary_text: str,
+        source_text: str,
+        search_start: int,
+        search_end: int,
+    ) -> Optional[Tuple[int, int, float]]:
+        primary_norm = self._normalize_sentence(primary_text)
+        if len(primary_norm) < self.gap_block_min_length:
+            return None
+
+        length = len(primary_text)
+        candidate_lengths = []
+        for factor in (0.70, 0.85, 1.0, 1.15, 1.30):
+            cand_len = int(length * factor)
+            if cand_len >= 40:
+                candidate_lengths.append(cand_len)
+
+        best: Optional[Tuple[int, int, float]] = None
+        max_pos = max(search_start, search_end - 30)
+        for pos in range(search_start, max_pos, 4):
+            for cand_len in candidate_lengths:
+                cand_end = min(search_end, pos + cand_len)
+                if cand_end - pos < 40:
+                    continue
+                if self._has_hard_boundary_inside(source_text, pos, cand_end):
+                    continue
+                candidate = source_text[pos:cand_end]
+                score = self._segment_similarity(primary_text, candidate)
+                if best is None or score > best[2]:
+                    best = (pos, cand_end, score)
+
+        if best is None:
+            return None
+
+        start, end, score = best
+        start, end = self._expand_source_window(source_text, start, end, search_start, search_end)
+        final_text = source_text[start:end]
+        final_score = self._segment_similarity(primary_text, final_text)
+        return start, end, max(score, final_score)
+
+    def _expand_source_window(
+        self,
+        text: str,
+        start: int,
+        end: int,
+        lower_bound: int,
+        upper_bound: int,
+    ) -> Tuple[int, int]:
+        start, end = self._expand_to_sentence_boundary(text, start, end, max_expand=80)
+        start = max(lower_bound, self._clip_start_after_hard_boundary(text, start, end))
+        end = min(upper_bound, self._clip_end_before_hard_boundary(text, start, end))
+        if end <= start:
+            return max(lower_bound, start), min(upper_bound, max(start, end))
+        return start, end
+
+    def _clip_end_before_hard_boundary(self, text: str, start: int, end: int) -> int:
+        if not text or end <= start:
+            return end
+        clipped = end
+        for m in self._hard_boundary_pattern.finditer(text):
+            if start < m.start() < end:
+                clipped = min(clipped, m.start())
+                break
+        return max(start, clipped)
+
+    def _has_hard_boundary_inside(self, text: str, start: int, end: int) -> bool:
+        if end - start <= 1:
+            return False
+        for m in self._hard_boundary_pattern.finditer(text):
+            if start < m.start() < end:
+                return True
+        return False
+
+    def _gap_rescue_threshold(self, text: str) -> float:
+        norm_len = len(self._normalize_sentence(text))
+        if norm_len >= 220:
+            return 0.42
+        if norm_len >= 120:
+            return 0.46
+        return 0.52
+
+    def _looks_like_heading(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "")
+        if not normalized:
+            return False
+        return bool(re.match(
+            r"^(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|"
+            r"[一二三四五六七八九十]+、|\d+[、\.．:：])",
+            normalized,
+        )) and len(normalized) <= 40
+
+    def _is_heading_only_segment(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "")
+        if not normalized:
+            return True
+        return self._looks_like_heading(normalized) and len(normalized) <= 45
+
+    def _is_structural_noise_line(self, text: str) -> bool:
+        if not text:
+            return True
+        if "[表格行" in text:
+            return True
+        if "|" in text:
+            return True
+        cleaned = re.sub(r"\s+", "", text)
+        if len(cleaned) < 8:
+            return True
+        if len(re.findall(r"\d", cleaned)) > max(10, len(cleaned) // 3):
+            return True
+        return False
+
+    def _is_gap_block_candidate(self, text: str) -> bool:
+        cleaned = self._clean_sentence_for_semantic_match(text)
+        cleaned = re.sub(r"\s+", "", cleaned)
+        if len(cleaned) < self.gap_block_min_length:
+            return False
+        if self._looks_like_heading(cleaned):
+            return False
+        if len(re.findall(r"\d", cleaned)) > max(12, len(cleaned) // 3):
+            return False
+        cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", cleaned))
+        if cjk_chars < max(18, int(len(cleaned) * 0.45)):
+            return False
+        return True
 
     def _expand_single_match_by_sentences(
         self,
@@ -874,8 +1345,44 @@ class ComparisonEngine:
         overlap = self._matched_char_ratio(norm_a, norm_b)
         return max(ratio, overlap)
 
+    def _segment_similarity(self, text_a: str, text_b: str) -> float:
+        norm_a = self._normalize_sentence(text_a)
+        norm_b = self._normalize_sentence(text_b)
+        if len(norm_a) < 8 or len(norm_b) < 8:
+            return 0.0
+        ratio = self._sequence_ratio(norm_a, norm_b)
+        overlap = self._matched_char_ratio(norm_a, norm_b)
+        return max(ratio, overlap)
+
+    def _find_best_local_source_window(
+        self,
+        primary_text: str,
+        source_text: str,
+        near_pos: int,
+        search_back: int = 40,
+        search_forward: int = 900,
+        step: int = 3,
+    ) -> Optional[Tuple[int, int, float]]:
+        target_len = max(len(primary_text), 1)
+        start = max(0, near_pos - search_back)
+        end = min(len(source_text), near_pos + search_forward)
+        if end - start < 20:
+            return None
+
+        best: Optional[Tuple[int, int, float]] = None
+        probe_end = max(start, end - 20)
+        for pos in range(start, probe_end, max(step, 1)):
+            cand_end = min(len(source_text), pos + target_len)
+            if cand_end - pos < max(20, target_len // 3):
+                continue
+            cand = source_text[pos:cand_end]
+            score = self._segment_similarity(primary_text, cand)
+            if best is None or score > best[2]:
+                best = (pos, cand_end, score)
+        return best
+
     def _normalize_sentence(self, text: str) -> str:
-        cleaned = re.sub(r"\[表格行\d+\]", "", text)
+        cleaned = self._clean_sentence_for_semantic_match(text)
         cleaned = re.sub(r"\s+", "", cleaned)
         cleaned = re.sub(r"[，。；：、！？,.!?;:\"'“”‘’（）()\[\]【】<>《》]", "", cleaned)
         return cleaned.lower()
@@ -896,10 +1403,8 @@ class ComparisonEngine:
     def _is_narrative_sentence(self, text: str) -> bool:
         if not text:
             return False
-        if "[表格行" in text or "|" in text:
-            return False
-        cleaned = re.sub(r"\s+", "", text)
-        cleaned = re.sub(r"\[表格行\d+\]", "", cleaned)
+        cleaned = self._clean_sentence_for_semantic_match(text)
+        cleaned = re.sub(r"\s+", "", cleaned)
         if len(cleaned) < 24:
             return False
 
@@ -914,6 +1419,32 @@ class ComparisonEngine:
         if cjk_chars < max(12, int(len(cleaned) * 0.4)):
             return False
         return True
+
+    def _clean_sentence_for_semantic_match(self, text: str) -> str:
+        """清洗句子中的结构噪声，仅用于语义判断/扩边，不影响坐标。"""
+        if not text:
+            return ""
+
+        # 先按行切分，过滤表格行噪声
+        lines = []
+        for line in text.splitlines():
+            line = re.sub(r"\[表格行\d+\]", "", line).strip()
+            if not line:
+                continue
+            # 典型表格字段行，直接丢弃（避免和正文混在同一句）
+            if "|" in line:
+                continue
+            lines.append(line)
+
+        cleaned = " ".join(lines).strip()
+        if not cleaned:
+            cleaned = re.sub(r"\[表格行\d+\]", "", text)
+            cleaned = cleaned.replace("|", " ")
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+        # 去掉常见标题前缀，保留正文句
+        cleaned = re.sub(r"^(项目立项背景及意义|项目简介|第一部分|第二部分|第三部分)\s*", "", cleaned)
+        return cleaned
 
     def _generate_fingerprint(self, text: str) -> int:
         """生成指纹"""

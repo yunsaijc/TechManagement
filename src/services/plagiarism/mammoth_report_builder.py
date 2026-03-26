@@ -20,6 +20,7 @@ from common.file_handler.mammoth_converter import (
     convert_docx_to_html_mammoth,
     get_mammoth_styles
 )
+from src.services.plagiarism.coordinate_map import build_coordinate_map
 
 
 class MammothPlagiarismReportBuilder:
@@ -115,85 +116,72 @@ class MammothPlagiarismReportBuilder:
         right_html: str,
         data: Dict
     ) -> Tuple[str, str, Dict[str, Dict[str, Any]]]:
-        """同时在两侧HTML上应用查重高亮。"""
+        """基于 canonical 坐标映射在两侧 HTML 应用高亮。"""
         segments = data.get("duplicate_segments", [])
         if not segments:
             return left_html, right_html, {}
 
-        left_index = self._build_html_index(left_html)
-        right_index = self._build_html_index(right_html)
-
         primary_doc = data.get("primary_doc", "")
         documents = data.get("documents", {})
-        text_lengths = data.get("text_lengths", {})
-        primary_doc_len = len(documents.get(primary_doc, "")) or int(text_lengths.get(primary_doc, 0) or 0)
+        source_doc = next(
+            (s.get("sources", [{}])[0].get("doc", "") for s in segments if s.get("sources")),
+            "",
+        )
+        left_canonical = documents.get(primary_doc, "")
+        right_canonical = documents.get(source_doc, "")
+        left_map = build_coordinate_map(left_canonical, left_html) if left_canonical else None
+        right_map = build_coordinate_map(right_canonical, right_html) if right_canonical else None
 
-        source_doc = ""
-        for segment in segments:
-            sources = segment.get("sources", [])
-            if sources:
-                source_doc = sources[0].get("doc", "")
-                break
-        source_doc_len = len(documents.get(source_doc, "")) or int(text_lengths.get(source_doc, 0) or 0)
-
-        left_spans: List[Tuple[int, int, str, bool]] = []
-        right_spans: List[Tuple[int, int, str, bool]] = []
+        left_spans: List[Tuple[int, int, str, bool, str]] = []
+        right_spans: List[Tuple[int, int, str, bool, str]] = []
         left_occupied: List[Tuple[int, int]] = []
         right_occupied: List[Tuple[int, int]] = []
         match_results: Dict[str, Dict[str, Any]] = {}
 
-        # 长片段优先占位，避免短片段切碎高亮
         sorted_segments = sorted(
             enumerate(segments),
-            key=lambda x: len(self._normalize_text(x[1].get("primary_text", ""))),
-            reverse=True
+            key=lambda x: (int(x[1].get("primary_start", 0) or 0), -len(x[1].get("primary_text", ""))),
         )
 
         for seg_idx, segment in sorted_segments:
             match_id = segment.get("match_id") or f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
-
-            left_text = segment.get("primary_text", "")
+            match_type = segment.get("match_type", "exact")
             sources = segment.get("sources", [])
-            right_text = sources[0].get("text", "") if sources else ""
-
-            left_norm = self._normalize_text(left_text)
-            right_norm = self._normalize_text(right_text)
-            if len(left_norm) < 8 or len(right_norm) < 8:
+            if not sources:
                 continue
 
-            left_match = self._locate_segment_span(
-                left_index,
-                left_norm,
-                int(segment.get("primary_start", 0) or 0),
-                primary_doc_len,
-            )
-
+            primary_start = int(segment.get("primary_start", 0) or 0)
+            primary_end = int(segment.get("primary_end", 0) or 0)
             source_start = int(sources[0].get("start", 0) or 0) if sources else 0
-            right_match = self._locate_segment_span(
-                right_index,
-                right_norm,
-                source_start,
-                source_doc_len,
-            )
-
-            if not left_match or not right_match:
+            source_end = int(sources[0].get("end", 0) or 0) if sources else 0
+            if primary_end <= primary_start or source_end <= source_start:
                 continue
 
-            left_start, left_end, left_mode, left_conf = left_match
-            right_start, right_end, right_mode, right_conf = right_match
-
-            if self._has_overlap(left_occupied, left_start, left_end) or self._has_overlap(right_occupied, right_start, right_end):
+            if not left_map or not right_map:
+                continue
+            left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
+            right_fragments, right_cov = right_map.span_to_html_fragments(source_start, source_end)
+            if not left_fragments or not right_fragments:
                 continue
 
-            left_occupied.append((left_start, left_end))
-            right_occupied.append((right_start, right_end))
-            left_spans.append((left_start, left_end, match_id, is_template))
-            right_spans.append((right_start, right_end, match_id, is_template))
+            left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
+            right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
+            if not left_filtered or not right_filtered:
+                continue
 
+            for left_start, left_end in left_filtered:
+                left_occupied.append((left_start, left_end))
+                left_spans.append((left_start, left_end, match_id, is_template, match_type))
+            for right_start, right_end in right_filtered:
+                right_occupied.append((right_start, right_end))
+                right_spans.append((right_start, right_end, match_id, is_template, match_type))
+
+            coverage = min(left_cov, right_cov)
             match_results[match_id] = {
-                "mode": "full" if left_mode == "full" and right_mode == "full" else "core",
-                "confidence": min(left_conf, right_conf),
+                "mode": "full" if coverage >= 0.85 else "core",
+                "confidence": round(coverage, 4),
+                "match_type": match_type,
             }
 
         return (
@@ -201,6 +189,21 @@ class MammothPlagiarismReportBuilder:
             self._inject_spans(right_html, right_spans, "source"),
             match_results,
         )
+
+    def _filter_non_overlapping_fragments(
+        self,
+        fragments: List[Tuple[int, int]],
+        occupied: List[Tuple[int, int]],
+        min_len: int = 3,
+    ) -> List[Tuple[int, int]]:
+        filtered: List[Tuple[int, int]] = []
+        for start, end in fragments:
+            if end - start < min_len:
+                continue
+            if self._has_overlap(occupied, start, end):
+                continue
+            filtered.append((start, end))
+        return filtered
 
     def _normalize_text(self, text: str) -> str:
         if not text:
@@ -408,14 +411,19 @@ class MammothPlagiarismReportBuilder:
     def _inject_spans(
         self,
         html_content: str,
-        spans: List[Tuple[int, int, str, bool]],
+        spans: List[Tuple[int, int, str, bool, str]],
         side: str,
     ) -> str:
         result = html_content
-        for start, end, match_id, is_template in sorted(spans, key=lambda x: x[0], reverse=True):
-            template_class = " template" if is_template else ""
+        for start, end, match_id, is_template, match_type in sorted(spans, key=lambda x: x[0], reverse=True):
+            classes = ["hit"]
+            if is_template:
+                classes.append("template")
+            if match_type == "paraphrase":
+                classes.append("paraphrase")
+            class_attr = " ".join(classes)
             wrapped = (
-                f'<span class="hit{template_class}" data-match-id="{match_id}" data-side="{side}">'
+                f'<span class="{class_attr}" data-match-id="{match_id}" data-side="{side}" data-match-type="{match_type}">'
                 f"{result[start:end]}</span>"
             )
             result = result[:start] + wrapped + result[end:]
@@ -687,10 +695,11 @@ class MammothPlagiarismReportBuilder:
         cards = []
         for i, segment in enumerate(segments[:50], 1):  # 最多显示50个
             match_id = segment.get("match_id") or f"m{i:03d}"
-            primary_text = segment.get("primary_text", "")[:60]
+            primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:60]
             is_template = segment.get("is_template", False)
             similarity = segment.get("similarity_score", segment.get("similarity", 1.0))
             result = (match_results or {}).get(match_id)
+            match_type = segment.get("match_type", "exact")
             
             sources = segment.get("sources", [])
             source_info = ""
@@ -699,18 +708,25 @@ class MammothPlagiarismReportBuilder:
                 source_info = f"来源: {html.escape(source_doc)}"
             
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
+            type_badge = '<span class="template-badge" style="background:#2563eb;">改写</span>' if match_type == "paraphrase" else ''
             if result:
                 locate_badge = '<span class="locate-badge ok">完整</span>' if result.get("mode") == "full" else '<span class="locate-badge partial">核心</span>'
             else:
                 locate_badge = '<span class="locate-badge miss">未定位</span>'
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
-                <div class="nav-header">#{i} {template_badge} {locate_badge}</div>
+                <div class="nav-header">#{i} {template_badge} {type_badge} {locate_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度: {similarity:.2f} | {source_info}</small>
             </button>''')
 
         return "".join(cards) if cards else '<p class="empty">未定位到可高亮的重复片段</p>'
+
+    def _clean_nav_text(self, text: str) -> str:
+        cleaned = re.sub(r"\[表格行\d+\]", "", text or "")
+        cleaned = cleaned.replace("|", " ")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
     def _render_html_page(
         self,
@@ -765,6 +781,7 @@ class MammothPlagiarismReportBuilder:
     .locate-badge.ok {{ background: #16a34a; color: #fff; }}
     .locate-badge.partial {{ background: #2563eb; color: #fff; }}
     .locate-badge.miss {{ background: #9ca3af; color: #fff; }}
+    .hit.paraphrase {{ background: rgba(37, 99, 235, 0.22) !important; color: #1e3a8a !important; }}
     .empty {{ color: #9ca3af; font-size: 13px; padding: 20px; text-align: center; }}
     .stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; width: 100%; }}
     .stat-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }}
@@ -841,18 +858,18 @@ class MammothPlagiarismReportBuilder:
         const navItem = document.querySelector(`.nav-item[data-match-id="${{matchId}}"]`);
         if (navItem) navItem.classList.add('active');
         
-        // 滚动到第一个匹配
+        // 左右两侧分别滚动到首个匹配片段。
+        // 一个 match_id 现在可能被拆成多个 fragment，不能再假设 hits[0]/hits[1] 分别对应左右两侧。
         if (hits.length > 0) {{
-          const firstHit = hits[0];
-          firstHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-          
-          // 同时滚动另一侧的对应元素
-          if (hits.length > 1) {{
-            const secondHit = hits[1];
-            const otherPanel = secondHit.closest('.panel-body');
-            if (otherPanel) {{
-              secondHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-            }}
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {{
+            primaryHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+          }}
+
+          if (sourceHit) {{
+            sourceHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
           }}
         }}
       }};

@@ -201,7 +201,6 @@ async def full_grouping(request: FullGroupingRequest) -> ApiResponse[FullGroupin
                 group_count=result.statistics.total_groups,
                 balance_score=result.statistics.balance_score,
                 avg_projects_per_group=result.statistics.total_projects / max(1, result.statistics.total_groups),
-                avg_quality_per_group=result.statistics.avg_match_score
             )
         )
         

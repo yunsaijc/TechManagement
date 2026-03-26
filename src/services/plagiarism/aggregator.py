@@ -128,6 +128,37 @@ class ResultAggregator:
             group["segments"] = sorted(group["segments"], key=lambda seg: (seg.get("primary_line", 0), seg.get("char_count", 0)))
         return ordered_groups
 
+    def _dedupe_formatted_segments(self, segments: List[dict]) -> List[dict]:
+        deduped: List[dict] = []
+        for seg in sorted(segments, key=lambda x: (int(x.get("primary_start", 0) or 0), -int(x.get("char_count", 0) or 0))):
+            replaced = False
+            for i, kept in enumerate(deduped):
+                overlap = min(int(seg.get("primary_end", 0) or 0), int(kept.get("primary_end", 0) or 0)) - max(
+                    int(seg.get("primary_start", 0) or 0),
+                    int(kept.get("primary_start", 0) or 0),
+                )
+                if overlap <= 0:
+                    continue
+                min_len = max(
+                    min(
+                        int(seg.get("char_count", 0) or 0),
+                        int(kept.get("char_count", 0) or 0),
+                    ),
+                    1,
+                )
+                if overlap / min_len < 0.85:
+                    continue
+
+                score_new = float(seg.get("similarity_score", 0) or 0) + int(seg.get("char_count", 0) or 0) / 1000.0
+                score_old = float(kept.get("similarity_score", 0) or 0) + int(kept.get("char_count", 0) or 0) / 1000.0
+                if score_new > score_old:
+                    deduped[i] = seg
+                replaced = True
+                break
+            if not replaced:
+                deduped.append(seg)
+        return deduped
+
     def aggregate(
         self,
         results: List[DocumentSimilarity],
@@ -415,6 +446,11 @@ class ResultAggregator:
                 doc_b, match, doc_texts
             )
 
+            display_similarity = match.similarity_score or 0
+            if source_text:
+                lexical_similarity = self._lexical_ratio(primary_text, source_text)
+                display_similarity = max(display_similarity, lexical_similarity)
+
             # 获取主文档 Section 信息
             primary_section = ""
             if self.section_extractor and doc_texts and doc_a in doc_texts:
@@ -449,7 +485,7 @@ class ResultAggregator:
                 }],
                 "char_count": len(match.text),
                 "ngram_count": match.ngram_count,
-                "similarity_score": round(match.similarity_score, 4) if match.similarity_score else 0,
+                "similarity_score": round(display_similarity, 4) if display_similarity else 0,
                 "match_type": getattr(match, "match_type", "exact"),
                 "confidence": round(getattr(match, "confidence", 1.0), 4),
                 "parent_match_id": getattr(match, "parent_match_id", None),
@@ -721,6 +757,26 @@ class ResultAggregator:
 
             total_effective_chars += pair_effective_chars
             total_template_chars += pair_template_chars
+
+        effective_segments = self._dedupe_formatted_segments(effective_segments)
+        template_segments = self._dedupe_formatted_segments(template_segments)
+
+        def _segment_sort_key(seg: dict) -> tuple:
+            text = str(seg.get("primary_text", "") or "")
+            is_meta = (
+                "申报书" in text
+                or "填 报 说 明" in text
+                or "单位名称" in text
+                or "指南代码" in text
+            )
+            return (
+                1 if is_meta else 0,
+                int(seg.get("primary_start", 0) or 0),
+                -int(seg.get("char_count", 0) or 0),
+            )
+
+        effective_segments.sort(key=_segment_sort_key)
+        template_segments.sort(key=_segment_sort_key)
 
         for idx, seg in enumerate(effective_segments, start=1):
             seg["match_id"] = f"m{idx:03d}"

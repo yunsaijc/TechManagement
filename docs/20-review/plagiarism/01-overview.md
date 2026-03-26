@@ -10,6 +10,7 @@
 - **控制误报**：抑制模板句、表格结构、短碎片噪声
 - **边界可用**：重复片段的起止位置尽量贴近人工判断
 - **展示可信**：Word 原貌保留，且高亮与检测结果一致
+- **检测区域可控**：仅对 `primary` 的业务正文区域查重
 
 ## 当前架构（基于现有代码）
 
@@ -19,17 +20,22 @@
 - PDF：`common/file_handler/pdf_parser.py`
 - DOCX：`common/file_handler/docx_parser.py`
 
-2. **分句与预过滤**
+2. **Primary 检测区截取（配置驱动）**
+- 仅对 `primary docx` 执行 Section 截取
+- `source` 文档默认全文参与比对，不做区域裁剪
+- 截取器：`section_extractor.py`
+
+3. **分句与预过滤**
 - 语义分句：`tokenizer.py`
 - 前置模板过滤：`template_prefilter.py`
 - 模板判定：`template_filter.py`
 
-3. **查重主链路**
+4. **查重主链路**
 - N-gram 切分：`ngram.py`
 - 指纹比对 + 连续区间：`engine.py`（Winnowing）
 - 结果聚合：`aggregator.py`
 
-4. **报告输出**
+5. **报告输出**
 - 最终报告：`mammoth_report_builder.py`
 - 最终交付文件：`debug_plagiarism/plagiarism_report_mammoth.html`
 
@@ -79,7 +85,7 @@
 ```text
 上传文件
   -> 文本提取（PDF/DOCX）
-  -> Section 提取
+  -> Primary Section 提取（仅 primary）
   -> 分句与位置映射
   -> 前置过滤（模板/表格/短句）
   -> Exact 检测（N-gram + Winnowing）
@@ -89,6 +95,27 @@
   -> 结果聚合
   -> Mammoth HTML 渲染（最终交付）
 ```
+
+## Section 配置约定（Primary Only）
+
+- `primary`：必须配置待检区域（起止边界）
+- `source`：不配置区域，直接全文比对
+- 建议优先用“标题到标题”的边界模式，避免固定行号/固定字符位偏移
+
+示例：
+
+```json
+{
+  "primary_scope": {
+    "start_pattern": "项目立项背景及意义",
+    "end_pattern": "三、项目实施方案"
+  }
+}
+```
+
+说明：
+- 实际运行时仅从 `primary` 提取 `start_pattern` 到 `end_pattern` 之间文本进入检测。
+- `source` 仍保留全文，以最大化召回。
 
 ## 调参原则
 
