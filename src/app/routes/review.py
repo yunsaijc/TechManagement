@@ -41,6 +41,7 @@ async def submit_review(
     document_type: str = Form(...),
     check_items: Optional[str] = Form(None),
     enable_llm_analysis: bool = Form(False),
+    metadata: Optional[str] = Form(None),
 ) -> ApiResponse[ReviewResult]:
     """提交文件进行形式审查
 
@@ -49,14 +50,25 @@ async def submit_review(
         document_type: 文档类型（必填，由调用方指定）
         check_items: 检查项，逗号分隔（可选）
         enable_llm_analysis: 是否启用 LLM 深度分析（可选）
+        metadata: 元数据 JSON 字符串（可选）
 
     Returns:
         审查结果
     """
+    import json
+
     # 解析检查项
     items = None
     if check_items:
         items = [i.strip() for i in check_items.split(",")]
+
+    # 解析元数据
+    meta_dict = {}
+    if metadata:
+        try:
+            meta_dict = json.loads(metadata)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="metadata 必须是有效的 JSON 字符串")
 
     # 读取文件内容
     file_data = await file.read()
@@ -71,6 +83,7 @@ async def submit_review(
             document_type=document_type,
             check_items=items,
             enable_llm_analysis=enable_llm_analysis,
+            metadata=meta_dict,
         )
 
         # 存储结果

@@ -2,12 +2,12 @@
 
 提供统一的文件处理能力，包括 PDF 解析、图片处理、格式转换等。
 """
-from src.common.file_handler.base import BaseFileParser, ParseResult
-from src.common.file_handler.factory import get_parser, detect_file_type
-from src.common.file_handler.image_processor import ImageProcessor
-from src.common.file_handler.ocr import OCRProcessor
-from src.common.file_handler.pdf_parser import PDFParser
-from src.common.file_handler.docx_parser import DOCXParser
+from .base import BaseFileParser, ParseResult
+from .factory import get_parser, detect_file_type
+from .image_processor import ImageProcessor
+from .ocr import OCRProcessor
+from .pdf_parser import PDFParser
+from .docx_parser import DOCXParser
 
 __all__ = [
     "BaseFileParser",

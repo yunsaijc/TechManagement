@@ -21,6 +21,7 @@ from src.common.file_handler import get_parser
 from src.services.plagiarism.aggregator import ResultAggregator, PlagiarismResult
 from src.services.plagiarism.engine import ComparisonEngine
 from src.services.plagiarism.report_builder import PlagiarismHtmlReportBuilder
+from src.services.plagiarism.mammoth_report_builder import MammothPlagiarismReportBuilder
 from src.services.plagiarism.section_extractor import SectionExtractor
 from src.services.plagiarism.template_filter import TemplateFilter
 from src.services.plagiarism.template_prefilter import TemplatePreFilter
@@ -64,6 +65,7 @@ class PlagiarismAgent:
         self.template_filter = TemplateFilter()
         self.template_prefilter = TemplatePreFilter(template_filter=self.template_filter)
         self.report_builder = PlagiarismHtmlReportBuilder()
+        self.mammoth_report_builder = MammothPlagiarismReportBuilder()
         # Winnowing 参数优化：减少碎片化
         self.comparison_engine = ComparisonEngine(
             min_continuous_match=5,
@@ -76,17 +78,20 @@ class PlagiarismAgent:
     async def check(
         self,
         files: List[Tuple[str, bytes]],  # [(doc_id, file_data)]
+        file_paths: Optional[Dict[str, str]] = None,  # {doc_id: file_path} 用于mammoth报告
     ) -> PlagiarismResult:
         """
         执行查重
 
         Args:
             files: 文件列表 [(id, data), ...]
+            file_paths: 文件路径字典 {doc_id: file_path}，用于生成mammoth格式报告（保留表格等格式）
 
         Returns:
             查重结果
         """
         start_time = time.time()
+        self._file_paths = file_paths or {}
 
         # 1. 提取所有文本
         texts = {}  # {doc_id: full_text}
@@ -194,9 +199,26 @@ class PlagiarismAgent:
                 processed_texts,
                 primary_doc_id,
                 similarities,
+                excluded_ranges,  # 传入排除区间
             )
 
         return result
+
+    async def check_with_paths(
+        self,
+        files: List[Tuple[str, bytes]],
+        file_paths: Dict[str, str],
+    ) -> PlagiarismResult:
+        """执行查重并传入文件路径（用于生成mammoth格式报告）
+        
+        Args:
+            files: 文件列表 [(id, data), ...]
+            file_paths: 文件路径字典 {doc_id: file_path}
+            
+        Returns:
+            查重结果
+        """
+        return await self.check(files, file_paths)
 
     def _detect_type_from_bytes(self, file_data: bytes) -> str:
         """根据文件数据检测类型"""
@@ -241,6 +263,7 @@ class PlagiarismAgent:
         processed_texts: Dict[str, str],
         primary_doc_id: str,
         similarities,
+        excluded_ranges: Dict[str, list] = None,  # 添加排除区间参数
     ):
         """保存查重详细debug信息"""
         debug_dir = Path("debug_plagiarism")
@@ -254,13 +277,41 @@ class PlagiarismAgent:
             template_filter=self.template_filter,
         )
         output["documents"] = processed_texts
+        
+        # 添加排除区间信息
+        if excluded_ranges:
+            output["excluded_ranges"] = {
+                doc_id: [{"start": r.start, "end": r.end, "reason": r.reason} for r in ranges]
+                for doc_id, ranges in excluded_ranges.items()
+            }
 
         filename = debug_dir / "plagiarism_debug.json"
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
-        html_filename = debug_dir / "plagiarism_report.html"
-        self.report_builder.build_from_debug_file(filename, html_filename)
+        # 生成 mammoth 版报告（保留Word格式，包括表格）
+        mammoth_html_filename = debug_dir / "plagiarism_report_mammoth.html"
+        def _is_docx(doc_id: str) -> bool:
+            return doc_id.lower().endswith(".docx")
+
+        primary_path = None
+        if hasattr(self, "_file_paths") and _is_docx(primary_doc_id):
+            primary_path = self._file_paths.get(primary_doc_id)
+        source_path = None
+        for doc_id in doc_ids:
+            if doc_id != primary_doc_id and _is_docx(doc_id) and doc_id in (self._file_paths or {}):
+                source_path = self._file_paths[doc_id]
+                break
+        
+        try:
+            self.mammoth_report_builder.build_from_debug_file(
+                filename,
+                mammoth_html_filename,
+                primary_docx_path=primary_path,
+                source_docx_path=source_path,
+            )
+            print(f"[Plagiarism] Debug: 保存Mammoth格式报告到 {mammoth_html_filename}")
+        except Exception as e:
+            print(f"[Plagiarism] Debug: Mammoth报告生成失败: {e}")
 
         print(f"[Plagiarism] Debug: 保存查重详情到 {filename}")
-        print(f"[Plagiarism] Debug: 保存HTML报告到 {html_filename}")
