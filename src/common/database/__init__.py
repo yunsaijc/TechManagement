@@ -41,6 +41,7 @@ from src.common.database.repositories import (
     WorkUnitRepository,
     RecommendUnitRepository,
     SubjectRepository,
+    XkflRepository,
 )
 
 
@@ -64,6 +65,11 @@ def get_recommend_unit_repo() -> RecommendUnitRepository:
 def get_subject_repo() -> SubjectRepository:
     """获取学科仓库实例"""
     return SubjectRepository()
+
+
+def get_xkfl_repo() -> XkflRepository:
+    """获取学科分类仓库实例 (来自项目评审数据库)"""
+    return XkflRepository()
 
 
 __all__ = [
@@ -91,9 +97,11 @@ __all__ = [
     "WorkUnitRepository",
     "RecommendUnitRepository",
     "SubjectRepository",
+    "XkflRepository",
     # 便捷函数
     "get_expert_repo",
     "get_work_unit_repo",
     "get_recommend_unit_repo",
     "get_subject_repo",
+    "get_xkfl_repo",
 ]

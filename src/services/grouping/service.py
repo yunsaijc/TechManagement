@@ -41,7 +41,7 @@ class GroupingService:
         self.embedder = embedder
         
         # 初始化子服务
-        self.grouping_agent = GroupingAgent(llm, embedder)
+        self.grouping_agent = GroupingAgent(llm, embedder, use_llm_validation=True)
         self.matching_agent = MatchingAgent(llm, embedder)
     
     async def group_projects(
@@ -90,10 +90,14 @@ class GroupingService:
         """
         # 1. 分组
         grouping_request = GroupingRequest(
-            year=request.year,
             category=request.category,
             max_per_group=request.max_per_group,
-            strategy=GroupingStrategy.BALANCED
+            strategy=GroupingStrategy.SEMANTIC,
+            merge_min_total_score=request.merge_min_total_score,
+            merge_min_text_score=request.merge_min_text_score,
+            merge_reserve_ratio=request.merge_reserve_ratio,
+            merge_reserve_rounds=request.merge_reserve_rounds,
+            merge_candidate_limit=request.merge_candidate_limit,
         )
         grouping_result = await self.group_projects(grouping_request)
         
@@ -154,7 +158,7 @@ class GroupingService:
         # 5. 构建结果
         result = FullGroupingResult(
             id=f"full_{grouping_result.id}",
-            year=request.year,
+            year="fixed",
             category=request.category,
             groups=grouping_result.groups,
             matches=matches,
