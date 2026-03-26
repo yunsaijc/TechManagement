@@ -6,6 +6,10 @@
 from typing import Any, Iterable, List
 import io
 import re
+
+from typing import Any, Iterable, List
+import io
+import re
 from typing import List, Generator, Union
 import io
 import zipfile
@@ -342,6 +346,59 @@ class DOCXParser(BaseFileParser):
             y_cursor += 20
 
         return table_blocks, row_index, y_cursor
+
+    async def parse(self, file_data: bytes, **kwargs) -> ParseResult:
+        """解析 DOCX 文件。"""
+        try:
+            import docx
+        except ImportError:
+            raise ImportError("python-docx not installed. Run: uv add python-docx")
+
+        doc = docx.Document(io.BytesIO(file_data))
+
+        text_blocks: list[TextBlock] = []
+        row_index = 0
+        table_index = 0
+        y_cursor = 0
+        last_paragraph_text = ""
+
+        blocks = self._iter_block_items(doc)
+        for block in blocks:
+            block_type = type(block).__name__
+            if block_type == "Paragraph":
+                last_paragraph_text = self._format_paragraph_text(block)
+                y_cursor = self._append_paragraph_block(text_blocks, block, y_cursor)
+                continue
+
+            if block_type == "Table":
+                table_index += 1
+                table_title = self._extract_table_title(last_paragraph_text)
+                blocks_for_table, row_index, y_cursor = self._extract_table_blocks(
+                    block,
+                    table_index=table_index,
+                    page_num=0,
+                    row_index_start=row_index,
+                    y_start=y_cursor,
+                    table_title=table_title,
+                )
+                text_blocks.extend(blocks_for_table)
+
+        # 兜底：若顺序遍历未抽取到文本，退化到直接遍历 paragraphs/tables。
+        if not text_blocks:
+            for p in getattr(doc, "paragraphs", []) or []:
+                y_cursor = self._append_paragraph_block(text_blocks, p, y_cursor)
+
+            for table in getattr(doc, "tables", []) or []:
+                table_index += 1
+                blocks_for_table, row_index, y_cursor = self._extract_table_blocks(
+                    table,
+                    table_index=table_index,
+                    page_num=0,
+                    row_index_start=row_index,
+                    y_start=y_cursor,
+                    table_title="",
+                )
+                text_blocks.extend(blocks_for_table)
 
     async def parse(self, file_data: bytes, **kwargs) -> ParseResult:
         """解析 DOCX 文件。"""
