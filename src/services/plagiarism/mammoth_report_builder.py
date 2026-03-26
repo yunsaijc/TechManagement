@@ -160,21 +160,22 @@ class MammothPlagiarismReportBuilder:
 
             if not left_map or not right_map:
                 continue
-            left_match = left_map.span_to_html(primary_start, primary_end)
-            right_match = right_map.span_to_html(source_start, source_end)
-            if not left_match or not right_match:
+            left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
+            right_fragments, right_cov = right_map.span_to_html_fragments(source_start, source_end)
+            if not left_fragments or not right_fragments:
                 continue
 
-            left_start, left_end, left_cov = left_match
-            right_start, right_end, right_cov = right_match
-
-            if self._has_overlap(left_occupied, left_start, left_end) or self._has_overlap(right_occupied, right_start, right_end):
+            left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
+            right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
+            if not left_filtered or not right_filtered:
                 continue
 
-            left_occupied.append((left_start, left_end))
-            right_occupied.append((right_start, right_end))
-            left_spans.append((left_start, left_end, match_id, is_template, match_type))
-            right_spans.append((right_start, right_end, match_id, is_template, match_type))
+            for left_start, left_end in left_filtered:
+                left_occupied.append((left_start, left_end))
+                left_spans.append((left_start, left_end, match_id, is_template, match_type))
+            for right_start, right_end in right_filtered:
+                right_occupied.append((right_start, right_end))
+                right_spans.append((right_start, right_end, match_id, is_template, match_type))
 
             coverage = min(left_cov, right_cov)
             match_results[match_id] = {
@@ -188,6 +189,21 @@ class MammothPlagiarismReportBuilder:
             self._inject_spans(right_html, right_spans, "source"),
             match_results,
         )
+
+    def _filter_non_overlapping_fragments(
+        self,
+        fragments: List[Tuple[int, int]],
+        occupied: List[Tuple[int, int]],
+        min_len: int = 3,
+    ) -> List[Tuple[int, int]]:
+        filtered: List[Tuple[int, int]] = []
+        for start, end in fragments:
+            if end - start < min_len:
+                continue
+            if self._has_overlap(occupied, start, end):
+                continue
+            filtered.append((start, end))
+        return filtered
 
     def _normalize_text(self, text: str) -> str:
         if not text:
@@ -679,7 +695,7 @@ class MammothPlagiarismReportBuilder:
         cards = []
         for i, segment in enumerate(segments[:50], 1):  # 最多显示50个
             match_id = segment.get("match_id") or f"m{i:03d}"
-            primary_text = segment.get("primary_text", "")[:60]
+            primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:60]
             is_template = segment.get("is_template", False)
             similarity = segment.get("similarity_score", segment.get("similarity", 1.0))
             result = (match_results or {}).get(match_id)
@@ -705,6 +721,12 @@ class MammothPlagiarismReportBuilder:
             </button>''')
 
         return "".join(cards) if cards else '<p class="empty">未定位到可高亮的重复片段</p>'
+
+    def _clean_nav_text(self, text: str) -> str:
+        cleaned = re.sub(r"\[表格行\d+\]", "", text or "")
+        cleaned = cleaned.replace("|", " ")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
     def _render_html_page(
         self,

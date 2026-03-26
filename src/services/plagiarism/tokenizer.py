@@ -27,6 +27,9 @@ class SentenceTokenizer:
     # 句内分隔符（不分句，但标记位置）
     INTERNAL_SEPARATORS = ['，', '、', ':', '：', '(', ')', '（', '）']
     TABLE_ROW_MARKER = re.compile(r"\[表格行\d+\]")
+    HEADING_BOUNDARY = re.compile(
+        r"(第[一二三四五六七八九十]+部分|第一部分|第二部分|第三部分|项目简介|项目立项背景及意义|[一二三四五六七八九十]、)"
+    )
 
     def tokenize(self, text: str) -> List[Sentence]:
         """
@@ -75,6 +78,11 @@ class SentenceTokenizer:
                 sentence_start_pos = i
                 continue
 
+            if current_text and self._is_heading_boundary(text, i):
+                # 章节标题视为硬边界，避免把表格尾巴/上一段正文与标题和下一段正文粘成一个句子
+                flush(i)
+                continue
+
             char = text[i]
             if not current_text:
                 sentence_start_pos = i
@@ -93,6 +101,19 @@ class SentenceTokenizer:
             flush(len(text))
 
         return sentences
+
+    def _is_heading_boundary(self, text: str, pos: int) -> bool:
+        match = self.HEADING_BOUNDARY.match(text, pos)
+        if not match:
+            return False
+
+        # 只在合理边界切开：文本开头、换行后，或当前字符前是空白/表格分隔
+        if pos == 0:
+            return True
+        prev = text[pos - 1]
+        if prev in {'\n', '\r', '\t', ' ', '|', '：', ':'}:
+            return True
+        return False
 
     def tokenize_by_paragraphs(self, text: str) -> List[Sentence]:
         """

@@ -63,6 +63,16 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -217,6 +227,8 @@ class GroupingAgent:
         self.stop_after_first_merge_round_for_debug = _env_bool(
             "GROUPING_STOP_AFTER_FIRST_MERGE_ROUND", False
         )
+        self.merge_max_rounds = max(1, _env_int("GROUPING_MERGE_MAX_ROUNDS", 20))
+        self.merge_stall_rounds = max(1, _env_int("GROUPING_MERGE_STALL_ROUNDS", 2))
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
@@ -662,14 +674,29 @@ class GroupingAgent:
             return clusters
 
         clusters = [cluster[:] for cluster in clusters if cluster]
-        max_rounds = 20
+        max_rounds = self.merge_max_rounds
         top_k = 3
+        prev_small_group_count: Optional[int] = None
+        stall_rounds = 0
 
         for round_idx in range(1, max_rounds + 1):
             clusters = [c for c in clusters if c]
             small_indices = [idx for idx, c in enumerate(clusters) if 0 < len(c) < min_per_group]
             if not small_indices:
                 break
+            current_small_group_count = len(small_indices)
+            if prev_small_group_count is not None:
+                if current_small_group_count >= prev_small_group_count:
+                    stall_rounds += 1
+                else:
+                    stall_rounds = 0
+                if stall_rounds >= self.merge_stall_rounds:
+                    print(
+                        f"[合并] 连续{stall_rounds}轮过小组数量未下降"
+                        f"（当前{current_small_group_count}），提前停止"
+                    )
+                    break
+            prev_small_group_count = current_small_group_count
 
             print(f"[合并][第{round_idx}轮] 发现{len(small_indices)}个过小组需要处理...")
 
@@ -794,6 +821,7 @@ class GroupingAgent:
                 break
 
             # 统一提交本轮合并
+            committed_merges = 0
             for edge in planned_merges:
                 src = edge["src"]
                 dst = edge["dst"]
@@ -801,13 +829,17 @@ class GroupingAgent:
                     continue
                 clusters[dst].extend(clusters[src])
                 clusters[src] = []
+                committed_merges += 1
                 print(
                     f"  [合并] 将组{src+1}({sizes[src]}个项目)合并到组{dst+1} "
                     f"(score={edge['score']:.3f}, text={edge['text']:.3f}, subject={edge['subject']:.3f})"
                 )
+            if committed_merges == 0:
+                print(f"[合并][第{round_idx}轮] 计划合并 {len(planned_merges)} 条但实际提交 0 条，停止")
+                break
 
             clusters = [c for c in clusters if c]
-            print(f"[合并][第{round_idx}轮] 完成 {len(planned_merges)} 次合并，剩余 {len(clusters)} 组")
+            print(f"[合并][第{round_idx}轮] 完成 {committed_merges} 次合并，剩余 {len(clusters)} 组")
 
             if self.stop_after_first_merge_round_for_debug and round_idx == 1:
                 debug_file = self._save_unmerged_groups_for_debug(clusters, min_per_group, round_idx)

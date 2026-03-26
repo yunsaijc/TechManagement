@@ -40,6 +40,39 @@ class CoordinateMap:
         covered = len(mapped) / max(end - start, 1)
         return html_start, html_end, covered
 
+    def span_to_html_fragments(self, start: int, end: int) -> Tuple[List[Tuple[int, int]], float]:
+        """Map a canonical span to text-only HTML fragments.
+
+        Each returned fragment is fully inside a contiguous text run of the HTML,
+        so wrapping it with `<span>` will not cross block tags and break the DOM.
+        """
+        if start < 0 or end <= start or start >= len(self.canonical_text):
+            return [], 0.0
+
+        end = min(end, len(self.canonical_text))
+        mapped = [
+            self.canonical_to_html[i]
+            for i in range(start, end)
+            if 0 <= i < len(self.canonical_to_html) and self.canonical_to_html[i] >= 0
+        ]
+        if not mapped:
+            return [], 0.0
+
+        fragments: List[Tuple[int, int]] = []
+        frag_start = mapped[0]
+        frag_end = mapped[0] + 1
+        for pos in mapped[1:]:
+            if pos == frag_end:
+                frag_end = pos + 1
+                continue
+            fragments.append((frag_start, frag_end))
+            frag_start = pos
+            frag_end = pos + 1
+        fragments.append((frag_start, frag_end))
+
+        covered = len(mapped) / max(end - start, 1)
+        return fragments, covered
+
 
 def build_coordinate_map(canonical_text: str, html: str) -> CoordinateMap:
     plain_text, plain_to_html = _extract_plain_text_with_html_positions(html)

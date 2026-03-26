@@ -446,6 +446,11 @@ class ResultAggregator:
                 doc_b, match, doc_texts
             )
 
+            display_similarity = match.similarity_score or 0
+            if source_text:
+                lexical_similarity = self._lexical_ratio(primary_text, source_text)
+                display_similarity = max(display_similarity, lexical_similarity)
+
             # 获取主文档 Section 信息
             primary_section = ""
             if self.section_extractor and doc_texts and doc_a in doc_texts:
@@ -480,7 +485,7 @@ class ResultAggregator:
                 }],
                 "char_count": len(match.text),
                 "ngram_count": match.ngram_count,
-                "similarity_score": round(match.similarity_score, 4) if match.similarity_score else 0,
+                "similarity_score": round(display_similarity, 4) if display_similarity else 0,
                 "match_type": getattr(match, "match_type", "exact"),
                 "confidence": round(getattr(match, "confidence", 1.0), 4),
                 "parent_match_id": getattr(match, "parent_match_id", None),
