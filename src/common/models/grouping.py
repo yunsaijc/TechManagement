@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field
 
 class GroupingStrategy(str, Enum):
     """分组策略"""
-    BALANCED = "balanced"  # 均衡策略
-    QUALITY = "quality"     # 质量优先策略
+    SEMANTIC = "semantic"   # 语义优先策略
+    BALANCED = "balanced"   # 兼容旧策略（内部也按语义处理）
+    QUALITY = "quality"     # 兼容旧策略（内部也按语义处理）
 
 
 # ========== 项目模型 ==========
@@ -53,26 +54,6 @@ class ProjectAnalysis(BaseModel):
     
     # 融合文本（用于向量化）
     text: Optional[str] = Field(None, description="融合后的文本")
-
-    class Config:
-        from_attributes = True
-
-
-class ProjectQuality(BaseModel):
-    """项目质量评估结果
-    
-    使用 LLM 评估项目的创新性、技术难度、应用价值
-    """
-    project_id: str = Field(..., description="项目ID")
-    
-    # 各维度得分 (0-100)
-    innovation_score: float = Field(..., description="创新性得分")
-    difficulty_score: float = Field(..., description="技术难度得分")
-    value_score: float = Field(..., description="应用价值得分")
-    
-    # 综合得分
-    total_score: float = Field(..., description="综合得分 (加权平均)")
-    comment: Optional[str] = Field(None, description="简要评语")
 
     class Config:
         from_attributes = True
@@ -130,8 +111,14 @@ class ProjectInGroup(BaseModel):
     project_id: str = Field(..., description="项目ID")
     xmmc: str = Field(..., description="项目名称")
     xmjj: Optional[str] = Field(None, description="项目简介")
-    quality_score: float = Field(..., description="质量评分")
+    subject_code: Optional[str] = Field(None, description="项目学科代码")
+    subject_name: Optional[str] = Field(None, description="项目学科名称")
+    semantic_score: float = Field(..., description="语义匹配得分")
     reason: Optional[str] = Field(None, description="分配理由")
+    # 新增debug字段
+    original_subject_code: Optional[str] = Field(None, description="原始学科代码")
+    original_subject_name: Optional[str] = Field(None, description="原始学科名称")
+    keywords: List[str] = Field(default_factory=list, description="项目关键词")
 
     class Config:
         from_attributes = True
@@ -140,7 +127,7 @@ class ProjectInGroup(BaseModel):
 class GroupSummary(BaseModel):
     """分组摘要信息"""
     count: int = Field(..., description="项目数量")
-    avg_score: float = Field(..., description="平均质量得分")
+    avg_score: float = Field(..., description="平均语义得分")
     main_themes: List[str] = Field(default_factory=list, description="主要主题")
 
     class Config:
@@ -150,15 +137,12 @@ class GroupSummary(BaseModel):
 class ProjectGroup(BaseModel):
     """项目分组"""
     group_id: int = Field(..., description="分组ID")
-    subject_code: Optional[str] = Field(None, description="学科代码")
-    subject_name: Optional[str] = Field(None, description="学科名称")
+    subject_code: Optional[str] = Field(None, description="组编码")
+    subject_name: Optional[str] = Field(None, description="组主题")
     projects: List[ProjectInGroup] = Field(default_factory=list, description="分组内项目列表")
     
     # 统计信息
     count: int = Field(0, description="项目数量")
-    avg_quality: float = Field(0.0, description="平均质量得分")
-    max_quality: float = Field(0.0, description="最高质量得分")
-    min_quality: float = Field(0.0, description="最低质量得分")
     
     # 兼容旧版
     summary: Optional[GroupSummary] = Field(None, description="分组摘要(兼容)")
@@ -173,20 +157,14 @@ class GroupingStatistics(BaseModel):
     group_count: int = Field(..., description="分组数量")
     balance_score: float = Field(..., description="均衡度得分 (0-1)")
     avg_projects_per_group: float = Field(..., description="平均每组项目数")
-    avg_quality_per_group: float = Field(..., description="平均质量得分")
-    
-    # 新增：质量评估详情
-    quality_mean: Optional[float] = Field(None, description="质量分数均值")
-    quality_median: Optional[float] = Field(None, description="质量分数中位数")
-    quality_std: Optional[float] = Field(None, description="质量分数标准差")
-    quality_min: Optional[float] = Field(None, description="质量分数最小值")
-    quality_max: Optional[float] = Field(None, description="质量分数最大值")
     
     # 新增：分组质量
     quantity_balance: Optional[float] = Field(None, description="数量均衡度 (0-1)")
-    quality_balance: Optional[float] = Field(None, description="质量均衡度 (0-1)")
-    subject_purity: Optional[float] = Field(None, description="学科纯度 (0-1)")
+    subject_purity: Optional[float] = Field(None, description="主题聚合度 (0-1)")
     split_correctness: Optional[float] = Field(None, description="拆分正确率 (0-1)")
+
+    # 新增：可靠性验证提醒
+    audit_reminder: Optional[str] = Field(None, description="人工复审提醒")
 
     class Config:
         from_attributes = True
@@ -282,7 +260,7 @@ class FullStatistics(BaseModel):
 class FullGroupingResult(BaseModel):
     """完整分组与匹配结果"""
     id: str = Field(..., description="结果ID")
-    year: str = Field(..., description="年度")
+    year: str = Field("fixed", description="数据集标识")
     category: Optional[str] = Field(None, description="类别")
     groups: List[ProjectGroup] = Field(default_factory=list, description="分组列表")
     matches: Dict[int, MatchingResult] = Field(default_factory=dict, description="匹配结果 (group_id -> 匹配结果)")
@@ -299,11 +277,14 @@ class FullGroupingResult(BaseModel):
 
 class GroupingRequest(BaseModel):
     """分组请求"""
-    year: str = Field(..., description="年度 (必填)")
     category: Optional[str] = Field(None, description="奖种类别")
     max_per_group: int = Field(15, description="每组目标项目数")
-    strategy: GroupingStrategy = Field(GroupingStrategy.BALANCED, description="分组策略")
-    limit: Optional[int] = Field(None, description="限制项目数量（测试用）")
+    strategy: GroupingStrategy = Field(GroupingStrategy.SEMANTIC, description="分组策略")
+    merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
+    merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")
+    merge_reserve_ratio: Optional[float] = Field(None, description="前几轮小组合并的软上限比例（可选）")
+    merge_reserve_rounds: Optional[int] = Field(None, description="软上限生效轮数（可选）")
+    merge_candidate_limit: Optional[int] = Field(None, description="每个过小组保留的候选目标组数（可选）")
 
     class Config:
         from_attributes = True
@@ -323,9 +304,13 @@ class MatchingRequest(BaseModel):
 
 class FullGroupingRequest(BaseModel):
     """完整分组与匹配请求"""
-    year: str = Field(..., description="年度 (必填)")
     category: Optional[str] = Field(None, description="奖种类别")
     max_per_group: int = Field(15, description="每组目标项目数")
+    merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
+    merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")
+    merge_reserve_ratio: Optional[float] = Field(None, description="前几轮小组合并的软上限比例（可选）")
+    merge_reserve_rounds: Optional[int] = Field(None, description="软上限生效轮数（可选）")
+    merge_candidate_limit: Optional[int] = Field(None, description="每个过小组保留的候选目标组数（可选）")
     experts_per_project: int = Field(5, description="每个项目分配专家数")
     min_experts_per_group: int = Field(10, description="每组最少懂行专家")
     avoid_relations: bool = Field(True, description="是否回避关系")

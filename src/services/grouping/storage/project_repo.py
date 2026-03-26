@@ -1,8 +1,10 @@
 """
 项目数据访问层
 
-负责从项目评审数据库 (SQL Server) 读取项目数据
+负责从项目评审数据库 (SQL Server) 读取项目数据。
+分组功能默认只使用固定业务批次下、审核通过的项目子集。
 """
+import os
 from typing import List, Optional
 
 from src.common.database.connection import project_execute
@@ -13,55 +15,56 @@ class ProjectRepository:
     """项目数据仓库
     
     对应数据库: kjjhxm_wlps (SQL Server)
-    表: Sb_Jbxx, Sb_Jj
+    表: Sb_Jbxx, Sb_Jj, Sb_Sbzt
     """
+
+    FIXED_TEST_GUIDE_CODE = os.getenv("GROUPING_TEST_GUIDE_CODE", "c2f3b7b1f9534463ad726e6936c91859")
+    APPROVED_AUDIT_STATUS = os.getenv("GROUPING_TEST_AUDIT_STATUS", "1")
+
+    @classmethod
+    def _base_from_clause(cls) -> str:
+        return """
+            FROM Sb_Jbxx b
+            LEFT JOIN Sb_Jj j ON b.id = j.onlysign
+            LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
+            WHERE b.zndm = ?
+              AND s.gkAudit = ?
+        """
+
+    @classmethod
+    def _base_params(cls) -> List[str]:
+        return [cls.FIXED_TEST_GUIDE_CODE, cls.APPROVED_AUDIT_STATUS]
+
+    @classmethod
+    def get_grouping_dataset_filter(cls) -> dict:
+        return {
+            "guide_code": cls.FIXED_TEST_GUIDE_CODE,
+            "audit_status": cls.APPROVED_AUDIT_STATUS,
+        }
     
     @staticmethod
-    def get_projects_by_year(
-        year: str,
+    def get_grouping_test_projects(
         category: Optional[str] = None,
-        limit: Optional[int] = None
     ) -> List[Project]:
-        """根据年度获取项目列表
+        """获取固定分组测试数据集
         
         Args:
-            year: 年度
             category: 奖种类别 (可选)
-            limit: 限制返回数量
         
         Returns:
             项目列表
         """
-        params = [year]
-        
-        # 构建查询SQL
-        if limit:
-            # SQL Server: TOP 在最外层
-            sql = f"""
-                SELECT TOP {limit}
-                    b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2, 
-                    j.xmjj, j.lxbj, b.cddwMc, b.year
-                FROM Sb_Jbxx b
-                LEFT JOIN Sb_Jj j ON b.id = j.onlysign
-                WHERE b.year = ?
-            """
-            if category:
-                sql += " AND b.jhlb = ?"
-                params.append(category)
-            sql += " ORDER BY b.id"
-        else:
-            sql = """
-                SELECT 
-                    b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2, 
-                    j.xmjj, j.lxbj, b.cddwMc, b.year
-                FROM Sb_Jbxx b
-                LEFT JOIN Sb_Jj j ON b.id = j.onlysign
-                WHERE b.year = ?
-            """
-            if category:
-                sql += " AND b.jhlb = ?"
-                params.append(category)
-            sql += " ORDER BY b.id"
+        params = ProjectRepository._base_params()
+        sql = f"""
+            SELECT
+                b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2,
+                j.xmjj, j.lxbj, b.cddwMc, b.year
+            {ProjectRepository._base_from_clause()}
+        """
+        if category:
+            sql += " AND b.jhlb = ?"
+            params.append(category)
+        sql += " ORDER BY b.id"
         
         # 执行查询
         rows = project_execute(sql, tuple(params))
@@ -122,21 +125,23 @@ class ProjectRepository:
         )
     
     @staticmethod
-    def count_projects_by_year(year: str, category: Optional[str] = None) -> int:
-        """统计年度项目数量
+    def count_grouping_test_projects(category: Optional[str] = None) -> int:
+        """统计固定分组测试数据集数量
         
         Args:
-            year: 年度
             category: 奖种类别
         
         Returns:
             项目数量
         """
-        sql = "SELECT COUNT(*) as cnt FROM Sb_Jbxx WHERE year = ?"
-        params = [year]
+        sql = f"""
+            SELECT COUNT(*) as cnt
+            {ProjectRepository._base_from_clause()}
+        """
+        params = ProjectRepository._base_params()
         
         if category:
-            sql += " AND jhlb = ?"
+            sql += " AND b.jhlb = ?"
             params.append(category)
         
         rows = project_execute(sql, tuple(params))

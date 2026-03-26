@@ -2,393 +2,329 @@
 
 ## 概述
 
-分组子服务是智能分组与专家匹配服务的核心组件之一，负责将申报项目按学科分类，并对超出30项的学科进行质量均衡分配，实现组内数量与质量的双均衡。
+分组子服务负责将申报项目按"项目在做什么"进行分组。当前实现采用**关键词Embedding主导 + 学科代码辅助**的策略：以项目关键词（`gjc` 字段）为主要信息计算Embedding进行语义聚类，学科代码作为辅助参考信息。
+
+分组的基本原则是：
+- **关键词是分组的核心依据**，决定项目主题相似性
+- **Embedding捕捉关键词语义关系**，进行全局层次聚类
+- **学科代码作为辅助信息**，帮助理解分组结果
+- 关键词差异大的项目应分到不同组，即使学科代码相同
+- 组内主题必须能被人类评审解释
+- 过大组（>max_per_group）必须拆分，过小组（<min_per_group）优先合并且需满足门槛
+
+### 本次规则变更（2026-03-26）
+
+针对“前半段能分开、后半段合不动”以及“同代码也可能细分方向不同”的问题，分组策略调整为：
+
+1. **保留 Embedding 主导的前半段**：继续使用关键词 Embedding、层次聚类和过大组拆分负责“先分开”。
+2. **小组合并改为整轮统一决策**：不再按单个小组串行贪心，而是每轮先收集全部候选，再统一选择本轮执行的合并计划。
+3. **门槛动态化**：不再依赖单一固定阈值，而是结合每个小组自身候选分布动态判断是否值得合并。
+4. **引入软上限留空间**：在前几轮合并中先使用 `soft_cap`，避免早期把目标组塞满，给后续小组保留入口。
+5. **同代码不再视为天然可并**：即使 `code_a == code_b`，也必须通过语义一致性判断；仅在语义置信足够高时才可直并。
+6. **代码不同仍需 LLM 校验**：只要 `code_a != code_b`，必须先通过 LLM 校验。
+7. **LLM 缓存键细化**：不再只按 `code_a:code_b` 复用，加入代表项目上下文哈希。
+
+### 问题-方案对照
+
+1. **问题：小组合并是局部贪心，前面并完后面容易卡死**
+   - 方案：改为“整轮统一决策”。先收集所有候选，再统一生成本轮合并计划，避免“谁先处理谁先抢目标组”。
+
+2. **问题：单一固定阈值过于僵硬，后期要么强并，要么完全合不动**
+   - 方案：阈值配置化，并结合每个小组自己的候选分布做动态判断，不再只看全局固定分数线。
+
+3. **问题：目标组过早被塞满，后续小组没有容量可去**
+   - 方案：引入 `soft_cap / hard_cap` 双上限。前几轮优先使用 `soft_cap`，后续再放开到 `hard_cap`。
+
+4. **问题：同代码也可能细分方向不同，不能直接并**
+   - 方案：`code_a == code_b` 时也要做语义一致性判断，不能仅凭学科代码直接合并。
+
+5. **问题：代码不同的并组风险高**
+   - 方案：在小组合并阶段保留强制校验：只要 `code_a != code_b`，必须先通过 LLM。
+
+6. **问题：拆分只按一级学科，粒度过粗**
+   - 方案：拆分从一级学科升级为优先按三级学科代码拆分，减少同大类内混杂组。
+
+7. **问题：LLM缓存键仅按学科代码对，复用过粗**
+   - 方案：缓存键加入代表项目上下文哈希，避免不同语境误用旧结论。
 
 ---
 
-## 核心逻辑（重构后）
+## 核心逻辑
 
-### 原有方案问题
+### 分组目标
 
-| 问题 | 原因 |
-|------|------|
-| 语义聚类 ≠ 学科分组 | Embedding 只保证语义相近，不保证学科一致 |
-| 质量不均衡 | 聚类只保证语义相似，不保证质量分布 |
+1. 基于项目关键词计算全局Embedding，建立语义空间
+2. 基于Embedding相似度进行全局层次聚类，形成初始组
+3. 根据容量约束对过小组和过大组进行再平衡
+4. 最终输出可解释、可回放的分组结果
 
-### 新方案：按学科分组 + 质量均衡分配
+### 关键词的主导地位
 
+项目关键词（`gjc` 字段）是分组的核心依据：
+- **文本构造**：关键词高权重重复 + 标题重复 + 简介弱补充 + 学科名弱提示
+- 关键词和标题共同决定Embedding主方向，优先体现“项目具体在做什么”
+- 项目简介只作补充，并额外过滤“人工智能、多模态、模型”等泛词
+- 学科名只保留一次，作为弱提示，不再主导向量方向
+- **无关键词Fallback**：从项目名提取2-8字中文词组，过滤停用词
+
+### Embedding计算
+
+基于构造文本计算项目Embedding：
+- 使用统一的Embedding模型（如text-embedding-3-small）
+- 所有项目先计算Embedding，保存在全局vector_map中
+- 基于余弦相似度进行层次聚类
+
+### 学科代码的辅助作用
+
+学科代码作为辅助参考信息：
+- 帮助理解分组结果的学科分布
+- 用于生成组标题时提供学科上下文
+- 不再作为硬性分组边界
+
+### LLM验证机制（新增）
+
+为了提高分组质量，引入了LLM验证机制：
+
+#### 1. 初始聚类阶段验证
+- **触发条件**：启用了LLM验证（`use_llm_validation=True`）
+- **验证时机**：在初始Embedding聚类完成后
+- **验证逻辑**：
+  1. 统计每个聚类内的三级学科代码分布
+  2. 确定主导学科（项目数最多的三级学科）
+  3. 对非主导学科的项目进行LLM验证
+  4. 验证失败的项目从聚类中移除，形成独立组
+
+#### 2. 合并小组阶段验证
+- **触发条件**：小组合并时，候选组代码不同（`code_a != code_b`）
+- **验证逻辑**：使用 LLM 判断两个候选组是否应该合并
+- **执行约束**：LLM 返回“否”时不得执行合并
+
+#### 3. LLM验证Prompt
 ```
-1. 按三级学科初步分组（利用 ssxk1 字段）
-2. 数量 ≤30 → 直接保留
-3. 数量 >30 → 进入质量均衡分配流程
-   3.1 LLM 评估每个项目质量（创新性/技术难度/应用价值）
-   3.2 贪心算法分配，保证组间质量均衡
-4. 合并结果，输出 15 个分组
-```
+你是一位科研项目分组专家。请判断以下项目是否应该与主导学科组的项目分在同一评审组。
 
----
+【待判断项目】学科: {project_subject} ({subject_name})
+项目名称: {project_name}
+关键词: {keywords}
+简介: {abstract}
 
-## 业务流程
+【主导学科组】学科: {dominant_subject} ({subject_name})
+代表项目：
+1. {anchor_project_1}
+2. {anchor_project_2}
+3. {anchor_project_3}
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        分组子服务流程                              │
-└─────────────────────────────────────────────────────────────────┘
+判断标准：
+1. 研究内容是否高度相关
+2. 技术方法是否相似
+3. 是否属于相近的研究领域
 
-     输入: year, target_groups=15
-         │
-         ▼
-┌─────────────────────┐
-│  1. 获取项目列表     │
-│     + 学科代码       │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  2. 查询学科层级    │
-│  sys_subject 表    │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│  3. 按三级学科分组  │
-└──────┬──────────────┘
-         │
-         ▼
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-┌────────┐ ┌────────┐
-│ ≤30项  │ │ >30项  │
-│ 保留   │ │ 质量评估│
-│ 原分组 │ │ +均衡分配│
-└────────┘ └────┬────┘
-                 │
-                 ▼
-┌─────────────────────┐
-│  4. 合并分组结果   │
-│     + 质量统计      │
-└──────┬──────────────┘
-                 │
-                 ▼
-             输出: 15个分组
-```
-
----
-
-## 核心模块
-
-### 1. 学科分组 (Subject Grouping)
-
-#### 1.1 学科层级判断
-
-```python
-def get_subject_level(code: str) -> int:
-    """判断学科层级
-    
-    - code 长度=2 → 一级学科 (如 01, 02, 03)
-    - code 长度=3 → 二级学科 (如 010, 011)
-    - code 长度≥4 → 三级学科 (如 0101, 0102)
-    """
-    if not code:
-        return 0
-    length = len(code)
-    if length == 2:
-        return 1
-    elif length == 3:
-        return 2
-    elif length >= 4:
-        return 3
-    return 0
-```
-
-#### 1.2 按三级学科分组
-
-```python
-def group_by_subject(projects: List[Project]) -> Dict[str, List[Project]]:
-    """按三级学科代码分组
-    
-    Returns:
-        {
-            "0101": [Project, Project, ...],  # 计算机软件与理论
-            "0201": [Project, ...],           # 理论物理
-            ...
-        }
-    """
-    subject_groups = defaultdict(list)
-    
-    for project in projects:
-        # 取三级学科代码（前4位）
-        if project.ssxk1 and len(project.ssxk1) >= 4:
-            subject_code = project.ssxk1[:4]
-        else:
-            subject_code = "unknown"
-        
-        subject_groups[subject_code].append(project)
-    
-    return dict(subject_groups)
-```
-
-### 2. 质量评估 (Quality Assessment)
-
-对数量 >30 的学科，评估每个项目的质量。
-
-#### 2.1 评估维度
-
-| 维度 | 权重 | 说明 |
-|------|------|------|
-| 创新性 | 33.3% | 技术的原创性、领先程度 |
-| 技术难度 | 33.3% | 技术的复杂程度、实现难度 |
-| 应用价值 | 33.3% | 推广应用前景，经济效益 |
-
-#### 2.2 LLM 评估 Prompt
-
-```python
-def build_quality_prompt(project: Project) -> str:
-    """构建质量评估 prompt"""
-    # 清洗 HTML
-    clean_xmjj = clean_html(project.xmjj)[:1000]
-    
-    return f"""
-项目名称: {project.xmmc}
-关键词: {project.gjc or '无'}
-项目简介: {clean_xmjj}
-
-请从以下三个维度评估该项目质量（每个维度0-100分）：
-1. 创新性: 项目的创新程度
-2. 技术难度: 技术实现的复杂程度  
-3. 应用价值: 实际应用和推广价值
-
-请返回JSON格式：
-{{"innovation": 85, "difficulty": 70, "value": 90, "comment": "简要评语"}}
-"""
-```
-
-#### 2.3 并发评估
-
-```python
-async def assess_all_quality(
-    projects: List[Project], 
-    concurrency: int = 10
-) -> Dict[str, ProjectQuality]:
-    """并发评估所有项目质量
-    
-    Args:
-        projects: 项目列表
-        concurrency: 并发数
-    
-    Returns:
-        {project_id: ProjectQuality}
-    """
-    semaphore = asyncio.Semaphore(concurrency)
-    
-    async def assess_with_limit(p: Project):
-        async with semaphore:
-            return p.id, await llm_assess(p)
-    
-    tasks = [assess_with_limit(p) for p in projects]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    return {
-        pid: quality 
-        for pid, quality in results 
-        if not isinstance(quality, Exception)
-    }
-```
-
-### 3. 均衡分配 (Balanced Distribution)
-
-对数量 >30 的学科，使用贪心算法进行均衡分配。
-
-#### 3.1 算法逻辑
-
-```python
-def balanced_distribute(
-    projects: List[Project],
-    quality_scores: Dict[str, ProjectQuality],
-    max_per_group: int = 15
-) -> List[List[Project]]:
-    """质量均衡分配算法
-    
-    目标: 每组数量均衡 + 质量总分均衡
-    方法: 贪心分配（先按质量排序，然后轮转分配）
-    
-    Args:
-        projects: 项目列表
-        quality_scores: 质量分数 {project_id: ProjectQuality}
-        max_per_group: 每组目标项目数 (默认15)
-    
-    Returns:
-        分组结果 [[Project, ...], [Project, ...], ...]
-    """
-    # 计算需要的组数
-    target_groups = max(1, (len(projects) + max_per_group - 1) // max_per_group)
-    sorted_projects = sorted(
-        projects, 
-        key=lambda p: quality_scores.get(p.id, ProjectQuality()).total_score,
-        reverse=True
-    )
-    
-    # 2. 初始化分组
-    groups = [[] for _ in range(target_groups)]
-    group_scores = [0.0] * target_groups
-    
-    # 3. 贪心分配：总是加入分数最低的组
-    for p in sorted_projects:
-        min_idx = group_scores.index(min(group_scores))
-        groups[min_idx].append(p)
-        group_scores[min_idx] += quality_scores.get(p.id, ProjectQuality()).total_score
-    
-    return groups
-```
-
-#### 3.2 均衡约束
-
-| 约束 | 容忍度 |
-|------|--------|
-| 数量差异 | ≤ 3 项 |
-| 质量差异 | ≤ 10% |
-
-#### 3.3 均衡性检查
-
-```python
-def check_balance(groups: List[List[Project]], quality_scores: Dict) -> bool:
-    """检查分组是否满足均衡约束"""
-    sizes = [len(g) for g in groups]
-    scores = [sum(quality_scores[p.id].total_score for p in g) for g in groups]
-    
-    # 数量差异检查
-    if max(sizes) - min(sizes) > 3:
-        return False
-    
-    # 质量差异检查 (10%)
-    avg_score = sum(scores) / len(scores)
-    for s in scores:
-        if abs(s - avg_score) / avg_score > 0.1:
-            return False
-    
-    return True
+请回答：应该保留在一起（是/否）
 ```
 
 ---
 
-## 参数配置
+## 推荐流程
+
+```
+1. 获取项目列表（含学科代码、关键词、项目名称字段）
+2. 构造文本（关键词 + 标题主导，简介补充，学科弱提示）
+3. 计算全局Embedding，建立vector_map
+4. 基于Embedding相似度进行全局层次聚类
+   【新增】对每个聚类进行学科一致性验证（LLM验证）
+   【新增】以主导学科为锚点，移除验证失败的项目
+5. 对超过 max_per_group 的组基于Embedding重新聚类拆分
+6. 对小于 min_per_group 的组执行整轮统一的小组合并
+   【规则】同代码也要做语义一致性判断；若候选组代码不同（`code_a != code_b`），必须先做LLM验证
+7. 按需生成组标题、理由和复核标记
+8. 输出分组结果 + 理由 + 复核标记
+```
+
+---
+
+## 详细策略（关键词Embedding主导分组）
+
+### 1. 文本构造
+
+构造用于Embedding的文本，确保具体领域词比泛学科词更主导：
+
+**构造格式**：
+```
+{关键词}×3。{标题清洗词}×2。{简介清洗词}。{学科名}
+```
+
+**示例**：
+- 关键词：`"深度学习；图像识别；神经网络"`
+- 项目名：`"基于CNN的医学影像诊断系统"`
+- 学科名：`"人工智能应用"`
+- 构造文本：`"深度学习。深度学习。深度学习。图像识别。图像识别。图像识别。神经网络。神经网络。神经网络。医学影像诊断。医学影像诊断。医学影像病灶临床辅助。人工智能应用"`
+
+**关键词Fallback**（当`gjc`为空时）：
+- 从项目名提取2-8字中文词组
+- 过滤停用词：`{"项目", "研究", "技术", "系统", "方法", "应用", "开发", "平台", "基于", "及其"}`
+- 若提取失败，使用项目名本身
+
+**摘要清洗额外规则**：
+- 在摘要中额外过滤泛词：`{"人工智能", "智能", "多模态", "大模型", "机器学习", "深度学习", "神经网络", "算法", "数据", "图像", "识别", "检测"}`
+- 目的不是删除方向词，而是避免 `F020509` 这类大筐学科因共享泛词而被Embedding错误拉近
+
+### 2. 全局Embedding计算
+
+基于构造文本计算所有项目的Embedding：
+- 使用统一的Embedding模型
+- 建立全局vector_map：`{project_id: embedding_vector}`
+- 基于余弦相似度计算项目间相似度
+
+### 3. 层次聚类
+
+基于Embedding相似度进行全局层次聚类：
+- 初始状态：每个项目为一个簇
+- 迭代合并：Embedding相似度最高的两个簇合并
+- 停止条件：相似度低于阈值或达到组大小约束
+- 最终形成初始分组
+
+### 4. 同主题识别
+
+Embedding相似度高的项目聚在一组，即使学科代码不同：
+
+示例：
+- 项目A（代码F0202）：关键词`深度学习；图像识别` → 分到"深度学习应用组"
+- 项目B（代码B0103）：关键词`深度学习；医学影像` → 同组（主题相似）
+- 项目C（代码F0202）：关键词`网络安全；加密算法` → 分到"网络安全组"（主题不同）
+
+### 5. 过大组拆分
+
+对于超过 `max_per_group` 的组：
+- 基于Embedding重新进行层次聚类
+- 优先按语义切分成多个子主题
+- 每个子主题保持内部Embedding相似度高
+
+### 6. 过小组合并
+
+对于小于 `min_per_group` 的组，采用“**Embedding 召回 + 整轮统一决策**”的小组合并策略。该阶段不推翻前半段聚类，只负责把过碎的小组合理并回去。
+
+#### 合并原则
+- **前半段不动**：Embedding、初始层次聚类、过大组拆分仍然保留。
+- **整轮统一决策**：不是一个组一个组串行贪心，而是每轮先把全部小组的候选目标收集完，再统一选择本轮要执行的合并。
+- **同代码不直并**：`code_a == code_b` 也不能直接合并，仍需通过语义一致性判断。
+- **代码不同必须 LLM**：`code_a != code_b` 时必须做 LLM 校验。
+- **容量分阶段放开**：前几轮先用 `soft_cap`，后几轮再放开到 `hard_cap=max_per_group`。
+- **门槛动态化**：不再只看全局固定阈值，而是结合每个小组自己的候选分布动态决定是否值得合并。
+
+#### 候选打分
+每条“小组 -> 目标组”候选边综合以下因素：
+- `text_sim`：组中心 Embedding 语义相似度，仍是主因子。
+- `keyword_overlap`：关键词重合度，用来补足标题和简介短文本不足。
+- `subject_distance`：学科距离，只作为辅助先验，不再主导结果。
+- `size_fit_bonus`：合并后若更接近目标组规模区间，则加分。
+- `capacity_penalty`：目标组越接近当前上限，惩罚越大。
+
+#### 合并流程
+1. **生成候选**：为每个过小组召回一批潜在目标组，候选数可配置，不再写死成固定的极小值。
+2. **动态筛选**：结合每个小组自己的候选分布，过滤掉明显不值得合并的候选边。
+3. **统一校验**：
+   - `code_a == code_b`：先做语义一致性判断，低置信时再送 LLM。
+   - `code_a != code_b`：必须做 LLM 校验。
+4. **整轮决策**：在容量约束下，一次性选出本轮最合适的一批合并关系，避免局部贪心。
+5. **批量提交**：统一执行本轮合并，再进入下一轮。
+
+#### 容量策略
+- `hard_cap = max_per_group`
+- `soft_cap = floor(max_per_group * reserve_ratio)`
+- 前 `reserve_rounds` 轮使用 `soft_cap`
+- 之后放开到 `hard_cap`
+
+#### 迭代控制
+- 无可执行合并时停止
+- 连续若干轮小组数不下降时停止
+- 到达最大轮数时停止
+- 输出剩余未合并小组及其候选失败原因，供人工复核
+
+---
+
+## 结果要求
+
+每个组至少输出：
+- `group_name`
+- `group_reason`
+- `count`
+- `needs_review`
+- 组内每个项目的 `project_reason`
+- 每个项目的 `confidence`
+
+最终结果要能支持：
+- 人工查看
+- 追溯为什么这样分
+- 重新运行时结果稳定
+
+---
+
+## 伪代码（关键词Embedding主导分组）
+
+```python
+projects = load_fixed_grouping_test_projects()
+
+# 1. 构造文本并计算全局Embedding
+vector_map = {}
+for project in projects:
+    text = construct_text(project)  # 关键词+标题主导，简介补充，学科弱提示
+    vector_map[project.id] = compute_embedding(text)
+
+# 2. 基于Embedding相似度进行全局层次聚类
+similarity_matrix = compute_cosine_similarity(vector_map)
+clusters = hierarchical_cluster(projects, similarity_matrix, threshold=0.7)
+
+# 3. 处理过大组（基于Embedding重新聚类拆分）
+clusters = split_large_groups(clusters, max_per_group, vector_map)
+
+# 4. 处理过小组合并（整轮统一决策）
+# - 为每个过小组召回一批候选目标组
+# - 同代码也要做语义一致性判断
+# - 学科代码不同（code_a != code_b）时必须使用LLM验证
+# - 前几轮使用soft_cap给后续合并留容量空间
+# - 每轮统一决策并批量提交，不再串行贪心
+clusters = merge_small_clusters_by_embedding(clusters, min_per_group, max_per_group, vector_map)
+
+return export_result(clusters)
+```
+
+---
+
+## 约束参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `max_per_group` | 15 | 每组目标项目数 |
-| `split_threshold` | 30 | 超过此数量则拆分该学科 |
-| `quality_weights` | 1:1:1 | 创新性:技术难度:应用价值 |
-| `quantity_tolerance` | 3 | 数量差异容忍 |
-| `quality_tolerance` | 0.1 | 质量差异容忍 (10%) |
-| `llm_concurrency` | 10 | LLM 并发数 |
+| `min_per_group` | 5 | 小组下限，低于则合并 |
+| `max_per_group` | 15 | 每组上限，超过则拆分 |
+| `embedding_threshold` | 0.7 | Embedding相似度阈值（低于不聚类） |
+| `merge_candidate_limit` | 配置项 | 每个过小组保留的候选目标组数 |
+| `confidence_threshold` | 0.65 | 低于该值标记复核 |
+| `enable_embedding` | true | 启用Embedding计算（关键词主导） |
+| `enable_llm` | false | 是否启用LLM（当前用规则生成标题） |
+| `use_llm_validation` | false | 是否启用LLM验证（代码不同时触发） |
+| `merge_min_total_score` | 配置项 | 小组合并总分阈值（可配置） |
+| `merge_min_text_score` | 配置项 | 小组合并语义分阈值（可配置） |
+| `merge_reserve_ratio` | 配置项 | 前几轮使用软上限的容量比例 |
+| `merge_reserve_rounds` | 配置项 | 软上限生效轮数 |
+| `max_iterations` | 20 | 小组合并最大迭代次数 |
+| `llm_validation_timeout` | 30 | LLM验证超时时间（秒） |
 
 ---
 
-## 性能优化
+## 运行建议
 
-### 5000+ 项目处理预估
-
-| 步骤 | 时间 |
-|------|------|
-| 获取项目 + 学科 | ~5秒 |
-| 学科分组统计 | ~1秒 |
-| 质量评估 (LLM并发10) | ~10分钟 (5000项目) |
-| 均衡分配算法 | ~1秒 |
-| **总计** | **~10分钟** |
-
-### 优化策略
-
-1. **质量分数缓存**: 评估过的项目结果缓存，避免重复评估
-2. **LLM 并发**: 控制并发数，避免 API 限流
-3. **超时处理**: 单项目评估超时跳过，使用默认分
-
----
-
-## 核心代码结构
-
-### GroupingAgent (重构后)
-
-```python
-class GroupingAgent:
-    """分组 Agent"""
-    
-    def __init__(self, llm=None):
-        self.llm = llm or get_default_llm_client()
-        self.quality_cache = {}  # 质量分数缓存
-    
-    async def group_projects(
-        self,
-        projects: List[Project],
-        target_groups: int = 15
-    ) -> GroupingResult:
-        """执行项目分组"""
-        
-        # 1. 按三级学科初步分组
-        subject_groups = self._group_by_subject(projects)
-        
-        # 2. 处理每个学科
-        final_groups = []
-        
-        for subject_code, subject_projects in subject_groups.items():
-            if len(subject_projects) <= 30:
-                # 数量≤30，直接保留
-                final_groups.append(subject_projects)
-            else:
-                # 数量>30，质量均衡分配
-                # 2.1 评估质量
-                quality_scores = await self._assess_quality(subject_projects)
-                # 2.2 均衡分配
-                split_groups = self._balanced_distribute(
-                    subject_projects, 
-                    quality_scores,
-                    len(subject_projects) // 30 + 1
-                )
-                final_groups.extend(split_groups)
-        
-        # 3. 合并并返回结果
-        return self._merge_groups(final_groups, target_groups)
-```
-
----
-
-## 输出结果
-
-### 分组结果示例
-
-```json
-{
-  "groups": [
-    {
-      "group_id": 1,
-      "subject_code": "0101",
-      "subject_name": "计算机软件与理论",
-      "projects": [
-        {"id": "p1", "xmmc": "项目A", "quality_score": 85.0},
-        {"id": "p2", "xmmc": "项目B", "quality_score": 78.3}
-      ],
-      "statistics": {
-        "count": 28,
-        "avg_quality": 81.5,
-        "max_quality": 95.0,
-        "min_quality": 65.0
-      }
-    }
-  ],
-  "statistics": {
-    "total_groups": 15,
-    "total_projects": 5000,
-    "avg_projects_per_group": 333.3,
-    "avg_quality_per_group": 75.0
-  }
-}
-```
+- **核心依据**：项目关键词（`gjc` 字段）主导Embedding计算
+- 构造文本时优先保留关键词和标题中的具体领域词，避免摘要泛词主导向量
+- 所有项目先计算全局Embedding，建立语义空间
+- 基于Embedding相似度进行全局层次聚类
+- 关键词为空时从项目名提取作为fallback
+- 组标题优先用高频关键词+学科名称规则生成
+- 所有低置信度项目都要保留复核信息
 
 ---
 
 ## 相关文档
 
-- [服务概述 →](01-overview.md)
-- [专家匹配子服务 →](03-matching.md)
-- [数据模型 →](04-models.md)
-- [API 接口 →](05-api.md)
+- [智能分组与专家匹配服务概述](01-overview.md)
+- [数据模型](04-models.md)
+- [API 接口文档](05-api.md)

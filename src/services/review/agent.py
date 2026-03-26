@@ -153,6 +153,23 @@ class ReviewAgent:
         print(f"[REVIEW] 处理完成，总耗时: {result.processing_time:.2f}s", flush=True)
         return result
 
+    def _compress_image_for_llm(self, img_data: bytes, max_size: int = 2000000) -> bytes:
+        """压缩图片到合理大小，避免超过 LLM 10MB 限制"""
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(img_data))
+            max_dim = 2048
+            if max(img.size) > max_dim:
+                ratio = max_dim / max(img.size)
+                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=85, optimize=True)
+            return buf.getvalue()
+        except Exception:
+            return img_data
+
     async def _analyze_image_with_timeout(
         self,
         multi_llm: MultimodalLLM,
@@ -162,6 +179,8 @@ class ReviewAgent:
         timeout_sec: Optional[int] = None,
     ) -> str:
         """统一的多模态调用封装：带超时和步骤日志。"""
+        # 压缩图片避免超过 LLM 10MB 限制
+        image_data = self._compress_image_for_llm(image_data)
         timeout = timeout_sec or int(os.getenv("LLM_STEP_TIMEOUT", "45"))
         logger.info(f"[LLM] {stage} 开始 (timeout={timeout}s)")
         print(f"[LLM] {stage} 开始", flush=True)
@@ -480,7 +499,7 @@ class ReviewAgent:
 字段名: x1,y1,x2,y2 （归一化坐标0-1）"""
 
             locate_result = await self._analyze_image_with_timeout(
-                multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
+                    multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
             )
             
             # 解析坐标
@@ -504,7 +523,6 @@ class ReviewAgent:
             )
             
             logger.info("[LLM] 表格提取完成")
-            
         except Exception as e:
             logger.error(f"[LLM] 表格提取失败: {e}")
             fields_llm = {"error": str(e)}
@@ -513,7 +531,15 @@ class ReviewAgent:
         from src.common.extractors import StampExtractor
         stamp_extractor = StampExtractor()
         stamps_result = await stamp_extractor.extract(file_data)
-        stamps_desc = stamps_result if stamps_result else "未检测到印章"
+        
+        # stamps_result 是结构化数据，stamps_desc 是用于展示的描述文本
+        if stamps_result and stamps_result.get("stamps"):
+            stamps_desc = " ".join([
+                f"印章{i+1}: {s.get('unit', '未知单位')}" 
+                for i, s in enumerate(stamps_result.get("stamps", []))
+            ])
+        else:
+            stamps_desc = "未检测到印章"
         
         # 4. 使用 SignatureExtractor 提取签字
         from src.common.extractors import SignatureExtractor
@@ -524,7 +550,8 @@ class ReviewAgent:
         return {
             "document_type_llm": doc_type_llm.strip(),
             "extracted_fields": fields_llm,
-            "stamps_description": str(stamps_desc) if stamps_desc else "未检测到印章",
+            "stamps_description": stamps_desc,
+            "stamps_result": stamps_result,  # 结构化印章数据
             "signatures_description": str(sigs_desc) if sigs_desc else "未检测到签字",
         }
     

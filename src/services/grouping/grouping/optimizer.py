@@ -12,7 +12,6 @@ from src.common.models.grouping import (
     GroupingStrategy,
     ProjectGroup,
     ProjectInGroup,
-    ProjectQuality,
 )
 
 
@@ -25,7 +24,7 @@ class GroupOptimizer:
     def optimize(
         self,
         cluster_labels: np.ndarray,
-        quality_scores: Dict[str, float],
+        semantic_scores: Dict[str, float],
         projects: List[Dict],
         strategy: GroupingStrategy = GroupingStrategy.BALANCED
     ) -> List[ProjectGroup]:
@@ -33,7 +32,7 @@ class GroupOptimizer:
         
         Args:
             cluster_labels: 聚类标签
-            quality_scores: 项目ID -> 质量得分
+            semantic_scores: 项目ID -> 语义得分
             projects: 项目列表
             strategy: 分组策略
         
@@ -44,7 +43,7 @@ class GroupOptimizer:
         
         # 构建初始分组
         groups = self._build_initial_groups(
-            cluster_labels, quality_scores, projects, n_clusters
+            cluster_labels, semantic_scores, projects, n_clusters
         )
         
         # 根据策略优化
@@ -62,7 +61,7 @@ class GroupOptimizer:
     def _build_initial_groups(
         self,
         cluster_labels: np.ndarray,
-        quality_scores: Dict[str, float],
+        semantic_scores: Dict[str, float],
         projects: List[Dict],
         n_clusters: int
     ) -> List[ProjectGroup]:
@@ -70,7 +69,7 @@ class GroupOptimizer:
         
         Args:
             cluster_labels: 聚类标签
-            quality_scores: 质量得分
+            semantic_scores: 语义得分
             projects: 项目列表
             n_clusters: 分组数
         
@@ -86,18 +85,18 @@ class GroupOptimizer:
                 if label == cluster_id:
                     project = projects[i]
                     project_id = project.get("id", f"proj_{i}")
-                    quality = quality_scores.get(project_id, 75.0)
+                    semantic = semantic_scores.get(project_id, 75.0)
                     
                     cluster_projects.append(ProjectInGroup(
                         project_id=project_id,
                         xmmc=project.get("xmmc", ""),
-                        quality_score=quality,
+                        semantic_score=semantic,
                         reason="基于内容聚类"
                     ))
             
             # 计算分组摘要
             if cluster_projects:
-                avg_score = sum(p.quality_score for p in cluster_projects) / len(cluster_projects)
+                avg_score = sum(p.semantic_score for p in cluster_projects) / len(cluster_projects)
                 summary = GroupSummary(
                     count=len(cluster_projects),
                     avg_score=avg_score,
@@ -155,7 +154,7 @@ class GroupOptimizer:
                 all_projects.append(p)
         
         # 按质量排序
-        all_projects.sort(key=lambda x: x.quality_score, reverse=True)
+        all_projects.sort(key=lambda x: x.semantic_score, reverse=True)
         
         # 交错分配到各组
         n_groups = len(groups)
@@ -166,7 +165,7 @@ class GroupOptimizer:
         # 重新计算摘要
         for group in groups:
             if group.projects:
-                scores = [p.quality_score for p in group.projects]
+                scores = [p.semantic_score for p in group.projects]
                 group.summary = GroupSummary(
                     count=len(group.projects),
                     avg_score=sum(scores) / len(scores),
