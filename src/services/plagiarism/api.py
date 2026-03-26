@@ -61,7 +61,10 @@ async def check_plagiarism(
         file_data_list.append((doc_id, content))
         
         # 保存临时文件用于 mammoth 转换
-        temp_file = tempfile.NamedTemporaryFile(suffix='.docx', delete=False)
+        suffix = ""
+        if f.filename and "." in f.filename:
+            suffix = "." + f.filename.rsplit(".", 1)[-1].lower()
+        temp_file = tempfile.NamedTemporaryFile(suffix=suffix or ".tmp", delete=False)
         temp_file.write(content)
         temp_file.close()
         file_paths[doc_id] = temp_file.name

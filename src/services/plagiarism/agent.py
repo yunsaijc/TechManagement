@@ -289,16 +289,17 @@ class PlagiarismAgent:
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
 
-        # 生成普通文本版报告
-        html_filename = debug_dir / "plagiarism_report.html"
-        self.report_builder.build_from_debug_file(filename, html_filename)
-
         # 生成 mammoth 版报告（保留Word格式，包括表格）
         mammoth_html_filename = debug_dir / "plagiarism_report_mammoth.html"
-        primary_path = self._file_paths.get(primary_doc_id) if hasattr(self, '_file_paths') else None
+        def _is_docx(doc_id: str) -> bool:
+            return doc_id.lower().endswith(".docx")
+
+        primary_path = None
+        if hasattr(self, "_file_paths") and _is_docx(primary_doc_id):
+            primary_path = self._file_paths.get(primary_doc_id)
         source_path = None
         for doc_id in doc_ids:
-            if doc_id != primary_doc_id and doc_id in (self._file_paths or {}):
+            if doc_id != primary_doc_id and _is_docx(doc_id) and doc_id in (self._file_paths or {}):
                 source_path = self._file_paths[doc_id]
                 break
         
@@ -314,4 +315,3 @@ class PlagiarismAgent:
             print(f"[Plagiarism] Debug: Mammoth报告生成失败: {e}")
 
         print(f"[Plagiarism] Debug: 保存查重详情到 {filename}")
-        print(f"[Plagiarism] Debug: 保存HTML报告到 {html_filename}")

@@ -41,7 +41,7 @@ class ResultAggregator:
     MAX_TEMPLATE_RATIO = 0.7
     MIN_SOURCE_COVERAGE = 0.8
     MIN_LEXICAL_SIMILARITY = 0.20  # 降低阈值，n-gram匹配已经验证过相似性
-    MIN_COMMON_SUBSTRING_RATIO = 0.10  # 降低阈值，允许更多变体匹配
+    MIN_COMMON_SUBSTRING_RATIO = 0.04  # 允许改写场景（同义替换）通过
     MIN_MATCHED_CONTENT_RATIO = 0.30   # 降低阈值，允许更多变体匹配
 
 
@@ -70,6 +70,11 @@ class ResultAggregator:
                 merged.append(current)
                 continue
 
+            # 改写补全片段不做跨句拼接，避免误扩成超长段
+            if "paraphrase" in {getattr(last, "match_type", "exact"), getattr(current, "match_type", "exact")}:
+                merged.append(current)
+                continue
+
             gap_primary = current.start_pos - last.end_pos
             gap_source = current.source_start - last.source_end
 
@@ -87,6 +92,9 @@ class ResultAggregator:
                         ((last.ngram_count + current.ngram_count) * 1.0) / max(max(last.end_pos, current.end_pos) - min(last.start_pos, current.start_pos), 1),
                         1.0,
                     ),
+                    match_type="paraphrase" if ("paraphrase" in {last.match_type, current.match_type}) else "exact",
+                    confidence=max(last.confidence, current.confidence),
+                    parent_match_id=last.parent_match_id or current.parent_match_id,
                 )
             else:
                 merged.append(current)
@@ -171,6 +179,8 @@ class ResultAggregator:
             template_segments = self._merge_adjacent_matches(template_segments)
 
             effective_segments, rejected_segments = self._filter_low_quality_segments(effective_segments)
+            rescued_segments, rejected_segments = self._rescue_high_similarity_segments(rejected_segments)
+            effective_segments.extend(rescued_segments)
             # 将被拒绝的片段标记为低质量，而不是模板
             for seg in rejected_segments:
                 seg.is_low_quality = True
@@ -301,6 +311,26 @@ class ResultAggregator:
             kept.append(seg)
         return kept, rejected
 
+    def _rescue_high_similarity_segments(self, rejected: List[Match]) -> Tuple[List[Match], List[Match]]:
+        """从被拒绝片段中挽救“长文本+高相似”的改写段。"""
+        rescued: List[Match] = []
+        still_rejected: List[Match] = []
+        for seg in rejected:
+            if len(seg.text or "") < 220:
+                still_rejected.append(seg)
+                continue
+            source_text = (seg.source_text or "").strip()
+            if not source_text:
+                still_rejected.append(seg)
+                continue
+            lexical = self._lexical_ratio(seg.text, source_text)
+            matched = self._matched_content_ratio(seg.text, source_text)
+            if lexical >= 0.55 and matched >= 0.50:
+                rescued.append(seg)
+                continue
+            still_rejected.append(seg)
+        return rescued, still_rejected
+
     def _source_coverage_ratio(self, segments: List[Match]) -> float:
         if not segments:
             return 0.0
@@ -396,6 +426,8 @@ class ResultAggregator:
             template_reason = None
             if template_filter:
                 template_reason = template_filter.get_template_reason(match.text)
+                if template_reason is None and template_filter.is_template(match.text):
+                    template_reason = "template"
             
             # 检查是否是低质量片段（被拒绝的匹配）
             is_low_quality = getattr(match, 'is_low_quality', False)
@@ -418,6 +450,9 @@ class ResultAggregator:
                 "char_count": len(match.text),
                 "ngram_count": match.ngram_count,
                 "similarity_score": round(match.similarity_score, 4) if match.similarity_score else 0,
+                "match_type": getattr(match, "match_type", "exact"),
+                "confidence": round(getattr(match, "confidence", 1.0), 4),
+                "parent_match_id": getattr(match, "parent_match_id", None),
                 "is_template": template_reason is not None,
                 "template_reason": template_reason,
             })
@@ -640,6 +675,8 @@ class ResultAggregator:
             raw_template_segments = self._merge_adjacent_matches(raw_template_segments)
 
             pair_effective_segments, rejected_segments = self._filter_low_quality_segments(raw_effective_segments)
+            rescued_segments, rejected_segments = self._rescue_high_similarity_segments(rejected_segments)
+            pair_effective_segments.extend(rescued_segments)
             pair_template_segments = raw_template_segments + rejected_segments
 
             pair_effective_chars = sum(len(m.text) for m in pair_effective_segments)
@@ -684,6 +721,12 @@ class ResultAggregator:
 
             total_effective_chars += pair_effective_chars
             total_template_chars += pair_template_chars
+
+        for idx, seg in enumerate(effective_segments, start=1):
+            seg["match_id"] = f"m{idx:03d}"
+
+        for idx, seg in enumerate(template_segments, start=1):
+            seg["match_id"] = f"t{idx:03d}"
 
         output["duplicate_segments"] = effective_segments
         output["template_segments"] = template_segments

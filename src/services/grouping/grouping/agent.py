@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import math
 import os
@@ -48,6 +49,16 @@ from src.common.database import get_xkfl_repo
 
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _clean_html_text(text: Optional[str]) -> str:
@@ -185,6 +196,8 @@ class GroupingAgent:
         min_per_group: int = 5,
         concurrency: int = 10,
         use_llm_validation: bool = False,  # 默认禁用LLM验证以提高速度
+        merge_min_total_score: Optional[float] = None,
+        merge_min_text_score: Optional[float] = None,
     ):
         self.llm = llm or get_default_llm_client()
         self.embedder = embedder or get_default_embedding_client()
@@ -192,6 +205,16 @@ class GroupingAgent:
         self.min_per_group = min_per_group
         self.concurrency = concurrency
         self.use_llm_validation = use_llm_validation
+        self.merge_min_total_score = (
+            merge_min_total_score
+            if merge_min_total_score is not None
+            else _env_float("GROUPING_MERGE_MIN_TOTAL_SCORE", 0.62)
+        )
+        self.merge_min_text_score = (
+            merge_min_text_score
+            if merge_min_text_score is not None
+            else _env_float("GROUPING_MERGE_MIN_TEXT_SCORE", 0.45)
+        )
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
@@ -202,13 +225,18 @@ class GroupingAgent:
         import json
         from pathlib import Path
         
-        cache_file = Path(__file__).parent.parent.parent.parent / "debug_grouping" / "llm_validation_cache.json"
+        # 路径: tech/debug_grouping/llm_validation_cache.json
+        cache_file = Path(__file__).parent.parent.parent.parent.parent / "debug_grouping" / "llm_validation_cache.json"
         if cache_file.exists():
             try:
                 with open(cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    cache = json.load(f)
+                print(f"[缓存] 加载LLM验证缓存: {len(cache)} 条记录")
+                return cache
             except Exception as e:
                 print(f"[缓存] 加载LLM验证缓存失败: {e}")
+        else:
+            print(f"[缓存] 缓存文件不存在，创建新缓存")
         return {}
     
     def _save_llm_validation_cache(self):
@@ -216,13 +244,15 @@ class GroupingAgent:
         import json
         from pathlib import Path
         
-        cache_dir = Path(__file__).parent.parent.parent.parent / "debug_grouping"
+        # 路径: tech/debug_grouping/llm_validation_cache.json
+        cache_dir = Path(__file__).parent.parent.parent.parent.parent / "debug_grouping"
         cache_dir.mkdir(exist_ok=True)
         cache_file = cache_dir / "llm_validation_cache.json"
         
         try:
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self._llm_validation_cache, f, ensure_ascii=False, indent=2)
+            print(f"[缓存] 已保存 {len(self._llm_validation_cache)} 条LLM验证记录")
         except Exception as e:
             print(f"[缓存] 保存LLM验证缓存失败: {e}")
 
@@ -323,15 +353,22 @@ class GroupingAgent:
         if not self._is_same_discipline_category(a, b):
             return 0.0
 
+        # 同三级学科优先给高分；仅同一级大类则低分，避免细分方向误并
+        third_a = self._get_third_level_code(a)
+        third_b = self._get_third_level_code(b)
+        if third_a and third_a == third_b:
+            return 0.9
+
         prefixes_a = self._subject_prefixes(a)
         prefixes_b = self._subject_prefixes(b)
         common = [p for p in prefixes_a if p in prefixes_b]
         if not common:
-            return 0.0
+            return 0.2
 
         longest = max(len(item) for item in common)
-        max_len = max(len(a), len(b), 1)
-        return min(0.95, 0.35 + 0.6 * (longest / max_len))
+        if longest >= 3:
+            return 0.55
+        return 0.2
 
     def _subject_group_key(self, project: Project) -> str:
         code = (project.ssxk1 or project.ssxk2 or "unknown").strip()
@@ -592,8 +629,7 @@ class GroupingAgent:
                 center = np.mean(cluster_vectors, axis=0) if cluster_vectors else None
                 code_a = cluster[0].ssxk1 or cluster[0].ssxk2 or ""
                 
-                best_idx = None
-                best_score = -1.0
+                candidates: List[Tuple[float, int, float, float, str]] = []
                 
                 for other_idx, other in enumerate(clusters):
                     if other_idx == idx or not other:
@@ -612,16 +648,38 @@ class GroupingAgent:
                         text_score = _cosine_similarity(center, other_center)
                     
                     total_score = 0.75 * subject_score + 0.25 * text_score
-                    if total_score > best_score:
-                        best_score = total_score
-                        best_idx = other_idx
-                
-                if best_idx is not None:
-                    # TODO: 如果学科不同，可以用LLM验证是否应该合并
+                    candidates.append((total_score, other_idx, text_score, subject_score, code_b))
+
+                if not candidates:
+                    continue
+
+                candidates.sort(key=lambda item: item[0], reverse=True)
+                merged = False
+
+                for total_score, best_idx, text_score, subject_score, code_b in candidates:
+                    if (
+                        total_score < self.merge_min_total_score
+                        or text_score < self.merge_min_text_score
+                    ):
+                        continue
+
+                    if code_a != code_b:
+                        ok = await self._llm_validate_merge(cluster, clusters[best_idx], code_a, code_b)
+                        if not ok:
+                            print(f"  [合并拒绝] 组{idx+1} -> 组{best_idx+1}，代码{code_a}!={code_b}，LLM拒绝")
+                            continue
+
                     clusters[best_idx].extend(cluster)
                     clusters[idx] = []
                     changed = True
-                    print(f"  [合并] 将组{idx+1}({len(cluster)}个项目)合并到组{best_idx+1}")
+                    merged = True
+                    print(
+                        f"  [合并] 将组{idx+1}({len(cluster)}个项目)合并到组{best_idx+1} "
+                        f"(score={total_score:.3f}, text={text_score:.3f}, subject={subject_score:.3f})"
+                    )
+                    break
+
+                if merged:
                     break
         
         return [c for c in clusters if c]
@@ -903,6 +961,10 @@ class GroupingAgent:
     async def group_projects(self, request: GroupingRequest) -> GroupingResult:
         start_time = time.time()
         self.max_per_group = request.max_per_group
+        if request.merge_min_total_score is not None:
+            self.merge_min_total_score = request.merge_min_total_score
+        if request.merge_min_text_score is not None:
+            self.merge_min_text_score = request.merge_min_text_score
 
         projects = self.project_repo.get_grouping_test_projects(category=request.category)
         if not projects:
@@ -968,6 +1030,8 @@ class GroupingAgent:
             "input": {
                 "category": request.category,
                 "max_per_group": request.max_per_group,
+                "merge_min_total_score": self.merge_min_total_score,
+                "merge_min_text_score": self.merge_min_text_score,
             },
         })
         if filename:
@@ -1287,9 +1351,9 @@ class GroupingAgent:
         self,
         clusters: List[List[Project]]
     ) -> List[List[Project]]:
-        """【学科大类约束】按学科大类拆分混合组
-        
-        将包含多个学科大类的组拆分成多个纯组
+        """按三级学科优先拆分混合组
+
+        先按三级学科代码（前5位）拆分，避免同大类内细分方向混杂。
         """
         result = []
         
@@ -1297,18 +1361,18 @@ class GroupingAgent:
             if not cluster:
                 continue
             
-            # 按学科大类分组
+            # 按三级学科分组
             category_groups: Dict[str, List[Project]] = {}
             for project in cluster:
                 code = project.ssxk1 or project.ssxk2 or ""
-                cat = self._get_first_level_category(code)
+                cat = self._get_third_level_code(code)
                 if not cat:
                     cat = "unknown"
                 if cat not in category_groups:
                     category_groups[cat] = []
                 category_groups[cat].append(project)
             
-            # 如果只有一个大类，保持原组
+            # 如果只有一个三级代码，保持原组
             if len(category_groups) <= 1:
                 result.append(cluster)
             else:
@@ -1316,7 +1380,7 @@ class GroupingAgent:
                 for cat, projects in category_groups.items():
                     if projects:
                         result.append(projects)
-                        print(f"  [学科拆分] 拆出 {cat} 类组，{len(projects)} 个项目")
+                        print(f"  [学科拆分] 拆出 {cat} 组，{len(projects)} 个项目")
         
         return result
     
@@ -1625,9 +1689,11 @@ class GroupingAgent:
         if code_a == code_b:
             return True
 
-        # 检查缓存（基于学科代码对，不依赖具体项目）
-        cache_key = f"{code_a}:{code_b}"
-        reverse_key = f"{code_b}:{code_a}"
+        # 检查缓存（学科代码 + 代表项目上下文）
+        context_a = self._validation_context_hash(cluster_a)
+        context_b = self._validation_context_hash(cluster_b)
+        cache_key = f"{code_a}:{code_b}:{context_a}:{context_b}"
+        reverse_key = f"{code_b}:{code_a}:{context_b}:{context_a}"
         if cache_key in self._llm_validation_cache:
             return self._llm_validation_cache[cache_key]
         if reverse_key in self._llm_validation_cache:
@@ -1710,6 +1776,16 @@ class GroupingAgent:
         except Exception as e:
             print(f"[LLM验证] 调用失败: {e}，默认不允许合并")
             return False
+
+    def _validation_context_hash(self, cluster: List[Project]) -> str:
+        tokens: List[str] = []
+        for project in cluster[:3]:
+            code = project.ssxk1 or project.ssxk2 or ""
+            third = self._get_third_level_code(code)
+            keywords = ",".join(_parse_keywords_to_list(project.gjc)[:5])
+            tokens.append(f"{third}|{(project.xmmc or '')[:60]}|{keywords}")
+        raw = "||".join(tokens)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
     def _get_third_level_code(self, code: str) -> str:
         """获取三级学科代码（前5位）"""

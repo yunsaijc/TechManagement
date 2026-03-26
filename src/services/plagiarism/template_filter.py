@@ -43,6 +43,7 @@ class TemplateFilter:
 
     # 表格正文的最小长度阈值（包含表格标记）
     TABLE_CONTENT_MIN_LENGTH = 50
+    TABLE_MARKER_MIN_COUNT = 2
 
     # 短句过滤阈值
     MIN_SENTENCE_LENGTH = 15
@@ -157,6 +158,13 @@ class TemplateFilter:
         2. 如果文本包含表格标记但有足够的正文内容，保留参与查重
         """
         has_table_marker = '[表格行' in text
+        table_marker_count = text.count('[表格行')
+        pipe_count = text.count('|')
+
+        # 明显的表格骨架文本：多行表格标记 + 多列分隔符
+        # 这类内容即使字符较长，也更接近模板结构而非正文。
+        if table_marker_count >= self.TABLE_MARKER_MIN_COUNT and pipe_count >= 4:
+            return True
 
         if not has_table_marker:
             # 检查其他表格模式
@@ -167,7 +175,7 @@ class TemplateFilter:
 
         # 包含表格标记，判断是否只是结构内容
         # 如果文本长度超过阈值，认为是包含正文的表格内容，保留
-        if len(text) >= self.TABLE_CONTENT_MIN_LENGTH:
+        if len(text) >= self.TABLE_CONTENT_MIN_LENGTH and pipe_count <= 2:
             return False
 
         # 短文本，检查是否是纯表格结构
@@ -194,6 +202,8 @@ class TemplateFilter:
         if self._is_table_related(text):
             return True
         if self._is_template(text):
+            return True
+        if self._is_number_only(text):
             return True
         return False
 

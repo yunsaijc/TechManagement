@@ -33,6 +33,9 @@ class Match:
     source_end: int  # 在来源文档中的结束位置
     source_text: str = ""  # 来源文档的匹配文本
     similarity_score: float = 0.0  # 片段相似度分数（0-1）
+    match_type: str = "exact"  # exact / paraphrase
+    confidence: float = 1.0
+    parent_match_id: Optional[str] = None
 
 
 @dataclass
@@ -66,6 +69,7 @@ class ComparisonEngine:
         ngram_size: int = 8,
         winnowing_window: int = 8,
         min_match_length: int = 30,
+        max_fingerprint_frequency: int = 200,
     ):
         """
         初始化比对引擎
@@ -75,11 +79,15 @@ class ComparisonEngine:
             ngram_size: N-gram 大小
             winnowing_window: Winnowing 窗口大小
             min_match_length: 最小匹配长度（字符数），小于此长度的匹配会被过滤
+            max_fingerprint_frequency: 单文档内同一指纹最大保留次数（抑制高频噪声）
         """
         self.min_continuous_match = min_continuous_match
         self.ngram_size = ngram_size
         self.winnowing_window = winnowing_window
         self.min_match_length = min_match_length
+        self.max_fingerprint_frequency = max_fingerprint_frequency
+        self.sentence_expand_window = 6
+        self.sentence_similarity_threshold = 0.40
 
     def compare(
         self,
@@ -156,6 +164,13 @@ class ComparisonEngine:
                     doc_b,
                     doc_texts,
                 )
+                matches = self._expand_matches_by_sentence_similarity(
+                    matches,
+                    docs.get(doc_a, []),
+                    docs.get(doc_b, []),
+                    text_a,
+                    text_b,
+                )
                 
                 # 计算相似度
                 total_chars = len(doc_texts[doc_a])
@@ -226,58 +241,96 @@ class ComparisonEngine:
         """
         ngrams_a = doc_ngrams[doc_a]
         ngrams_b = doc_ngrams[doc_b]
-        
+
         # 构建 doc_b 的指纹到 N-gram 下标映射
         fp_to_indices_b: Dict[int, List[int]] = defaultdict(list)
         for idx_b, ng in enumerate(ngrams_b):
             fp = self._generate_fingerprint(ng.text)
             fp_to_indices_b[fp].append(idx_b)
-        
-        # 查找所有匹配的指纹位置对
-        matched_positions: List[Tuple[int, int]] = []  # [(idx_a, idx_b), ...]
-        last_idx_b = -1
-        
-        for i, ng in enumerate(ngrams_a):
-            fp = self._generate_fingerprint(ng.text)
-            
-            # 检查位置是否在排除区间内
-            if self._is_position_excluded(ng.position, excluded_a):
+
+        # 生成候选匹配对：
+        # 1) 不再用“单一路径贪心”选 idx_b，避免漏检
+        # 2) 对高频指纹限流，抑制模板噪声导致的误连
+        matched_positions: List[Tuple[int, int]] = []
+        for idx_a, ng_a in enumerate(ngrams_a):
+            if self._is_position_excluded(ng_a.position, excluded_a):
                 continue
-            
-            if fp in fp_to_indices_b and doc_b in fingerprint_index.get(fp, {}):
-                selected_idx_b = None
 
-                for idx_b in fp_to_indices_b[fp]:
-                    # 检查 doc_b 的字符位置是否在排除区间内
-                    pos_b = ngrams_b[idx_b].position
-                    if self._is_position_excluded(pos_b, excluded_b):
-                        continue
+            fp = self._generate_fingerprint(ng_a.text)
+            if doc_b not in fingerprint_index.get(fp, {}):
+                continue
 
-                    if idx_b >= last_idx_b:
-                        selected_idx_b = idx_b
-                        break
+            idx_candidates = fp_to_indices_b.get(fp, [])
+            if not idx_candidates:
+                continue
 
-                    if selected_idx_b is None:
-                        selected_idx_b = idx_b
+            if len(idx_candidates) > self.max_fingerprint_frequency:
+                continue
 
-                if selected_idx_b is not None:
-                    matched_positions.append((i, selected_idx_b))
-                    last_idx_b = selected_idx_b
-        
-        # 使用滑动窗口检测连续匹配
-        continuous_ranges = self._winnowing_window(
-            matched_positions,
-            ngrams_a,
-            ngrams_b,
-            self.min_continuous_match,
-        )
+            for idx_b in idx_candidates:
+                pos_b = ngrams_b[idx_b].position
+                if self._is_position_excluded(pos_b, excluded_b):
+                    continue
+                matched_positions.append((idx_a, idx_b))
 
-        continuous_ranges = [
-            r
-            for r in continuous_ranges
-        ]
-        
-        return continuous_ranges
+        if not matched_positions:
+            return []
+
+        # 先按“对角线偏移”分桶，再做窗口连续性检测。
+        # 这样能显著减少跨段错连，并提升插入/删除场景的召回。
+        bucket_size = max(1, self.winnowing_window)
+        diagonal_buckets: Dict[int, List[Tuple[int, int]]] = defaultdict(list)
+        for idx_a, idx_b in matched_positions:
+            delta = idx_a - idx_b
+            bucket = delta // bucket_size
+            diagonal_buckets[bucket].append((idx_a, idx_b))
+
+        continuous_ranges: List[ContinuousMatch] = []
+        for pairs in diagonal_buckets.values():
+            ranges = self._winnowing_window(
+                pairs,
+                ngrams_a,
+                ngrams_b,
+                self.min_continuous_match,
+            )
+            continuous_ranges.extend(ranges)
+
+        if not continuous_ranges:
+            return []
+
+        continuous_ranges.sort(key=lambda r: (r.start_a, r.start_b, -r.match_count))
+        return self._dedupe_ranges(continuous_ranges)
+
+    def _dedupe_ranges(
+        self,
+        ranges: List[ContinuousMatch],
+    ) -> List[ContinuousMatch]:
+        """去除高度重叠的重复区间，保留更长、更稳定的匹配。"""
+        deduped: List[ContinuousMatch] = []
+        for current in ranges:
+            replaced = False
+            for i, kept in enumerate(deduped):
+                overlap_a = min(current.end_a, kept.end_a) - max(current.start_a, kept.start_a)
+                overlap_b = min(current.end_b, kept.end_b) - max(current.start_b, kept.start_b)
+                if overlap_a <= 0 or overlap_b <= 0:
+                    continue
+
+                len_cur = max(current.end_a - current.start_a, 1)
+                len_kept = max(kept.end_a - kept.start_a, 1)
+                overlap_ratio = overlap_a / min(len_cur, len_kept)
+                if overlap_ratio < 0.8:
+                    continue
+
+                if len_cur > len_kept or (
+                    len_cur == len_kept and current.match_count > kept.match_count
+                ):
+                    deduped[i] = current
+                replaced = True
+                break
+
+            if not replaced:
+                deduped.append(current)
+        return deduped
     
     def _winnowing_window(
         self,
@@ -638,6 +691,229 @@ class ComparisonEngine:
         if end > start:
             return text_b[start:end].replace('\n', ' ').strip()
         return ""
+
+    def _expand_matches_by_sentence_similarity(
+        self,
+        matches: List[Match],
+        sentences_a: List[Sentence],
+        sentences_b: List[Sentence],
+        text_a: str,
+        text_b: str,
+    ) -> List[Match]:
+        """在已有 exact 命中邻域做句级补全，改善改写场景边界。"""
+        if not matches or not sentences_a or not sentences_b:
+            return matches
+
+        expanded: List[Match] = []
+        for match in matches:
+            expanded.append(
+                self._expand_single_match_by_sentences(
+                    match,
+                    sentences_a,
+                    sentences_b,
+                    text_a,
+                    text_b,
+                )
+            )
+        return expanded
+
+    def _expand_single_match_by_sentences(
+        self,
+        match: Match,
+        sentences_a: List[Sentence],
+        sentences_b: List[Sentence],
+        text_a: str,
+        text_b: str,
+    ) -> Match:
+        anchor_a = self._sentence_index_range(sentences_a, match.start_pos, match.end_pos)
+        anchor_b = self._sentence_index_range(sentences_b, match.source_start, match.source_end)
+        if anchor_a is None or anchor_b is None:
+            return match
+
+        a_start, a_end = anchor_a
+        b_start, b_end = anchor_b
+        anchor_text_a = " ".join(s.text for s in sentences_a[a_start:a_end + 1])
+        anchor_text_b = " ".join(s.text for s in sentences_b[b_start:b_end + 1])
+        if not self._is_narrative_sentence(anchor_text_a) or not self._is_narrative_sentence(anchor_text_b):
+            return match
+
+        new_a_start, new_a_end = a_start, a_end
+        new_b_start, new_b_end = b_start, b_end
+        anchor_delta = ((a_start + a_end) // 2) - ((b_start + b_end) // 2)
+        step_scores: List[float] = []
+
+        # 向左扩展：仅允许邻接句配对，避免跨段误连
+        left_steps = 0
+        while left_steps < self.sentence_expand_window:
+            candidates: List[Tuple[int, int, float]] = []
+            for cand_a, cand_b in (
+                (new_a_start - 1, new_b_start - 1),
+                (new_a_start - 1, new_b_start),
+                (new_a_start, new_b_start - 1),
+            ):
+                if cand_a < 0 or cand_b < 0:
+                    continue
+                if abs((cand_a - cand_b) - anchor_delta) > 1:
+                    continue
+                if not self._is_narrative_sentence(sentences_a[cand_a].text):
+                    continue
+                if not self._is_narrative_sentence(sentences_b[cand_b].text):
+                    continue
+                score = self._sentence_similarity(sentences_a[cand_a].text, sentences_b[cand_b].text)
+                candidates.append((cand_a, cand_b, score))
+            if not candidates:
+                break
+            best_a, best_b, best_score = max(candidates, key=lambda x: x[2])
+            if best_score < self.sentence_similarity_threshold:
+                break
+            new_a_start = min(new_a_start, best_a)
+            new_b_start = min(new_b_start, best_b)
+            step_scores.append(best_score)
+            left_steps += 1
+
+        # 向右扩展：同样保持局部连续
+        right_steps = 0
+        while right_steps < self.sentence_expand_window:
+            candidates = []
+            for cand_a, cand_b in (
+                (new_a_end + 1, new_b_end + 1),
+                (new_a_end + 1, new_b_end),
+                (new_a_end, new_b_end + 1),
+            ):
+                if cand_a >= len(sentences_a) or cand_b >= len(sentences_b):
+                    continue
+                if abs((cand_a - cand_b) - anchor_delta) > 1:
+                    continue
+                if not self._is_narrative_sentence(sentences_a[cand_a].text):
+                    continue
+                if not self._is_narrative_sentence(sentences_b[cand_b].text):
+                    continue
+                score = self._sentence_similarity(sentences_a[cand_a].text, sentences_b[cand_b].text)
+                candidates.append((cand_a, cand_b, score))
+            if not candidates:
+                break
+            best_a, best_b, best_score = max(candidates, key=lambda x: x[2])
+            if best_score < self.sentence_similarity_threshold:
+                break
+            new_a_end = max(new_a_end, best_a)
+            new_b_end = max(new_b_end, best_b)
+            step_scores.append(best_score)
+            right_steps += 1
+
+        new_start_a = sentences_a[new_a_start].start_pos
+        new_end_a = sentences_a[new_a_end].end_pos
+        new_start_b = sentences_b[new_b_start].start_pos
+        new_end_b = sentences_b[new_b_end].end_pos
+
+        # 限制单次扩展跨度，避免误扩到其他段落
+        if (new_end_a - new_start_a) > 1200 or (new_end_b - new_start_b) > 1200:
+            return match
+
+        new_start_b = sentences_b[new_b_start].start_pos
+
+        # 至少放大一侧且长度有效，避免误扩
+        if (
+            new_start_a >= match.start_pos
+            and new_end_a <= match.end_pos
+            and new_start_b >= match.source_start
+            and new_end_b <= match.source_end
+        ):
+            return match
+
+        if new_end_a - new_start_a < self.min_match_length or new_end_b - new_start_b < self.min_match_length:
+            return match
+
+        expanded_text = text_a[new_start_a:new_end_a].replace("\n", " ").strip()
+        expanded_source = self._extract_source_text(text_b, new_start_b, new_end_b)
+        if not self._is_narrative_sentence(expanded_text) or not self._is_narrative_sentence(expanded_source):
+            return match
+        if not step_scores:
+            return match
+        confidence = sum(step_scores) / max(len(step_scores), 1)
+
+        return Match(
+            text=expanded_text,
+            start_pos=new_start_a,
+            end_pos=new_end_a,
+            ngram_count=match.ngram_count,
+            source_doc=match.source_doc,
+            source_start=new_start_b,
+            source_end=new_end_b,
+            source_text=expanded_source,
+            similarity_score=max(match.similarity_score, min(confidence, 1.0)),
+            match_type="paraphrase" if (new_end_a - new_start_a) > (match.end_pos - match.start_pos) + 40 else match.match_type,
+            confidence=min(confidence, 1.0),
+            parent_match_id=match.parent_match_id,
+        )
+
+    def _sentence_index_range(
+        self,
+        sentences: List[Sentence],
+        start_pos: int,
+        end_pos: int,
+    ) -> Optional[Tuple[int, int]]:
+        indexes = []
+        for idx, sentence in enumerate(sentences):
+            if sentence.end_pos <= start_pos:
+                continue
+            if sentence.start_pos >= end_pos:
+                continue
+            indexes.append(idx)
+
+        if not indexes:
+            return None
+        return indexes[0], indexes[-1]
+
+    def _sentence_similarity(self, text_a: str, text_b: str) -> float:
+        norm_a = self._normalize_sentence(text_a)
+        norm_b = self._normalize_sentence(text_b)
+        if len(norm_a) < 8 or len(norm_b) < 8:
+            return 0.0
+
+        ratio = self._sequence_ratio(norm_a, norm_b)
+        overlap = self._matched_char_ratio(norm_a, norm_b)
+        return max(ratio, overlap)
+
+    def _normalize_sentence(self, text: str) -> str:
+        cleaned = re.sub(r"\[表格行\d+\]", "", text)
+        cleaned = re.sub(r"\s+", "", cleaned)
+        cleaned = re.sub(r"[，。；：、！？,.!?;:\"'“”‘’（）()\[\]【】<>《》]", "", cleaned)
+        return cleaned.lower()
+
+    def _sequence_ratio(self, a: str, b: str) -> float:
+        from difflib import SequenceMatcher
+
+        return SequenceMatcher(None, a, b).ratio()
+
+    def _matched_char_ratio(self, a: str, b: str) -> float:
+        from difflib import SequenceMatcher
+
+        matcher = SequenceMatcher(None, a, b)
+        matched = sum(block.size for block in matcher.get_matching_blocks())
+        base = max(min(len(a), len(b)), 1)
+        return matched / base
+
+    def _is_narrative_sentence(self, text: str) -> bool:
+        if not text:
+            return False
+        if "[表格行" in text or "|" in text:
+            return False
+        cleaned = re.sub(r"\s+", "", text)
+        cleaned = re.sub(r"\[表格行\d+\]", "", cleaned)
+        if len(cleaned) < 24:
+            return False
+
+        if len(re.findall(r"\d", cleaned)) > max(8, len(cleaned) // 4):
+            return False
+
+        enum_markers = len(re.findall(r"\d+[）\)\.、]", cleaned))
+        if enum_markers >= 3:
+            return False
+
+        cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", cleaned))
+        if cjk_chars < max(12, int(len(cleaned) * 0.4)):
+            return False
+        return True
 
     def _generate_fingerprint(self, text: str) -> int:
         """生成指纹"""
