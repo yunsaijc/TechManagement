@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>绩效核验演示</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: rgba(255, 255, 255, 0.06);
+      --panel-2: rgba(255, 255, 255, 0.10);
+      --ink: rgba(255, 255, 255, 0.92);
+      --muted: rgba(255, 255, 255, 0.65);
+      --line: rgba(255, 255, 255, 0.16);
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(900px 480px at 18% 12%, rgba(59, 130, 246, 0.24), transparent 60%),
+        radial-gradient(860px 520px at 78% 10%, rgba(34, 197, 94, 0.18), transparent 62%),
+        radial-gradient(760px 520px at 68% 78%, rgba(245, 158, 11, 0.14), transparent 60%),
+        linear-gradient(180deg, #0b1220 0%, #070b14 100%);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      width: min(1200px, 94vw);
+      margin: 22px auto 36px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .hero {
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: linear-gradient(110deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+      box-shadow: var(--shadow);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.2px;
+    }
+
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .panel {
+      padding: 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .row .full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      padding: 10px 12px;
+      font: inherit;
+      outline: none;
+      transition: border-color 160ms ease, background 160ms ease;
+    }
+
+    textarea {
+      min-height: 210px;
+      resize: vertical;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px dashed var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted);
+    }
+
+    input:focus, textarea:focus {
+      border-color: rgba(59, 130, 246, 0.85);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .opts {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .opts label {
+      margin: 0;
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    button {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 110ms ease, opacity 110ms ease, background 110ms ease;
+    }
+
+    button:active { transform: translateY(1px); }
+
+    .btn-primary {
+      background: linear-gradient(110deg, rgba(59, 130, 246, 0.92), rgba(99, 102, 241, 0.92));
+      color: #071023;
+    }
+
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--line);
+      color: var(--ink);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.18);
+      border-color: rgba(239, 68, 68, 0.40);
+      color: rgba(255, 255, 255, 0.92);
+    }
+
+    .summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .badge.red { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.14); }
+    .badge.yellow { border-color: rgba(245, 158, 11, 0.60); background: rgba(245, 158, 11, 0.14); }
+    .badge.green { border-color: rgba(34, 197, 94, 0.55); background: rgba(34, 197, 94, 0.12); }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      width: min(620px, 100%);
+    }
+
+    .kpi {
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .kpi .v {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .kpi .k {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .tables {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      vertical-align: top;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.88);
+    }
+
+    th {
+      color: rgba(255, 255, 255, 0.76);
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    tbody tr:nth-child(odd) td {
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    tbody tr:hover td {
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+
+    .tag.red { color: rgba(255, 255, 255, 0.92); border-color: rgba(239, 68, 68, 0.60); background: rgba(239, 68, 68, 0.16); }
+    .tag.yellow { color: rgba(255, 255, 255, 0.92); border-color: rgba(245, 158, 11, 0.65); background: rgba(245, 158, 11, 0.16); }
+    .tag.green { color: rgba(255, 255, 255, 0.92); border-color: rgba(34, 197, 94, 0.55); background: rgba(34, 197, 94, 0.14); }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      color: rgba(255, 255, 255, 0.86);
+      font-size: 12px;
+      line-height: 1.55;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 10px;
+      white-space: pre-wrap;
+      overflow: auto;
+      max-height: 220px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 99;
+      display: none;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(12, 16, 28, 0.88);
+      color: rgba(255, 255, 255, 0.90);
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+      max-width: min(520px, 92vw);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .progress {
+      margin-top: 12px;
+      display: none;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, 0.22);
+      border-top-color: rgba(59, 130, 246, 0.92);
+      animation: spin 800ms linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .bar {
+      flex: 1;
+      min-width: 220px;
+      height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+    }
+
+    .bar > div {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(59, 130, 246, 0.92), rgba(34, 197, 94, 0.86));
+      transition: width 220ms ease;
+    }
+
+    .ptext {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.76);
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .pstage {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.04);
+      color: rgba(255, 255, 255, 0.86);
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 1fr 1fr; }
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>申报书 vs 任务书 · 绩效核验</h1>
+      <!-- <div class="sub">严格对齐核验：核心指标章节一致、研究内容防缩水、预算总额/科目金额一致、单位与人员分工一致。</div> -->
+    </section>
+
+    <section class="panel">
+      <div class="sub" style="margin-bottom:10px;">文件模式（pdf/docx）</div>
+
+      <div class="row">
+        <div class="full mode-file">
+          <div class="grid">
+            <div>
+              <label>申报书文件（pdf/docx）</label>
+              <input id="declarationFile" type="file" accept=".pdf,.docx" />
+            </div>
+            <div>
+              <label>任务书文件（pdf/docx）</label>
+              <input id="taskFile" type="file" accept=".pdf,.docx" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- <div class="opts">
+        <span>默认使用严格模式：核心指标来源章节对齐；研究内容按“申报书一”对“任务书二”覆盖判定；预算先比金额再看占比。</span>
+        <span>默认PDF用例：tests/申报书/5e8836fc476344b382794452deef9061.pdf 与 tests/任务书/5e8836fc476344b382794452deef9061.pdf</span>
+      </div> -->
+
+      <div class="actions">
+        <button class="btn-primary" id="runBtn">开始核验</button>
+        <button class="btn-ghost" id="defaultPdfBtn">默认PDF用例</button>
+        <button class="btn-danger" id="clearBtn">清空</button>
+      </div>
+
+      <div id="progressBox" class="progress">
+        <div class="spinner" aria-hidden="true"></div>
+        <div class="bar"><div id="progressFill"></div></div>
+        <div class="ptext">
+          <span id="progressPct">0%</span>
+          <span id="progressStage" class="pstage">received</span>
+          <span id="progressMsg"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="summary">
+        <div id="riskBadge" class="badge yellow">等待执行</div>
+        <div class="kpis">
+          <div class="kpi"><div id="kRed" class="v">0</div><div class="k">RED 数量</div></div>
+          <div class="kpi"><div id="kYellow" class="v">0</div><div class="k">YELLOW 数量</div></div>
+          <div class="kpi"><div id="kGreen" class="v">0</div><div class="k">GREEN 数量</div></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="sub">摘要（后端 result.summary）</div>
+        <div id="summaryText" class="mono"></div>
+      </div>
+    </section>
+
+    <section class="panel tables">
+      <div>
+        <div class="sub" style="margin-bottom:8px;">核心考核指标对齐（metrics_risks）</div>
+        <div id="metricsTable"></div>
+      </div>
+      <div>
+        <div class="sub" style="margin-bottom:8px;">研究内容防缩水（content_risks）</div>
+        <div id="contentTable"></div>
+      </div>
+      <div>
+        <div class="sub" style="margin-bottom:8px;">预算一致性（budget_risks）</div>
+        <div id="budgetTable"></div>
+      </div>
+      <div>
+        <div class="sub" style="margin-bottom:8px;">单位预算明细一致性（unit_budget_risks）</div>
+        <div id="unitBudgetTable"></div>
+      </div>
+      <div>
+        <div class="sub" style="margin-bottom:8px;">其他关键信息（other_risks）</div>
+        <div id="otherTable"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const els = {
+      declarationFile: document.getElementById('declarationFile'),
+      taskFile: document.getElementById('taskFile'),
+      runBtn: document.getElementById('runBtn'),
+      clearBtn: document.getElementById('clearBtn'),
+      riskBadge: document.getElementById('riskBadge'),
+      kRed: document.getElementById('kRed'),
+      kYellow: document.getElementById('kYellow'),
+      kGreen: document.getElementById('kGreen'),
+      summaryText: document.getElementById('summaryText'),
+      metricsTable: document.getElementById('metricsTable'),
+      contentTable: document.getElementById('contentTable'),
+      budgetTable: document.getElementById('budgetTable'),
+      unitBudgetTable: document.getElementById('unitBudgetTable'),
+      otherTable: document.getElementById('otherTable'),
+      toast: document.getElementById('toast')
+    };
+
+    let _pollTimer = null;
+
+    function toast(msg) {
+      els.toast.textContent = String(msg || '');
+      els.toast.style.display = 'block';
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => { els.toast.style.display = 'none'; }, 2800);
+    }
+
+    function escapeHTML(str) {
+      return String(str || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    }
+
+    function riskCls(level) {
+      const l = String(level || '').toUpperCase();
+      if (l === 'RED') return 'red';
+      if (l === 'YELLOW') return 'yellow';
+      return 'green';
+    }
+
+    function renderTable(html) {
+      return html || '<div class="sub">暂无数据</div>';
+    }
+
+    function renderMetrics(metrics) {
+      if (!Array.isArray(metrics) || metrics.length === 0) {
+        return '<div class="sub">暂无指标差异。</div>';
+      }
+      const rows = metrics.map(m => {
+        const tag = '<span class="tag ' + riskCls(m.risk_level) + '">' + escapeHTML(m.risk_level) + '</span>';
+        const applyDesc = escapeHTML(String(m.apply_display ?? (String(m.apply_value ?? '') + (m.unit || ''))));
+        const taskDesc = escapeHTML(String(m.task_display ?? (String(m.task_value ?? '') + (m.unit || ''))));
+        return [
+          '<tr>',
+          '<td>' + tag + ' ' + escapeHTML(m.type || '-') + '</td>',
+          '<td>' + applyDesc + '</td>',
+          '<td>' + taskDesc + '</td>',
+          '<td>' + escapeHTML(m.reason || '') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+      return [
+        '<table>',
+        '<thead><tr><th>类型</th><th>申报书</th><th>任务书</th><th>原因</th></tr></thead>',
+        '<tbody>' + rows + '</tbody>',
+        '</table>'
+      ].join('');
+    }
+
+    function renderContents(contents) {
+      if (!Array.isArray(contents) || contents.length === 0) {
+        return '<div class="sub">未抽取到可核验研究内容，当前不支持“暂无差异”结论。</div>';
+      }
+      const rows = contents.map(c => {
+        const tag = '<span class="tag ' + riskCls(c.risk_level) + '">' + escapeHTML(c.risk_level) + '</span>';
+        const coverage = Number(c.coverage_score ?? 0);
+        return [
+          '<tr>',
+          '<td>' + tag + ' ' + escapeHTML(c.apply_id || '-') + '</td>',
+          '<td>' + escapeHTML(c.apply_text || '') + '</td>',
+          '<td>' + escapeHTML(c.task_text || '') + '</td>',
+          '<td>' + escapeHTML((c.is_covered ? '已覆盖' : '未覆盖（缩水风险）') + ' · ' + (coverage * 100).toFixed(1) + '%') + '</td>',
+          '<td>' + escapeHTML(c.reason || '') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+      return [
+        '<table>',
+        '<thead><tr><th>ID</th><th>申报书内容摘要</th><th>任务书内容摘要</th><th>覆盖</th><th>原因</th></tr></thead>',
+        '<tbody>' + rows + '</tbody>',
+        '</table>'
+      ].join('');
+    }
+
+    function renderBudgets(budgets) {
+      if (!Array.isArray(budgets) || budgets.length === 0) {
+        return '<div class="sub">暂无预算差异。</div>';
+      }
+      const rows = budgets.map(b => {
+        const tag = '<span class="tag ' + riskCls(b.risk_level) + '">' + escapeHTML(b.risk_level) + '</span>';
+        const applyAmount = Number(b.apply_amount ?? 0);
+        const taskAmount = Number(b.task_amount ?? 0);
+        const applyRatio = Number(b.apply_ratio ?? 0);
+        const taskRatio = Number(b.task_ratio ?? 0);
+        const delta = Number(b.ratio_delta ?? 0);
+        return [
+          '<tr>',
+          '<td>' + tag + ' ' + escapeHTML(b.type || '-') + '</td>',
+          '<td>' + escapeHTML(applyAmount.toFixed(2)) + '</td>',
+          '<td>' + escapeHTML(taskAmount.toFixed(2)) + '</td>',
+          '<td>' + escapeHTML((applyRatio * 100).toFixed(1) + '%') + '</td>',
+          '<td>' + escapeHTML((taskRatio * 100).toFixed(1) + '%') + '</td>',
+          '<td>' + escapeHTML((delta * 100).toFixed(1) + '%') + '</td>',
+          '<td>' + escapeHTML(b.reason || '') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+      return [
+        '<table>',
+        '<thead><tr><th>类别</th><th>申报书金额</th><th>任务书金额</th><th>申报书占比</th><th>任务书占比</th><th>变动</th><th>原因</th></tr></thead>',
+        '<tbody>' + rows + '</tbody>',
+        '</table>'
+      ].join('');
+    }
+
+    function renderOthers(others) {
+      const filtered = Array.isArray(others)
+        ? others.filter(o => String(o?.field || '').trim() !== '知识产权归属')
+        : [];
+
+      if (filtered.length === 0) {
+        return '<div class="sub">暂无其他关键信息差异。</div>';
+      }
+
+      function tryParseJSON(raw) {
+        const text = String(raw || '').trim();
+        if (!text) return null;
+        if (!(text.startsWith('[') || text.startsWith('{'))) return null;
+        try {
+          return JSON.parse(text);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function formatOtherValue(field, raw) {
+        const parsed = tryParseJSON(raw);
+        if (!parsed) {
+          return escapeHTML(raw || '');
+        }
+
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) {
+            return '<span class="sub">无</span>';
+          }
+
+          if (field === '项目组成员及分工') {
+            return parsed.map((item, idx) => {
+              const name = escapeHTML(item?.name || '-');
+              const duty = escapeHTML(item?.duty || '-');
+              return (idx + 1) + '. ' + name + '：' + duty;
+            }).join('<br>');
+          }
+
+          if (field === '合作单位') {
+            return parsed.map((item, idx) => {
+              return (idx + 1) + '. ' + escapeHTML(String(item || '-'));
+            }).join('<br>');
+          }
+
+          if (typeof parsed[0] === 'object' && parsed[0] !== null) {
+            return parsed.map((item, idx) => {
+              const pairs = Object.entries(item)
+                .map(([k, v]) => escapeHTML(k) + '：' + escapeHTML(v))
+                .join('；');
+              return (idx + 1) + '. ' + pairs;
+            }).join('<br>');
+          }
+
+          return parsed.map(x => escapeHTML(String(x || '-'))).join('、');
+        }
+
+        if (typeof parsed === 'object') {
+          return Object.entries(parsed)
+            .map(([k, v]) => escapeHTML(k) + '：' + escapeHTML(v))
+            .join('<br>');
+        }
+
+        return escapeHTML(String(parsed));
+      }
+
+      const rows = filtered.map(o => {
+        const tag = '<span class="tag ' + riskCls(o.risk_level) + '">' + escapeHTML(o.risk_level) + '</span>';
+        return [
+          '<tr>',
+          '<td>' + tag + ' ' + escapeHTML(o.field || '-') + '</td>',
+          '<td>' + formatOtherValue(o.field || '', o.apply_value || '') + '</td>',
+          '<td>' + formatOtherValue(o.field || '', o.task_value || '') + '</td>',
+          '<td>' + escapeHTML(o.reason || '') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+      return [
+        '<table>',
+        '<thead><tr><th>字段</th><th>申报书</th><th>任务书</th><th>原因</th></tr></thead>',
+        '<tbody>' + rows + '</tbody>',
+        '</table>'
+      ].join('');
+    }
+
+    function renderUnitBudgets(items) {
+      if (!Array.isArray(items) || items.length === 0) {
+        return '<div class="sub">暂无单位预算差异。</div>';
+      }
+      const rows = items.map(u => {
+        const tag = '<span class="tag ' + riskCls(u.risk_level) + '">' + escapeHTML(u.risk_level) + '</span>';
+        return [
+          '<tr>',
+          '<td>' + tag + ' ' + escapeHTML(u.unit_name || '-') + '</td>',
+          '<td>' + escapeHTML(u.type || '-') + '</td>',
+          '<td>' + escapeHTML(Number(u.apply_amount ?? 0).toFixed(2)) + '</td>',
+          '<td>' + escapeHTML(Number(u.task_amount ?? 0).toFixed(2)) + '</td>',
+          '<td>' + escapeHTML(Number(u.delta ?? 0).toFixed(2)) + '</td>',
+          '<td>' + escapeHTML(u.reason || '') + '</td>',
+          '</tr>'
+        ].join('');
+      }).join('');
+      return [
+        '<table>',
+        '<thead><tr><th>单位</th><th>科目</th><th>申报金额</th><th>任务书金额</th><th>差额</th><th>说明</th></tr></thead>',
+        '<tbody>' + rows + '</tbody>',
+        '</table>'
+      ].join('');
+    }
+
+    function updateSummary(result) {
+      const all = []
+        .concat(result?.metrics_risks || [])
+        .concat(result?.content_risks || [])
+        .concat(result?.budget_risks || [])
+        .concat(result?.unit_budget_risks || [])
+        .concat(result?.other_risks || []);
+
+      const reds = all.filter(x => x.risk_level === 'RED').length;
+      const yellows = all.filter(x => x.risk_level === 'YELLOW').length;
+      const greens = all.filter(x => x.risk_level === 'GREEN').length;
+
+      // 移除“总体高/中/低风险”口径，仅保留执行状态。
+      els.riskBadge.className = 'badge green';
+      els.riskBadge.textContent = '核验完成';
+
+      els.kRed.textContent = String(reds);
+      els.kYellow.textContent = String(yellows);
+      els.kGreen.textContent = String(greens);
+      els.summaryText.textContent = String(result?.summary || '');
+    }
+
+    function setProgress(visible, progress, stage, msg) {
+      const box = document.getElementById('progressBox');
+      const fill = document.getElementById('progressFill');
+      const pct = document.getElementById('progressPct');
+      const st = document.getElementById('progressStage');
+      const m = document.getElementById('progressMsg');
+
+      if (!visible) {
+        box.style.display = 'none';
+        fill.style.width = '0%';
+        pct.textContent = '0%';
+        st.textContent = '';
+        m.textContent = '';
+        return;
+      }
+
+      box.style.display = 'flex';
+      const p = Math.max(0, Math.min(1, Number(progress ?? 0)));
+      fill.style.width = (p * 100).toFixed(1) + '%';
+      pct.textContent = (p * 100).toFixed(0) + '%';
+      st.textContent = String(stage || '');
+      m.textContent = String(msg || '');
+    }
+
+    async function pollTask(taskId) {
+      if (_pollTimer) {
+        clearTimeout(_pollTimer);
+        _pollTimer = null;
+      }
+
+      const resp = await fetch('/api/v1/perfcheck/' + encodeURIComponent(taskId));
+      const payload = await resp.json().catch(() => null);
+      if (!resp.ok || !payload || payload.status !== 'success') {
+        throw new Error(payload?.detail || payload?.message || '进度查询失败');
+      }
+
+      const task = payload.data;
+      setProgress(true, task.progress ?? 0, task.stage || '', task.message || '');
+
+      if (task.state === 'finished') {
+        setProgress(false);
+        const result = task.result;
+        if (!result) {
+          throw new Error('任务已完成但未返回结果');
+        }
+        updateSummary(result);
+        els.metricsTable.innerHTML = renderTable(renderMetrics(result.metrics_risks));
+        els.contentTable.innerHTML = renderTable(renderContents(result.content_risks));
+        els.budgetTable.innerHTML = renderTable(renderBudgets(result.budget_risks));
+        els.unitBudgetTable.innerHTML = renderTable(renderUnitBudgets(result.unit_budget_risks));
+        els.otherTable.innerHTML = renderTable(renderOthers(result.other_risks));
+        toast('核验完成');
+        return;
+      }
+
+      if (task.state === 'failed') {
+        setProgress(false);
+        const code = String(task.error_code || '').trim();
+        const msg = String(task.message || '核验失败').trim();
+        throw new Error((code ? code + ': ' : '') + msg);
+      }
+
+      _pollTimer = setTimeout(() => {
+        pollTask(taskId).catch(e => toast(e?.message || '进度查询失败'));
+      }, 700);
+    }
+
+    async function runCheck() {
+      const projectId = 'perfcheck_demo';
+      const budgetShiftThreshold = 0.10;
+
+      els.runBtn.disabled = true;
+      els.runBtn.style.opacity = '0.65';
+      els.runBtn.textContent = '核验中...';
+      setProgress(true, 0.02, 'received', '已提交任务，等待执行');
+
+      try {
+        let resp;
+        const df = els.declarationFile.files[0];
+        const tf = els.taskFile.files[0];
+        if (!df || !tf) {
+          throw new Error('请上传申报书与任务书文件');
+        }
+        const fd = new FormData();
+        fd.append('declaration_file', df);
+        fd.append('task_file', tf);
+        fd.append('project_id', projectId);
+        fd.append('budget_shift_threshold', String(budgetShiftThreshold));
+        fd.append('enable_table_vision_extraction', 'true');
+        fd.append('enable_llm_entailment', 'true');
+
+        resp = await fetch('/api/v1/perfcheck/compare-async', { method: 'POST', body: fd });
+
+        const payload = await resp.json().catch(() => null);
+        if (!resp.ok) {
+          const msg = payload?.detail || payload?.message || '请求失败';
+          throw new Error(msg);
+        }
+        if (!payload || payload.status !== 'success') {
+          throw new Error(payload?.message || '后端返回异常');
+        }
+
+        const task = payload.data;
+        if (!task || !task.task_id) {
+          throw new Error('任务提交成功但未返回 task_id');
+        }
+        await pollTask(task.task_id);
+      } catch (e) {
+        setProgress(false);
+        toast(e?.message || '执行失败');
+      } finally {
+        els.runBtn.disabled = false;
+        els.runBtn.style.opacity = '1';
+        els.runBtn.textContent = '开始核验';
+      }
+    }
+
+    async function runDefaultPdf() {
+      const projectId = 'perfcheck_default_pdf';
+      const budgetShiftThreshold = 0.10;
+
+      els.runBtn.disabled = true;
+      els.defaultPdfBtn.disabled = true;
+      els.runBtn.style.opacity = '0.65';
+      els.defaultPdfBtn.style.opacity = '0.65';
+      setProgress(true, 0.02, 'received', '已提交默认PDF任务，等待执行');
+
+      try {
+        const resp = await fetch('/api/v1/perfcheck/compare-default-async', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: projectId,
+            budget_shift_threshold: budgetShiftThreshold,
+            enable_table_vision_extraction: true,
+            enable_llm_entailment: true
+          })
+        });
+
+        const payload = await resp.json().catch(() => null);
+        if (!resp.ok) {
+          const msg = payload?.detail || payload?.message || '请求失败';
+          throw new Error(msg);
+        }
+        if (!payload || payload.status !== 'success') {
+          throw new Error(payload?.message || '后端返回异常');
+        }
+
+        const task = payload.data;
+        if (!task || !task.task_id) {
+          throw new Error('任务提交成功但未返回 task_id');
+        }
+        await pollTask(task.task_id);
+      } catch (e) {
+        setProgress(false);
+        toast(e?.message || '执行失败');
+      } finally {
+        els.runBtn.disabled = false;
+        els.defaultPdfBtn.disabled = false;
+        els.runBtn.style.opacity = '1';
+        els.defaultPdfBtn.style.opacity = '1';
+      }
+    }
+
+    function clearAll() {
+      if (els.declarationFile) els.declarationFile.value = '';
+      if (els.taskFile) els.taskFile.value = '';
+      els.riskBadge.className = 'badge yellow';
+      els.riskBadge.textContent = '等待执行';
+      els.kRed.textContent = '0';
+      els.kYellow.textContent = '0';
+      els.kGreen.textContent = '0';
+      els.summaryText.textContent = '';
+      els.metricsTable.innerHTML = '';
+      els.contentTable.innerHTML = '';
+      els.budgetTable.innerHTML = '';
+      els.unitBudgetTable.innerHTML = '';
+      els.otherTable.innerHTML = '';
+      setProgress(false);
+    }
+
+    els.runBtn.addEventListener('click', runCheck);
+    els.defaultPdfBtn = document.getElementById('defaultPdfBtn');
+    els.defaultPdfBtn.addEventListener('click', runDefaultPdf);
+    els.clearBtn.addEventListener('click', clearAll);
+  </script>
+</body>
+</html>
