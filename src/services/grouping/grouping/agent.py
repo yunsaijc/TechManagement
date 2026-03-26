@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import logging
 import math
 import os
 import re
@@ -22,6 +24,9 @@ from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+# 配置 logger
+logger = logging.getLogger(__name__)
 
 from src.common.llm import get_default_embedding_client, get_default_llm_client
 from src.common.models.grouping import (
@@ -44,6 +49,16 @@ from src.common.database import get_xkfl_repo
 
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _clean_html_text(text: Optional[str]) -> str:
@@ -81,6 +96,9 @@ def _parse_keywords_to_list(gjc: Optional[str]) -> List[str]:
     """解析关键词字段为列表"""
     if not gjc:
         return []
+    # 清洗HTML实体
+    gjc = gjc.replace("&ldquo;", "").replace("&rdquo;", "")
+    gjc = gjc.replace("&quot;", "").replace("&amp;", "&")
     separators = r'[;；,，]'
     keywords = re.split(separators, gjc)
     return [kw.strip() for kw in keywords if kw.strip()]
@@ -149,10 +167,10 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                     {
                         "project_id": item.project_id,
                         "xmmc": item.xmmc,
-                        "xmjj": _clean_html_text(item.xmjj) if item.xmjj else "",
-                        "semantic_score": item.semantic_score,
-                        "quality_score": item.quality_score,
-                        "reason": item.reason,
+                        "xmjj": _clean_html_text(item.xmjj)[:200] if item.xmjj else "",  # 截取前200字
+                        "original_subject_code": item.original_subject_code or "",
+                        "original_subject_name": item.original_subject_name or "",
+                        "keywords": item.keywords or [],
                     }
                     for item in group.projects
                 ],
@@ -175,17 +193,68 @@ class GroupingAgent:
         llm: Any = None,
         embedder: Any = None,
         max_per_group: int = 15,
-        min_per_group: int = 3,
+        min_per_group: int = 5,
         concurrency: int = 10,
+        use_llm_validation: bool = False,  # 默认禁用LLM验证以提高速度
+        merge_min_total_score: Optional[float] = None,
+        merge_min_text_score: Optional[float] = None,
     ):
         self.llm = llm or get_default_llm_client()
         self.embedder = embedder or get_default_embedding_client()
         self.max_per_group = max_per_group
         self.min_per_group = min_per_group
         self.concurrency = concurrency
+        self.use_llm_validation = use_llm_validation
+        self.merge_min_total_score = (
+            merge_min_total_score
+            if merge_min_total_score is not None
+            else _env_float("GROUPING_MERGE_MIN_TOTAL_SCORE", 0.62)
+        )
+        self.merge_min_text_score = (
+            merge_min_text_score
+            if merge_min_text_score is not None
+            else _env_float("GROUPING_MERGE_MIN_TEXT_SCORE", 0.45)
+        )
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
+        self._llm_validation_cache: Dict[str, bool] = self._load_llm_validation_cache()  # 持久化缓存
+
+    def _load_llm_validation_cache(self) -> Dict[str, bool]:
+        """加载LLM验证缓存（持久化到文件）"""
+        import json
+        from pathlib import Path
+        
+        # 路径: tech/debug_grouping/llm_validation_cache.json
+        cache_file = Path(__file__).parent.parent.parent.parent.parent / "debug_grouping" / "llm_validation_cache.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    cache = json.load(f)
+                print(f"[缓存] 加载LLM验证缓存: {len(cache)} 条记录")
+                return cache
+            except Exception as e:
+                print(f"[缓存] 加载LLM验证缓存失败: {e}")
+        else:
+            print(f"[缓存] 缓存文件不存在，创建新缓存")
+        return {}
+    
+    def _save_llm_validation_cache(self):
+        """保存LLM验证缓存到文件"""
+        import json
+        from pathlib import Path
+        
+        # 路径: tech/debug_grouping/llm_validation_cache.json
+        cache_dir = Path(__file__).parent.parent.parent.parent.parent / "debug_grouping"
+        cache_dir.mkdir(exist_ok=True)
+        cache_file = cache_dir / "llm_validation_cache.json"
+        
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self._llm_validation_cache, f, ensure_ascii=False, indent=2)
+            print(f"[缓存] 已保存 {len(self._llm_validation_cache)} 条LLM验证记录")
+        except Exception as e:
+            print(f"[缓存] 保存LLM验证缓存失败: {e}")
 
     def _load_subject_cache(self) -> Dict[str, str]:
         try:
@@ -242,6 +311,36 @@ class GroupingAgent:
                 ordered.append(item)
         return ordered
 
+    def _get_first_level_category(self, code: str) -> str:
+        """获取学科大类（一级学科代码）
+        
+        A - 数理科学
+        B - 化学科学  
+        C - 生命科学
+        D - 地球科学
+        E - 工程与材料科学
+        F - 信息科学
+        G - 管理科学
+        H - 医学科学
+        J - 交叉学科
+        """
+        code = (code or "").strip()
+        if not code:
+            return ""
+        # 返回第一个字母（大类）
+        if code[0].isalpha():
+            return code[0].upper()
+        return ""
+
+    def _is_same_discipline_category(self, code_a: str, code_b: str) -> bool:
+        """检查两个学科代码是否属于同一大类"""
+        cat_a = self._get_first_level_category(code_a)
+        cat_b = self._get_first_level_category(code_b)
+        # 如果任一个为空，允许合并（保守策略）
+        if not cat_a or not cat_b:
+            return True
+        return cat_a == cat_b
+
     def _subject_similarity(self, code_a: str, code_b: str) -> float:
         a = (code_a or "").strip()
         b = (code_b or "").strip()
@@ -250,15 +349,26 @@ class GroupingAgent:
         if a == b:
             return 1.0
 
+        # 【学科大类约束】不同大类直接返回0，禁止合并
+        if not self._is_same_discipline_category(a, b):
+            return 0.0
+
+        # 同三级学科优先给高分；仅同一级大类则低分，避免细分方向误并
+        third_a = self._get_third_level_code(a)
+        third_b = self._get_third_level_code(b)
+        if third_a and third_a == third_b:
+            return 0.9
+
         prefixes_a = self._subject_prefixes(a)
         prefixes_b = self._subject_prefixes(b)
         common = [p for p in prefixes_a if p in prefixes_b]
         if not common:
-            return 0.0
+            return 0.2
 
         longest = max(len(item) for item in common)
-        max_len = max(len(a), len(b), 1)
-        return min(0.95, 0.35 + 0.6 * (longest / max_len))
+        if longest >= 3:
+            return 0.55
+        return 0.2
 
     def _subject_group_key(self, project: Project) -> str:
         code = (project.ssxk1 or project.ssxk2 or "unknown").strip()
@@ -291,55 +401,77 @@ class GroupingAgent:
         return "。".join([part for part in parts if part])
 
     def _project_text(self, project: Project) -> str:
-        return self._project_text_key(project.id, project.xmmc or "", project.gjc or "", _clean_html_text(project.xmjj or ""))
+        """构建增强文本用于Embedding生成"""
+        return self._build_enhanced_text(project)
+    
+    def _build_enhanced_text(self, project: Project) -> str:
+        """构建增强文本，提升关键词和学科信息的权重"""
+        parts = []
+        
+        # 1. 学科信息（高权重：重复3次）
+        subject_code = project.ssxk1 or project.ssxk2 or ""
+        subject_name = self._get_subject_name(subject_code)
+        if subject_name and subject_name != "unknown":
+            parts.extend([subject_name] * 3)
+        
+        # 2. 关键词（最高权重：重复5次）
+        keywords = _parse_keywords_to_list(project.gjc)
+        for kw in keywords:
+            if kw and len(kw) >= 2:
+                parts.extend([kw] * 5)
+        
+        # 3. 项目标题（清洗后）
+        if project.xmmc:
+            title = self._clean_text_for_embedding(project.xmmc)
+            if title:
+                parts.append(title)
+        
+        # 4. 项目简介（低权重：截断并清洗）
+        if project.xmjj:
+            summary = _clean_html_text(project.xmjj)
+            summary = self._clean_text_for_embedding(summary)
+            if summary:
+                parts.append(summary[:200])
+        
+        return "。".join(parts)
+    
+    def _clean_text_for_embedding(self, text: str) -> str:
+        """清洗文本，去除通用停用词"""
+        if not text:
+            return ""
+        
+        # 通用停用词表
+        stopwords = {
+            "优化", "调度", "系统", "方法", "研究", "技术", "应用",
+            "开发", "平台", "关键", "实现", "相关", "面向", "基于",
+            "一种", "及其", "理论", "模型", "机制", "设计", "分析",
+            "进行", "开展", "提出", "解决", "探索", "建立", "构建",
+        }
+        
+        # 清洗HTML实体
+        text = text.replace("&ldquo;", "").replace("&rdquo;", "")
+        text = text.replace("&quot;", "").replace("&amp;", "&")
+        
+        # 分词并去除停用词（提取2-8字的中文词）
+        words = re.findall(r"[\u4e00-\u9fff]{2,8}", text)
+        filtered = [w for w in words if w not in stopwords]
+        return "。".join(filtered)
 
     def _embed_projects(self, projects: List[Project]) -> Dict[str, np.ndarray]:
         if not projects:
             return {}
         texts = [self._project_text(project) for project in projects]
         total = len(projects)
-        batch_size = 25  # 与embedding_factory一致
-        total_batches = (total + batch_size - 1) // batch_size
-        print(f"[Grouping] 开始生成 embedding: {total} 个项目，分 {total_batches} 批，每批 {batch_size} 个")
+        logger.info(f"[Grouping] 开始生成 embedding: {total} 个项目")
         
         embed_start = time.time()
-        vectors = self._safe_embed_with_progress(texts, batch_size)
+        # 直接使用 embedder 的批量+并发功能，带进度回调
+        embeddings = self.embedder.embed_documents(texts, progress_callback=lambda done, total_batch: logger.info(f"[Grouping] embedding 进度: {done}/{total_batch} 批次完成"))
+        vectors = np.array(embeddings)
         
         elapsed = time.time() - embed_start
-        print(f"[Grouping] embedding 完成: {total} 个项目，{total_batches} 批，用时 {elapsed:.2f} 秒，平均每批 {elapsed/total_batches:.2f} 秒")
+        logger.info(f"[Grouping] embedding 完成: {total} 个项目，用时 {elapsed:.2f} 秒")
         return {project.id: vectors[idx] for idx, project in enumerate(projects)}
-    
-    def _safe_embed_with_progress(self, texts: List[str], batch_size: int = 25) -> np.ndarray:
-        """带进度显示的embedding计算"""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        
-        total = len(texts)
-        total_batches = (total + batch_size - 1) // batch_size
-        results = {}
-        completed = 0
-        
-        def embed_batch(start_idx: int) -> tuple[int, np.ndarray]:
-            batch = texts[start_idx:start_idx + batch_size]
-            embeddings = self.embedder.embed_documents(batch)
-            return start_idx, np.array(embeddings)
-        
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(embed_batch, start): start 
-                      for start in range(0, total, batch_size)}
-            
-            for future in as_completed(futures):
-                start_idx, embeddings = future.result()
-                results[start_idx] = embeddings
-                completed += 1
-                if completed % 10 == 0 or completed == total_batches:
-                    print(f"[Grouping] embedding 进度: {completed}/{total_batches} 批 ({completed*100//total_batches}%)")
-        
-        # 按顺序合并结果
-        all_embeddings = []
-        for start in range(0, total, batch_size):
-            all_embeddings.extend(results[start])
-        
-        return np.array(all_embeddings)
 
     def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         buckets: Dict[str, List[Project]] = defaultdict(list)
@@ -419,6 +551,139 @@ class GroupingAgent:
 
         return clusters
 
+    def _split_large_clusters_by_embedding(
+        self,
+        clusters: List[List[Project]],
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """拆分过大组（基于Embedding KMeans聚类）
+        
+        Args:
+            clusters: 当前聚类列表
+            max_per_group: 每组最大项目数
+            vector_map: 项目ID到向量的映射
+            
+        Returns:
+            拆分后的聚类列表
+        """
+        result = []
+        for idx, cluster in enumerate(clusters):
+            if len(cluster) <= max_per_group:
+                result.append(cluster)
+                continue
+            
+            # 过大组需要拆分
+            print(f"  [拆分] 组{idx+1}有{len(cluster)}个项目，需要拆分...")
+            sub_clusters = self._split_bucket_by_text(cluster, max_per_group, vector_map)
+            result.extend(sub_clusters)
+            print(f"  [拆分] 完成，拆成{len(sub_clusters)}个组")
+        
+        return result
+
+    async def _merge_small_clusters_by_embedding(
+        self,
+        clusters: List[List[Project]],
+        min_per_group: int,
+        max_per_group: int,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[List[Project]]:
+        """合并过小组（基于Embedding相似度，带LLM验证）
+        
+        Args:
+            clusters: 当前聚类列表
+            min_per_group: 每组最小项目数
+            max_per_group: 每组最大项目数
+            vector_map: 项目ID到向量的映射
+            
+        Returns:
+            合并后的聚类列表
+        """
+        if not clusters:
+            return clusters
+        
+        clusters = [cluster[:] for cluster in clusters if cluster]
+        
+        # 收集所有需要合并的请求
+        changed = True
+        while changed:
+            changed = False
+            clusters = [c for c in clusters if c]
+            
+            # 找出过小组
+            small_indices = [idx for idx, c in enumerate(clusters) if 0 < len(c) < min_per_group]
+            if not small_indices:
+                break
+            
+            print(f"[合并] 发现{len(small_indices)}个过小组需要处理...")
+            
+            for idx in small_indices:
+                if idx >= len(clusters):
+                    continue
+                cluster = clusters[idx]
+                if not cluster:
+                    continue
+                
+                # 找最相似的组合并
+                cluster_vectors = [vector_map[p.id] for p in cluster if p.id in vector_map]
+                center = np.mean(cluster_vectors, axis=0) if cluster_vectors else None
+                code_a = cluster[0].ssxk1 or cluster[0].ssxk2 or ""
+                
+                candidates: List[Tuple[float, int, float, float, str]] = []
+                
+                for other_idx, other in enumerate(clusters):
+                    if other_idx == idx or not other:
+                        continue
+                    if len(other) + len(cluster) > max_per_group:
+                        continue
+                    
+                    # 计算相似度
+                    code_b = other[0].ssxk1 or other[0].ssxk2 or ""
+                    subject_score = self._subject_similarity(code_a, code_b)
+                    
+                    other_vectors = [vector_map[p.id] for p in other if p.id in vector_map]
+                    text_score = 0.0
+                    if center is not None and other_vectors:
+                        other_center = np.mean(other_vectors, axis=0)
+                        text_score = _cosine_similarity(center, other_center)
+                    
+                    total_score = 0.75 * subject_score + 0.25 * text_score
+                    candidates.append((total_score, other_idx, text_score, subject_score, code_b))
+
+                if not candidates:
+                    continue
+
+                candidates.sort(key=lambda item: item[0], reverse=True)
+                merged = False
+
+                for total_score, best_idx, text_score, subject_score, code_b in candidates:
+                    if (
+                        total_score < self.merge_min_total_score
+                        or text_score < self.merge_min_text_score
+                    ):
+                        continue
+
+                    if code_a != code_b:
+                        ok = await self._llm_validate_merge(cluster, clusters[best_idx], code_a, code_b)
+                        if not ok:
+                            print(f"  [合并拒绝] 组{idx+1} -> 组{best_idx+1}，代码{code_a}!={code_b}，LLM拒绝")
+                            continue
+
+                    clusters[best_idx].extend(cluster)
+                    clusters[idx] = []
+                    changed = True
+                    merged = True
+                    print(
+                        f"  [合并] 将组{idx+1}({len(cluster)}个项目)合并到组{best_idx+1} "
+                        f"(score={total_score:.3f}, text={text_score:.3f}, subject={subject_score:.3f})"
+                    )
+                    break
+
+                if merged:
+                    break
+        
+        return [c for c in clusters if c]
+
     def _infer_target_group_count(self, project_count: int, max_per_group: int) -> int:
         if project_count <= 0:
             return 0
@@ -437,7 +702,7 @@ class GroupingAgent:
         from src.services.grouping.grouping.cluster import ProjectCluster
         return ProjectCluster("kmeans").fit_predict(vectors, n_clusters)
 
-    def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
+    async def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
         """基于关键词Embedding主导的全局层次聚类分组"""
         if not projects:
             return []
@@ -445,27 +710,32 @@ class GroupingAgent:
             return [projects]
 
         print(f"[Grouping] 开始关键词Embedding主导分组，共 {len(projects)} 个项目")
-        
+
         # 1. 计算全局Embedding
         print(f"[Grouping] 计算全局Embedding...")
         vector_map = self._embed_projects(projects)
         print(f"[Grouping] Embedding计算完成，共 {len(vector_map)} 个项目")
-        
-        # 2. 基于Embedding相似度进行全局层次聚类
+
+        # 2. 基于Embedding相似度进行全局层次聚类（带LLM验证）
         print(f"[Grouping] 进行全局层次聚类...")
-        clusters = self._hierarchical_cluster_by_embedding(projects, vector_map, similarity_threshold=0.7)
+        clusters = await self._hierarchical_cluster_by_embedding(projects, vector_map, similarity_threshold=0.7)
         print(f"[Grouping] 初始聚类完成，生成 {len(clusters)} 个组")
-        
+
+        # 2.5 【学科大类约束】按学科大类拆分混合组
+        print(f"[Grouping] 按学科大类拆分混合组...")
+        clusters = self._split_by_discipline_category(clusters)
+        print(f"[Grouping] 学科大类拆分完成，共 {len(clusters)} 个组")
+
         # 3. 处理过大组（基于Embedding重新聚类拆分）
         print(f"[Grouping] 处理过大组...")
         clusters = self._split_large_clusters_by_embedding(clusters, max_per_group, vector_map)
         print(f"[Grouping] 过大组拆分完成，共 {len(clusters)} 个组")
-        
-        # 4. 处理过小组合并到最相似的组
+
+        # 4. 处理过小组合并到最相似的组（带LLM验证）
         print(f"[Grouping] 处理过小组合并...")
-        clusters = self._merge_small_clusters_by_embedding(clusters, self.min_per_group, max_per_group, vector_map)
+        clusters = await self._merge_small_clusters_by_embedding(clusters, self.min_per_group, max_per_group, vector_map)
         print(f"[Grouping] 过小组合并完成，共 {len(clusters)} 个组")
-        
+
         print(f"[Grouping] 最终分组完成，共 {len(clusters)} 个组")
         return clusters
 
@@ -532,12 +802,31 @@ class GroupingAgent:
         return [cluster for cluster in clusters if cluster]
 
     def _extract_keywords(self, text: str) -> List[str]:
-        tokens = re.findall(r"[\u4e00-\u9fffA-Za-z0-9]{2,}", text or "")
+        # 先清洗HTML标签
+        text = re.sub(r'<[^>]+>', ' ', text or "")
+        # 清洗HTML实体
+        text = re.sub(r'&[a-zA-Z]+;', ' ', text)
+        # 清洗CSS样式相关的内容
+        text = re.sub(r'\b\d+px\b', ' ', text)  # 移除 16px, 12px 等
+        text = re.sub(r'\b[a-z]+-[a-z]+\b', ' ', text)  # 移除 font-style 等CSS属性
+        
+        # 提取中文词（2-6个字的词）
+        chinese_tokens = re.findall(r"[\u4e00-\u9fff]{2,6}", text)
+        # 提取英文/数字词
+        english_tokens = re.findall(r"[A-Za-z][a-zA-Z0-9]*", text)
+        
+        tokens = chinese_tokens + english_tokens
+        
         stopwords = {
             "项目", "研究", "技术", "系统", "方法", "应用", "开发", "平台", "关键", "实现",
             "相关", "面向", "基于", "一种", "及其", "关键技术", "理论", "模型", "机制",
+            "设计", "分析", "优化", "控制", "检测", "监测", "识别", "预测", "决策",
+            "协同", "联合", "综合", "新型", "智能", "智慧", "自动", "集成",
+            # HTML/CSS常见词
+            "font", "style", "size", "color", "px", "indent", "margin", "text", "align",
+            "span", "div", "p", "br", "strong", "em", "b", "i", "u",
         }
-        return [token for token in tokens if token not in stopwords]
+        return [token for token in tokens if token not in stopwords and len(token) <= 10]
 
     def _select_group_title(self, cluster: List[Project]) -> Tuple[str, str, str]:
         subject_codes = [project.ssxk1 for project in cluster if project.ssxk1]
@@ -592,6 +881,9 @@ class GroupingAgent:
             for project in cluster:
                 score = 1.0
                 scores.append(score)
+                # 使用数据库的gjc字段作为关键词
+                keywords = _parse_keywords_to_list(project.gjc)[:10]  # 最多10个
+                
                 project_items.append(
                     ProjectInGroup(
                         project_id=project.id,
@@ -602,6 +894,9 @@ class GroupingAgent:
                         semantic_score=score,
                         quality_score=score,
                         reason=summary or f"语义归入：{title}",
+                        original_subject_code=project.ssxk1,
+                        original_subject_name=self._get_subject_name(project.ssxk1 or ""),
+                        keywords=keywords,
                     )
                 )
 
@@ -666,6 +961,10 @@ class GroupingAgent:
     async def group_projects(self, request: GroupingRequest) -> GroupingResult:
         start_time = time.time()
         self.max_per_group = request.max_per_group
+        if request.merge_min_total_score is not None:
+            self.merge_min_total_score = request.merge_min_total_score
+        if request.merge_min_text_score is not None:
+            self.merge_min_text_score = request.merge_min_text_score
 
         projects = self.project_repo.get_grouping_test_projects(category=request.category)
         if not projects:
@@ -682,7 +981,7 @@ class GroupingAgent:
         )
 
         cluster_start = time.time()
-        clusters = self._cluster_projects(projects, self.max_per_group)
+        clusters = await self._cluster_projects(projects, self.max_per_group)
         print(f"[Grouping] 初步生成 {len(clusters)} 个语义簇，用时 {time.time() - cluster_start:.2f} 秒")
 
         build_group_start = time.time()
@@ -731,6 +1030,8 @@ class GroupingAgent:
             "input": {
                 "category": request.category,
                 "max_per_group": request.max_per_group,
+                "merge_min_total_score": self.merge_min_total_score,
+                "merge_min_text_score": self.merge_min_text_score,
             },
         })
         if filename:
@@ -1045,19 +1346,66 @@ class GroupingAgent:
 
 
 # ========== Embedding主导分组新方法 ==========
+
+    def _split_by_discipline_category(
+        self,
+        clusters: List[List[Project]]
+    ) -> List[List[Project]]:
+        """按三级学科优先拆分混合组
+
+        先按三级学科代码（前5位）拆分，避免同大类内细分方向混杂。
+        """
+        result = []
+        
+        for cluster in clusters:
+            if not cluster:
+                continue
+            
+            # 按三级学科分组
+            category_groups: Dict[str, List[Project]] = {}
+            for project in cluster:
+                code = project.ssxk1 or project.ssxk2 or ""
+                cat = self._get_third_level_code(code)
+                if not cat:
+                    cat = "unknown"
+                if cat not in category_groups:
+                    category_groups[cat] = []
+                category_groups[cat].append(project)
+            
+            # 如果只有一个三级代码，保持原组
+            if len(category_groups) <= 1:
+                result.append(cluster)
+            else:
+                # 拆分成多个组
+                for cat, projects in category_groups.items():
+                    if projects:
+                        result.append(projects)
+                        print(f"  [学科拆分] 拆出 {cat} 组，{len(projects)} 个项目")
+        
+        return result
     
-    def _hierarchical_cluster_by_embedding(
+    async def _hierarchical_cluster_by_embedding(
         self,
         projects: List[Project],
         vector_map: Dict[str, np.ndarray],
         similarity_threshold: float = 0.7
     ) -> List[List[Project]]:
-        """基于Embedding相似度进行全局层次聚类（使用scipy优化版本）"""
+        """基于Embedding相似度进行全局层次聚类（使用scipy优化版本）
+        
+        【改进】在初始聚类后进行学科一致性验证：
+        1. 先按Embedding相似度聚类
+        2. 对每个聚类检查学科一致性
+        3. 以主导学科（项目数最多）为锚点
+        4. 对非主导学科的项目进行LLM验证
+        5. 验证失败的项目从聚类中移除
+        """
         n = len(projects)
         if n == 0:
             return []
         if n == 1:
             return [projects]
+        
+        print(f"[初始聚类] 开始，共 {n} 个项目")
         
         # 获取所有embedding向量
         vectors = np.array([vector_map.get(p.id, np.zeros(1536)) for p in projects])
@@ -1082,124 +1430,366 @@ class GroupingAgent:
             clusters_dict[label].append(idx)
         
         # 将索引转换为项目对象
-        return [[projects[idx] for idx in cluster] for cluster in clusters_dict.values()]
-    
-    def _split_large_clusters_by_embedding(
+        initial_clusters = [[projects[idx] for idx in cluster] for cluster in clusters_dict.values()]
+        print(f"[初始聚类] 完成，生成 {len(initial_clusters)} 个初始组")
+        
+        # 【新增】对每个聚类进行学科一致性验证
+        if not self.use_llm_validation:
+            print(f"[初始聚类] 未启用LLM验证，跳过学科一致性检查")
+            return initial_clusters
+        
+        print(f"[初始聚类] 开始学科一致性验证...")
+        validated_clusters = await self._validate_initial_clusters_with_llm(initial_clusters, vector_map)
+        print(f"[初始聚类] 验证完成，最终 {len(validated_clusters)} 个组")
+        
+        return validated_clusters
+
+    async def _validate_initial_clusters_with_llm(
         self,
         clusters: List[List[Project]],
-        max_per_group: int,
         vector_map: Dict[str, np.ndarray]
     ) -> List[List[Project]]:
-        """基于Embedding重新聚类拆分过大组"""
-        result = []
+        """【新增】验证初始聚类的学科一致性，以主导学科为锚点
         
-        for cluster in clusters:
-            if len(cluster) <= max_per_group:
-                result.append(cluster)
-            else:
-                # 对过大组重新聚类，使用更高的阈值进行更细的拆分
-                sub_clusters = self._hierarchical_cluster_by_embedding(
-                    cluster, vector_map, similarity_threshold=0.75
-                )
-                
-                # 如果拆分后还有过大的，继续递归拆分
-                for sub in sub_clusters:
-                    if len(sub) > max_per_group:
-                        # 使用K-means进行强制拆分
-                        sub_sub_clusters = self._force_split_by_kmeans(sub, max_per_group, vector_map)
-                        result.extend(sub_sub_clusters)
-                    else:
-                        result.append(sub)
+        【优化】先收集所有组的验证请求，然后一次性并发执行
         
-        return result
-    
-    def _force_split_by_kmeans(
-        self,
-        projects: List[Project],
-        max_per_group: int,
-        vector_map: Dict[str, np.ndarray]
-    ) -> List[List[Project]]:
-        """使用K-means强制拆分过大组"""
-        n = len(projects)
-        n_clusters = math.ceil(n / max_per_group)
+        对每个聚类：
+        1. 统计各三级学科的项目数量
+        2. 确定主导学科（项目数最多的学科）
+        3. 对非主导学科的项目进行LLM验证
+        4. 验证失败的项目从聚类中移除，形成新的独立组
+        """
+        # 第一步：收集所有需要验证的请求
+        all_validations = []  # List of (cluster_idx, project, dominant_subject, representative_projects, project_subject)
+        cluster_info = []  # 保存每个组的信息
         
-        # 获取embedding矩阵
-        vectors = np.array([vector_map.get(p.id, np.zeros(1536)) for p in projects])
+        for cluster_idx, cluster in enumerate(clusters):
+            if len(cluster) <= 1:
+                cluster_info.append({
+                    'cluster': cluster,
+                    'skip': True,
+                    'dominant_subject': None,
+                    'project_subject_map': {},
+                    'to_validate_indices': []
+                })
+                continue
+            
+            # 统计三级学科分布
+            subject_counter = Counter()
+            project_subject_map = {}
+            
+            for project in cluster:
+                code = project.ssxk1 or project.ssxk2 or ""
+                third_level_code = self._get_third_level_code(code)
+                subject_counter[third_level_code] += 1
+                project_subject_map[project.id] = third_level_code
+            
+            # 如果只有一个三级学科，跳过验证
+            if len(subject_counter) <= 1:
+                cluster_info.append({
+                    'cluster': cluster,
+                    'skip': True,
+                    'dominant_subject': None,
+                    'project_subject_map': project_subject_map,
+                    'to_validate_indices': []
+                })
+                print(f"  [组{cluster_idx+1}] 单一学科，跳过验证")
+                continue
+            
+            # 确定主导学科
+            dominant_subject = subject_counter.most_common(1)[0][0]
+            dominant_count = subject_counter[dominant_subject]
+            
+            print(f"  [组{cluster_idx+1}] 包含{len(subject_counter)}个学科，主导学科: {dominant_subject} ({dominant_count}个项目)")
+            
+            # 收集需要验证的项目
+            to_validate_indices = []
+            representative_projects = [p for p in cluster if (p.ssxk1 or p.ssxk2 or "").startswith(dominant_subject[:3])][:3]
+            
+            for proj_idx, project in enumerate(cluster):
+                code = project_subject_map[project.id]
+                if code != dominant_subject:
+                    to_validate_indices.append(proj_idx)
+                    all_validations.append((
+                        cluster_idx,
+                        project,
+                        dominant_subject,
+                        representative_projects,
+                        code
+                    ))
+            
+            cluster_info.append({
+                'cluster': cluster,
+                'skip': False,
+                'dominant_subject': dominant_subject,
+                'project_subject_map': project_subject_map,
+                'to_validate_indices': to_validate_indices
+            })
         
-        # 使用K-means聚类
-        from sklearn.cluster import KMeans
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        labels = kmeans.fit_predict(vectors)
-        
-        # 按标签分组
-        clusters_dict: Dict[int, List[Project]] = {}
-        for idx, label in enumerate(labels):
-            if label not in clusters_dict:
-                clusters_dict[label] = []
-            clusters_dict[label].append(projects[idx])
-        
-        return list(clusters_dict.values())
-    
-    def _merge_small_clusters_by_embedding(
-        self,
-        clusters: List[List[Project]],
-        min_per_group: int,
-        max_per_group: int,
-        vector_map: Dict[str, np.ndarray]
-    ) -> List[List[Project]]:
-        """基于Embedding相似度合并过小组合并到最相似的组"""
-        if not clusters:
+        # 第二步：如果没有任何验证请求，直接返回
+        if not all_validations:
+            print(f"[初始聚类] 无需验证，直接返回 {len(clusters)} 个组")
             return clusters
         
-        changed = True
-        while changed:
-            changed = False
-            clusters = [c for c in clusters if c]
-            
-            # 找出小组合并
-            small_indices = [i for i, c in enumerate(clusters) if 0 < len(c) < min_per_group]
-            if not small_indices:
-                break
-            
-            for idx in small_indices:
-                if idx >= len(clusters):
-                    continue
-                cluster = clusters[idx]
-                if not cluster:
-                    continue
-                
-                # 计算该组的平均embedding
-                cluster_vectors = [vector_map.get(p.id) for p in cluster if p.id in vector_map]
-                if not cluster_vectors:
-                    continue
-                cluster_vec = np.mean(cluster_vectors, axis=0)
-                
-                # 找最相似的目标组
-                best_idx = None
-                best_sim = -1.0
-                
-                for other_idx, other in enumerate(clusters):
-                    if other_idx == idx or not other:
-                        continue
-                    if len(other) + len(cluster) > max_per_group:
-                        continue
-                    
-                    # 计算目标组的平均embedding
-                    other_vectors = [vector_map.get(p.id) for p in other if p.id in vector_map]
-                    if not other_vectors:
-                        continue
-                    other_vec = np.mean(other_vectors, axis=0)
-                    
-                    # 计算相似度
-                    sim = _cosine_similarity(cluster_vec, other_vec)
-                    if sim > best_sim:
-                        best_sim = sim
-                        best_idx = other_idx
-                
-                if best_idx is not None:
-                    clusters[best_idx].extend(cluster)
-                    clusters[idx] = []
-                    changed = True
-                    break
+        # 第三步：一次性并发执行所有验证
+        print(f"[LLM并发验证] 共收集 {len(all_validations)} 个验证请求，开始并发执行...")
         
-        return [c for c in clusters if c]
+        # 构造批量验证参数：(cluster_a, cluster_b, code_a, code_b)
+        # cluster_a: 主导学科的代表项目
+        # cluster_b: 待验证的单个项目
+        # code_a: 主导学科代码
+        # code_b: 待验证项目的学科代码
+        validations_for_batch = [
+            (info[3], [info[1]], info[2], info[4])  # (representative_projects, [project], dominant_subject, project_subject)
+            for info in all_validations
+        ]
+        
+        # 调用批量验证
+        validation_results = await self._batch_llm_validate_merges(validations_for_batch)
+        
+        # 第四步：根据验证结果处理每个组
+        validated_clusters = []
+        removed_projects = []
+        
+        # 建立验证结果的索引
+        validation_idx = 0
+        for cluster_idx, info in enumerate(cluster_info):
+            cluster = info['cluster']
+            
+            if info['skip']:
+                validated_clusters.append(cluster)
+                continue
+            
+            dominant_subject = info['dominant_subject']
+            project_subject_map = info['project_subject_map']
+            to_validate_indices = info['to_validate_indices']
+            
+            # 根据验证结果分离项目
+            keep_projects = []
+            for i, proj_idx in enumerate(to_validate_indices):
+                project = cluster[proj_idx]
+                if validation_results[validation_idx]:
+                    keep_projects.append(project)
+                else:
+                    removed_projects.append(project)
+                    print(f"    ❌ 移除: {project.xmmc[:30]}...")
+                validation_idx += 1
+            
+            # 保留主导学科项目 + 验证通过的项目
+            main_cluster = [p for p in cluster if project_subject_map[p.id] == dominant_subject]
+            main_cluster.extend(keep_projects)
+            
+            if main_cluster:
+                validated_clusters.append(main_cluster)
+        
+        # 第五步：为移除的项目创建独立组
+        for project in removed_projects:
+            validated_clusters.append([project])
+            print(f"  [新增独立组] {project.xmmc[:30]}...")
+        
+        return validated_clusters
+
+    async def _batch_validate_single_projects(
+        self,
+        cluster: List[Project],
+        to_validate: List[Project],
+        dominant_subject: str,
+        vector_map: Dict[str, np.ndarray]
+    ) -> List[bool]:
+        """【新增】批量验证单个项目是否应该保留在主导学科组中
+        
+        Args:
+            cluster: 原始聚类
+            to_validate: 需要验证的项目列表
+            dominant_subject: 主导三级学科代码
+        
+        Returns:
+            List[bool]: 每个项目是否应该保留
+        """
+        if not to_validate:
+            return []
+        
+        # 批量调用LLM验证
+        validations = []
+        for project in to_validate:
+            dominant_subject_name = self._get_subject_name(dominant_subject)
+            project_subject_name = self._get_subject_name(project.ssxk1 or project.ssxk2 or "")
+            
+            validations.append((
+                [p for p in cluster if (p.ssxk1 or p.ssxk2 or "").startswith(dominant_subject[:3])][:3],  # 主导学科的代表项目
+                [project],  # 待验证的单个项目
+                dominant_subject,
+                project.ssxk1 or project.ssxk2 or ""
+            ))
+        
+        # 批量验证
+        results = await self._batch_llm_validate_merges(validations)
+        return results
+
+    async def _batch_llm_validate_merges(
+        self,
+        validations: List[Tuple[List[Project], List[Project], str, str]]
+    ) -> List[bool]:
+        """【P1】批量并发执行LLM验证（限制并发数为10）
+        
+        Args:
+            validations: 列表，每个元素是 (cluster_a, cluster_b, code_a, code_b)
+            
+        Returns:
+            列表，每个元素是对应验证的结果（True=可以合并，False=拒绝合并）
+        """
+        if not validations or not self.use_llm_validation:
+            return [True] * len(validations)
+
+        import asyncio
+        
+        # 限制并发数为10
+        sem = asyncio.Semaphore(10)
+        
+        # 打印并发信息
+        print(f"[LLM并发验证] 启动 {len(validations)} 个验证任务（并发限制：10）")
+
+        async def validate_one(cluster_a, cluster_b, code_a, code_b, idx):
+            async with sem:
+                try:
+                    print(f"[LLM并发验证] 启动第{idx+1}/{len(validations)}个任务")
+                    r = await self._llm_validate_merge(cluster_a, cluster_b, code_a, code_b)
+                    print(f"[LLM并发验证] 第{idx+1}/{len(validations)}个任务完成")
+                    return r
+                except Exception as e:
+                    print(f"[LLM并发验证] 第{idx+1}个异常: {e}，默认允许合并")
+                    return True
+
+        # 创建所有任务并同时启动
+        tasks = [
+            validate_one(cluster_a, cluster_b, code_a, code_b, i)
+            for i, (cluster_a, cluster_b, code_a, code_b) in enumerate(validations)
+        ]
+
+        # 使用asyncio.gather并发执行（信号量控制实际并发数）
+        all_results = await asyncio.gather(*tasks, return_exceptions=False)
+        print(f"[LLM并发验证] 所有 {len(validations)} 个任务已完成")
+        return all_results
+
+    async def _llm_validate_merge(
+        self,
+        cluster_a: List[Project],
+        cluster_b: List[Project],
+        code_a: str,
+        code_b: str,
+    ) -> bool:
+        """使用LLM验证两个不同三级学科代码的组是否应该合并
+
+        返回: True 表示应该合并，False 表示不应该合并
+        """
+        if not self.use_llm_validation:
+            return True
+
+        # 如果学科代码相同，不需要LLM验证
+        if code_a == code_b:
+            return True
+
+        # 检查缓存（学科代码 + 代表项目上下文）
+        context_a = self._validation_context_hash(cluster_a)
+        context_b = self._validation_context_hash(cluster_b)
+        cache_key = f"{code_a}:{code_b}:{context_a}:{context_b}"
+        reverse_key = f"{code_b}:{code_a}:{context_b}:{context_a}"
+        if cache_key in self._llm_validation_cache:
+            return self._llm_validation_cache[cache_key]
+        if reverse_key in self._llm_validation_cache:
+            return self._llm_validation_cache[reverse_key]
+
+        # 构造LLM判断的prompt
+        subject_name_a = self._get_subject_name(code_a)
+        subject_name_b = self._get_subject_name(code_b)
+
+        # 提取每个组的代表性项目信息（最多3个）
+        projects_a_info = []
+        for p in cluster_a[:3]:
+            keywords = _parse_keywords_to_list(p.gjc)
+            projects_a_info.append({
+                "name": p.xmmc,
+                "keywords": keywords,
+                "abstract": _clean_html_text(p.xmjj)[:200] if p.xmjj else "",
+            })
+
+        projects_b_info = []
+        for p in cluster_b[:3]:
+            keywords = _parse_keywords_to_list(p.gjc)
+            projects_b_info.append({
+                "name": p.xmmc,
+                "keywords": keywords,
+                "abstract": _clean_html_text(p.xmjj)[:200] if p.xmjj else "",
+            })
+
+        prompt = f"""你是一位科研项目分组专家。请判断以下两个来自不同三级学科的项目组是否应该分在同一评审组。
+
+【学科A】{code_a} ({subject_name_a})
+代表项目：
+"""
+        for i, p in enumerate(projects_a_info, 1):
+            prompt += f"{i}. {p['name']}\n"
+            if p['keywords']:
+                prompt += f"   关键词：{', '.join(p['keywords'])}\n"
+            if p['abstract']:
+                prompt += f"   简介：{p['abstract']}\n"
+
+        prompt += f"""
+【学科B】{code_b} ({subject_name_b})
+代表项目：
+"""
+        for i, p in enumerate(projects_b_info, 1):
+            prompt += f"{i}. {p['name']}\n"
+            if p['keywords']:
+                prompt += f"   关键词：{', '.join(p['keywords'])}\n"
+            if p['abstract']:
+                prompt += f"   简介：{p['abstract']}\n"
+
+        prompt += """
+【判断标准】
+1. 两个组的研究内容是否高度相关，可以由同一批专家评审？
+2. 如果合并，是否会导致评审专家难以公正评价（因为超出专业范围）？
+
+请回答：
+- 如果应该合并（研究内容高度相关，适合同一批专家评审），回答：是
+- 如果不应该合并（研究内容差异大，不适合同一批专家评审），回答：否
+
+只回答"是"或"否"，不要解释。"""
+
+        try:
+            print(f"[LLM验证] 开始调用: {code_a} vs {code_b}")
+            import asyncio
+            # 添加60秒超时
+            response = await asyncio.wait_for(self.llm.ainvoke(prompt), timeout=60.0)
+            result = response.content.strip().lower() if hasattr(response, 'content') else str(response).strip().lower()
+            should_merge = "是" in result or "yes" in result or "true" in result
+
+            # 缓存结果（双向都存）
+            self._llm_validation_cache[cache_key] = should_merge
+            self._llm_validation_cache[reverse_key] = should_merge
+            self._save_llm_validation_cache()  # 持久化保存
+            print(f"[LLM验证] 学科{code_a} vs {code_b}: {'通过' if should_merge else '拒绝'}合并")
+            return should_merge
+        except asyncio.TimeoutError:
+            print(f"[LLM验证] 学科{code_a} vs {code_b}: 超时，默认不允许合并")
+            return False
+        except Exception as e:
+            print(f"[LLM验证] 调用失败: {e}，默认不允许合并")
+            return False
+
+    def _validation_context_hash(self, cluster: List[Project]) -> str:
+        tokens: List[str] = []
+        for project in cluster[:3]:
+            code = project.ssxk1 or project.ssxk2 or ""
+            third = self._get_third_level_code(code)
+            keywords = ",".join(_parse_keywords_to_list(project.gjc)[:5])
+            tokens.append(f"{third}|{(project.xmmc or '')[:60]}|{keywords}")
+        raw = "||".join(tokens)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+    def _get_third_level_code(self, code: str) -> str:
+        """获取三级学科代码（前5位）"""
+        code = (code or "").strip()
+        if len(code) >= 5:
+            return code[:5]
+        return code

@@ -3,9 +3,15 @@ Embedding 向量化模型配置
 
 配置从环境变量读取
 """
+from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# 加载 .env 文件（从项目根目录）
+_env_path = Path(__file__).parent.parent.parent.parent / ".env"
+load_dotenv(_env_path)
 
 
 class EmbeddingConfig(BaseSettings):

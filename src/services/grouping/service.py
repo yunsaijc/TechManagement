@@ -41,7 +41,7 @@ class GroupingService:
         self.embedder = embedder
         
         # 初始化子服务
-        self.grouping_agent = GroupingAgent(llm, embedder)
+        self.grouping_agent = GroupingAgent(llm, embedder, use_llm_validation=True)
         self.matching_agent = MatchingAgent(llm, embedder)
     
     async def group_projects(

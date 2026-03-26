@@ -25,10 +25,16 @@ embedding_config = EmbeddingConfig()
 
 def get_default_llm_client():
     """获取默认 LLM 客户端（使用环境变量配置）"""
+    api_key = (
+        llm_config.api_key
+        or os.getenv("apikey")
+        or os.getenv("API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
     return get_llm_client(
         provider=llm_config.provider or "openai",
         model=llm_config.model or None,
-        api_key=llm_config.api_key or None,
+        api_key=api_key or None,
         base_url=llm_config.base_url or None,
         temperature=llm_config.temperature,
         max_tokens=llm_config.max_tokens,

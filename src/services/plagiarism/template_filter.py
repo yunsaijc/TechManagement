@@ -34,11 +34,16 @@ class TemplateFilter:
     ]
 
     # 表格相关（使用 search 匹配任意位置）
+    # 注意：只排除纯表格结构内容，保留表格中的正文
     TABLE_PATTERNS = [
-        r'\[表格行\d+\]',  # 表格行标记 [表格行1]
-        r'[\u4e00-\u9fa5]+\s*\|\s*[\u4e00-\u9fa5]+',  # "项目 | 金额"
+        r'^\s*\[表格行\d+\]\s*$',  # 只有表格行标记，没有内容
+        r'^\s*\[表格行\d+\]\s*[^\w\s]{0,10}\s*$',  # 表格行标记+少量符号
         r'^表格序号',  # 表格表头
     ]
+
+    # 表格正文的最小长度阈值（包含表格标记）
+    TABLE_CONTENT_MIN_LENGTH = 50
+    TABLE_MARKER_MIN_COUNT = 2
 
     # 短句过滤阈值
     MIN_SENTENCE_LENGTH = 15
@@ -127,6 +132,10 @@ class TemplateFilter:
         if len(text) < 5:
             return False
 
+        # 如果文本很长（超过50字），不太可能是标题，可能是正文中的编号
+        if len(text) > 50:
+            return False
+
         for regex in self._heading_compiled:
             if regex.match(text):
                 return True
@@ -142,11 +151,38 @@ class TemplateFilter:
         return bool(self.NUMBER_ONLY_PATTERN.match(text))
 
     def _is_table_related(self, text: str) -> bool:
-        """检查是否表格相关内容"""
+        """检查是否表格相关内容
+
+        策略：
+        1. 如果文本很短且只包含表格标记，认为是表格结构内容，排除
+        2. 如果文本包含表格标记但有足够的正文内容，保留参与查重
+        """
+        has_table_marker = '[表格行' in text
+        table_marker_count = text.count('[表格行')
+        pipe_count = text.count('|')
+
+        # 明显的表格骨架文本：多行表格标记 + 多列分隔符
+        # 这类内容即使字符较长，也更接近模板结构而非正文。
+        if table_marker_count >= self.TABLE_MARKER_MIN_COUNT and pipe_count >= 4:
+            return True
+
+        if not has_table_marker:
+            # 检查其他表格模式
+            for regex in self._table_compiled:
+                if regex.search(text):
+                    return True
+            return False
+
+        # 包含表格标记，判断是否只是结构内容
+        # 如果文本长度超过阈值，认为是包含正文的表格内容，保留
+        if len(text) >= self.TABLE_CONTENT_MIN_LENGTH and pipe_count <= 2:
+            return False
+
+        # 短文本，检查是否是纯表格结构
         for regex in self._table_compiled:
-            # 使用 search 而不是 match，因为表格标记可能在句子中间
             if regex.search(text):
                 return True
+
         return False
 
     def is_template(self, text: str) -> bool:
@@ -166,6 +202,8 @@ class TemplateFilter:
         if self._is_table_related(text):
             return True
         if self._is_template(text):
+            return True
+        if self._is_number_only(text):
             return True
         return False
 

@@ -33,6 +33,10 @@
 | `enable_embedding` | Boolean | 否 | 是否启用 embedding 召回（默认true） |
 | `enable_llm` | Boolean | 否 | 是否启用 LLM 复核/标题生成（默认true） |
 | `needs_review_threshold` | Number | 否 | 低于该置信度标记复核（默认0.65） |
+| `merge_min_total_score` | Number | 否 | 小组合并总分阈值（建议配置化，不写死） |
+| `merge_min_text_score` | Number | 否 | 小组合并语义分阈值（建议配置化，不写死） |
+
+> 说明：`merge_min_total_score`、`merge_min_text_score` 可由服务配置注入；若接口层未开放这些字段，则使用服务端默认配置。小组合并阶段只要 `code_a != code_b` 即强制LLM校验。
 
 #### 请求示例
 
@@ -200,6 +204,11 @@ curl -X POST "http://localhost:8000/api/v1/grouping/full" \
 
 - 输入以学科代码 + `xmmc` 为主，`xmjj` 为辅
 - 学科代码用于粗分和相似性判断，但不是绝对硬约束
+- 小组合并时阈值由配置控制，不建议在代码中写死固定值
+- 小组合并阶段：若候选组学科代码不同（`code_a != code_b`），必须先通过LLM校验
+- 学科相似度将优先参考三级代码，降低仅同一级大类导致的误并风险
+- 拆分粒度从一级学科扩展到三级学科优先，减少同大类内混杂
+- LLM校验缓存键包含项目上下文哈希，避免仅按代码对的粗复用
 - 默认测试数据来自固定业务批次下的审核通过项目子集，调用方无需再传 `year` 或 `limit`
 - 对外文档不披露真实业务批次标识与敏感过滤条件
 - 字母开头代码与 7 位数字代码不能混组

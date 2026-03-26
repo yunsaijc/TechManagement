@@ -116,6 +116,10 @@ class ProjectInGroup(BaseModel):
     semantic_score: float = Field(..., description="语义匹配得分")
     quality_score: Optional[float] = Field(None, description="兼容字段：语义得分")
     reason: Optional[str] = Field(None, description="分配理由")
+    # 新增debug字段
+    original_subject_code: Optional[str] = Field(None, description="原始学科代码")
+    original_subject_name: Optional[str] = Field(None, description="原始学科名称")
+    keywords: List[str] = Field(default_factory=list, description="项目关键词")
 
     class Config:
         from_attributes = True
@@ -289,6 +293,8 @@ class GroupingRequest(BaseModel):
     category: Optional[str] = Field(None, description="奖种类别")
     max_per_group: int = Field(15, description="每组目标项目数")
     strategy: GroupingStrategy = Field(GroupingStrategy.SEMANTIC, description="分组策略")
+    merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
+    merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")
 
     class Config:
         from_attributes = True
