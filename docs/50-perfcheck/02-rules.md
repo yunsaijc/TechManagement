@@ -1,192 +1,111 @@
-# 📏 绩效核验规则设计
+# 绩效核验规则设计
 
-## 设计目标
+## 设计思路
 
-本规则系统用于将“语义差异”转换为“可判定风险”，确保以下问题可自动识别：
+规则层目标是把“抽取结果”稳定转换为“可审查结论”，核心原则：
 
-1. 核心指标是否下降
-2. 研究内容是否删减
-3. 预算结构是否异常迁移
+1. 章节先约束，再比较，避免跨章节污染。
+2. 金额/数值类规则优先于描述类规则。
+3. 所有结果收敛到 GREEN/YELLOW/RED，便于下游展示与统计。
 
----
+## 风险等级
 
-## 规则分层
+当前实现统一使用三档风险：
 
-```text
-Layer 1: 数据标准化
-  - 单位换算、数值清洗、同义词归一
+- GREEN：一致或可接受差异
+- YELLOW：存在提示性差异
+- RED：存在明确不一致或高风险差异
 
-Layer 2: 对齐规则
-  - 章节对齐、指标对齐、预算科目对齐
+## 指标规则（metrics_risks）
 
-Layer 3: 差异判定规则
-  - 指标缩水规则
-  - 内容删减规则
-  - 预算挪移规则
+### 范围约束
 
-Layer 4: 风险分级规则
-  - Critical / High / Medium / Low
-```
+- 仅比较申报书“五、项目实施的预期绩效目标”与任务书“七、项目实施的绩效目标”。
+- 年度/阶段/里程碑类中间指标默认不进入最终对齐。
 
----
+### 对齐规则
 
-## 核心规则清单
+1. 指标名标准化后先做规则直匹配。
+2. 直匹配失败时走相似度+LLM精排确认。
+3. 指标去重按“指标名+单位”，重复来源优先级：绩效指标/考核指标 > 总体目标补齐。
 
-### 1. 指标缩水规则
+### 风险判定
 
-#### R-IND-001 数值型指标下降
+- 任务书指标缺失：RED
+- 数值下降：RED
+- 指标等级降级：RED
+- 约束变模糊且无法证明同等严格：YELLOW
+- 其余情况：GREEN
 
-- 适用对象：论文数、专利数、营收额、样机数量等
-- 判定条件：任务书值 < 申报书值
-- 风险等级：
-  - 下降幅度 >= 30%: `Critical`
-  - 10% <= 下降幅度 < 30%: `High`
-  - 0 < 下降幅度 < 10%: `Medium`
+## 研究内容规则（content_risks）
 
-#### R-IND-002 指标被移除
+- 以申报书条目为基准，判断任务书覆盖情况。
+- 规范化后完全一致时直接 coverage_score=1.0。
+- 全部覆盖：GREEN
+- 部分覆盖：YELLOW
+- 全部不覆盖或任务书无内容：RED
 
-- 判定条件：申报书存在指标，任务书无对应承诺
-- 风险等级：`Critical`
+## 预算规则（budget_risks）
 
-#### R-IND-003 验收口径放宽
+### 总额规则
 
-- 示例：
-  - “发表 SCI 论文 5 篇” -> “发表论文若干”
-  - “营收不低于 500 万” -> “形成一定营收”
-- 判定条件：可量化约束降级为模糊描述
-- 风险等级：`High`
+- 预算总额不一致：RED
+- 预算总额一致：GREEN
 
-### 2. 研究内容删减规则
+### 科目规则
 
-#### R-RSCH-001 关键任务删除
+- 金额不一致优先判 RED。
+- 在金额一致前提下，占比变化超过阈值 budget_shift_threshold（默认 0.10）判 YELLOW；极大变化判 RED。
 
-- 判定条件：关键研究任务在任务书中缺失
-- 关键任务识别：包含关键字“核心技术”“关键算法”“系统集成”“中试验证”等
-- 风险等级：`High`
+### 特殊规则
 
-#### R-RSCH-002 里程碑减少
-
-- 判定条件：里程碑数量减少或交付件减少
-- 风险等级：`Medium` 至 `High`（按减少比例）
-
-#### R-RSCH-003 技术路线弱化
-
-- 判定条件：任务书中技术路径被替换为低复杂度路线
-- 风险等级：`Medium`
-
-### 3. 预算挪移规则
-
-#### R-BUD-001 大类比例异常变动
-
-- 适用大类：设备费、材料费、测试化验加工费、燃料动力费、劳务费、专家咨询费、管理费等
-- 判定条件：同一大类比例变化绝对值 > 阈值（默认 15%）
-- 风险等级：`High`
-
-#### R-BUD-002 管理性费用异常上升
-
-- 判定条件：管理费/间接费用明显上升且研发类费用同步下降
-- 风险等级：`High`
-
-#### R-BUD-003 预算结构重排
-
-- 判定条件：多项预算同时大幅变化，结构相似度低于阈值（默认 0.7）
-- 风险等级：`Medium` 或 `High`
-
----
-
-## 规则执行流程
-
-```mermaid
-flowchart LR
-    A[解析后的结构化数据] --> B[规则预处理]
-    B --> C[指标类规则]
-    B --> D[研究内容规则]
-    B --> E[预算规则]
-    C --> F[规则命中结果]
-    D --> F
-    E --> F
-    F --> G[风险聚合评分]
-    G --> H[预警等级输出]
-```
-
----
+- 如果已存在“预算总额”，预算科目中的“合计/总计”行不再输出，避免重复和误报。
 
 ## 核心代码结构
 
 ```python
-from dataclasses import dataclass
-from enum import Enum
+def _check_budget(self, apply_budget, task_budget, threshold):
+	risks = []
+	total_a = float(getattr(apply_budget, "total", 0.0) or 0.0)
+	total_t = float(getattr(task_budget, "total", 0.0) or 0.0)
 
+	# 1) 先比较预算总额
+	if total_a > 0 or total_t > 0:
+		...
 
-class RiskLevel(str, Enum):
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-
-@dataclass
-class RuleHit:
-    rule_id: str
-    category: str
-    level: RiskLevel
-    message: str
-    evidence: dict
-
-
-def check_indicator_decline(declare_value: float, task_value: float) -> RuleHit | None:
-    """检查数值型指标是否缩水。"""
-    if task_value >= declare_value:
-        return None
-    decline_ratio = (declare_value - task_value) / declare_value
-    if decline_ratio >= 0.3:
-        level = RiskLevel.CRITICAL
-    elif decline_ratio >= 0.1:
-        level = RiskLevel.HIGH
-    else:
-        level = RiskLevel.MEDIUM
-    return RuleHit(
-        rule_id="R-IND-001",
-        category="indicator",
-        level=level,
-        message=f"核心指标下降 {decline_ratio:.1%}",
-        evidence={"declare": declare_value, "task": task_value},
-    )
+	# 2) 再比较科目明细；存在预算总额时过滤“合计/总计”
+	apply_seq = [(item.type, float(item.amount or 0.0)) for item in getattr(apply_budget, "items", []) or []]
+	task_seq = [(item.type, float(item.amount or 0.0)) for item in getattr(task_budget, "items", []) or []]
+	if total_a > 0 or total_t > 0:
+		apply_seq = [(t, a) for t, a in apply_seq if t.replace(" ", "") not in {"合计", "总计"}]
+		task_seq = [(t, a) for t, a in task_seq if t.replace(" ", "") not in {"合计", "总计"}]
+	...
 ```
-
----
 
 ## 使用示例
 
 ```python
-hits = []
-
-hit = check_indicator_decline(declare_value=10, task_value=6)
-if hit:
-    hits.append(hit)
-
-for h in hits:
-    print(h.rule_id, h.level, h.message)
-
-# 输出：R-IND-001 RiskLevel.CRITICAL 核心指标下降 40.0%
+detector = PerfCheckDetector()
+risks = detector._check_budget(apply_budget, task_budget, threshold=0.10)
+for r in risks:
+	print(r.type, r.risk_level, r.reason)
 ```
 
----
+## 其他信息规则（other_risks）
+
+- 比较项目名称、承担单位、合作单位、项目组成员及分工。
+- 项目组成员判定采用“成员缺失 + 分工覆盖”规则。
+
+## 单位预算规则（unit_budget_risks）
+
+- 按单位聚合金额，比较“合计”差异。
+- 金额不一致：RED；一致：GREEN。
 
 ## 可配置参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `indicator_decline_critical` | 0.30 | 指标下降 Critical 阈值 |
-| `indicator_decline_high` | 0.10 | 指标下降 High 阈值 |
-| `budget_shift_threshold` | 0.15 | 预算比例变动阈值 |
-| `budget_structure_similarity` | 0.70 | 预算结构相似度阈值 |
-| `content_delete_threshold` | 0.20 | 研究内容删减比例阈值 |
-
----
-
-## 边界与例外处理
-
-- 合理变更（有审批批注、政策调整依据）可标记为“已说明变更”
-- 指标单位变化先归一后比较，避免误报
-- OCR 不确定字段进入“人工复核队列”，不直接输出高风险结论
+| budget_shift_threshold | 0.10 | 预算占比变动阈值 |
+| strict_mode | true | 预留参数，当前主流程保持兼容 |
+| enable_llm_enhancement | false | 预留开关 |
+| enable_llm_entailment | true | LLM语义校验开关 |

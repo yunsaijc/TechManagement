@@ -1,131 +1,98 @@
-# 📄 文档解析与对齐方案
+# 文档解析方案（PerfCheckParser）
 
 ## 设计思路
 
-申报书与任务书通常篇幅长、版式复杂、表格密集。解析方案采用“结构优先、语义兜底”：
+解析层遵循“章节硬约束优先、LLM补充其次、规则纠偏兜底”的策略：
 
-1. 先建立章节树与表格索引，保留文档结构
-2. 再抽取指标与预算实体，形成可比对对象
-3. 最后通过语义相似度完成跨文档对齐
+1. 先按标题定位核心章节，缩小抽取范围。
+2. 再由 LLM 提取结构化字段。
+3. 最后用规则补齐和去重，保证可比对性。
 
----
+## 设计原则
 
-## 解析流程
+解析策略为“章节硬约束 + 表格规则 + LLM补充 + 后处理纠偏”。
 
-```mermaid
-flowchart TD
-    A[原始文档 PDF/DOCX] --> B[格式识别与预处理]
-    B --> C[章节切分]
-    C --> D[表格抽取]
-    D --> E[实体抽取]
-    E --> F[标准化]
-    F --> G[对齐键构建]
-    G --> H[输出结构化 JSON]
-```
+关键目标：
 
----
+1. 核心章节必须稳定命中
+2. 表格字段优先于自由文本
+3. 结果可用于 detector 的可比对结构
 
-## 关键步骤
+## 当前抽取对象
 
-### 1. 章节切分
+- project_name
+- research_contents
+- performance_targets
+- budget
+- basic_info（undertaking_unit/partner_units/team_members）
+- units_budget
 
-- 识别标题层级（1/1.1/一、（一））
-- 构建 `section_id` 与父子关系
-- 记录原文位置：页码、段落序号
+## 章节硬约束
 
-### 2. 表格抽取
+### 绩效目标章节
 
-- 提取预算表、绩效指标表、里程碑表
-- 对合并单元格做展开归一
-- 输出统一行结构：`{category, item, value, unit, period}`
+- 申报书：项目实施的预期绩效目标（第五部分）
+- 任务书：项目实施的绩效目标（第七部分）
 
-### 3. 实体抽取
+### 研究内容章节
 
-- 指标实体：论文、专利、标准、营收、示范、人才培养
-- 研究实体：任务、子课题、技术路线、里程碑、交付件
-- 预算实体：预算大类、金额、占比、说明
+- 申报书：项目实施内容及目标
+- 任务书：项目实施的主要内容任务
 
-### 4. 标准化
+### 成员分工章节
 
-- 单位归一：元/万元、篇/项/套
-- 时间归一：年度、项目周期
-- 同义词归一：
-  - “预期成果”≈“绩效目标”
-  - “经费预算”≈“资金计划”
+- 申报书：项目组主要成员（兼容第四/第六部分标题）
+- 任务书：六、参加人员及分工
 
----
+## 绩效目标后处理
 
-## 对齐策略
+1. 先标准化 LLM 返回指标（避免 type 泛化）。
+2. 补齐顺序固定：
+   - 先绩效指标（三级指标+指标值）与满意度
+   - 再补总体目标-实施期目标缺失项
+3. 去重键为“指标名+单位”，同名优先保留绩效指标来源。
+4. 剔除年度/阶段中间项。
 
-### 对齐键设计
+## 成员抽取规则
 
-每个实体生成 `align_key`：
+- 支持“姓名/旧值:新值；分工/旧值:新值”的压缩表格行。
+- 记录时优先取冒号右侧当前值。
+- 与 LLM 基本信息结果做去重合并。
 
-```text
-align_key = normalize(name) + normalize(metric_type) + normalize(period)
-```
+## 预算抽取规则
 
-### 对齐顺序
+- 优先项目预算表与单位预算明细表。
+- 支持规则兜底回填预算明细。
+- 保留预算总额与科目明细，供 detector 做金额与占比比较。
 
-1. 精确键匹配（规则）
-2. 同义词匹配（词典）
-3. 语义匹配（向量检索）
-4. 低置信度人工复核
+## 长文档处理说明
 
----
+- 不再做全局头尾截断。
+- 原因：长文档中段常包含绩效表和成员表，截断会导致核心信息漏抽。
+- 当前做法是保留全文，再对各主题窗口按 max_chars 控制长度。
 
 ## 核心代码结构
 
 ```python
-from dataclasses import dataclass
+async def extract_schema_from_text(self, text: str, source_file_type: Optional[str] = None) -> DocumentSchema:
+   raw = self._strip_filling_instructions(text)
+   doc_kind = self._detect_doc_kind(raw)
 
+   required_metrics_text = self._extract_required_metrics_sections(raw=raw, doc_kind=doc_kind)
+   required_members_text = self._extract_required_team_members_sections(raw=raw, doc_kind=doc_kind)
 
-@dataclass
-class ParsedEntity:
-    entity_type: str
-    name: str
-    value: float | None
-    unit: str | None
-    period: str | None
-    section_path: str
-    page_no: int
-
-
-def build_align_key(entity: ParsedEntity) -> str:
-    """为实体构建跨文档对齐键。"""
-    parts = [entity.name.strip().lower(), entity.entity_type]
-    if entity.period:
-        parts.append(entity.period.strip().lower())
-    return "|".join(parts)
+   # LLM抽取 + 规则补齐
+   performance_targets = self._normalize_performance_targets(metrics_data.get("performance_targets") or [])
+   performance_targets = self._supplement_performance_targets(performance_targets, required_metrics_text)
+   performance_targets = self._keep_overall_targets_only(performance_targets, required_metrics_text)
+   ...
 ```
-
----
 
 ## 使用示例
 
 ```python
-entities = parser.extract_entities(document_bytes)
-entity_keys = [build_align_key(e) for e in entities]
-
-print(len(entities))
-print(entity_keys[:3])
+parser = PerfCheckParser()
+schema = await parser.extract_schema_from_text(raw_text, source_file_type="docx")
+print(schema.project_name)
+print(len(schema.performance_targets), len(schema.basic_info.team_members if schema.basic_info else []))
 ```
-
----
-
-## 质量控制
-
-| 检查项 | 目标 |
-|--------|------|
-| 章节召回率 | >= 98% |
-| 指标抽取准确率 | >= 95% |
-| 预算字段完整率 | >= 97% |
-| 对齐准确率 | >= 93% |
-
----
-
-## 异常处理
-
-- 扫描件质量差：启用 OCR 增强并标记低置信度
-- 表格断裂：基于标题与邻接行进行拼接恢复
-- 单位缺失：根据上下文推断，标注 `inferred=true`

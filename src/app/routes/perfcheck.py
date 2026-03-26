@@ -147,8 +147,10 @@ async def _run_compare_files_task(
     project_id: str,
     dec_bytes: bytes,
     dec_type: str,
+    dec_filename: str = "",
     task_bytes: bytes,
     task_type: str,
+    task_filename: str = "",
     budget_shift_threshold: float,
     strict_mode: bool,
     enable_llm_enhancement: bool,
@@ -176,7 +178,11 @@ async def _run_compare_files_task(
         )
         _results[result.task_id] = result
         try:
-            _save_debug_result(result)
+            _save_debug_result(
+                result,
+                declaration_filename=dec_filename,
+                task_filename=task_filename,
+            )
         except Exception as e:
             result.warnings.append(f"调试结果保存失败: {str(e)}")
         _update_task(
@@ -196,13 +202,26 @@ async def _run_compare_files_task(
         _update_task(task_id, state="failed", progress=min(p, 0.99), stage="error", error_code=code, message=msg)
 
 
-def _save_debug_result(result: PerfCheckResult) -> None:
+def _safe_stem(name: str) -> str:
+    stem = os.path.splitext(os.path.basename(str(name or "")))[0]
+    stem = re.sub(r"[^0-9A-Za-z._\-\u4e00-\u9fa5]+", "_", stem).strip("_")
+    return stem or "unknown"
+
+
+def _save_debug_result(
+    result: PerfCheckResult,
+    *,
+    declaration_filename: str = "",
+    task_filename: str = "",
+) -> None:
     """保存调试结果到本地目录。"""
-    safe_project_id = re.sub(r"[^0-9A-Za-z._-]+", "_", result.project_id).strip("_")
-    if not safe_project_id:
-        safe_project_id = "unknown_project"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = f"{safe_project_id}_{timestamp}_{result.task_id}"
+    dec_stem = _safe_stem(declaration_filename)
+    task_stem = _safe_stem(task_filename)
+    if dec_stem == task_stem:
+        base_name = f"{dec_stem}_{timestamp}"
+    else:
+        base_name = f"{dec_stem}_vs_{task_stem}_{timestamp}"
 
     json_path = os.path.join(DEBUG_DIR, f"{base_name}.json")
     md_path = os.path.join(DEBUG_DIR, f"{base_name}.md")
@@ -251,7 +270,11 @@ async def compare_files(
         )
         _results[result.task_id] = result
         try:
-            _save_debug_result(result)
+            _save_debug_result(
+                result,
+                declaration_filename=declaration_file.filename or "declaration",
+                task_filename=task_file.filename or "task",
+            )
         except Exception as e:
             result.warnings.append(f"调试结果保存失败: {str(e)}")
 
@@ -299,8 +322,10 @@ async def compare_files_async(
                 project_id=project_id,
                 dec_bytes=dec_bytes,
                 dec_type=dec_type,
+                dec_filename=declaration_file.filename or "declaration",
                 task_bytes=task_bytes,
                 task_type=task_type,
+                task_filename=task_file.filename or "task",
                 budget_shift_threshold=budget_shift_threshold,
                 strict_mode=strict_mode,
                 enable_llm_enhancement=enable_llm_enhancement,
@@ -371,8 +396,10 @@ async def compare_default_async(request: PerfCheckDefaultRequest) -> ApiResponse
                 project_id=request.project_id,
                 dec_bytes=dec_bytes,
                 dec_type="pdf",
+                dec_filename=os.path.basename(_DEFAULT_DECLARATION_PDF),
                 task_bytes=task_bytes,
                 task_type="pdf",
+                task_filename=os.path.basename(_DEFAULT_TASK_PDF),
                 budget_shift_threshold=request.budget_shift_threshold,
                 strict_mode=request.strict_mode,
                 enable_llm_enhancement=request.enable_llm_enhancement,

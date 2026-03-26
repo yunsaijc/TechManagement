@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic import BaseModel
 
 class ResearchContent(BaseModel):
@@ -11,7 +11,7 @@ class PerformanceTarget(BaseModel):
     subtype: Optional[str] = None
     text: str = ""
     source: str = ""
-    value: float
+    value: Union[float, str]
     unit: str
     constraint: str = "≥"
 
@@ -40,7 +40,6 @@ class BasicInfo(BaseModel):
     undertaking_unit: Optional[str] = None
     partner_units: List[str] = []
     team_members: List[TeamMember] = []
-    ip_ownership: Optional[str] = None
 
 class DocumentSchema(BaseModel):
     project_name: str
@@ -65,6 +64,8 @@ class MetricComparison(BaseModel):
     task_id: str
     apply_value: float
     task_value: float
+    apply_display: Optional[str] = None
+    task_display: Optional[str] = None
     apply_subtype: Optional[str] = None
     task_subtype: Optional[str] = None
     unit: str
@@ -75,6 +76,7 @@ class MetricComparison(BaseModel):
 class ContentComparison(BaseModel):
     apply_id: str
     apply_text: str
+    task_text: str = ""
     is_covered: bool
     coverage_score: float
     risk_level: str
@@ -109,7 +111,6 @@ class UnitBudgetComparison(BaseModel):
 class PerfCheckResult(BaseModel):
     project_id: str
     task_id: str
-    overall_score: float
     metrics_risks: List[MetricComparison]
     content_risks: List[ContentComparison]
     budget_risks: List[BudgetComparison]

@@ -75,20 +75,16 @@ class PerfCheckAgent:
             apply_schema, task_schema, self.budget_threshold
         )
         if on_progress:
-            on_progress(0.78, "score", "计算综合评分与摘要")
-        
-        # 3. 计算综合评分 (0-100)
-        score = self._calculate_overall_score(metrics_risks, content_risks, budget_risks)
-        
-        # 4. 生成简短总结
-        summary = self._generate_summary(metrics_risks, content_risks, budget_risks, score)
+            on_progress(0.78, "summary", "生成核验摘要")
+
+        # 3. 生成简短总结
+        summary = self._generate_summary(metrics_risks, content_risks, budget_risks)
         if on_progress:
             on_progress(0.95, "finalize", "整理输出结果")
         
         return PerfCheckResult(
             project_id=project_id or apply_schema.project_name,
             task_id=task_id,
-            overall_score=score,
             metrics_risks=metrics_risks,
             content_risks=content_risks,
             budget_risks=budget_risks,
@@ -98,42 +94,29 @@ class PerfCheckAgent:
             warnings=[]
         )
 
-    def _calculate_overall_score(
-        self, 
-        m_risks: List[MetricComparison], 
-        c_risks: List[ContentComparison], 
-        b_risks: List[BudgetComparison]
-    ) -> float:
-        """权重评分模型"""
-        score = 100.0
-        
-        # 指标扣分 (权重 50%)
-        m_penalty = sum([20 for r in m_risks if r.risk_level == "RED"]) + \
-                    sum([5 for r in m_risks if r.risk_level == "YELLOW"])
-        score -= min(50, m_penalty)
-        
-        # 内容扣分 (权重 30%)
-        c_penalty = sum([15 for r in c_risks if r.risk_level == "RED"]) + \
-                    sum([5 for r in c_risks if r.risk_level == "YELLOW"])
-        score -= min(30, c_penalty)
-        
-        # 预算扣分 (权重 20%)
-        b_penalty = sum([10 for r in b_risks if r.risk_level == "RED"]) + \
-                    sum([3 for r in b_risks if r.risk_level == "YELLOW"])
-        score -= min(20, b_penalty)
-        
-        return max(0, score)
-
-    def _generate_summary(self, m_risks, c_risks, b_risks, score) -> str:
+    def _generate_summary(self, m_risks, c_risks, b_risks) -> str:
         """生成核验结论概要"""
-        if score > 90:
-            return "项目绩效指标与任务书保持高度一致，预算变动在合理范围内。"
-        
+        content_level = str(getattr(c_risks[0], "risk_level", "")).upper() if c_risks else ""
         red_counts = len([r for r in m_risks if r.risk_level == "RED"]) + \
                      len([r for r in c_risks if r.risk_level == "RED"]) + \
                      len([r for r in b_risks if r.risk_level == "RED"])
+
+        yellow_counts = len([r for r in m_risks if r.risk_level == "YELLOW"]) + \
+                        len([r for r in c_risks if r.risk_level == "YELLOW"]) + \
+                        len([r for r in b_risks if r.risk_level == "YELLOW"])
+
+        if red_counts == 0 and yellow_counts == 0:
+            if content_level == "GREEN":
+                return "项目研究内容判定为“内容一致或扩展”，核心绩效指标与预算变动整体在合理范围内。"
+            return "项目绩效指标与任务书保持一致，预算变动在合理范围内。"
+
+        if content_level == "RED":
+            return "研究内容判定为“严重缩水”，建议优先核查任务书对申报书核心内容的覆盖完整性。"
+
+        if content_level == "YELLOW":
+            return "研究内容判定为“部分缩水”，任务书仅覆盖申报书部分内容，建议逐条补齐。"
         
         if red_counts > 0:
-            return f"检测到 {red_counts} 项高风险变动，主要涉及绩效缩水或内容删减，建议重点核对。"
+            return f"检测到 {red_counts} 项重点差异，主要涉及绩效缩水或内容删减，建议重点核对。"
         
         return "检测到部分中度风险变动，请关注预算占比调整。"

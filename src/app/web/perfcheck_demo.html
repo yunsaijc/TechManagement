@@ -395,15 +395,6 @@
       <div class="sub" style="margin-bottom:10px;">文件模式（pdf/docx）</div>
 
       <div class="row">
-        <div>
-          <label>项目 ID</label>
-          <input id="projectId" type="text" value="perfcheck_demo_001" />
-        </div>
-        <div>
-          <label>预算占比阈值（辅助，金额一致性优先）</label>
-          <input id="budgetShiftThreshold" type="number" step="0.01" min="0" max="1" value="0.10" />
-        </div>
-
         <div class="full mode-file">
           <div class="grid">
             <div>
@@ -444,7 +435,6 @@
       <div class="summary">
         <div id="riskBadge" class="badge yellow">等待执行</div>
         <div class="kpis">
-          <div class="kpi"><div id="kScore" class="v">-</div><div class="k">总体评分 (0-100)</div></div>
           <div class="kpi"><div id="kRed" class="v">0</div><div class="k">RED 数量</div></div>
           <div class="kpi"><div id="kYellow" class="v">0</div><div class="k">YELLOW 数量</div></div>
           <div class="kpi"><div id="kGreen" class="v">0</div><div class="k">GREEN 数量</div></div>
@@ -473,12 +463,10 @@
         <div class="sub" style="margin-bottom:8px;">单位预算明细一致性（unit_budget_risks）</div>
         <div id="unitBudgetTable"></div>
       </div>
-      <!--
       <div>
         <div class="sub" style="margin-bottom:8px;">其他关键信息（other_risks）</div>
         <div id="otherTable"></div>
       </div>
-      -->
     </section>
   </div>
 
@@ -486,14 +474,11 @@
 
   <script>
     const els = {
-      projectId: document.getElementById('projectId'),
-      budgetShiftThreshold: document.getElementById('budgetShiftThreshold'),
       declarationFile: document.getElementById('declarationFile'),
       taskFile: document.getElementById('taskFile'),
       runBtn: document.getElementById('runBtn'),
       clearBtn: document.getElementById('clearBtn'),
       riskBadge: document.getElementById('riskBadge'),
-      kScore: document.getElementById('kScore'),
       kRed: document.getElementById('kRed'),
       kYellow: document.getElementById('kYellow'),
       kGreen: document.getElementById('kGreen'),
@@ -502,7 +487,7 @@
       contentTable: document.getElementById('contentTable'),
       budgetTable: document.getElementById('budgetTable'),
       unitBudgetTable: document.getElementById('unitBudgetTable'),
-      // otherTable: document.getElementById('otherTable'),
+      otherTable: document.getElementById('otherTable'),
       toast: document.getElementById('toast')
     };
 
@@ -529,21 +514,6 @@
       return 'green';
     }
 
-    function scoreToOverall(score) {
-      const s = Number(score ?? 0);
-      if (s < 40) return 'CRITICAL';
-      if (s < 70) return 'HIGH';
-      if (s < 90) return 'MEDIUM';
-      return 'LOW';
-    }
-
-    function overallToBadgeClass(overall) {
-      const o = String(overall || '').toUpperCase();
-      if (o === 'CRITICAL' || o === 'HIGH') return 'red';
-      if (o === 'MEDIUM') return 'yellow';
-      return 'green';
-    }
-
     function renderTable(html) {
       return html || '<div class="sub">暂无数据</div>';
     }
@@ -554,8 +524,8 @@
       }
       const rows = metrics.map(m => {
         const tag = '<span class="tag ' + riskCls(m.risk_level) + '">' + escapeHTML(m.risk_level) + '</span>';
-        const applyDesc = escapeHTML(String(m.apply_value ?? '') + (m.unit || '') + (m.apply_subtype ? ' · ' + m.apply_subtype : ''));
-        const taskDesc = escapeHTML(String(m.task_value ?? '') + (m.unit || '') + (m.task_subtype ? ' · ' + m.task_subtype : ''));
+        const applyDesc = escapeHTML(String(m.apply_display ?? (String(m.apply_value ?? '') + (m.unit || ''))));
+        const taskDesc = escapeHTML(String(m.task_display ?? (String(m.task_value ?? '') + (m.unit || ''))));
         return [
           '<tr>',
           '<td>' + tag + ' ' + escapeHTML(m.type || '-') + '</td>',
@@ -567,7 +537,7 @@
       }).join('');
       return [
         '<table>',
-        '<thead><tr><th>类型</th><th>申报</th><th>任务书</th><th>原因</th></tr></thead>',
+        '<thead><tr><th>类型</th><th>申报书</th><th>任务书</th><th>原因</th></tr></thead>',
         '<tbody>' + rows + '</tbody>',
         '</table>'
       ].join('');
@@ -583,7 +553,8 @@
         return [
           '<tr>',
           '<td>' + tag + ' ' + escapeHTML(c.apply_id || '-') + '</td>',
-          '<td>' + escapeHTML((c.apply_text || '').slice(0, 160)) + '</td>',
+          '<td>' + escapeHTML(c.apply_text || '') + '</td>',
+          '<td>' + escapeHTML(c.task_text || '') + '</td>',
           '<td>' + escapeHTML((c.is_covered ? '已覆盖' : '未覆盖（缩水风险）') + ' · ' + (coverage * 100).toFixed(1) + '%') + '</td>',
           '<td>' + escapeHTML(c.reason || '') + '</td>',
           '</tr>'
@@ -591,7 +562,7 @@
       }).join('');
       return [
         '<table>',
-        '<thead><tr><th>ID</th><th>申报内容摘要</th><th>覆盖</th><th>原因</th></tr></thead>',
+        '<thead><tr><th>ID</th><th>申报书内容摘要</th><th>任务书内容摘要</th><th>覆盖</th><th>原因</th></tr></thead>',
         '<tbody>' + rows + '</tbody>',
         '</table>'
       ].join('');
@@ -622,24 +593,85 @@
       }).join('');
       return [
         '<table>',
-        '<thead><tr><th>类别</th><th>申报金额</th><th>任务书金额</th><th>申报占比</th><th>任务书占比</th><th>变动</th><th>原因</th></tr></thead>',
+        '<thead><tr><th>类别</th><th>申报书金额</th><th>任务书金额</th><th>申报书占比</th><th>任务书占比</th><th>变动</th><th>原因</th></tr></thead>',
         '<tbody>' + rows + '</tbody>',
         '</table>'
       ].join('');
     }
 
-    /*
     function renderOthers(others) {
-      if (!Array.isArray(others) || others.length === 0) {
+      const filtered = Array.isArray(others)
+        ? others.filter(o => String(o?.field || '').trim() !== '知识产权归属')
+        : [];
+
+      if (filtered.length === 0) {
         return '<div class="sub">暂无其他关键信息差异。</div>';
       }
-      const rows = others.map(o => {
+
+      function tryParseJSON(raw) {
+        const text = String(raw || '').trim();
+        if (!text) return null;
+        if (!(text.startsWith('[') || text.startsWith('{'))) return null;
+        try {
+          return JSON.parse(text);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function formatOtherValue(field, raw) {
+        const parsed = tryParseJSON(raw);
+        if (!parsed) {
+          return escapeHTML(raw || '');
+        }
+
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) {
+            return '<span class="sub">无</span>';
+          }
+
+          if (field === '项目组成员及分工') {
+            return parsed.map((item, idx) => {
+              const name = escapeHTML(item?.name || '-');
+              const duty = escapeHTML(item?.duty || '-');
+              return (idx + 1) + '. ' + name + '：' + duty;
+            }).join('<br>');
+          }
+
+          if (field === '合作单位') {
+            return parsed.map((item, idx) => {
+              return (idx + 1) + '. ' + escapeHTML(String(item || '-'));
+            }).join('<br>');
+          }
+
+          if (typeof parsed[0] === 'object' && parsed[0] !== null) {
+            return parsed.map((item, idx) => {
+              const pairs = Object.entries(item)
+                .map(([k, v]) => escapeHTML(k) + '：' + escapeHTML(v))
+                .join('；');
+              return (idx + 1) + '. ' + pairs;
+            }).join('<br>');
+          }
+
+          return parsed.map(x => escapeHTML(String(x || '-'))).join('、');
+        }
+
+        if (typeof parsed === 'object') {
+          return Object.entries(parsed)
+            .map(([k, v]) => escapeHTML(k) + '：' + escapeHTML(v))
+            .join('<br>');
+        }
+
+        return escapeHTML(String(parsed));
+      }
+
+      const rows = filtered.map(o => {
         const tag = '<span class="tag ' + riskCls(o.risk_level) + '">' + escapeHTML(o.risk_level) + '</span>';
         return [
           '<tr>',
           '<td>' + tag + ' ' + escapeHTML(o.field || '-') + '</td>',
-          '<td>' + escapeHTML(o.apply_value || '') + '</td>',
-          '<td>' + escapeHTML(o.task_value || '') + '</td>',
+          '<td>' + formatOtherValue(o.field || '', o.apply_value || '') + '</td>',
+          '<td>' + formatOtherValue(o.field || '', o.task_value || '') + '</td>',
           '<td>' + escapeHTML(o.reason || '') + '</td>',
           '</tr>'
         ].join('');
@@ -651,7 +683,6 @@
         '</table>'
       ].join('');
     }
-    */
 
     function renderUnitBudgets(items) {
       if (!Array.isArray(items) || items.length === 0) {
@@ -679,22 +710,20 @@
     }
 
     function updateSummary(result) {
-      const score = Number(result?.overall_score ?? 0);
-      const overall = scoreToOverall(score);
-      els.riskBadge.className = 'badge ' + overallToBadgeClass(overall);
-      els.riskBadge.textContent = '总体：' + overall + ' · ' + score.toFixed(1);
-      els.kScore.textContent = score.toFixed(0);
-
       const all = []
         .concat(result?.metrics_risks || [])
         .concat(result?.content_risks || [])
         .concat(result?.budget_risks || [])
         .concat(result?.unit_budget_risks || [])
-        // .concat(result?.other_risks || []);
+        .concat(result?.other_risks || []);
 
       const reds = all.filter(x => x.risk_level === 'RED').length;
       const yellows = all.filter(x => x.risk_level === 'YELLOW').length;
       const greens = all.filter(x => x.risk_level === 'GREEN').length;
+
+      // 移除“总体高/中/低风险”口径，仅保留执行状态。
+      els.riskBadge.className = 'badge green';
+      els.riskBadge.textContent = '核验完成';
 
       els.kRed.textContent = String(reds);
       els.kYellow.textContent = String(yellows);
@@ -752,7 +781,7 @@
         els.contentTable.innerHTML = renderTable(renderContents(result.content_risks));
         els.budgetTable.innerHTML = renderTable(renderBudgets(result.budget_risks));
         els.unitBudgetTable.innerHTML = renderTable(renderUnitBudgets(result.unit_budget_risks));
-        // els.otherTable.innerHTML = renderTable(renderOthers(result.other_risks));
+        els.otherTable.innerHTML = renderTable(renderOthers(result.other_risks));
         toast('核验完成');
         return;
       }
@@ -770,13 +799,8 @@
     }
 
     async function runCheck() {
-      const projectId = String(els.projectId.value || '').trim();
-      if (!projectId) {
-        toast('请填写项目 ID');
-        return;
-      }
-
-      const budgetShiftThreshold = Number(els.budgetShiftThreshold.value || 0.10);
+      const projectId = 'perfcheck_demo';
+      const budgetShiftThreshold = 0.10;
 
       els.runBtn.disabled = true;
       els.runBtn.style.opacity = '0.65';
@@ -825,8 +849,8 @@
     }
 
     async function runDefaultPdf() {
-      const projectId = String(els.projectId.value || '').trim() || 'perfcheck_default_pdf';
-      const budgetShiftThreshold = Number(els.budgetShiftThreshold.value || 0.10);
+      const projectId = 'perfcheck_default_pdf';
+      const budgetShiftThreshold = 0.10;
 
       els.runBtn.disabled = true;
       els.defaultPdfBtn.disabled = true;
@@ -876,7 +900,6 @@
       if (els.taskFile) els.taskFile.value = '';
       els.riskBadge.className = 'badge yellow';
       els.riskBadge.textContent = '等待执行';
-      els.kScore.textContent = '-';
       els.kRed.textContent = '0';
       els.kYellow.textContent = '0';
       els.kGreen.textContent = '0';
@@ -885,7 +908,7 @@
       els.contentTable.innerHTML = '';
       els.budgetTable.innerHTML = '';
       els.unitBudgetTable.innerHTML = '';
-      // els.otherTable.innerHTML = '';
+      els.otherTable.innerHTML = '';
       setProgress(false);
     }
 

@@ -1,198 +1,167 @@
-# 🌐 API 接口文档
-
-## 概述
-
-绩效核验服务提供申报书与任务书的智能对齐和差异核验接口，输出结构化预警结果。
+# API 接口文档
 
 ## 基础信息
 
 | 项目 | 值 |
 |------|-----|
-| 基础路径 | `/api/v1/perfcheck` |
-| 认证方式 | API Key / Bearer Token |
-| 请求格式 | `application/json` 或 `multipart/form-data` |
-| 响应格式 | JSON |
+| 基础路径 | /api/v1/perfcheck |
+| 请求格式 | multipart/form-data 或 application/json |
+| 响应格式 | JSON（ApiResponse） |
 
----
+## 已实现接口
 
-## 接口列表
+### 1. 同步文件比对
 
-### 1. 单项目核验
+POST /api/v1/perfcheck/compare
 
-**POST** `/api/v1/perfcheck/compare`
+表单参数：
 
-对单个项目的申报书与任务书执行核验。
+- declaration_file（必填）
+- task_file（必填）
+- project_id（必填）
+- budget_shift_threshold（默认 0.10）
+- strict_mode（默认 true）
+- enable_llm_enhancement（默认 false）
+- enable_table_vision_extraction（默认 true）
+- enable_llm_entailment（默认 true）
 
-#### 请求参数（JSON）
+返回 PerfCheckResult。
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `project_id` | String | 是 | 项目唯一标识 |
-| `declaration_text` | String | 否 | 申报书文本（与文件二选一） |
-| `task_text` | String | 否 | 任务书文本（与文件二选一） |
-| `declaration_file_id` | String | 否 | 申报书文件ID |
-| `task_file_id` | String | 否 | 任务书文件ID |
-| `strict_mode` | Boolean | 否 | 是否启用严格模式，默认 `true` |
-| `budget_shift_threshold` | Number | 否 | 预算比例变动阈值，默认 `0.15` |
-
-#### 请求示例
+请求示例：
 
 ```bash
 curl -X POST "http://localhost:8000/api/v1/perfcheck/compare" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "proj_2026_001",
-    "declaration_file_id": "file_dec_001",
-    "task_file_id": "file_task_001",
-    "strict_mode": true,
-    "budget_shift_threshold": 0.15
-  }'
+	-F "declaration_file=@tests/申报书/demo.docx" \
+	-F "task_file=@tests/任务书/demo.docx" \
+	-F "project_id=perfcheck_demo" \
+	-F "budget_shift_threshold=0.10"
 ```
 
-#### 响应示例
+响应示例：
 
 ```json
 {
-  "status": "success",
-  "code": 200,
-  "message": "核验完成",
-  "data": {
-    "task_id": "pc_170000000001",
-    "project_id": "proj_2026_001",
-    "summary": {
-      "overall_risk": "high",
-      "critical_count": 1,
-      "high_count": 2,
-      "medium_count": 1
-    },
-    "findings": [
-      {
-        "rule_id": "R-IND-001",
-        "category": "indicator",
-        "risk_level": "critical",
-        "title": "核心指标下降",
-        "detail": "论文指标由 10 篇降至 6 篇，下降 40.0%",
-        "evidence": {
-          "declaration": "预期发表 SCI 论文 10 篇",
-          "task": "计划发表 SCI 论文 6 篇",
-          "declaration_location": "第4章-绩效目标-表2",
-          "task_location": "第3章-考核指标-表1"
-        }
-      },
-      {
-        "rule_id": "R-BUD-001",
-        "category": "budget",
-        "risk_level": "high",
-        "title": "预算大类比例异常变动",
-        "detail": "设备费占比由 35% 降至 12%，管理费占比由 8% 升至 20%"
-      }
-    ]
-  }
+	"status": "success",
+	"code": 200,
+	"message": "核验完成",
+	"data": {
+		"project_id": "perfcheck_demo",
+		"task_id": "abcd1234",
+		"metrics_risks": [],
+		"content_risks": [],
+		"budget_risks": [],
+		"other_risks": [],
+		"unit_budget_risks": [],
+		"warnings": [],
+		"summary": ""
+	}
 }
 ```
 
----
+### 2. 异步文件比对
 
-### 2. 批量核验
+POST /api/v1/perfcheck/compare-async
 
-**POST** `/api/v1/perfcheck/batch-compare`
+参数同 compare，返回 PerfCheckTask（state=running）。
 
-批量提交多个项目核验任务。
+### 3. 同步文本比对
 
-#### 请求参数
+POST /api/v1/perfcheck/compare-text
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `items` | Array | 是 | 核验任务列表 |
-| `items[].project_id` | String | 是 | 项目ID |
-| `items[].declaration_file_id` | String | 是 | 申报书文件ID |
-| `items[].task_file_id` | String | 是 | 任务书文件ID |
-| `callback_url` | String | 否 | 异步回调地址 |
+请求体模型 PerfCheckRequest：
 
-#### 响应示例
+- declaration_text
+- task_text
+- project_id
+- budget_shift_threshold
+- strict_mode
+- enable_llm_enhancement
+- enable_table_vision_extraction
+- enable_llm_entailment
+
+返回 PerfCheckResult。
+
+请求示例：
 
 ```json
 {
-  "status": "success",
-  "code": 200,
-  "message": "批量任务已提交",
-  "data": {
-    "batch_id": "pcb_170000000002",
-    "total": 50,
-    "queued": 50
-  }
+	"project_id": "perfcheck_demo",
+	"declaration_text": "...",
+	"task_text": "...",
+	"budget_shift_threshold": 0.10,
+	"strict_mode": true,
+	"enable_llm_enhancement": false,
+	"enable_table_vision_extraction": true,
+	"enable_llm_entailment": true
 }
 ```
 
----
+### 4. 异步文本比对
 
-### 3. 查询核验任务
+POST /api/v1/perfcheck/compare-text-async
 
-**GET** `/api/v1/perfcheck/{task_id}`
+请求体同 compare-text，返回 PerfCheckTask。
 
-查询任务状态与核验摘要。
+### 5. 默认样例异步比对
 
-#### 路径参数
+POST /api/v1/perfcheck/compare-default-async
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `task_id` | String | 任务ID |
+用于本地默认 PDF 样例调试。
 
-#### 响应示例
+### 6. 任务状态查询
 
-```json
-{
-  "status": "success",
-  "code": 200,
-  "data": {
-    "task_id": "pc_170000000001",
-    "state": "finished",
-    "project_id": "proj_2026_001",
-    "summary": {
-      "overall_risk": "high",
-      "critical_count": 1,
-      "high_count": 2,
-      "medium_count": 1
-    }
-  }
-}
-```
+GET /api/v1/perfcheck/{task_id}
 
----
+返回 PerfCheckTask。
 
-### 4. 获取核验报告
+### 7. 报告获取
 
-**GET** `/api/v1/perfcheck/{task_id}/report`
+GET /api/v1/perfcheck/{task_id}/report?format=markdown|json
 
-获取结构化核验报告，可用于审查归档。
+- format=markdown：返回 PerfCheckReporter 生成的 Markdown
+- format=json：返回 PerfCheckResult 的 JSON 文本
 
-#### 查询参数
+## 主要响应模型
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `format` | String | 否 | `json`/`markdown`/`pdf`，默认 `json` |
+### PerfCheckResult
 
----
+- project_id
+- task_id
+- metrics_risks
+- content_risks
+- budget_risks
+- other_risks
+- unit_budget_risks
+- warnings
+- summary
+
+### PerfCheckTask
+
+- task_id
+- project_id
+- state（running/finished/failed）
+- progress
+- stage
+- error_code
+- message
+- summary
+- result
+
+## 错误处理
+
+路由层使用 HTTPException 返回错误；异步任务内部将异常归一为 error_code。
+
+常见 error_code：
+
+- LLM_TIMEOUT
+- TASK_CANCELLED
+- UNKNOWN_ERROR
 
 ## 错误码说明
 
-| 错误码 | 含义 | 说明 |
-|--------|------|------|
-| `40001` | 请求参数错误 | 必填字段缺失或格式非法 |
-| `40002` | 文件不可用 | 文件不存在或无读取权限 |
-| `40003` | 文档解析失败 | 文档损坏或无法提取文本 |
-| `40901` | 任务冲突 | 同一项目已有进行中任务 |
-| `42201` | 对齐失败 | 无法建立有效对齐关系 |
-| `50001` | 核验执行失败 | 系统内部错误 |
-
----
-
-## 预警等级定义
-
-| 等级 | 含义 | 处置建议 |
-|------|------|----------|
-| `critical` | 明显降标/删减/异常挪移 | 立即人工复核并冻结流转 |
-| `high` | 高风险差异 | 进入复核队列优先处理 |
-| `medium` | 中风险差异 | 常规复核 |
-| `low` | 低风险差异 | 自动通过或抽检 |
+| 场景 | HTTP 状态码 | 说明 |
+|------|-------------|------|
+| 参数错误 | 400 | 文件为空、format 非法等 |
+| 资源不存在 | 404 | task_id 不存在、默认样例文件不存在 |
+| 业务校验失败 | 422 | 解析或输入校验失败 |
+| 服务异常 | 500 | compare 执行失败或任务提交失败 |

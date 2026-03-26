@@ -1,3 +1,5 @@
+import json
+
 from src.common.models.perfcheck import PerfCheckResult
 
 class PerfCheckReporter:
@@ -27,13 +29,12 @@ class PerfCheckReporter:
         md.append(f"本次针对**{result.project_id}**项目的申报书和任务书进行全维度精准比对，从**核心考核指标、研究内容、预算大类**三个维度核查是否存在“偷工减料、指标缩水、预算挪移”等问题。")
         md.append("")
 
-        overall_text = "未发现高风险差异"
+        overall_text = "未发现显著差异"
         if red_n > 0:
-            overall_text = f"发现 {red_n} 项高风险差异"
+            overall_text = f"发现 {red_n} 项重点差异"
         elif yellow_n > 0:
-            overall_text = f"发现 {yellow_n} 项中风险差异"
-
-        md.append(f"综合风险评分：**{result.overall_score:.2f}**（{overall_text}）。")
+            overall_text = f"发现 {yellow_n} 项提示差异"
+        md.append(f"核验总体结论：**{overall_text}**。")
         if getattr(result, "summary", ""):
             md.append(f"核验摘要：{result.summary}")
         md.append("")
@@ -52,8 +53,8 @@ class PerfCheckReporter:
             md.append("| 指标类型 | 申报书 | 任务书 | 风险等级 | 说明 |")
             md.append("| --- | --- | --- | --- | --- |")
             for m in metrics:
-                a = f"{m.apply_value}{m.unit}" + (f"（{m.apply_subtype}）" if m.apply_subtype else "")
-                t = f"{m.task_value}{m.unit}" + (f"（{m.task_subtype}）" if m.task_subtype else "")
+                a = m.apply_display or f"{m.apply_value}{m.unit}"
+                t = m.task_display or f"{m.task_value}{m.unit}"
                 md.append(f"| {m.type} | {a} | {t} | {m.risk_level} | {m.reason} |")
         md.append("")
 
@@ -64,18 +65,21 @@ class PerfCheckReporter:
             covered = sum(1 for c in contents if bool(getattr(c, "is_covered", False)))
             total = len(contents)
             coverage_ratio = (covered / total) if total else 0.0
-            if has_any("RED", contents) or coverage_ratio < 0.7:
-                md.append(f"研究内容存在删减风险：覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
-            elif has_any("YELLOW", contents) or coverage_ratio < 0.9:
-                md.append(f"研究内容整体匹配，但存在部分覆盖/表述差异：覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
+            content_level = str(getattr(contents[0], "risk_level", "")).upper() if contents else ""
+            if content_level == "RED":
+                md.append(f"判定：**严重缩水**。任务书未覆盖申报书核心内容；覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
+            elif content_level == "YELLOW":
+                md.append(f"判定：**部分缩水**。任务书仅覆盖申报书部分内容；覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
             else:
-                md.append(f"研究内容整体复刻，未发现删减或阶段合并：覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
+                md.append(f"判定：**内容一致或扩展**。任务书覆盖申报书全部研究内容；覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
             md.append("")
-            md.append("| 内容项 | 覆盖情况 | 相似度 | 风险等级 | 说明 |")
-            md.append("| --- | --- | --- | --- | --- |")
+            md.append("| 内容项 | 申报书内容摘要 | 任务书内容摘要 | 覆盖情况 | 相似度 | 风险等级 | 说明 |")
+            md.append("| --- | --- | --- | --- | --- | --- | --- |")
             for c in contents:
                 cov = "已覆盖" if c.is_covered else "未完全覆盖"
-                md.append(f"| {c.apply_id} | {cov} | {c.coverage_score:.2%} | {c.risk_level} | {c.reason} |")
+                apply_text = (getattr(c, "apply_text", "") or "").replace("|", "\\|")
+                task_text = (getattr(c, "task_text", "") or "").replace("|", "\\|")
+                md.append(f"| {c.apply_id} | {apply_text} | {task_text} | {cov} | {c.coverage_score:.2%} | {c.risk_level} | {c.reason} |")
         md.append("")
 
         md.append("## 三、预算大类：占比变动核验")
@@ -89,7 +93,7 @@ class PerfCheckReporter:
             else:
                 md.append("预算大类与占比整体匹配，未发现“乾坤大挪移”式的结构性调整。")
             md.append("")
-            md.append("| 预算类别 | 申报占比 | 任务书占比 | 变动幅度 | 风险等级 | 说明 |")
+            md.append("| 预算类别 | 申报书占比 | 任务书占比 | 变动幅度 | 风险等级 | 说明 |")
             md.append("| --- | --- | --- | --- | --- | --- |")
             for b in budgets:
                 md.append(f"| {b.type} | {b.apply_ratio:.1%} | {b.task_ratio:.1%} | {b.ratio_delta:.1%} | {b.risk_level} | {b.reason} |")
@@ -100,37 +104,78 @@ class PerfCheckReporter:
         if not unit_risks:
             md.append("未发现承担单位/合作单位经费预算明细差异。")
         else:
-            md.append("| 单位 | 科目 | 申报金额 | 任务书金额 | 差额 | 风险等级 | 说明 |")
+            md.append("| 单位 | 科目 | 申报书金额 | 任务书金额 | 差额 | 风险等级 | 说明 |")
             md.append("| --- | --- | --- | --- | --- | --- | --- |")
             for u in unit_risks:
                 md.append(f"| {u.unit_name} | {u.type} | {u.apply_amount:.2f} | {u.task_amount:.2f} | {u.delta:.2f} | {u.risk_level} | {u.reason} |")
         md.append("")
 
-        # md.append("## 五、其他关键信息：一致性核验")
-        # if not others:
-        #     md.append("其他关键信息：**完全对齐，无隐性修改**。")
-        #     md.append("除核心维度外，申报书与任务书的项目基本信息、承担/合作单位信息、项目组人员及分工、知识产权归属等关键信息均保持一致，不存在因表述微调导致的执行缩水风险。")
-        # else:
-        #     if has_any("RED", others):
-        #         md.append("发现其他关键信息存在高风险变更（可能导致执行缩水或权益变化）：")
-        #     elif has_any("YELLOW", others):
-        #         md.append("其他关键信息总体一致，但存在需要人工确认的差异：")
-        #     else:
-        #         md.append("其他关键信息一致。")
-        #     md.append("")
-        #     md.append("| 字段 | 申报书 | 任务书 | 风险等级 | 说明 |")
-        #     md.append("| --- | --- | --- | --- | --- |")
-        #     for o in others:
-        #         md.append(f"| {o.field} | {o.apply_value} | {o.task_value} | {o.risk_level} | {o.reason} |")
-        # md.append("")
+        md.append("## 五、项目组成员及分工")
+        member_item = None
+        for o in others:
+            if getattr(o, "field", "") == "项目组成员及分工":
+                member_item = o
+                break
 
-        md.append("## 五、核验结论")
+        def _parse_members(raw: str):
+            text = str(raw or "").strip()
+            if not text:
+                return []
+            try:
+                data = json.loads(text)
+                if isinstance(data, list):
+                    rows = []
+                    for x in data:
+                        if not isinstance(x, dict):
+                            continue
+                        name = str(x.get("name") or "").strip()
+                        duty = str(x.get("duty") or "").strip()
+                        if name:
+                            rows.append({"name": name, "duty": duty})
+                    return rows
+            except Exception:
+                return []
+            return []
+
+        if not member_item:
+            md.append("未抽取到项目组成员及分工信息。")
+        else:
+            apply_members = _parse_members(getattr(member_item, "apply_value", ""))
+            task_members = _parse_members(getattr(member_item, "task_value", ""))
+            md.append(f"核验判定：**{getattr(member_item, 'risk_level', 'GREEN')}**，{getattr(member_item, 'reason', '一致')}。")
+            md.append("")
+
+            md.append("### 申报书（第六部分：项目组主要成员表）")
+            if not apply_members:
+                md.append("未抽取到申报书项目组成员。")
+            else:
+                md.append("| 序号 | 姓名 | 分工 |")
+                md.append("| --- | --- | --- |")
+                for i, m in enumerate(apply_members, start=1):
+                    name = str(m.get("name") or "").replace("|", "\\|")
+                    duty = str(m.get("duty") or "").replace("|", "\\|")
+                    md.append(f"| {i} | {name} | {duty} |")
+
+            md.append("")
+            md.append("### 任务书（第六部分：参加人员及分工表）")
+            if not task_members:
+                md.append("未抽取到任务书项目组成员。")
+            else:
+                md.append("| 序号 | 姓名 | 分工 |")
+                md.append("| --- | --- | --- |")
+                for i, m in enumerate(task_members, start=1):
+                    name = str(m.get("name") or "").replace("|", "\\|")
+                    duty = str(m.get("duty") or "").replace("|", "\\|")
+                    md.append(f"| {i} | {name} | {duty} |")
+        md.append("")
+
+        md.append("## 六、核验结论")
         if red_n == 0 and yellow_n == 0:
             md.append("本次核验在核心考核指标、研究内容及预算大类维度均未发现差异迹象，任务书整体继承申报书要求。")
         elif red_n == 0:
-            md.append(f"本次核验未发现高风险缩水，但存在 **{yellow_n}** 项中风险差异，建议结合原文进行复核确认。")
+            md.append(f"本次核验存在 **{yellow_n}** 项提示差异，建议结合原文进行复核确认。")
         else:
-            md.append(f"本次核验发现 **{red_n}** 项高风险差异，建议对相关条款进行重点核对并要求解释/更正。")
+            md.append(f"本次核验发现 **{red_n}** 项重点差异，建议对相关条款进行重点核对并要求解释/更正。")
         md.append("")
 
         if getattr(result, "warnings", None):

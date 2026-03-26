@@ -51,22 +51,7 @@ from src.common.models.perfcheck import (
     OtherInfoComparison,
     UnitBudgetComparison,
 )
-from src.common.models.logicons import (
-    ConflictCategory,
-    ConflictItem,
-    ConflictSeverity,
-    DocSpan,
-    DocumentGraph,
-    ExtractedEntity,
-    GraphEdge,
-    GraphStats,
-    LogiConsResult,
-    LogiConsSummary,
-    LogiConsTask,
-    LogiConsTextRequest,
-    RuleConfigSnapshot,
-    RuleInfo,
-)
+
 
 __all__ = [
     # 文件模型
@@ -141,11 +126,7 @@ __all__ = [
     "GraphEdge",
     "DocumentGraph",
     "ConflictItem",
-    "LogiConsSummary",
     "GraphStats",
-    "LogiConsTextRequest",
-    "LogiConsResult",
-    "LogiConsTask",
     "RuleInfo",
     "RuleConfigSnapshot",
 ]
