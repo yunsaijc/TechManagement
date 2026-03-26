@@ -114,7 +114,6 @@ class ProjectInGroup(BaseModel):
     subject_code: Optional[str] = Field(None, description="项目学科代码")
     subject_name: Optional[str] = Field(None, description="项目学科名称")
     semantic_score: float = Field(..., description="语义匹配得分")
-    quality_score: Optional[float] = Field(None, description="兼容字段：语义得分")
     reason: Optional[str] = Field(None, description="分配理由")
     # 新增debug字段
     original_subject_code: Optional[str] = Field(None, description="原始学科代码")
@@ -144,9 +143,6 @@ class ProjectGroup(BaseModel):
     
     # 统计信息
     count: int = Field(0, description="项目数量")
-    avg_quality: float = Field(0.0, description="平均语义得分")
-    max_quality: float = Field(0.0, description="最高语义得分")
-    min_quality: float = Field(0.0, description="最低语义得分")
     
     # 兼容旧版
     summary: Optional[GroupSummary] = Field(None, description="分组摘要(兼容)")
@@ -161,18 +157,9 @@ class GroupingStatistics(BaseModel):
     group_count: int = Field(..., description="分组数量")
     balance_score: float = Field(..., description="均衡度得分 (0-1)")
     avg_projects_per_group: float = Field(..., description="平均每组项目数")
-    avg_quality_per_group: float = Field(..., description="平均语义得分")
-    
-    # 新增：语义评分详情
-    quality_mean: Optional[float] = Field(None, description="语义得分均值")
-    quality_median: Optional[float] = Field(None, description="语义得分中位数")
-    quality_std: Optional[float] = Field(None, description="语义得分标准差")
-    quality_min: Optional[float] = Field(None, description="语义得分最小值")
-    quality_max: Optional[float] = Field(None, description="语义得分最大值")
     
     # 新增：分组质量
     quantity_balance: Optional[float] = Field(None, description="数量均衡度 (0-1)")
-    quality_balance: Optional[float] = Field(None, description="语义均衡度 (0-1)")
     subject_purity: Optional[float] = Field(None, description="主题聚合度 (0-1)")
     split_correctness: Optional[float] = Field(None, description="拆分正确率 (0-1)")
 

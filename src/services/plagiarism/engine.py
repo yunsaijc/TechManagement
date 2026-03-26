@@ -874,7 +874,7 @@ class ComparisonEngine:
         return max(ratio, overlap)
 
     def _normalize_sentence(self, text: str) -> str:
-        cleaned = re.sub(r"\[表格行\d+\]", "", text)
+        cleaned = self._clean_sentence_for_semantic_match(text)
         cleaned = re.sub(r"\s+", "", cleaned)
         cleaned = re.sub(r"[，。；：、！？,.!?;:\"'“”‘’（）()\[\]【】<>《》]", "", cleaned)
         return cleaned.lower()
@@ -895,10 +895,8 @@ class ComparisonEngine:
     def _is_narrative_sentence(self, text: str) -> bool:
         if not text:
             return False
-        if "[表格行" in text or "|" in text:
-            return False
-        cleaned = re.sub(r"\s+", "", text)
-        cleaned = re.sub(r"\[表格行\d+\]", "", cleaned)
+        cleaned = self._clean_sentence_for_semantic_match(text)
+        cleaned = re.sub(r"\s+", "", cleaned)
         if len(cleaned) < 24:
             return False
 
@@ -913,6 +911,32 @@ class ComparisonEngine:
         if cjk_chars < max(12, int(len(cleaned) * 0.4)):
             return False
         return True
+
+    def _clean_sentence_for_semantic_match(self, text: str) -> str:
+        """清洗句子中的结构噪声，仅用于语义判断/扩边，不影响坐标。"""
+        if not text:
+            return ""
+
+        # 先按行切分，过滤表格行噪声
+        lines = []
+        for line in text.splitlines():
+            line = re.sub(r"\[表格行\d+\]", "", line).strip()
+            if not line:
+                continue
+            # 典型表格字段行，直接丢弃（避免和正文混在同一句）
+            if "|" in line:
+                continue
+            lines.append(line)
+
+        cleaned = " ".join(lines).strip()
+        if not cleaned:
+            cleaned = re.sub(r"\[表格行\d+\]", "", text)
+            cleaned = cleaned.replace("|", " ")
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+        # 去掉常见标题前缀，保留正文句
+        cleaned = re.sub(r"^(项目立项背景及意义|项目简介|第一部分|第二部分|第三部分)\s*", "", cleaned)
+        return cleaned
 
     def _generate_fingerprint(self, text: str) -> int:
         """生成指纹"""

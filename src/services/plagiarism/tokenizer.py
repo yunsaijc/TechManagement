@@ -26,6 +26,7 @@ class SentenceTokenizer:
 
     # 句内分隔符（不分句，但标记位置）
     INTERNAL_SEPARATORS = ['，', '、', ':', '：', '(', ')', '（', '）']
+    TABLE_ROW_MARKER = re.compile(r"\[表格行\d+\]")
 
     def tokenize(self, text: str) -> List[Sentence]:
         """
@@ -46,43 +47,50 @@ class SentenceTokenizer:
             return []
 
         sentences = []
-        current_pos = 0
-        current_text = []
+        current_text: List[str] = []
         line_offset = 0
         sentence_start_pos = 0
 
-        for i, char in enumerate(text):
-            if char in self.SENTENCE_ENDINGS:
-                # 遇到句末标点，保留标点后结束当前句子
-                current_text.append(char)
-                sentence_text = ''.join(current_text).strip()
-                if sentence_text:
-                    sentences.append(Sentence(
-                        text=sentence_text,
-                        start_pos=sentence_start_pos,
-                        end_pos=i + 1,
-                        line_number=line_offset + 1,
-                    ))
-                current_pos = i + 1
-                current_text = []
-                sentence_start_pos = i + 1
-            elif char == '\n':
-                # 换行符不中断句子，但更新行号
-                current_text.append(char)
-                line_offset += 1
-            else:
-                current_text.append(char)
-
-        # 处理最后一个句子
-        if current_text:
+        def flush(end_pos: int) -> None:
+            nonlocal current_text, sentence_start_pos
             sentence_text = ''.join(current_text).strip()
             if sentence_text:
                 sentences.append(Sentence(
                     text=sentence_text,
                     start_pos=sentence_start_pos,
-                    end_pos=len(text),
+                    end_pos=end_pos,
                     line_number=line_offset + 1,
                 ))
+            current_text = []
+            sentence_start_pos = end_pos
+
+        i = 0
+        while i < len(text):
+            marker = self.TABLE_ROW_MARKER.match(text, i)
+            if marker:
+                # [表格行X] 视为结构边界：切断当前句，避免把多行表格与正文拼成超长句
+                if current_text:
+                    flush(i)
+                i = marker.end()
+                sentence_start_pos = i
+                continue
+
+            char = text[i]
+            if not current_text:
+                sentence_start_pos = i
+
+            if char in self.SENTENCE_ENDINGS:
+                current_text.append(char)
+                flush(i + 1)
+            elif char == '\n':
+                current_text.append(char)
+                line_offset += 1
+            else:
+                current_text.append(char)
+            i += 1
+
+        if current_text:
+            flush(len(text))
 
         return sentences
 

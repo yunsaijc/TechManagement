@@ -15,6 +15,7 @@ import hashlib
 import logging
 import math
 import os
+import pickle
 import re
 import time
 import uuid
@@ -49,6 +50,7 @@ from src.common.database import get_xkfl_repo
 
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
+EMBEDDING_CACHE_FILE = os.path.join(DEBUG_DIR, "embedding_cache.pkl")
 
 
 def _env_float(name: str, default: float) -> float:
@@ -145,14 +147,7 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                 "group_count": result.statistics.group_count,
                 "balance_score": result.statistics.balance_score,
                 "avg_projects_per_group": result.statistics.avg_projects_per_group,
-                "avg_quality_per_group": result.statistics.avg_quality_per_group,
-                "quality_mean": result.statistics.quality_mean,
-                "quality_median": result.statistics.quality_median,
-                "quality_std": result.statistics.quality_std,
-                "quality_min": result.statistics.quality_min,
-                "quality_max": result.statistics.quality_max,
                 "quantity_balance": result.statistics.quantity_balance,
-                "quality_balance": result.statistics.quality_balance,
                 "subject_purity": result.statistics.subject_purity,
                 "split_correctness": result.statistics.split_correctness,
                 "audit_reminder": result.statistics.audit_reminder,
@@ -167,9 +162,6 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                 "subject_code": group.subject_code,
                 "subject_name": group.subject_name,
                 "count": group.count,
-                "avg_quality": group.avg_quality,
-                "max_quality": group.max_quality,
-                "min_quality": group.min_quality,
                 "projects": [
                     {
                         "project_id": item.project_id,
@@ -223,12 +215,13 @@ class GroupingAgent:
             else _env_float("GROUPING_MERGE_MIN_TEXT_SCORE", 0.45)
         )
         self.stop_after_first_merge_round_for_debug = _env_bool(
-            "GROUPING_STOP_AFTER_FIRST_MERGE_ROUND", True
+            "GROUPING_STOP_AFTER_FIRST_MERGE_ROUND", False
         )
         self.project_repo = ProjectRepository()
         self.xkfl_repo = get_xkfl_repo()
         self._subject_cache = self._load_subject_cache()
         self._llm_validation_cache: Dict[str, bool] = self._load_llm_validation_cache()  # 持久化缓存
+        self._embedding_cache: Dict[str, List[float]] = self._load_embedding_cache()
 
     def _load_llm_validation_cache(self) -> Dict[str, bool]:
         """加载LLM验证缓存（持久化到文件）"""
@@ -265,6 +258,32 @@ class GroupingAgent:
             print(f"[缓存] 已保存 {len(self._llm_validation_cache)} 条LLM验证记录")
         except Exception as e:
             print(f"[缓存] 保存LLM验证缓存失败: {e}")
+
+    def _load_embedding_cache(self) -> Dict[str, List[float]]:
+        if not os.path.exists(EMBEDDING_CACHE_FILE):
+            print("[缓存] Embedding缓存文件不存在，创建新缓存")
+            return {}
+        try:
+            with open(EMBEDDING_CACHE_FILE, "rb") as f:
+                cache = pickle.load(f)
+            if isinstance(cache, dict):
+                print(f"[缓存] 加载Embedding缓存: {len(cache)} 条记录")
+                return cache
+        except Exception as e:
+            print(f"[缓存] 加载Embedding缓存失败: {e}")
+        return {}
+
+    def _save_embedding_cache(self):
+        try:
+            with open(EMBEDDING_CACHE_FILE, "wb") as f:
+                pickle.dump(self._embedding_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"[缓存] 已保存Embedding缓存: {len(self._embedding_cache)} 条记录")
+        except Exception as e:
+            print(f"[缓存] 保存Embedding缓存失败: {e}")
+
+    @staticmethod
+    def _embedding_text_cache_key(text: str) -> str:
+        return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
     def _load_subject_cache(self) -> Dict[str, str]:
         try:
@@ -470,18 +489,48 @@ class GroupingAgent:
     def _embed_projects(self, projects: List[Project]) -> Dict[str, np.ndarray]:
         if not projects:
             return {}
-        texts = [self._project_text(project) for project in projects]
         total = len(projects)
         logger.info(f"[Grouping] 开始生成 embedding: {total} 个项目")
-        
-        embed_start = time.time()
-        # 直接使用 embedder 的批量+并发功能，带进度回调
-        embeddings = self.embedder.embed_documents(texts, progress_callback=lambda done, total_batch: logger.info(f"[Grouping] embedding 进度: {done}/{total_batch} 批次完成"))
-        vectors = np.array(embeddings)
-        
-        elapsed = time.time() - embed_start
-        logger.info(f"[Grouping] embedding 完成: {total} 个项目，用时 {elapsed:.2f} 秒")
-        return {project.id: vectors[idx] for idx, project in enumerate(projects)}
+
+        texts = [self._project_text(project) for project in projects]
+        keys = [self._embedding_text_cache_key(text) for text in texts]
+
+        vectors_map: Dict[str, np.ndarray] = {}
+        missing_projects: List[Project] = []
+        missing_texts: List[str] = []
+        missing_keys: List[str] = []
+
+        for project, text, key in zip(projects, texts, keys):
+            cached = self._embedding_cache.get(key)
+            if cached is not None:
+                vectors_map[project.id] = np.asarray(cached, dtype=float)
+            else:
+                missing_projects.append(project)
+                missing_texts.append(text)
+                missing_keys.append(key)
+
+        logger.info(
+            f"[Grouping] embedding缓存命中 {len(vectors_map)}/{total}，未命中 {len(missing_projects)}"
+        )
+
+        if missing_projects:
+            embed_start = time.time()
+            embeddings = self.embedder.embed_documents(
+                missing_texts,
+                progress_callback=lambda done, total_batch: logger.info(
+                    f"[Grouping] embedding 进度: {done}/{total_batch} 批次完成"
+                ),
+            )
+            elapsed = time.time() - embed_start
+            logger.info(f"[Grouping] embedding新计算完成: {len(missing_projects)} 个项目，用时 {elapsed:.2f} 秒")
+
+            for project, key, vec in zip(missing_projects, missing_keys, embeddings):
+                vec_list = [float(x) for x in vec]
+                self._embedding_cache[key] = vec_list
+                vectors_map[project.id] = np.asarray(vec_list, dtype=float)
+            self._save_embedding_cache()
+
+        return vectors_map
 
     def _bucket_projects_by_subject(self, projects: List[Project]) -> Dict[str, List[Project]]:
         buckets: Dict[str, List[Project]] = defaultdict(list)
@@ -779,42 +828,54 @@ class GroupingAgent:
             filename = f"merge_unmerged_round{round_idx}_{timestamp}.json"
             filepath = os.path.join(DEBUG_DIR, filename)
 
-            small_groups = []
-            all_groups = []
+            groups = []
+            small_group_ids = []
+            counts = []
             for idx, cluster in enumerate(clusters, start=1):
-                code_counter = Counter((p.ssxk1 or p.ssxk2 or "unknown") for p in cluster)
-                dominant_code = code_counter.most_common(1)[0][0] if code_counter else "unknown"
-                entry = {
-                    "cluster_index": idx,
-                    "count": len(cluster),
-                    "dominant_code": dominant_code,
+                code_counter = Counter((p.ssxk1 or p.ssxk2 or "") for p in cluster if (p.ssxk1 or p.ssxk2))
+                dominant_code = code_counter.most_common(1)[0][0] if code_counter else ""
+                dominant_name = self._get_subject_name(dominant_code) if dominant_code else "未知主题"
+                count = len(cluster)
+                counts.append(count)
+                group_entry = {
+                    "group_id": idx,
+                    "subject_code": dominant_code or None,
+                    "subject_name": dominant_name,
+                    "count": count,
                     "projects": [
                         {
                             "project_id": p.id,
                             "xmmc": p.xmmc,
-                            "subject_code": p.ssxk1 or p.ssxk2 or "",
-                            "keywords": _parse_keywords_to_list(p.gjc)[:10],
+                            "xmjj": _clean_html_text(p.xmjj) if p.xmjj else "",
+                            "original_subject_code": p.ssxk1 or p.ssxk2 or "",
+                            "original_subject_name": self._get_subject_name(p.ssxk1 or p.ssxk2 or ""),
+                            "keywords": _parse_keywords_to_list(p.gjc)[:20],
                         }
                         for p in cluster
                     ],
                 }
-                all_groups.append(
-                    {
-                        "cluster_index": idx,
-                        "count": len(cluster),
-                        "dominant_code": dominant_code,
-                    }
-                )
-                if 0 < len(cluster) < min_per_group:
-                    small_groups.append(entry)
+                groups.append(group_entry)
+                if 0 < count < min_per_group:
+                    small_group_ids.append(idx)
 
             payload = {
-                "round": round_idx,
-                "min_per_group": min_per_group,
-                "total_groups_after_round": len(clusters),
-                "small_group_count_after_round": len(small_groups),
-                "all_groups_summary": all_groups,
-                "small_groups_detail": small_groups,
+                "id": f"merge_debug_round{round_idx}_{timestamp}",
+                "year": "fixed",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "statistics": {
+                    "round": round_idx,
+                    "total_groups_after_round": len(clusters),
+                    "small_group_count_after_round": len(small_group_ids),
+                    "small_group_ids": small_group_ids,
+                    "min_per_group": min_per_group,
+                    "avg_projects_per_group": round(_safe_mean(counts), 2) if counts else 0.0,
+                    "max_projects_per_group": max(counts) if counts else 0,
+                    "min_projects_per_group": min(counts) if counts else 0,
+                },
+                "meta": {
+                    "type": "merge_debug_after_round",
+                },
+                "groups": groups,
             }
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -1016,10 +1077,8 @@ class GroupingAgent:
             title, summary, subject_name = self._select_group_title(cluster)
 
             project_items = []
-            scores = []
             for project in cluster:
                 score = 1.0
-                scores.append(score)
                 # 使用数据库的gjc字段作为关键词
                 keywords = _parse_keywords_to_list(project.gjc)[:10]  # 最多10个
                 
@@ -1031,7 +1090,6 @@ class GroupingAgent:
                         subject_code=project.ssxk1,
                         subject_name=subject_name or self._get_subject_name(project.ssxk1 or "unknown"),
                         semantic_score=score,
-                        quality_score=score,
                         reason=summary or f"语义归入：{title}",
                         original_subject_code=project.ssxk1,
                         original_subject_name=self._get_subject_name(project.ssxk1 or ""),
@@ -1045,9 +1103,6 @@ class GroupingAgent:
                 subject_name=subject_name or title,
                 projects=project_items,
                 count=len(cluster),
-                avg_quality=round(_safe_mean(scores), 2),
-                max_quality=round(max(scores), 2) if scores else 0.0,
-                min_quality=round(min(scores), 2) if scores else 0.0,
                 summary=self._build_group_summary(cluster, title),
             )
 
@@ -1068,7 +1123,6 @@ class GroupingAgent:
         if not groups:
             return {
                 "quantity_balance": 1.0,
-                "quality_balance": 1.0,
                 "subject_purity": 1.0,
                 "split_correctness": 1.0,
             }
@@ -1076,9 +1130,6 @@ class GroupingAgent:
         counts = [group.count for group in groups]
         avg_count = _safe_mean(counts)
         quantity_balance = 1.0 if not counts or avg_count == 0 else max(0.0, 1 - (np.std(counts) / (avg_count + 1e-8)))
-
-        group_sizes = [group.avg_quality for group in groups if group.count > 0]
-        quality_balance = 1.0 if not group_sizes else max(0.0, 1 - np.std(group_sizes))
 
         subject_purity_scores = []
         for group in groups:
@@ -1092,7 +1143,6 @@ class GroupingAgent:
         split_correctness = 1.0
         return {
             "quantity_balance": round(float(quantity_balance), 3),
-            "quality_balance": round(float(quality_balance), 3),
             "subject_purity": round(float(subject_purity), 3),
             "split_correctness": round(float(split_correctness), 3),
         }
@@ -1128,12 +1178,10 @@ class GroupingAgent:
         print(f"[Grouping] ProjectGroup 构建完成，用时 {time.time() - build_group_start:.2f} 秒")
 
         counts = [group.count for group in groups]
-        avg_scores = [group.avg_quality for group in groups]
         metrics = self._balance_metrics(groups)
         balance_score = (
-            metrics["quantity_balance"] * 0.4
-            + metrics["quality_balance"] * 0.2
-            + metrics["subject_purity"] * 0.4
+            metrics["quantity_balance"] * 0.5
+            + metrics["subject_purity"] * 0.5
         )
 
         stats = GroupingStatistics(
@@ -1141,14 +1189,7 @@ class GroupingAgent:
             group_count=len(groups),
             balance_score=round(balance_score, 3),
             avg_projects_per_group=round(_safe_mean(counts), 2),
-            avg_quality_per_group=round(_safe_mean(avg_scores), 2),
-            quality_mean=round(_safe_mean(avg_scores), 2) if avg_scores else 0.0,
-            quality_median=round(float(np.median(avg_scores)), 2) if avg_scores else 0.0,
-            quality_std=round(float(np.std(avg_scores)), 2) if avg_scores else 0.0,
-            quality_min=round(float(min(avg_scores)), 2) if avg_scores else 0.0,
-            quality_max=round(float(max(avg_scores)), 2) if avg_scores else 0.0,
             quantity_balance=metrics["quantity_balance"],
-            quality_balance=metrics["quality_balance"],
             subject_purity=metrics["subject_purity"],
             split_correctness=metrics["split_correctness"],
             audit_reminder=None,

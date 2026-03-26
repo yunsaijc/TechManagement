@@ -44,6 +44,11 @@ PLAGIARISM_SECTION_CONFIG: Dict[str, Dict[str, Any]] = {
         "whitelist_patterns": WHITELIST_TEMPLATE_PATTERNS,
         "heading_patterns": HEADING_PATTERNS,
         "table_patterns": TABLE_PATTERNS,
+        # primary-only 推荐配置：若命中则优先使用该单一区域
+        "primary_scope": {
+            "start_pattern": r"项目立项背景及意义",
+            "end_pattern": r"第三部分",
+        },
         "sections": [
             {
                 "name": "项目立项背景及意义",

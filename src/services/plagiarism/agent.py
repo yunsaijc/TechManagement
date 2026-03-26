@@ -53,6 +53,7 @@ class PlagiarismAgent:
         self.threshold_high = threshold_high
         self.threshold_medium = threshold_medium
         self.debug = debug
+        self.primary_scope_info = None
 
         # 初始化 Section 提取器
         if section_config and SectionExtractor.validate_config(section_config):
@@ -136,8 +137,19 @@ class PlagiarismAgent:
             text = texts[doc_id]
 
             if idx == 0 and self.section_extractor:
-                # 主文档：先提取 section 区域
-                text = self.section_extractor.extract(text)
+                # 主文档：仅 primary 执行 section 截取
+                extracted, start_pos, end_pos = self.section_extractor.extract_with_meta(text)
+                if not extracted:
+                    raise ValueError(
+                        "primary 文档未命中配置的检测区域：请检查 section_config 的 start_pattern/end_pattern"
+                    )
+                self.primary_scope_info = {
+                    "doc_id": doc_id,
+                    "start": start_pos,
+                    "end": end_pos,
+                    "char_count": len(extracted),
+                }
+                text = extracted
 
             extracted_texts[doc_id] = text
             print(f"[Plagiarism] Section提取 {doc_id}: {len(text)} chars")
@@ -199,6 +211,7 @@ class PlagiarismAgent:
                 primary_doc_id,
                 similarities,
                 excluded_ranges,  # 传入排除区间
+                primary_scope_info=self.primary_scope_info,
             )
 
         return result
@@ -263,6 +276,7 @@ class PlagiarismAgent:
         primary_doc_id: str,
         similarities,
         excluded_ranges: Dict[str, list] = None,  # 添加排除区间参数
+        primary_scope_info: Optional[Dict] = None,
     ):
         """保存查重详细debug信息"""
         debug_dir = Path("debug_plagiarism")
@@ -276,6 +290,8 @@ class PlagiarismAgent:
             template_filter=self.template_filter,
         )
         output["documents"] = processed_texts
+        if primary_scope_info:
+            output["primary_scope"] = primary_scope_info
         
         # 添加排除区间信息
         if excluded_ranges:

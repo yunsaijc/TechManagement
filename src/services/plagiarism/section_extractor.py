@@ -1,9 +1,11 @@
-"""Section 区域提取器
+"""Section 区域提取器.
 
-使用正则表达式从文档中提取指定的 section 区域。
+支持两种配置形态：
+1. primary_scope: 单一主检测区域（推荐，Primary Only）
+2. sections: 多段区域（兼容旧配置）
 """
 import re
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class SectionExtractor:
@@ -15,8 +17,10 @@ class SectionExtractor:
         Args:
             section_config: section 配置，包含 sections 列表
         """
-        self.sections = section_config.get("sections", [])
-    
+        self.section_config = section_config or {}
+        self.primary_scope = self.section_config.get("primary_scope", {})
+        self.sections = self.section_config.get("sections", [])
+
     def extract(self, text: str) -> str:
         """从全文中提取目标 section 区域
         
@@ -26,49 +30,74 @@ class SectionExtractor:
         Returns:
             提取后的文本
         """
+        extracted, _, _ = self.extract_with_meta(text)
+        return extracted
+
+    def extract_with_meta(self, text: str) -> Tuple[str, int, int]:
+        """提取主检测区域并返回坐标.
+
+        Returns:
+            (提取文本, 起始坐标, 结束坐标)
+            若未命中，返回 ("", -1, -1)
+        """
+        if not text:
+            return "", -1, -1
+
+        # 推荐路径：single primary scope
+        if self.primary_scope:
+            start_pattern = self.primary_scope.get("start_pattern")
+            end_pattern = self.primary_scope.get("end_pattern")
+            extracted, start, end = self._extract_single_scope(text, start_pattern, end_pattern)
+            return extracted, start, end
+
+        # 兼容旧配置：sections 多段拼接
         if not self.sections:
-            # 无配置，返回全文
-            return text
-        
+            return "", -1, -1
+
         results = []
-        
+        global_start = -1
+        global_end = -1
+
         for section in self.sections:
             start_pattern = section.get("start_pattern")
             end_pattern = section.get("end_pattern")
-            
-            if not start_pattern:
-                continue
-            
-            # 编译正则表达式
-            start_regex = re.compile(start_pattern)
-            
-            # 查找起始位置
-            start_match = start_regex.search(text)
-            if not start_match:
-                continue
-            
-            start_pos = start_match.start()
-            
-            # 查找结束位置
-            if end_pattern:
-                end_regex = re.compile(end_pattern)
-                end_match = end_regex.search(text[start_pos + 1:])
-                
-                if end_match:
-                    end_pos = start_pos + 1 + end_match.start()
-                else:
-                    # 没找到结束标记，跳过
-                    continue
-            else:
-                # 无结束模式，提取到文档结尾
-                end_pos = len(text)
-            
-            # 提取区域内容
-            section_text = text[start_pos:end_pos].strip()
+            section_text, start_pos, end_pos = self._extract_single_scope(text, start_pattern, end_pattern)
             if section_text:
                 results.append(section_text)
-        
-        return "\n".join(results)
+                if global_start < 0 or start_pos < global_start:
+                    global_start = start_pos
+                global_end = max(global_end, end_pos)
+
+        return "\n".join(results), global_start, global_end
+
+    def _extract_single_scope(
+        self,
+        text: str,
+        start_pattern: Optional[str],
+        end_pattern: Optional[str],
+    ) -> Tuple[str, int, int]:
+        if not start_pattern:
+            return "", -1, -1
+
+        start_match = re.compile(start_pattern).search(text)
+        if not start_match:
+            return "", -1, -1
+        start_pos = start_match.start()
+
+        if end_pattern:
+            end_match = re.compile(end_pattern).search(text[start_pos + 1:])
+            if not end_match:
+                return "", -1, -1
+            end_pos = start_pos + 1 + end_match.start()
+        else:
+            end_pos = len(text)
+
+        if end_pos <= start_pos:
+            return "", -1, -1
+        section_text = text[start_pos:end_pos].strip()
+        if not section_text:
+            return "", -1, -1
+        return section_text, start_pos, end_pos
     
     def filter_template_content(self, text: str) -> str:
         """过滤模板内容，只保留正文
@@ -132,12 +161,15 @@ class SectionExtractor:
         if not section_config:
             return False
         
+        primary_scope = section_config.get("primary_scope")
+        if isinstance(primary_scope, dict):
+            return bool(primary_scope.get("start_pattern"))
+
         sections = section_config.get("sections", [])
-        if not sections:
-            return False
-        
-        for section in sections:
-            if not section.get("start_pattern"):
-                return False
-        
-        return True
+        if sections:
+            for section in sections:
+                if not section.get("start_pattern"):
+                    return False
+            return True
+
+        return False
