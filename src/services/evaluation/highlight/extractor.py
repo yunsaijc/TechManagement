@@ -63,6 +63,50 @@ class HighlightExtractor:
         "在线填写项目申报书",
         "主要指标：",
     ]
+    GOAL_MARKERS = ["总体目标", "研究目标", "项目目标", "建设目标", "目的"]
+    INNOVATION_MARKERS = ["创新点", "创新亮点", "技术融合", "模式可推广", "新范式", "新模式"]
+    ROUTE_MARKERS = ["技术路线", "实施内容", "主要研究内容", "研究内容", "活动策划", "资源开发", "协同推广"]
+    SEGMENT_STOP_MARKERS = [
+        "背景与意义",
+        "意义",
+        "创新亮点",
+        "预期效益",
+        "实施内容",
+        "建设目标",
+        "指标名称",
+        "绩效指标",
+        "总体目标",
+    ]
+    GOAL_STOP_MARKERS = [
+        "实施内容",
+        "意义",
+        "社会价值",
+        "行业引领",
+        "政策支撑",
+        "健康扶贫",
+        "实施期目标",
+        "第一年度目标",
+        "第二年度目标",
+        "第三年度目标",
+        "第四年度目标",
+        "指标名称",
+        "绩效指标",
+        "预期效益",
+    ]
+    GOAL_REJECT_MARKERS = [
+        "实施期目标",
+        "第一年度目标",
+        "第二年度目标",
+        "第三年度目标",
+        "第四年度目标",
+        "绩效指标",
+        "指标名称",
+        "社会价值",
+        "行业引领",
+        "政策支撑",
+        "健康扶贫",
+        "协同推广",
+    ]
 
     async def extract(
         self,
@@ -119,25 +163,149 @@ class HighlightExtractor:
         candidates: List[str] = []
 
         for section_name, section_text in self._select_sections(sections, section_keys):
-            candidates.extend(self._split_sentences(section_text))
+            candidates.extend(self._extract_candidates(section_name, section_text, category))
+
+        if not candidates and allow_hint_fallback:
+            for section_name, section_text in sections.items():
+                if self._contains_hint(section_text, hints):
+                    candidates.extend(self._extract_candidates(section_name, section_text, category))
 
         if not candidates and allow_hint_fallback:
             for chunk in page_chunks:
                 text = str(chunk.get("text", ""))
                 section_name = str(chunk.get("section", ""))
-                if self._section_matches(section_name, section_keys) or any(hint in text for hint in hints):
-                    candidates.extend(self._split_sentences(text))
+                if self._section_matches(section_name, section_keys) or self._contains_hint(text, hints):
+                    candidates.extend(self._extract_candidates(section_name, text, category))
 
         deduplicated: List[str] = []
+        dedupe_keys: set[str] = set()
         for line in candidates:
-            normalized = self._normalize_point(line)
+            normalized = self._normalize_point(line, category)
             if not self._is_valid_point(normalized, category):
                 continue
-            if normalized in deduplicated:
+            dedupe_key = re.sub(r"\s+", "", normalized)
+            if dedupe_key in dedupe_keys:
                 continue
+            dedupe_keys.add(dedupe_key)
             deduplicated.append(normalized)
 
-        return deduplicated
+        if category == "goal":
+            return deduplicated
+
+        return sorted(
+            deduplicated,
+            key=lambda item: self._score_point(item, category),
+            reverse=True,
+        )
+
+    def _extract_candidates(self, section_name: str, text: str, category: str) -> List[str]:
+        """按类别提取候选句"""
+        if category == "goal":
+            return self._extract_goal_candidates(section_name, text)
+        return self._split_sentences(text)
+
+    def _extract_goal_candidates(self, section_name: str, text: str) -> List[str]:
+        """提取更可信的目标候选，避免把背景、绩效表和实施内容当成目标"""
+        compact = re.sub(r"\s+", " ", text or "").strip()
+        if not compact:
+            return []
+
+        candidates: List[str] = []
+        has_overall_goal = self._contains_hint(compact, ["总体目标"])
+        patterns = [
+            (
+                self._build_loose_marker_pattern("总体目标"),
+                ["在建设期内实现以下核心目标"] + self.GOAL_STOP_MARKERS,
+            ),
+        ]
+
+        if not has_overall_goal:
+            patterns.extend(
+                [
+                    (
+                        self._build_loose_marker_pattern("项目目标"),
+                        self.GOAL_STOP_MARKERS,
+                    ),
+                    (
+                        self._build_loose_marker_pattern("研究目标"),
+                        ["总体目标"] + self.GOAL_STOP_MARKERS,
+                    ),
+                ]
+            )
+
+        if section_name in {"项目简介", "项目目的和意义"}:
+            patterns.append(
+                (
+                    self._build_loose_marker_pattern("建设目标"),
+                    ["实施内容", "预期效益", "协同推广", "意义"] + self.GOAL_STOP_MARKERS,
+                )
+            )
+
+        if section_name == "项目目的和意义":
+            patterns.append(
+                (
+                    r"(?:^|[。；;\s])目的\s*[:：]",
+                    ["意义", "社会价值", "行业引领", "政策支撑", "健康扶贫"],
+                )
+            )
+
+        for marker_pattern, stop_markers in patterns:
+            candidates.extend(self._extract_goal_segments(compact, marker_pattern, stop_markers))
+
+        if candidates:
+            return candidates
+
+        if (
+            section_name in {"研究目标", "项目目标", "项目目的和意义"}
+            and not any(marker in compact for marker in self.GOAL_REJECT_MARKERS)
+        ):
+            return self._split_goal_items(compact)
+
+        return []
+
+    def _extract_goal_segments(
+        self,
+        text: str,
+        marker_pattern: str,
+        stop_markers: List[str],
+    ) -> List[str]:
+        """提取目标片段并拆分为独立条目"""
+        extracted: List[str] = []
+        stop_regex = "|".join(re.escape(marker) for marker in stop_markers)
+        pattern = re.compile(
+            rf"{marker_pattern}\s*(?:是|为|包括|如下|为：|如下：)?\s*(?P<body>.+?)(?={stop_regex}|$)"
+        )
+        for match in pattern.finditer(text):
+            body = match.group("body").strip(" ：:；;。")
+            if not body:
+                continue
+            if any(marker in body for marker in self.GOAL_REJECT_MARKERS):
+                continue
+            extracted.extend(self._split_goal_items(body))
+        return extracted
+
+    def _build_loose_marker_pattern(self, marker: str) -> str:
+        """构建允许字符间夹杂空白的标记匹配"""
+        return "".join(f"{re.escape(char)}\\s*" for char in marker)
+
+    def _contains_hint(self, text: str, hints: List[str]) -> bool:
+        """判断文本中是否包含关键词，兼容字符间空白"""
+        compact = re.sub(r"\s+", "", text or "")
+        return any(re.sub(r"\s+", "", hint) in compact for hint in hints)
+
+    def _split_goal_items(self, text: str) -> List[str]:
+        """拆分目标条目，优先保留结构化列表项"""
+        compact = re.sub(r"\s+", " ", text or "").strip(" ：:；;。")
+        if not compact:
+            return []
+
+        numbered = re.split(r"(?:^|\s+)(?:[①②③④⑤⑥⑦⑧⑨⑩]|\d+[、.．]|\(?[一二三四五六七八九十]+\)?[、.．])\s*", compact)
+        items = [item.strip(" ：:；;。") for item in numbered if item.strip()]
+        if len(items) > 1:
+            return items
+
+        segments = re.split(r"[；;。]", compact)
+        return [segment.strip(" ：:；;。") for segment in segments if segment.strip()]
 
     def _infer_project_profile(self, sections: Dict[str, str]) -> str:
         """根据章节和正文特征推断项目类型"""
@@ -190,7 +358,7 @@ class HighlightExtractor:
         """过滤模板句、表单句和噪声句"""
         if len(text) < 12:
             return False
-        if len(text) > 260:
+        if len(text) > 320:
             return False
         if any(phrase in text for phrase in self.REJECT_PHRASES):
             return False
@@ -206,13 +374,20 @@ class HighlightExtractor:
             return False
         if category == "route" and re.search(r"(背景与意义|建设目标|社会价值|行业引领|政策支撑)", text):
             return False
-        if category == "goal" and re.search(r"(活动创新|技术赋能|资源共享)", text):
+        if category == "route" and re.search(r"(主任委员|专业委员会|硕士研究生导师|副院长|发表核心论文|主持完成|实用新型专利|荣获.+奖)", text):
+            return False
+        if category == "route" and re.search(r"(硬件配置方面|设备配置|门急诊量|床位|病源基础|设备近\d+台|学科建设方面|核心重点学科|院区共设)", text):
+            return False
+        if category == "goal" and re.search(r"(背景与意义|社会价值|行业引领|政策支撑|健康扶贫)", text):
+            return False
+        if category == "goal" and re.search(r"(活动创新|技术赋能|资源共享|实施期目标|绩效指标|指标名称|协同推广|预期效益)", text):
             return False
         return True
 
-    def _normalize_point(self, text: str) -> str:
+    def _normalize_point(self, text: str, category: str) -> str:
         """清洗摘要候选句"""
-        normalized = text.strip(" -•*；;。")
+        normalized = self._extract_marked_segment(text, category).strip(" -•*；;。")
+        normalized = re.sub(r"\s+", " ", normalized)
         normalized = re.sub(r"^[（(]?[一二三四五六七八九十\d]+[）).、\s]*", "", normalized)
         normalized = re.sub(r"^创新点\d+\s*", "", normalized)
         normalized = re.sub(r"^方向[一二三四五六七八九十\d]+[:：]\s*", "", normalized)
@@ -221,7 +396,72 @@ class HighlightExtractor:
         normalized = re.sub(r"^主要研究内容[:：]\s*", "", normalized)
         normalized = re.sub(r"^实施内容[:：]\s*", "", normalized)
         normalized = re.sub(r"^建设目标[:：]\s*", "", normalized)
+        normalized = re.sub(r"^总体目标[:：]?\s*", "", normalized)
+        normalized = re.sub(r"^研究目标[:：]?\s*", "", normalized)
+        normalized = re.sub(r"^目的[:：]?\s*", "", normalized)
+        normalized = re.sub(r"^是(?=通过|建立|形成|建设|解决|突破)", "", normalized)
         return normalized.strip()
+
+    def _extract_marked_segment(self, text: str, category: str) -> str:
+        """按类别提取更聚焦的片段"""
+        markers = self._get_markers(category)
+        compact = re.sub(r"\s+", " ", text or "").strip()
+        for marker in markers:
+            if marker not in compact:
+                continue
+            start = compact.index(marker)
+            segment = compact[start:]
+            stop = self._find_segment_stop(segment, marker)
+            return segment[:stop].strip() if stop is not None else segment.strip()
+        return compact
+
+    def _get_markers(self, category: str) -> List[str]:
+        """返回类别对应的标记词"""
+        if category == "goal":
+            return self.GOAL_MARKERS
+        if category == "innovation":
+            return self.INNOVATION_MARKERS
+        return self.ROUTE_MARKERS
+
+    def _find_segment_stop(self, segment: str, current_marker: str) -> int | None:
+        """查找片段结束位置"""
+        stop_positions: List[int] = []
+        for marker in self.SEGMENT_STOP_MARKERS:
+            if marker == current_marker:
+                continue
+            pos = segment.find(marker, len(current_marker))
+            if pos > 0:
+                stop_positions.append(pos)
+        if not stop_positions:
+            return None
+        return min(stop_positions)
+
+    def _score_point(self, text: str, category: str) -> int:
+        """对候选句进行排序"""
+        score = 0
+        if category == "goal":
+            if "总体目标" in text:
+                score += 5
+            if "建设目标" in text:
+                score += 4
+            if "项目目标" in text or "研究目标" in text:
+                score += 4
+            if "目的" in text:
+                score += 2
+            if "实施内容" in text:
+                score -= 2
+        if category == "innovation":
+            if any(keyword in text for keyword in ("创新点", "创新亮点", "技术融合", "新模式", "新范式", "突破")):
+                score += 4
+            if any(keyword in text for keyword in ("形式多样化", "活动", "讲座", "义诊")):
+                score -= 1
+        if category == "route":
+            if any(keyword in text for keyword in ("实施内容", "主要研究内容", "技术路线", "活动策划", "资源开发", "协同推广")):
+                score += 4
+            if any(keyword in text for keyword in ("背景与意义", "建设目标", "目的")):
+                score -= 2
+        score += min(len(text) // 40, 4)
+        return score
 
     def _build_evidence(
         self,

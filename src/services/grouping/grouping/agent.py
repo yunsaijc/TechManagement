@@ -647,6 +647,251 @@ class GroupingAgent:
             buckets[self._subject_group_key(project)].append(project)
         return buckets
 
+    def _target_group_size(self, max_per_group: int) -> int:
+        """估算最终理想组大小，用于反推目标组数。"""
+        target_size = max(self.min_per_group + 1, int(round(max_per_group * 0.7)))
+        return max(self.min_per_group, min(max_per_group, target_size))
+
+    def _target_group_count(self, project_count: int, max_per_group: int) -> int:
+        """根据理想组大小估算目标组数。"""
+        if project_count <= 0:
+            return 0
+        return max(1, math.ceil(project_count / self._target_group_size(max_per_group)))
+
+    def _graph_top_n_neighbors(self, project_count: int) -> int:
+        """返回图构建阶段每个项目保留的近邻数。"""
+        base = _env_int("GROUPING_GRAPH_TOP_N_NEIGHBORS", 25)
+        if project_count <= 200:
+            return max(8, min(base, project_count - 1))
+        return max(10, min(base, 30, project_count - 1))
+
+    def _graph_edge_min_score(self) -> float:
+        """返回构图阶段的最小边权阈值。"""
+        return _env_float("GROUPING_GRAPH_EDGE_MIN_SCORE", 0.42)
+
+    def _graph_resolution_candidates(self) -> List[float]:
+        """返回社区发现阶段尝试的分辨率候选。"""
+        return [0.15, 0.25, 0.35, 0.45, 0.60, 0.80, 1.00, 1.20]
+
+    def _cluster_center(self, cluster: List[Project], vector_map: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
+        """计算簇中心向量。"""
+        cluster_vectors = [vector_map[p.id] for p in cluster if p.id in vector_map]
+        if not cluster_vectors:
+            return None
+        return np.mean(cluster_vectors, axis=0)
+
+    def _project_assignment_score(
+        self,
+        project: Project,
+        target_cluster: List[Project],
+        vector_map: Dict[str, np.ndarray],
+        target_center: Optional[np.ndarray],
+    ) -> float:
+        """计算项目移动到目标组的适配分数。"""
+        project_vector = vector_map.get(project.id)
+        text_score = 0.0
+        if project_vector is not None and target_center is not None:
+            text_score = _cosine_similarity(project_vector, target_center)
+
+        project_keywords = _parse_keywords_to_list(project.gjc)
+        if not project_keywords:
+            project_keywords = _extract_keywords_from_title_to_list(project.xmmc or "")
+        target_keywords = self._cluster_keyword_set(target_cluster)
+        keyword_score = self._keyword_overlap_score(
+            set(project_keywords),
+            target_keywords,
+        )
+
+        code_a = project.ssxk1 or project.ssxk2 or ""
+        code_b = target_cluster[0].ssxk1 or target_cluster[0].ssxk2 or ""
+        subject_score = self._subject_similarity(code_a, code_b)
+        return 0.80 * text_score + 0.10 * keyword_score + 0.10 * subject_score
+
+    def _build_similarity_graph(
+        self,
+        projects: List[Project],
+        vector_map: Dict[str, np.ndarray],
+    ) -> "Any":
+        """基于 kNN 构建项目相似图。"""
+        import networkx as nx
+        from sklearn.neighbors import NearestNeighbors
+
+        graph = nx.Graph()
+        if not projects:
+            return graph
+
+        vectors = np.asarray([vector_map[project.id] for project in projects], dtype=float)
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-8
+        normalized_vectors = vectors / norms
+
+        for idx in range(len(projects)):
+            graph.add_node(idx)
+
+        n_neighbors = self._graph_top_n_neighbors(len(projects))
+        neighbor_model = NearestNeighbors(
+            n_neighbors=min(len(projects), n_neighbors + 1),
+            metric="cosine",
+            algorithm="brute",
+        )
+        neighbor_model.fit(normalized_vectors)
+        distances, indices = neighbor_model.kneighbors(normalized_vectors, return_distance=True)
+
+        keyword_sets = [
+            set(_parse_keywords_to_list(project.gjc) or _extract_keywords_from_title_to_list(project.xmmc or ""))
+            for project in projects
+        ]
+        edge_min_score = self._graph_edge_min_score()
+
+        for src_idx, neighbors in enumerate(indices):
+            code_a = projects[src_idx].ssxk1 or projects[src_idx].ssxk2 or ""
+            keywords_a = keyword_sets[src_idx]
+            for rank, dst_idx in enumerate(neighbors):
+                if dst_idx == src_idx:
+                    continue
+                cosine_sim = max(0.0, 1.0 - float(distances[src_idx][rank]))
+                code_b = projects[dst_idx].ssxk1 or projects[dst_idx].ssxk2 or ""
+                keyword_score = self._keyword_overlap_score(keywords_a, keyword_sets[dst_idx])
+                subject_score = self._subject_similarity(code_a, code_b)
+                edge_score = 0.90 * cosine_sim + 0.06 * keyword_score + 0.04 * subject_score
+                if edge_score < edge_min_score:
+                    continue
+
+                if graph.has_edge(src_idx, dst_idx):
+                    if edge_score > graph[src_idx][dst_idx]["weight"]:
+                        graph[src_idx][dst_idx]["weight"] = edge_score
+                else:
+                    graph.add_edge(src_idx, dst_idx, weight=edge_score)
+
+        isolated_count = sum(1 for _, degree in graph.degree() if degree == 0)
+        print(
+            f"[图聚类] 相似图构建完成：节点 {graph.number_of_nodes()}，"
+            f"边 {graph.number_of_edges()}，孤立点 {isolated_count}"
+        )
+        return graph
+
+    def _graph_communities_to_clusters(
+        self,
+        communities: List[set[int]],
+        projects: List[Project],
+    ) -> List[List[Project]]:
+        """将社区发现结果转换为项目簇。"""
+        clusters: List[List[Project]] = []
+        for community in communities:
+            if not community:
+                continue
+            members = [projects[idx] for idx in sorted(community)]
+            if members:
+                clusters.append(members)
+        return clusters
+
+    def _run_graph_community_detection(
+        self,
+        graph: "Any",
+        projects: List[Project],
+        max_per_group: int,
+    ) -> List[List[Project]]:
+        """执行图社区发现，并选择最接近目标组数的结果。"""
+        import networkx as nx
+
+        if graph.number_of_nodes() == 0:
+            return []
+
+        target_group_count = self._target_group_count(len(projects), max_per_group)
+        best_communities: Optional[List[set[int]]] = None
+        best_gap: Optional[int] = None
+        best_resolution: Optional[float] = None
+
+        for resolution in self._graph_resolution_candidates():
+            communities = nx.community.louvain_communities(
+                graph,
+                weight="weight",
+                resolution=resolution,
+                seed=42,
+            )
+            group_count = len(communities)
+            gap = abs(group_count - target_group_count)
+            print(
+                f"[图聚类] resolution={resolution:.2f} -> {group_count} 个社区"
+                f"（目标 {target_group_count}）"
+            )
+            if best_gap is None or gap < best_gap:
+                best_gap = gap
+                best_communities = communities
+                best_resolution = resolution
+
+        if best_communities is None:
+            return [projects]
+
+        print(
+            f"[图聚类] 选用 resolution={best_resolution:.2f}，"
+            f"初始社区 {len(best_communities)} 个"
+        )
+        return self._graph_communities_to_clusters(best_communities, projects)
+
+    def _reassign_projects_from_small_clusters(
+        self,
+        clusters: List[List[Project]],
+        vector_map: Dict[str, np.ndarray],
+        min_per_group: int,
+        max_per_group: int,
+    ) -> List[List[Project]]:
+        """按项目粒度回收过小组。"""
+        clusters = [cluster[:] for cluster in clusters if cluster]
+        max_rounds = max(1, _env_int("GROUPING_REASSIGN_MAX_ROUNDS", 4))
+
+        for round_idx in range(1, max_rounds + 1):
+            clusters = [cluster for cluster in clusters if cluster]
+            small_indices = [idx for idx, cluster in enumerate(clusters) if 0 < len(cluster) < min_per_group]
+            if not small_indices:
+                break
+
+            print(f"[项目重分配][第{round_idx}轮] 发现 {len(small_indices)} 个过小组")
+            moved_count = 0
+
+            centers = [self._cluster_center(cluster, vector_map) for cluster in clusters]
+            for src_idx in small_indices:
+                if src_idx >= len(clusters):
+                    continue
+                source_cluster = clusters[src_idx]
+                if not source_cluster or len(source_cluster) >= min_per_group:
+                    continue
+
+                remaining_projects = []
+                for project in source_cluster:
+                    best_idx = None
+                    best_score = -1.0
+                    for dst_idx, target_cluster in enumerate(clusters):
+                        if dst_idx == src_idx or not target_cluster:
+                            continue
+                        if len(target_cluster) >= max_per_group:
+                            continue
+                        score = self._project_assignment_score(
+                            project,
+                            target_cluster,
+                            vector_map,
+                            centers[dst_idx],
+                        )
+                        if score > best_score:
+                            best_score = score
+                            best_idx = dst_idx
+
+                    if best_idx is None:
+                        remaining_projects.append(project)
+                        continue
+
+                    clusters[best_idx].append(project)
+                    centers[best_idx] = self._cluster_center(clusters[best_idx], vector_map)
+                    moved_count += 1
+
+                clusters[src_idx] = remaining_projects
+
+            clusters = [cluster for cluster in clusters if cluster]
+            print(f"[项目重分配][第{round_idx}轮] 完成 {moved_count} 个项目迁移，剩余 {len(clusters)} 组")
+            if moved_count == 0:
+                break
+
+        return [cluster for cluster in clusters if cluster]
+
     def _embed_large_buckets_only(self, buckets: Dict[str, List[Project]], max_per_group: int) -> Dict[str, np.ndarray]:
         large_projects: List[Project] = []
         large_bucket_count = 0
@@ -1046,38 +1291,40 @@ class GroupingAgent:
         return ProjectCluster("kmeans").fit_predict(vectors, n_clusters)
 
     async def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
-        """基于关键词Embedding主导的全局层次聚类分组"""
+        """基于图聚类与项目级重分配的全局分组。"""
         if not projects:
             return []
         if len(projects) <= max_per_group:
             return [projects]
 
-        print(f"[Grouping] 开始关键词Embedding主导分组，共 {len(projects)} 个项目")
+        print(f"[Grouping] 开始图聚类主导分组，共 {len(projects)} 个项目")
 
         # 1. 计算全局Embedding
         print(f"[Grouping] 计算全局Embedding...")
         vector_map = self._embed_projects(projects)
         print(f"[Grouping] Embedding计算完成，共 {len(vector_map)} 个项目")
 
-        # 2. 基于Embedding相似度进行全局层次聚类（带LLM验证）
-        print(f"[Grouping] 进行全局层次聚类...")
-        clusters = await self._hierarchical_cluster_by_embedding(projects, vector_map, similarity_threshold=0.7)
-        print(f"[Grouping] 初始聚类完成，生成 {len(clusters)} 个组")
+        # 2. 构建相似图并进行社区发现
+        print(f"[Grouping] 构建项目相似图...")
+        graph = self._build_similarity_graph(projects, vector_map)
+        print(f"[Grouping] 进行图社区发现...")
+        clusters = self._run_graph_community_detection(graph, projects, max_per_group)
+        print(f"[Grouping] 图聚类完成，生成 {len(clusters)} 个组")
 
-        # 2.5 【学科大类约束】按学科大类拆分混合组
-        print(f"[Grouping] 按学科大类拆分混合组...")
-        clusters = self._split_by_discipline_category(clusters)
-        print(f"[Grouping] 学科大类拆分完成，共 {len(clusters)} 个组")
-
-        # 3. 处理过大组（基于Embedding重新聚类拆分）
+        # 3. 处理过大组（在社区内部继续细分）
         print(f"[Grouping] 处理过大组...")
         clusters = self._split_large_clusters_by_embedding(clusters, max_per_group, vector_map)
         print(f"[Grouping] 过大组拆分完成，共 {len(clusters)} 个组")
 
-        # 4. 处理过小组合并到最相似的组（带LLM验证）
-        print(f"[Grouping] 处理过小组合并...")
-        clusters = await self._merge_small_clusters_by_embedding(clusters, self.min_per_group, max_per_group, vector_map)
-        print(f"[Grouping] 过小组合并完成，共 {len(clusters)} 个组")
+        # 4. 最后按项目粒度处理过小组与人数约束
+        print(f"[Grouping] 处理过小组的项目级重分配...")
+        clusters = self._reassign_projects_from_small_clusters(
+            clusters,
+            vector_map,
+            self.min_per_group,
+            max_per_group,
+        )
+        print(f"[Grouping] 项目级重分配完成，共 {len(clusters)} 个组")
 
         print(f"[Grouping] 最终分组完成，共 {len(clusters)} 个组")
         return clusters

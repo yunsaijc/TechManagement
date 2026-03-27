@@ -194,8 +194,9 @@ class MammothPlagiarismReportBuilder:
                 right_spans.append((right_start, right_end, match_id, is_template, match_type))
 
             coverage = min(left_cov, right_cov)
+            heading_mode = self._heading_alignment_mode(segment)
             match_results[match_id] = {
-                "mode": "full" if coverage >= 0.85 else "core",
+                "mode": "full" if coverage >= 0.85 and heading_mode == "aligned" else "core",
                 "confidence": round(coverage, 4),
                 "match_type": match_type,
             }
@@ -247,6 +248,40 @@ class MammothPlagiarismReportBuilder:
                     return cleaned
 
         return [(start, end) for start, end, _, _ in annotated]
+
+    def _heading_alignment_mode(self, segment: Dict[str, Any]) -> str:
+        primary_text = segment.get("primary_text", "") or ""
+        sources = segment.get("sources", []) or []
+        source_text = sources[0].get("text", "") if sources else ""
+        primary_heading = self._extract_leading_heading(primary_text)
+        source_heading = self._extract_leading_heading(source_text)
+
+        if not primary_heading and not source_heading:
+            return "aligned"
+        if not primary_heading or not source_heading:
+            return "mismatch"
+        return "aligned" if self._normalize_heading(primary_heading) == self._normalize_heading(source_heading) else "mismatch"
+
+    def _extract_leading_heading(self, text: str) -> str:
+        cleaned = self._clean_nav_text(text)
+        if not cleaned:
+            return ""
+        patterns = [
+            r"^(项目简介|项目立项背景及意义)",
+            r"^(第[一二三四五六七八九十百]+部分[^\s]{0,20})",
+            r"^([一二三四五六七八九十]+[、\.．][^。！？；]{1,40})",
+            r"^(\d+[、\.．][^。！？；]{1,40})",
+        ]
+        for pattern in patterns:
+            match = re.match(pattern, cleaned)
+            if match:
+                return match.group(1).strip()
+        return ""
+
+    def _normalize_heading(self, text: str) -> str:
+        cleaned = re.sub(r"\s+", "", text or "")
+        cleaned = cleaned.replace(".", "．")
+        return cleaned
 
     def _fragment_text(self, html_fragment: str) -> str:
         text = re.sub(r"<[^>]+>", "", html_fragment or "")
