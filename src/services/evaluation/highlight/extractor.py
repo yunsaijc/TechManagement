@@ -45,6 +45,42 @@ class HighlightExtractor:
         "预期成果",
     ]
     ROUTE_HINTS = ["技术路线", "研究方案", "实施方案", "技术方案", "主要研究内容", "实施内容"]
+    INNOVATION_KEYWORDS = [
+        "创新",
+        "突破",
+        "首创",
+        "首次",
+        "新范式",
+        "新模式",
+        "智能化",
+        "数字化",
+        "高精度",
+        "多模态",
+        "3D 打印",
+        "3D打印",
+        "虚拟现实",
+        "增强现实",
+        "机器人",
+        "个性化",
+        "自主可控",
+    ]
+    ROUTE_ACTION_KEYWORDS = [
+        "构建",
+        "建立",
+        "搭建",
+        "开发",
+        "设计",
+        "整合",
+        "开展",
+        "形成",
+        "利用",
+        "采用",
+        "实现",
+        "推进",
+        "优化",
+        "组建",
+        "改造",
+    ]
     REJECT_PHRASES = [
         "填报说明",
         "项目申报书分为",
@@ -62,6 +98,7 @@ class HighlightExtractor:
         "项目名称应清晰",
         "在线填写项目申报书",
         "主要指标：",
+        "目前取得的代表性科研创新成果",
     ]
     GOAL_MARKERS = ["总体目标", "研究目标", "项目目标", "建设目标", "目的"]
     INNOVATION_MARKERS = ["创新点", "创新亮点", "技术融合", "模式可推广", "新范式", "新模式"]
@@ -106,6 +143,22 @@ class HighlightExtractor:
         "政策支撑",
         "健康扶贫",
         "协同推广",
+    ]
+    STRUCTURED_TITLE_PATTERNS = [
+        r"^方向[一二三四五六七八九十\d]+[:：]",
+        r"^创新点\s*\d+",
+        r"^[①②③④⑤⑥⑦⑧⑨⑩]",
+        r"^(?:一是|二是|三是|四是|五是)[、:：]?",
+        r"^\d+[、\.．]",
+    ]
+    ROUTE_METRIC_PATTERNS = [
+        r"[，,](?:覆盖(?:全部)?[^\n，。；;]{0,40}(?:人次|项|册|场|%)).*$",
+        r"[，,](?:年覆盖[^\n，。；;]{0,30}).*$",
+        r"[，,](?:参与人数[^\n，。；;]{0,30}).*$",
+        r"[，,](?:用户活跃度达[^\n，。；;]{0,30}).*$",
+        r"[，,](?:发放至[^\n，。；;]{0,40}).*$",
+        r"[，,](?:阅读和浏览量[^\n，。；;]{0,30}).*$",
+        r"[，,](?:浏览量[^\n，。；;]{0,30}).*$",
     ]
 
     async def extract(
@@ -184,6 +237,19 @@ class HighlightExtractor:
             if not self._is_valid_point(normalized, category):
                 continue
             dedupe_key = re.sub(r"\s+", "", normalized)
+            if category == "innovation":
+                replaced = False
+                for index, existing in enumerate(deduplicated):
+                    existing_key = re.sub(r"\s+", "", existing)
+                    if dedupe_key in existing_key or existing_key in dedupe_key:
+                        if len(normalized) < len(existing):
+                            deduplicated[index] = normalized
+                            dedupe_keys.discard(existing_key)
+                            dedupe_keys.add(dedupe_key)
+                        replaced = True
+                        break
+                if replaced:
+                    continue
             if dedupe_key in dedupe_keys:
                 continue
             dedupe_keys.add(dedupe_key)
@@ -202,7 +268,7 @@ class HighlightExtractor:
         """按类别提取候选句"""
         if category == "goal":
             return self._extract_goal_candidates(section_name, text)
-        return self._split_sentences(text)
+        return self._extract_structured_candidates(section_name, text, category)
 
     def _extract_goal_candidates(self, section_name: str, text: str) -> List[str]:
         """提取更可信的目标候选，避免把背景、绩效表和实施内容当成目标"""
@@ -372,15 +438,23 @@ class HighlightExtractor:
             return False
         if re.search(r"(项目编号|申报单位|吸引发动公众参与|开展科学普及活动)", text):
             return False
+        if re.match(r"(实施地点|项目效益|主要指标|核心建设内容)[:：]?", text):
+            return False
         if category == "route" and re.search(r"(背景与意义|建设目标|社会价值|行业引领|政策支撑)", text):
             return False
         if category == "route" and re.search(r"(主任委员|专业委员会|硕士研究生导师|副院长|发表核心论文|主持完成|实用新型专利|荣获.+奖)", text):
             return False
         if category == "route" and re.search(r"(硬件配置方面|设备配置|门急诊量|床位|病源基础|设备近\d+台|学科建设方面|核心重点学科|院区共设)", text):
             return False
+        if category == "route" and re.search(r"(用户活跃度|参与人数|发放至社区|阅读和浏览量|大型科普活动\d+场)", text):
+            return False
+        if category == "route" and re.match(r"(主要研究内容涉及|聚焦于|围绕开发应用先进的)", text):
+            return False
         if category == "goal" and re.search(r"(背景与意义|社会价值|行业引领|政策支撑|健康扶贫)", text):
             return False
         if category == "goal" and re.search(r"(活动创新|技术赋能|资源共享|实施期目标|绩效指标|指标名称|协同推广|预期效益)", text):
+            return False
+        if category == "innovation" and re.search(r"(覆盖\d+|参与人数|用户活跃度|阅读和浏览量)", text):
             return False
         return True
 
@@ -388,9 +462,14 @@ class HighlightExtractor:
         """清洗摘要候选句"""
         normalized = self._extract_marked_segment(text, category).strip(" -•*；;。")
         normalized = re.sub(r"\s+", " ", normalized)
+        normalized = re.sub(r"^\|\s*", "", normalized)
+        if category == "innovation":
+            normalized = re.sub(r"^.*?创新点的描述限\s*\d+\s*字以内[）)]\s*", "", normalized)
+            normalized = re.sub(r"^项目预期的主要创新点[:：]?\s*", "", normalized)
         normalized = re.sub(r"^[（(]?[一二三四五六七八九十\d]+[）).、\s]*", "", normalized)
-        normalized = re.sub(r"^创新点\d+\s*", "", normalized)
+        normalized = re.sub(r"^创新点\s*\d+\s*", "", normalized)
         normalized = re.sub(r"^方向[一二三四五六七八九十\d]+[:：]\s*", "", normalized)
+        normalized = re.sub(r"^该(?:研究)?方向(?:主要)?(?:研究内容)?(?:聚焦于|聚焦|围绕|致力于|主要研究内容涉及)\s*", "", normalized)
         normalized = re.sub(r"^项目名称[:：]\s*", "", normalized)
         normalized = re.sub(r"^项目简介[:：]\s*", "", normalized)
         normalized = re.sub(r"^主要研究内容[:：]\s*", "", normalized)
@@ -400,7 +479,99 @@ class HighlightExtractor:
         normalized = re.sub(r"^研究目标[:：]?\s*", "", normalized)
         normalized = re.sub(r"^目的[:：]?\s*", "", normalized)
         normalized = re.sub(r"^是(?=通过|建立|形成|建设|解决|突破)", "", normalized)
+        if category == "route":
+            normalized = self._strip_route_metric_tail(normalized)
         return normalized.strip()
+
+    def _extract_structured_candidates(self, section_name: str, text: str, category: str) -> List[str]:
+        """按结构化条目提取创新点与技术路线候选"""
+        blocks = self._split_structured_blocks(text)
+        if not blocks:
+            return self._split_sentences(text)
+
+        candidates: List[str] = []
+        for block in blocks:
+            candidates.extend(self._expand_block_candidates(section_name, block, category))
+
+        return candidates or self._split_sentences(text)
+
+    def _split_structured_blocks(self, text: str) -> List[str]:
+        """按方向、创新点、项目符号等结构切块"""
+        compact = re.sub(r"\r\n?", "\n", text or "")
+        compact = re.sub(r"[ \t]+", " ", compact)
+        compact = re.sub(r"(?<!\n)(方向[一二三四五六七八九十\d]+[:：])", r"\n\1", compact)
+        compact = re.sub(r"(?<!\n)(创新点\s*\d+)", r"\n\1", compact)
+        compact = re.sub(r"(?<!\n)([①②③④⑤⑥⑦⑧⑨⑩])", r"\n\1", compact)
+        lines = [line.strip(" -•*\t") for line in compact.split("\n") if line.strip()]
+
+        blocks: List[str] = []
+        current: List[str] = []
+        for line in lines:
+            if self._is_structured_title(line) and current:
+                blocks.append("\n".join(current).strip())
+                current = []
+            current.append(line)
+
+        if current:
+            blocks.append("\n".join(current).strip())
+
+        return blocks
+
+    def _expand_block_candidates(self, section_name: str, block: str, category: str) -> List[str]:
+        """将结构块扩展为候选句"""
+        lines = [line.strip() for line in block.split("\n") if line.strip()]
+        if not lines:
+            return []
+
+        title = lines[0]
+        body = " ".join(lines[1:]).strip()
+        merged = " ".join(lines).strip()
+        candidates: List[str] = []
+
+        is_structured_title = self._is_structured_title(title)
+        if title.startswith("方向") and is_structured_title:
+            candidates.append(title)
+            sentence_source = body or title
+        elif title.startswith("创新点") and is_structured_title:
+            candidates.append(title)
+            sentence_source = merged
+        else:
+            sentence_source = merged
+
+        sentences = self._split_sentences(sentence_source)
+
+        if category == "innovation":
+            preferred = [
+                sentence for sentence in sentences
+                if any(keyword in sentence for keyword in self.INNOVATION_KEYWORDS)
+            ]
+            if preferred:
+                candidates.extend(preferred[:3])
+            elif sentences:
+                candidates.append(sentences[0])
+        else:
+            preferred = [
+                sentence for sentence in sentences
+                if any(keyword in sentence for keyword in self.ROUTE_ACTION_KEYWORDS)
+            ]
+            if preferred:
+                candidates.extend(preferred[:3])
+            elif sentences and section_name not in {"主要内容及实施地点"}:
+                candidates.append(sentences[0])
+
+        return candidates
+
+    def _is_structured_title(self, text: str) -> bool:
+        """判断是否为结构化条目标题"""
+        compact = text.strip()
+        return any(re.match(pattern, compact) for pattern in self.STRUCTURED_TITLE_PATTERNS)
+
+    def _strip_route_metric_tail(self, text: str) -> str:
+        """移除技术路线中偏绩效指标的尾部描述"""
+        normalized = text.strip()
+        for pattern in self.ROUTE_METRIC_PATTERNS:
+            normalized = re.sub(pattern, "", normalized)
+        return normalized.strip(" ，,；;。")
 
     def _extract_marked_segment(self, text: str, category: str) -> str:
         """按类别提取更聚焦的片段"""
@@ -453,13 +624,25 @@ class HighlightExtractor:
         if category == "innovation":
             if any(keyword in text for keyword in ("创新点", "创新亮点", "技术融合", "新模式", "新范式", "突破")):
                 score += 4
+            if any(keyword in text for keyword in ("研究", "系统", "平台", "机器人", "3D 打印", "3D打印", "个性化")):
+                score += 2
+            if re.fullmatch(r".{8,40}(研究|系统|平台|技术|算法|模型)$", text):
+                score += 4
             if any(keyword in text for keyword in ("形式多样化", "活动", "讲座", "义诊")):
                 score -= 1
+            if "：" not in text and len(text) <= 28:
+                score += 2
+            if len(text) > 120:
+                score -= 3
         if category == "route":
             if any(keyword in text for keyword in ("实施内容", "主要研究内容", "技术路线", "活动策划", "资源开发", "协同推广")):
                 score += 4
+            if any(text.startswith(keyword) for keyword in self.ROUTE_ACTION_KEYWORDS):
+                score += 3
             if any(keyword in text for keyword in ("背景与意义", "建设目标", "目的")):
                 score -= 2
+            if any(keyword in text for keyword in ("覆盖", "人次", "活跃度", "浏览量")):
+                score -= 3
         score += min(len(text) // 40, 4)
         return score
 
@@ -499,5 +682,5 @@ class HighlightExtractor:
         compact = re.sub(r"\s+", " ", text or "").strip()
         if not compact:
             return []
-        sentences = re.split(r"[。！？；;\n]", compact)
+        sentences = re.split(r"[。！？；;]", compact)
         return [sentence.strip() for sentence in sentences if sentence.strip()]

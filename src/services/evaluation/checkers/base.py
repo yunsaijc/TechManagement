@@ -3,6 +3,7 @@
 
 定义所有检查器的公共接口和基础实现。
 """
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,136 @@ class BaseChecker(ABC):
     # 子类必须指定维度代码
     dimension: str = ""
     dimension_name: str = ""
+    SECTION_ALIASES: Dict[str, List[str]] = {
+        "预期效益": [
+            "预期效益",
+            "项目实施的预期经济社会效益目标",
+            "项目效益",
+            "主要指标、效益",
+            "推广应用",
+            "应用范围与普及前景",
+            "普及前景",
+        ],
+        "社会效益": [
+            "社会效益",
+            "项目实施的预期经济社会效益目标",
+            "项目效益",
+            "主要指标、效益",
+            "普及前景",
+        ],
+        "经济效益": [
+            "经济效益",
+            "项目实施的预期经济社会效益目标",
+            "项目效益",
+            "产业化",
+            "应用前景",
+            "项目实施对产业的引领促进作用",
+        ],
+        "风险分析": [
+            "风险分析",
+            "风险控制",
+            "风险管理",
+            "风险应对",
+            "技术风险",
+            "市场风险",
+            "政策风险",
+            "实施制约因素",
+        ],
+        "风险控制": [
+            "风险控制",
+            "风险分析",
+            "风险管理",
+            "风险应对",
+            "技术风险",
+            "市场风险",
+            "政策风险",
+            "实施制约因素",
+        ],
+        "进度安排": [
+            "进度安排",
+            "实施计划",
+            "工作计划",
+            "研究计划",
+        ],
+        "政策依据": [
+            "政策依据",
+            "政策支撑条件",
+            "政策保障",
+            "申报项目与所属指南或申报通知方向的关联关系",
+        ],
+        "经费预算": [
+            "经费预算",
+            "预算说明",
+            "预算合理性说明",
+            "项目预算",
+            "项目预算表",
+            "省级财政资金",
+            "直接费用",
+            "间接费用",
+            "自筹资金",
+        ],
+        "预算说明": [
+            "预算说明",
+            "预算合理性说明",
+            "项目预算",
+            "项目预算表",
+            "省级财政资金",
+            "直接费用",
+            "间接费用",
+            "自筹资金",
+        ],
+        "伦理审查": [
+            "伦理审查",
+            "组织支撑条件",
+            "技术支持",
+        ],
+        "项目团队": [
+            "项目团队",
+            "项目组主要成员",
+            "负责人及项目主要骨干人员的科研水平及主要成果",
+            "任务分工",
+            "现有工作基础及合作分工",
+        ],
+        "人员分工": [
+            "人员分工",
+            "任务分工",
+            "项目组主要成员",
+            "现有工作基础及合作分工",
+        ],
+        "成员简介": [
+            "成员简介",
+            "负责人及项目主要骨干人员的科研水平及主要成果",
+            "项目组主要成员",
+        ],
+        "预期成果": [
+            "预期成果",
+            "项目实施的预期绩效目标",
+            "项目绩效评价考核目标及指标",
+            "主要指标、效益",
+            "科普内容产出",
+        ],
+        "考核指标": [
+            "考核指标",
+            "项目实施的预期绩效目标",
+            "项目绩效评价考核目标及指标",
+            "主要指标、效益",
+            "科普基础设施建设",
+            "科普内容产出",
+            "科普活动开展",
+        ],
+        "技术指标": [
+            "技术指标",
+            "项目实施的预期绩效目标",
+            "项目绩效评价考核目标及指标",
+            "主要指标、效益",
+        ],
+        "成果形式": [
+            "成果形式",
+            "项目实施的预期绩效目标",
+            "项目绩效评价考核目标及指标",
+            "科普内容产出",
+        ],
+    }
     
     def __init__(self, llm: Optional[Any] = None):
         """初始化检查器
@@ -90,18 +221,54 @@ class BaseChecker(ABC):
         """
         result = {}
         for name in section_names:
-            # 尝试精确匹配
-            if name in content:
-                result[name] = content[name]
-                continue
-            
-            # 尝试模糊匹配（章节名可能包含空格或格式差异）
-            for key in content:
-                if name in key or key in name:
-                    result[name] = content[key]
-                    break
+            matched_sections = self._match_sections(content, name)
+            if matched_sections:
+                result[name] = "\n\n".join(matched_sections)
         
         return result
+
+    def _match_sections(self, content: Dict[str, Any], section_name: str) -> List[str]:
+        """匹配章节及其别名，并返回去重后的内容列表"""
+        matched: List[str] = []
+        seen_keys: set[str] = set()
+        candidates = [section_name] + self.SECTION_ALIASES.get(section_name, [])
+
+        for candidate in candidates:
+            for key, value in content.items():
+                if key in seen_keys:
+                    continue
+                if self._section_matches(key, candidate):
+                    text = str(value).strip()
+                    if text:
+                        matched.append(text)
+                        seen_keys.add(key)
+
+        if section_name == "进度安排":
+            for key, value in content.items():
+                if key in seen_keys:
+                    continue
+                if self._is_schedule_timeline_section(key):
+                    text = str(value).strip()
+                    if text:
+                        matched.append(f"{key}\n{text}")
+                        seen_keys.add(key)
+
+        return matched
+
+    def _section_matches(self, actual_name: str, expected_name: str) -> bool:
+        """判断实际章节名是否匹配目标章节名"""
+        normalized_actual = re.sub(r"\s+", "", actual_name)
+        normalized_expected = re.sub(r"\s+", "", expected_name)
+        return (
+            normalized_actual == normalized_expected
+            or normalized_expected in normalized_actual
+            or normalized_actual in normalized_expected
+        )
+
+    def _is_schedule_timeline_section(self, section_name: str) -> bool:
+        """识别形如 2025年7月-2025年12月 的时间段章节"""
+        normalized = re.sub(r"\s+", "", section_name)
+        return bool(re.fullmatch(r"\d{4}年\d{1,2}月[-—至]+\d{4}年\d{1,2}月", normalized))
     
     def _format_content_for_prompt(self, content: Dict[str, Any]) -> str:
         """格式化内容用于提示词
