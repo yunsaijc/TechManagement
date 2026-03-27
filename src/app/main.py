@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 # 加载 .env 配置（从项目根目录）
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
@@ -10,6 +11,7 @@ load_dotenv(Path(__file__).parent.parent.parent / ".env")
 from src.app.routes import review
 from src.app.routes import grouping
 from src.app.routes import plagiarism
+from src.app.routes import perfcheck
 from src.app.routes import evaluation
 
 app = FastAPI(
@@ -22,6 +24,7 @@ app = FastAPI(
 app.include_router(review.router, prefix="/api/v1/review", tags=["形式审查"])
 app.include_router(grouping.router, prefix="/api/v1/grouping", tags=["智能分组"])
 app.include_router(plagiarism.router, prefix="/api/v1/plagiarism", tags=["查重"])
+app.include_router(perfcheck.router, prefix="/api/v1/perfcheck", tags=["绩效核验"])
 app.include_router(evaluation.router, prefix="/api/v1/evaluation", tags=["正文评审"])
 
 
@@ -29,6 +32,13 @@ app.include_router(evaluation.router, prefix="/api/v1/evaluation", tags=["正文
 async def health_check():
     """健康检查"""
     return {"status": "healthy"}
+
+
+@app.get("/demo/perfcheck")
+async def perfcheck_demo_page():
+    """绩效核验前端演示页。"""
+    page = Path(__file__).parent / "web" / "perfcheck_demo.html"
+    return FileResponse(page)
 
 
 # 启动时读取配置
