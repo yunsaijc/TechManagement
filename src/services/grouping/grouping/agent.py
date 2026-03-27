@@ -1,7 +1,7 @@
 """分组 Agent
 
 当前版本采用关键词Embedding主导 + 学科代码辅助分组策略：
-1. 构造文本（关键词 + 标题主导，学科弱提示）突出具体研究方向
+1. 构造文本（关键词重复3次 + 项目名）确保关键词权重最高
 2. 计算全局Embedding，建立语义空间
 3. 基于Embedding相似度进行全局层次聚类
 4. 对过大组/过小组合并基于Embedding再平衡
@@ -51,19 +51,6 @@ from src.common.database import get_xkfl_repo
 DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
 EMBEDDING_CACHE_FILE = os.path.join(DEBUG_DIR, "embedding_cache.pkl")
-
-EMBEDDING_BASE_STOPWORDS = {
-    "优化", "调度", "系统", "方法", "研究", "技术", "应用",
-    "开发", "平台", "关键", "实现", "相关", "面向", "基于",
-    "一种", "及其", "理论", "模型", "机制", "设计", "分析",
-    "进行", "开展", "提出", "解决", "探索", "建立", "构建",
-}
-
-EMBEDDING_SUMMARY_GENERIC_TERMS = {
-    "人工智能", "智能", "多模态", "大模型", "机器学习", "深度学习",
-    "神经网络", "算法", "数据", "图像", "识别", "检测",
-}
-
 
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
@@ -606,23 +593,9 @@ class GroupingAgent:
             "text": _text_for_project(project),
         }
 
-    def _get_merge_capacity_limit(
-        self,
-        round_idx: int,
-        max_per_group: int,
-        min_per_group: int,
-    ) -> int:
-        """获取当前轮次的小组合并容量上限。"""
-        if round_idx > self.merge_reserve_rounds:
-            return max_per_group
-        effective_ratio = max(0.9, self.merge_reserve_ratio)
-        soft_cap = int(math.floor(max_per_group * effective_ratio))
-        return max(min_per_group, min(max_per_group, soft_cap))
-
-    def _get_merge_candidate_limit(self, src_size: int) -> int:
-        """根据源组大小动态扩大候选数，避免极小组视野过窄。"""
-        extra = max(0, self.min_per_group - src_size)
-        return max(2, int(self.merge_candidate_limit) + extra)
+    def _get_merge_candidate_limit(self) -> int:
+        """返回每个过小组保留的候选目标组数。"""
+        return max(2, int(self.merge_candidate_limit))
 
     def _cluster_keyword_set(self, cluster: List[Project]) -> set[str]:
         keywords: set[str] = set()
@@ -642,26 +615,10 @@ class GroupingAgent:
             return 0.0
         return len(common) / base
 
-    def _merge_target_size(self, current_cap: int, min_per_group: int) -> int:
-        reserved_target = int(round(current_cap * max(0.9, self.merge_reserve_ratio)))
-        return max(min_per_group, min(current_cap, reserved_target))
-
-    def _size_fit_bonus(self, merged_size: int, current_cap: int, min_per_group: int) -> float:
-        target_size = self._merge_target_size(current_cap, min_per_group)
-        if target_size <= 0:
-            return 0.0
-        return max(0.0, 1.0 - abs(merged_size - target_size) / target_size)
-
-    def _capacity_penalty(self, dst_size: int, src_size: int, current_cap: int) -> float:
-        if current_cap <= 0:
-            return 0.0
-        return max(0.0, min(1.0, (dst_size + src_size) / current_cap))
-
     def _build_merge_candidate_edge(
         self,
         src_idx: int,
         dst_idx: int,
-        src_size: int,
         dst_size: int,
         code_a: str,
         code_b: str,
@@ -669,8 +626,6 @@ class GroupingAgent:
         dst_center: Optional[np.ndarray],
         keywords_a: set[str],
         keywords_b: set[str],
-        current_cap: int,
-        min_per_group: int,
     ) -> Dict[str, Any]:
         """构造小组合并候选边。"""
         subject_score = self._subject_similarity(code_a, code_b)
@@ -678,17 +633,7 @@ class GroupingAgent:
         if src_center is not None and dst_center is not None:
             text_score = _cosine_similarity(src_center, dst_center)
         keyword_score = self._keyword_overlap_score(keywords_a, keywords_b)
-        merged_size = src_size + dst_size
-        size_bonus = self._size_fit_bonus(merged_size, current_cap, min_per_group)
-        capacity_penalty = self._capacity_penalty(dst_size, src_size, current_cap)
-        total_score = (
-            0.55 * text_score
-            + 0.20 * keyword_score
-            + 0.15 * subject_score
-            + 0.10 * size_bonus
-            - 0.05 * capacity_penalty
-        )
-        total_score = max(0.0, min(1.0, total_score))
+        total_score = 0.75 * subject_score + 0.25 * text_score
         return {
             "src": src_idx,
             "dst": dst_idx,
@@ -696,50 +641,37 @@ class GroupingAgent:
             "text": text_score,
             "keyword": keyword_score,
             "subject": subject_score,
-            "size_bonus": size_bonus,
-            "capacity_penalty": capacity_penalty,
-            "merged_size": merged_size,
+            "dst_size": dst_size,
             "code_a": code_a,
             "code_b": code_b,
+            "same_code": code_a == code_b,
         }
 
-    def _select_local_merge_candidates(
+    def _select_merge_candidates(
         self,
-        local_candidates: List[Dict[str, Any]],
-        src_size: int,
+        same_code_candidates: List[Dict[str, Any]],
+        cross_code_candidates: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """基于源组自己的候选分布做动态筛选。"""
-        if not local_candidates:
-            return []
+        """同代码优先回收；跨代码仍走阈值兜底。"""
+        top_k = self._get_merge_candidate_limit()
 
-        ordered = sorted(local_candidates, key=lambda item: item["score"], reverse=True)
-        limit = min(len(ordered), self._get_merge_candidate_limit(src_size))
-        limited = ordered[:limit]
+        if same_code_candidates:
+            same_code_candidates.sort(
+                key=lambda item: (item["text"], item["keyword"], item["dst_size"], item["score"]),
+                reverse=True,
+            )
+            return same_code_candidates[:top_k]
 
-        best_score = limited[0]["score"]
-        tail_score = limited[-1]["score"]
-        best_text = max(item["text"] for item in limited)
-        tail_text = min(item["text"] for item in limited)
-
-        score_floor = max(
-            self.merge_min_total_score,
-            best_score - max(0.18, (best_score - tail_score) * 0.9),
+        filtered_cross_code = [
+            item
+            for item in cross_code_candidates
+            if item["score"] >= self.merge_min_total_score and item["text"] >= self.merge_min_text_score
+        ]
+        filtered_cross_code.sort(
+            key=lambda item: (item["score"], item["text"], item["keyword"], item["dst_size"]),
+            reverse=True,
         )
-        text_floor = max(
-            self.merge_min_text_score,
-            best_text - max(0.20, (best_text - tail_text) * 0.9),
-        )
-
-        selected: List[Dict[str, Any]] = []
-        for rank, candidate in enumerate(limited):
-            if candidate["score"] < score_floor or candidate["text"] < text_floor:
-                continue
-
-            candidate["force_same_code_llm"] = False
-            candidate["rank"] = rank
-            selected.append(candidate)
-
-        return selected
+        return filtered_cross_code[:top_k]
 
     @lru_cache(maxsize=4096)
     def _project_text_key(self, project_id: str, xmmc: str, gjc: str, xmjj: str) -> str:
@@ -751,52 +683,55 @@ class GroupingAgent:
         return self._build_enhanced_text(project)
     
     def _build_enhanced_text(self, project: Project) -> str:
-        """构建用于 Embedding 的增强文本，优先突出具体领域词。"""
+        """构建增强文本，提升关键词和学科信息的权重"""
         parts = []
-
-        # 1. 关键词仍是主信息，但不过度重复，避免把泛词放大。
-        keywords = _parse_keywords_to_list(project.gjc)
-        if not keywords and project.xmmc:
-            keywords = _extract_keywords_from_title_to_list(project.xmmc)
-        for kw in keywords:
-            if kw and len(kw) >= 2:
-                parts.extend([kw] * 3)
-
-        # 2. 标题比简介更重要，重复两次突出具体方向词。
-        if project.xmmc:
-            title = self._clean_text_for_embedding(project.xmmc)
-            if title:
-                parts.extend([title] * 2)
-
-        # 3. 简介只作为补充，并额外过滤 AI 泛词，避免大筐学科互相拉近。
-        if project.xmjj:
-            summary = _clean_html_text(project.xmjj)
-            summary = self._clean_text_for_embedding(summary, drop_generic_terms=True)
-            if summary:
-                parts.append(summary[:160])
-
-        # 4. 学科名只保留一次，作为弱提示信息。
+        
+        # 1. 学科信息（高权重：重复3次）
         subject_code = project.ssxk1 or project.ssxk2 or ""
         subject_name = self._get_subject_name(subject_code)
         if subject_name and subject_name != "unknown":
-            parts.append(subject_name)
-
+            parts.extend([subject_name] * 3)
+        
+        # 2. 关键词（最高权重：重复5次）
+        keywords = _parse_keywords_to_list(project.gjc)
+        for kw in keywords:
+            if kw and len(kw) >= 2:
+                parts.extend([kw] * 5)
+        
+        # 3. 项目标题（清洗后）
+        if project.xmmc:
+            title = self._clean_text_for_embedding(project.xmmc)
+            if title:
+                parts.append(title)
+        
+        # 4. 项目简介（低权重：截断并清洗）
+        if project.xmjj:
+            summary = _clean_html_text(project.xmjj)
+            summary = self._clean_text_for_embedding(summary)
+            if summary:
+                parts.append(summary[:200])
+        
         return "。".join(parts)
-
-    def _clean_text_for_embedding(self, text: str, drop_generic_terms: bool = False) -> str:
-        """清洗文本，保留更有区分度的领域词。"""
+    
+    def _clean_text_for_embedding(self, text: str) -> str:
+        """清洗文本，去除通用停用词"""
         if not text:
             return ""
-
+        
+        # 通用停用词表
+        stopwords = {
+            "优化", "调度", "系统", "方法", "研究", "技术", "应用",
+            "开发", "平台", "关键", "实现", "相关", "面向", "基于",
+            "一种", "及其", "理论", "模型", "机制", "设计", "分析",
+            "进行", "开展", "提出", "解决", "探索", "建立", "构建",
+        }
+        
         # 清洗HTML实体
         text = text.replace("&ldquo;", "").replace("&rdquo;", "")
         text = text.replace("&quot;", "").replace("&amp;", "&")
-
+        
         # 分词并去除停用词（提取2-8字的中文词）
         words = re.findall(r"[\u4e00-\u9fff]{2,8}", text)
-        stopwords = set(EMBEDDING_BASE_STOPWORDS)
-        if drop_generic_terms:
-            stopwords.update(EMBEDDING_SUMMARY_GENERIC_TERMS)
         filtered = [w for w in words if w not in stopwords]
         return "。".join(filtered)
 
@@ -851,6 +786,251 @@ class GroupingAgent:
         for project in projects:
             buckets[self._subject_group_key(project)].append(project)
         return buckets
+
+    def _target_group_size(self, max_per_group: int) -> int:
+        """估算最终理想组大小，用于反推目标组数。"""
+        target_size = max(self.min_per_group + 1, int(round(max_per_group * 0.7)))
+        return max(self.min_per_group, min(max_per_group, target_size))
+
+    def _target_group_count(self, project_count: int, max_per_group: int) -> int:
+        """根据理想组大小估算目标组数。"""
+        if project_count <= 0:
+            return 0
+        return max(1, math.ceil(project_count / self._target_group_size(max_per_group)))
+
+    def _graph_top_n_neighbors(self, project_count: int) -> int:
+        """返回图构建阶段每个项目保留的近邻数。"""
+        base = _env_int("GROUPING_GRAPH_TOP_N_NEIGHBORS", 25)
+        if project_count <= 200:
+            return max(8, min(base, project_count - 1))
+        return max(10, min(base, 30, project_count - 1))
+
+    def _graph_edge_min_score(self) -> float:
+        """返回构图阶段的最小边权阈值。"""
+        return _env_float("GROUPING_GRAPH_EDGE_MIN_SCORE", 0.42)
+
+    def _graph_resolution_candidates(self) -> List[float]:
+        """返回社区发现阶段尝试的分辨率候选。"""
+        return [0.15, 0.25, 0.35, 0.45, 0.60, 0.80, 1.00, 1.20]
+
+    def _cluster_center(self, cluster: List[Project], vector_map: Dict[str, np.ndarray]) -> Optional[np.ndarray]:
+        """计算簇中心向量。"""
+        cluster_vectors = [vector_map[p.id] for p in cluster if p.id in vector_map]
+        if not cluster_vectors:
+            return None
+        return np.mean(cluster_vectors, axis=0)
+
+    def _project_assignment_score(
+        self,
+        project: Project,
+        target_cluster: List[Project],
+        vector_map: Dict[str, np.ndarray],
+        target_center: Optional[np.ndarray],
+    ) -> float:
+        """计算项目移动到目标组的适配分数。"""
+        project_vector = vector_map.get(project.id)
+        text_score = 0.0
+        if project_vector is not None and target_center is not None:
+            text_score = _cosine_similarity(project_vector, target_center)
+
+        project_keywords = _parse_keywords_to_list(project.gjc)
+        if not project_keywords:
+            project_keywords = _extract_keywords_from_title_to_list(project.xmmc or "")
+        target_keywords = self._cluster_keyword_set(target_cluster)
+        keyword_score = self._keyword_overlap_score(
+            set(project_keywords),
+            target_keywords,
+        )
+
+        code_a = project.ssxk1 or project.ssxk2 or ""
+        code_b = target_cluster[0].ssxk1 or target_cluster[0].ssxk2 or ""
+        subject_score = self._subject_similarity(code_a, code_b)
+        return 0.80 * text_score + 0.10 * keyword_score + 0.10 * subject_score
+
+    def _build_similarity_graph(
+        self,
+        projects: List[Project],
+        vector_map: Dict[str, np.ndarray],
+    ) -> "Any":
+        """基于 kNN 构建项目相似图。"""
+        import networkx as nx
+        from sklearn.neighbors import NearestNeighbors
+
+        graph = nx.Graph()
+        if not projects:
+            return graph
+
+        vectors = np.asarray([vector_map[project.id] for project in projects], dtype=float)
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-8
+        normalized_vectors = vectors / norms
+
+        for idx in range(len(projects)):
+            graph.add_node(idx)
+
+        n_neighbors = self._graph_top_n_neighbors(len(projects))
+        neighbor_model = NearestNeighbors(
+            n_neighbors=min(len(projects), n_neighbors + 1),
+            metric="cosine",
+            algorithm="brute",
+        )
+        neighbor_model.fit(normalized_vectors)
+        distances, indices = neighbor_model.kneighbors(normalized_vectors, return_distance=True)
+
+        keyword_sets = [
+            set(_parse_keywords_to_list(project.gjc) or _extract_keywords_from_title_to_list(project.xmmc or ""))
+            for project in projects
+        ]
+        edge_min_score = self._graph_edge_min_score()
+
+        for src_idx, neighbors in enumerate(indices):
+            code_a = projects[src_idx].ssxk1 or projects[src_idx].ssxk2 or ""
+            keywords_a = keyword_sets[src_idx]
+            for rank, dst_idx in enumerate(neighbors):
+                if dst_idx == src_idx:
+                    continue
+                cosine_sim = max(0.0, 1.0 - float(distances[src_idx][rank]))
+                code_b = projects[dst_idx].ssxk1 or projects[dst_idx].ssxk2 or ""
+                keyword_score = self._keyword_overlap_score(keywords_a, keyword_sets[dst_idx])
+                subject_score = self._subject_similarity(code_a, code_b)
+                edge_score = 0.90 * cosine_sim + 0.06 * keyword_score + 0.04 * subject_score
+                if edge_score < edge_min_score:
+                    continue
+
+                if graph.has_edge(src_idx, dst_idx):
+                    if edge_score > graph[src_idx][dst_idx]["weight"]:
+                        graph[src_idx][dst_idx]["weight"] = edge_score
+                else:
+                    graph.add_edge(src_idx, dst_idx, weight=edge_score)
+
+        isolated_count = sum(1 for _, degree in graph.degree() if degree == 0)
+        print(
+            f"[图聚类] 相似图构建完成：节点 {graph.number_of_nodes()}，"
+            f"边 {graph.number_of_edges()}，孤立点 {isolated_count}"
+        )
+        return graph
+
+    def _graph_communities_to_clusters(
+        self,
+        communities: List[set[int]],
+        projects: List[Project],
+    ) -> List[List[Project]]:
+        """将社区发现结果转换为项目簇。"""
+        clusters: List[List[Project]] = []
+        for community in communities:
+            if not community:
+                continue
+            members = [projects[idx] for idx in sorted(community)]
+            if members:
+                clusters.append(members)
+        return clusters
+
+    def _run_graph_community_detection(
+        self,
+        graph: "Any",
+        projects: List[Project],
+        max_per_group: int,
+    ) -> List[List[Project]]:
+        """执行图社区发现，并选择最接近目标组数的结果。"""
+        import networkx as nx
+
+        if graph.number_of_nodes() == 0:
+            return []
+
+        target_group_count = self._target_group_count(len(projects), max_per_group)
+        best_communities: Optional[List[set[int]]] = None
+        best_gap: Optional[int] = None
+        best_resolution: Optional[float] = None
+
+        for resolution in self._graph_resolution_candidates():
+            communities = nx.community.louvain_communities(
+                graph,
+                weight="weight",
+                resolution=resolution,
+                seed=42,
+            )
+            group_count = len(communities)
+            gap = abs(group_count - target_group_count)
+            print(
+                f"[图聚类] resolution={resolution:.2f} -> {group_count} 个社区"
+                f"（目标 {target_group_count}）"
+            )
+            if best_gap is None or gap < best_gap:
+                best_gap = gap
+                best_communities = communities
+                best_resolution = resolution
+
+        if best_communities is None:
+            return [projects]
+
+        print(
+            f"[图聚类] 选用 resolution={best_resolution:.2f}，"
+            f"初始社区 {len(best_communities)} 个"
+        )
+        return self._graph_communities_to_clusters(best_communities, projects)
+
+    def _reassign_projects_from_small_clusters(
+        self,
+        clusters: List[List[Project]],
+        vector_map: Dict[str, np.ndarray],
+        min_per_group: int,
+        max_per_group: int,
+    ) -> List[List[Project]]:
+        """按项目粒度回收过小组。"""
+        clusters = [cluster[:] for cluster in clusters if cluster]
+        max_rounds = max(1, _env_int("GROUPING_REASSIGN_MAX_ROUNDS", 4))
+
+        for round_idx in range(1, max_rounds + 1):
+            clusters = [cluster for cluster in clusters if cluster]
+            small_indices = [idx for idx, cluster in enumerate(clusters) if 0 < len(cluster) < min_per_group]
+            if not small_indices:
+                break
+
+            print(f"[项目重分配][第{round_idx}轮] 发现 {len(small_indices)} 个过小组")
+            moved_count = 0
+
+            centers = [self._cluster_center(cluster, vector_map) for cluster in clusters]
+            for src_idx in small_indices:
+                if src_idx >= len(clusters):
+                    continue
+                source_cluster = clusters[src_idx]
+                if not source_cluster or len(source_cluster) >= min_per_group:
+                    continue
+
+                remaining_projects = []
+                for project in source_cluster:
+                    best_idx = None
+                    best_score = -1.0
+                    for dst_idx, target_cluster in enumerate(clusters):
+                        if dst_idx == src_idx or not target_cluster:
+                            continue
+                        if len(target_cluster) >= max_per_group:
+                            continue
+                        score = self._project_assignment_score(
+                            project,
+                            target_cluster,
+                            vector_map,
+                            centers[dst_idx],
+                        )
+                        if score > best_score:
+                            best_score = score
+                            best_idx = dst_idx
+
+                    if best_idx is None:
+                        remaining_projects.append(project)
+                        continue
+
+                    clusters[best_idx].append(project)
+                    centers[best_idx] = self._cluster_center(clusters[best_idx], vector_map)
+                    moved_count += 1
+
+                clusters[src_idx] = remaining_projects
+
+            clusters = [cluster for cluster in clusters if cluster]
+            print(f"[项目重分配][第{round_idx}轮] 完成 {moved_count} 个项目迁移，剩余 {len(clusters)} 组")
+            if moved_count == 0:
+                break
+
+        return [cluster for cluster in clusters if cluster]
 
     def _embed_large_buckets_only(self, buckets: Dict[str, List[Project]], max_per_group: int) -> Dict[str, np.ndarray]:
         large_projects: List[Project] = []
@@ -999,7 +1179,7 @@ class GroupingAgent:
                     break
             prev_small_group_count = current_small_group_count
 
-            current_cap = self._get_merge_capacity_limit(round_idx, max_per_group, min_per_group)
+            current_cap = max_per_group
             print(
                 f"[合并][第{round_idx}轮] 发现{len(small_indices)}个过小组需要处理..."
                 f"（当前容量上限={current_cap}）"
@@ -1017,14 +1197,15 @@ class GroupingAgent:
                 centers.append(np.mean(cluster_vectors, axis=0) if cluster_vectors else None)
                 keyword_sets.append(self._cluster_keyword_set(cluster))
 
-            # 每个小组先构造完整候选，再按本组分布动态过滤
+            # 每个小组先回收同代码碎片；若无同代码候选，再考虑跨代码候选
             candidate_edges: List[Dict[str, Any]] = []
             for src_idx in small_indices:
                 src_size = sizes[src_idx]
                 src_center = centers[src_idx]
                 code_a = codes[src_idx]
                 keywords_a = keyword_sets[src_idx]
-                local_candidates: List[Dict[str, Any]] = []
+                same_code_candidates: List[Dict[str, Any]] = []
+                cross_code_candidates: List[Dict[str, Any]] = []
 
                 for dst_idx, _ in enumerate(clusters):
                     if dst_idx == src_idx:
@@ -1033,30 +1214,35 @@ class GroupingAgent:
                         continue
 
                     code_b = codes[dst_idx]
-                    local_candidates.append(
-                        self._build_merge_candidate_edge(
-                            src_idx=src_idx,
-                            dst_idx=dst_idx,
-                            src_size=src_size,
-                            dst_size=sizes[dst_idx],
-                            code_a=code_a,
-                            code_b=code_b,
-                            src_center=src_center,
-                            dst_center=centers[dst_idx],
-                            keywords_a=keywords_a,
-                            keywords_b=keyword_sets[dst_idx],
-                            current_cap=current_cap,
-                            min_per_group=min_per_group,
-                        )
+                    candidate = self._build_merge_candidate_edge(
+                        src_idx=src_idx,
+                        dst_idx=dst_idx,
+                        dst_size=sizes[dst_idx],
+                        code_a=code_a,
+                        code_b=code_b,
+                        src_center=src_center,
+                        dst_center=centers[dst_idx],
+                        keywords_a=keywords_a,
+                        keywords_b=keyword_sets[dst_idx],
                     )
+                    if candidate["same_code"]:
+                        same_code_candidates.append(candidate)
+                    else:
+                        cross_code_candidates.append(candidate)
 
-                candidate_edges.extend(self._select_local_merge_candidates(local_candidates, src_size))
+                candidate_edges.extend(
+                    self._select_merge_candidates(same_code_candidates, cross_code_candidates)
+                )
 
             if not candidate_edges:
                 print(f"[合并][第{round_idx}轮] 无满足门槛的候选，停止")
                 break
 
-            print(f"[合并][第{round_idx}轮] 动态筛选后保留 {len(candidate_edges)} 条候选边")
+            same_code_edge_count = sum(1 for edge in candidate_edges if edge["same_code"])
+            print(
+                f"[合并][第{round_idx}轮] 保留 {len(candidate_edges)} 条候选边"
+                f"（同代码 {same_code_edge_count}，跨代码 {len(candidate_edges) - same_code_edge_count}）"
+            )
 
             # 并发执行跨代码候选的LLM校验（去重）
             need_validate_keys: List[Tuple[int, int]] = []
@@ -1088,7 +1274,10 @@ class GroupingAgent:
                 self._save_llm_validation_cache()
 
             # 冲突消解：按分数从高到低选择无冲突合并边
-            candidate_edges.sort(key=lambda item: item["score"], reverse=True)
+            candidate_edges.sort(
+                key=lambda item: (item["same_code"], item["score"], item["text"], item["dst_size"]),
+                reverse=True,
+            )
             planned_merges: List[Dict[str, Any]] = []
             used_as_source: set[int] = set()
             used_as_target: set[int] = set()
@@ -1242,38 +1431,40 @@ class GroupingAgent:
         return ProjectCluster("kmeans").fit_predict(vectors, n_clusters)
 
     async def _cluster_projects(self, projects: List[Project], max_per_group: int) -> List[List[Project]]:
-        """基于关键词Embedding主导的全局层次聚类分组"""
+        """基于图聚类与项目级重分配的全局分组。"""
         if not projects:
             return []
         if len(projects) <= max_per_group:
             return [projects]
 
-        print(f"[Grouping] 开始关键词Embedding主导分组，共 {len(projects)} 个项目")
+        print(f"[Grouping] 开始图聚类主导分组，共 {len(projects)} 个项目")
 
         # 1. 计算全局Embedding
         print(f"[Grouping] 计算全局Embedding...")
         vector_map = self._embed_projects(projects)
         print(f"[Grouping] Embedding计算完成，共 {len(vector_map)} 个项目")
 
-        # 2. 基于Embedding相似度进行全局层次聚类（带LLM验证）
-        print(f"[Grouping] 进行全局层次聚类...")
-        clusters = await self._hierarchical_cluster_by_embedding(projects, vector_map, similarity_threshold=0.7)
-        print(f"[Grouping] 初始聚类完成，生成 {len(clusters)} 个组")
+        # 2. 构建相似图并进行社区发现
+        print(f"[Grouping] 构建项目相似图...")
+        graph = self._build_similarity_graph(projects, vector_map)
+        print(f"[Grouping] 进行图社区发现...")
+        clusters = self._run_graph_community_detection(graph, projects, max_per_group)
+        print(f"[Grouping] 图聚类完成，生成 {len(clusters)} 个组")
 
-        # 2.5 【学科大类约束】按学科大类拆分混合组
-        print(f"[Grouping] 按学科大类拆分混合组...")
-        clusters = self._split_by_discipline_category(clusters)
-        print(f"[Grouping] 学科大类拆分完成，共 {len(clusters)} 个组")
-
-        # 3. 处理过大组（基于Embedding重新聚类拆分）
+        # 3. 处理过大组（在社区内部继续细分）
         print(f"[Grouping] 处理过大组...")
         clusters = self._split_large_clusters_by_embedding(clusters, max_per_group, vector_map)
         print(f"[Grouping] 过大组拆分完成，共 {len(clusters)} 个组")
 
-        # 4. 处理过小组合并到最相似的组（带LLM验证）
-        print(f"[Grouping] 处理过小组合并...")
-        clusters = await self._merge_small_clusters_by_embedding(clusters, self.min_per_group, max_per_group, vector_map)
-        print(f"[Grouping] 过小组合并完成，共 {len(clusters)} 个组")
+        # 4. 最后按项目粒度处理过小组与人数约束
+        print(f"[Grouping] 处理过小组的项目级重分配...")
+        clusters = self._reassign_projects_from_small_clusters(
+            clusters,
+            vector_map,
+            self.min_per_group,
+            max_per_group,
+        )
+        print(f"[Grouping] 项目级重分配完成，共 {len(clusters)} 个组")
 
         print(f"[Grouping] 最终分组完成，共 {len(clusters)} 个组")
         return clusters
