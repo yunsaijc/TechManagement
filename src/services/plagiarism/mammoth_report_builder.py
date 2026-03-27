@@ -939,13 +939,18 @@ class MammothPlagiarismReportBuilder:
         if not segments:
             return '<p class="empty">无重复片段</p>'
 
+        visible_ids = set((match_results or {}).keys())
         cards = []
+        display_idx = 0
         for i, segment in enumerate(segments[:50], 1):  # 最多显示50个
             match_id = segment.get("match_id") or f"m{i:03d}"
+            if visible_ids and match_id not in visible_ids:
+                continue
+            display_idx += 1
             primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:60]
             is_template = segment.get("is_template", False)
-            similarity = segment.get("similarity_score", segment.get("similarity", 1.0))
-            
+            similarity = float(segment.get("similarity_score", segment.get("similarity", 1.0)) or 0.0)
+
             sources = segment.get("sources", [])
             source_info = ""
             if sources:
@@ -955,7 +960,7 @@ class MammothPlagiarismReportBuilder:
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
-                <div class="nav-header">#{i} {template_badge}</div>
+                <div class="nav-header">#{display_idx} {template_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度: {similarity:.2f} | {source_info}</small>
             </button>''')

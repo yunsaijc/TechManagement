@@ -48,6 +48,7 @@ class ReportGenerator:
         industry_fit = result.get("industry_fit")
         benchmark = result.get("benchmark")
         sections = data.get("sections") or {}
+        evidence_map = self._build_evidence_map(evidence)
 
         score = result.get("overall_score", 0)
         grade = result.get("grade", "-")
@@ -387,9 +388,9 @@ class ReportGenerator:
         <section class="panel">
           <h2>划重点</h2>
           <table class="kv-table">
-            <tr><th>研究目标</th><td>{self._render_list(highlights.get("research_goals") or [], "暂无提取结果")}</td></tr>
-            <tr><th>创新点</th><td>{self._render_list(highlights.get("innovations") or [], "暂无提取结果")}</td></tr>
-            <tr><th>技术路线</th><td>{self._render_list(highlights.get("technical_route") or [], "暂无提取结果")}</td></tr>
+            <tr><th>研究目标</th><td>{self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}</td></tr>
+            <tr><th>创新点</th><td>{self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}</td></tr>
+            <tr><th>技术路线</th><td>{self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}</td></tr>
           </table>
         </section>
 
@@ -572,6 +573,43 @@ class ReportGenerator:
         return "<ol class=\"list\">" + "".join(
             f"<li>{html.escape(str(item))}</li>" for item in items
         ) + "</ol>"
+
+    def _build_evidence_map(self, evidence: List[Dict[str, Any]]) -> Dict[tuple[str, str], Dict[str, Any]]:
+        """按摘要分类和条目构建证据映射"""
+        mapping: Dict[tuple[str, str], Dict[str, Any]] = {}
+        for item in evidence:
+            category = str(item.get("category") or "")
+            target = str(item.get("target") or "")
+            if not category or not target:
+                continue
+            mapping[(category, target)] = item
+        return mapping
+
+    def _render_highlight_list(
+        self,
+        items: List[Any],
+        category: str,
+        evidence_map: Dict[tuple[str, str], Dict[str, Any]],
+        empty_text: str,
+    ) -> str:
+        """渲染带页码证据的划重点列表"""
+        if not items:
+            return f'<div class="empty">{html.escape(empty_text)}</div>'
+
+        rows: List[str] = []
+        for item in items:
+            text = str(item)
+            evidence = evidence_map.get((category, text))
+            meta_html = ""
+            if evidence:
+                page = evidence.get("page")
+                snippet = evidence.get("snippet") or ""
+                meta_html = (
+                    f'<div class="subtle">证据页：第 {html.escape(str(page))} 页</div>'
+                    f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
+                )
+            rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
+        return "<ol class=\"list\">" + "".join(rows) + "</ol>"
 
     def _render_industry_fit(self, industry_fit: Dict[str, Any] | None) -> str:
         if not industry_fit:
