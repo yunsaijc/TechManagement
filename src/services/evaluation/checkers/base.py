@@ -318,3 +318,51 @@ class BaseChecker(ABC):
             return 0.5
         
         return round(sum(item.weight for item in items) / len(items), 2)
+
+    def build_degraded_result(self, content: Dict[str, Any], reason: str = "") -> CheckResult:
+        """在模型不可用时，基于章节命中结果返回规则降级结果"""
+        sections = self._extract_sections(content, self._required_sections)
+        if not sections:
+            missing_issue = self._build_missing_sections_issue()
+            return CheckResult(
+                dimension=self.dimension,
+                dimension_name=self.dimension_name,
+                score=5.0,
+                confidence=0.3,
+                opinion=f"未找到{self.dimension_name}相关章节，当前无法完成有效评估",
+                issues=[missing_issue],
+                highlights=[],
+                items=[],
+                details={"degraded": True, "reason": reason},
+            )
+
+        section_names = list(sections.keys())
+        opinion = (
+            f"已定位到 {len(section_names)} 个相关章节，当前基于规则完成基础判断；"
+            "详细评语待模型服务恢复后补充。"
+        )
+        highlights = [f"已识别章节：{name}" for name in section_names[:2]]
+        issues = []
+        if reason:
+            issues.append(f"模型不可用，已输出规则降级结果：{reason}")
+
+        return CheckResult(
+            dimension=self.dimension,
+            dimension_name=self.dimension_name,
+            score=6.0,
+            confidence=0.45,
+            opinion=opinion,
+            issues=issues,
+            highlights=highlights,
+            items=[],
+            details={"degraded": True, "reason": reason, "matched_sections": section_names},
+        )
+
+    def _build_missing_sections_issue(self) -> str:
+        """生成缺失章节提示"""
+        if not self._required_sections:
+            return "缺少相关章节"
+        if len(self._required_sections) == 1:
+            return f"缺少{self._required_sections[0]}章节"
+        primary = self._required_sections[:2]
+        return f"缺少{'或'.join(primary)}章节"

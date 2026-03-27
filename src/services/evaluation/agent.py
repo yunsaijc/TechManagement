@@ -328,17 +328,21 @@ class EvaluationAgent:
             raw = await asyncio.gather(*[task for _, task in task_specs], return_exceptions=True)
             for (dimension, _), item in zip(task_specs, raw):
                 if isinstance(item, Exception):
-                    results.append(
-                        CheckResult(
-                            dimension=dimension,
-                            score=5.0,
-                            confidence=0.0,
-                            opinion=f"检查异常: {str(item)}",
-                            issues=["检查过程发生错误"],
-                            highlights=[],
-                            items=[],
+                    checker = self.get_checker(dimension)
+                    if checker:
+                        results.append(checker.build_degraded_result(sections, str(item)))
+                    else:
+                        results.append(
+                            CheckResult(
+                                dimension=dimension,
+                                score=5.0,
+                                confidence=0.0,
+                                opinion=f"检查异常: {str(item)}",
+                                issues=["检查过程发生错误"],
+                                highlights=[],
+                                items=[],
+                            )
                         )
-                    )
                 else:
                     results.append(item)
 
@@ -399,18 +403,21 @@ class EvaluationAgent:
     async def _safe_check(self, checker: BaseChecker, content: Dict[str, Any]) -> CheckResult:
         """安全执行检查"""
         try:
-            return await checker.check(content)
+            result = await checker.check(content)
+            if self._should_degrade_check_result(result):
+                return checker.build_degraded_result(content, result.opinion)
+            return result
         except Exception as e:
-            return CheckResult(
-                dimension=checker.dimension,
-                dimension_name=checker.dimension_name,
-                score=5.0,
-                confidence=0.0,
-                opinion=f"检查异常: {str(e)}",
-                issues=["检查过程发生错误"],
-                highlights=[],
-                items=[],
-            )
+            return checker.build_degraded_result(content, str(e))
+
+    def _should_degrade_check_result(self, result: CheckResult) -> bool:
+        """识别需要降级替换的检查结果"""
+        opinion = result.opinion or ""
+        issue_text = " ".join(result.issues or [])
+        return any(
+            marker in opinion or marker in issue_text
+            for marker in ("检查异常", "评审解析失败", "Request timed out", "Connection error")
+        )
 
     def _filter_sections(self, sections: Dict[str, Any], include_sections: List[str]) -> Dict[str, Any]:
         """按 include_sections 过滤章节"""
@@ -459,7 +466,7 @@ class EvaluationAgent:
         debug_dir = Path("debug_eval")
         debug_dir.mkdir(exist_ok=True)
 
-        stem = result.evaluation_id or f"{result.project_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        stem = f"EVAL_{result.project_id}"
         json_path = debug_dir / f"{stem}.json"
         html_path = debug_dir / f"{stem}.html"
 
