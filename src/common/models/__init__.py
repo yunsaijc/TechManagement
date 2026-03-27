@@ -31,6 +31,26 @@ from src.common.models.grouping import (
     FullGroupingResult,
     FullStatistics,
 )
+from src.common.models.perfcheck import (
+    Budget,
+    BudgetItem,
+    BudgetComparison,
+    ContentComparison,
+    DocumentSchema,
+    BasicInfo,
+    TeamMember,
+    Organization,
+    UnitBudgetAllocation,
+    MetricComparison,
+    PerformanceTarget,
+    PerfCheckRequest,
+    PerfCheckResult,
+    PerfCheckTask,
+    ResearchContent,
+    OtherInfoComparison,
+    UnitBudgetComparison,
+)
+
 
 __all__ = [
     # 文件模型
@@ -78,4 +98,33 @@ __all__ = [
     "FullGroupingRequest",
     "FullGroupingResult",
     "FullStatistics",
+    # 绩效核验模型
+    "Budget",
+    "BudgetItem",
+    "BudgetComparison",
+    "ContentComparison",
+    "DocumentSchema",
+    "BasicInfo",
+    "TeamMember",
+    "Organization",
+    "UnitBudgetAllocation",
+    "MetricComparison",
+    "PerformanceTarget",
+    "PerfCheckRequest",
+    "PerfCheckResult",
+    "PerfCheckTask",
+    "ResearchContent",
+    "OtherInfoComparison",
+    "UnitBudgetComparison",
+    # 逻辑自洽模型
+    "ConflictSeverity",
+    "ConflictCategory",
+    "DocSpan",
+    "ExtractedEntity",
+    "GraphEdge",
+    "DocumentGraph",
+    "ConflictItem",
+    "GraphStats",
+    "RuleInfo",
+    "RuleConfigSnapshot",
 ]
