@@ -143,8 +143,8 @@ class MammothPlagiarismReportBuilder:
         left_map = build_coordinate_map(left_canonical, left_html) if left_canonical else None
         right_map = build_coordinate_map(right_canonical, right_html) if right_canonical else None
 
-        left_spans: List[Tuple[int, int, str, bool, str]] = []
-        right_spans: List[Tuple[int, int, str, bool, str]] = []
+        left_spans: List[Tuple[int, int, str, bool, str, str]] = []
+        right_spans: List[Tuple[int, int, str, bool, str, str]] = []
         left_occupied: List[Tuple[int, int]] = []
         right_occupied: List[Tuple[int, int]] = []
         match_results: Dict[str, Dict[str, Any]] = {}
@@ -158,6 +158,8 @@ class MammothPlagiarismReportBuilder:
             match_id = segment.get("match_id") or f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
             match_type = segment.get("match_type", "exact")
+            similarity = float(segment.get("similarity_score", segment.get("similarity", 0.0)) or 0.0)
+            tone = self._highlight_tone(similarity)
             sources = segment.get("sources", [])
             if not sources:
                 continue
@@ -188,10 +190,10 @@ class MammothPlagiarismReportBuilder:
 
             for left_start, left_end in left_filtered:
                 left_occupied.append((left_start, left_end))
-                left_spans.append((left_start, left_end, match_id, is_template, match_type))
+                left_spans.append((left_start, left_end, match_id, is_template, match_type, tone))
             for right_start, right_end in right_filtered:
                 right_occupied.append((right_start, right_end))
-                right_spans.append((right_start, right_end, match_id, is_template, match_type))
+                right_spans.append((right_start, right_end, match_id, is_template, match_type, tone))
 
             coverage = min(left_cov, right_cov)
             heading_mode = self._heading_alignment_mode(segment)
@@ -199,6 +201,8 @@ class MammothPlagiarismReportBuilder:
                 "mode": "full" if coverage >= 0.85 and heading_mode == "aligned" else "core",
                 "confidence": round(coverage, 4),
                 "match_type": match_type,
+                "tone": tone,
+                "similarity": round(similarity, 4),
             }
 
         return (
@@ -211,16 +215,40 @@ class MammothPlagiarismReportBuilder:
         self,
         fragments: List[Tuple[int, int]],
         occupied: List[Tuple[int, int]],
-        min_len: int = 3,
     ) -> List[Tuple[int, int]]:
         filtered: List[Tuple[int, int]] = []
-        for start, end in fragments:
-            if end - start < min_len:
+        total = len(fragments)
+        for idx, (start, end) in enumerate(fragments):
+            if self._is_discardable_short_fragment(fragments, idx):
                 continue
             if self._has_overlap(occupied, start, end):
                 continue
             filtered.append((start, end))
         return filtered
+
+    def _is_discardable_short_fragment(
+        self,
+        fragments: List[Tuple[int, int]],
+        idx: int,
+    ) -> bool:
+        start, end = fragments[idx]
+        length = end - start
+        if length >= 3:
+            return False
+
+        fragment_count = len(fragments)
+        if fragment_count <= 1:
+            return True
+
+        prev_exists = idx > 0
+        next_exists = idx + 1 < fragment_count
+
+        # 被 Word 内联格式切开的连续高亮片段，2 字碎片也要保留。
+        if length == 2 and prev_exists and next_exists:
+            return False
+        if length == 2 and (prev_exists or next_exists):
+            return False
+        return True
 
     def _clean_fragments_for_side(
         self,
@@ -628,23 +656,25 @@ class MammothPlagiarismReportBuilder:
     def _inject_spans(
         self,
         html_content: str,
-        spans: List[Tuple[int, int, str, bool, str]],
+        spans: List[Tuple[int, int, str, bool, str, str]],
         side: str,
     ) -> str:
         result = html_content
-        for start, end, match_id, is_template, match_type in sorted(spans, key=lambda x: x[0], reverse=True):
+        for start, end, match_id, is_template, match_type, tone in sorted(spans, key=lambda x: x[0], reverse=True):
             classes = ["hit"]
             if is_template:
                 classes.append("template")
-            if match_type == "paraphrase":
-                classes.append("paraphrase")
+            classes.append(tone)
             class_attr = " ".join(classes)
             wrapped = (
-                f'<span class="{class_attr}" data-match-id="{match_id}" data-side="{side}" data-match-type="{match_type}">'
+                f'<span class="{class_attr}" data-match-id="{match_id}" data-side="{side}" data-match-type="{match_type}" data-tone="{tone}">'
                 f"{result[start:end]}</span>"
             )
             result = result[:start] + wrapped + result[end:]
         return result
+
+    def _highlight_tone(self, similarity: float) -> str:
+        return "strong" if similarity >= 0.78 else "soft"
 
     def _apply_highlights(
         self,
@@ -915,8 +945,6 @@ class MammothPlagiarismReportBuilder:
             primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:60]
             is_template = segment.get("is_template", False)
             similarity = segment.get("similarity_score", segment.get("similarity", 1.0))
-            result = (match_results or {}).get(match_id)
-            match_type = segment.get("match_type", "exact")
             
             sources = segment.get("sources", [])
             source_info = ""
@@ -925,14 +953,9 @@ class MammothPlagiarismReportBuilder:
                 source_info = f"来源: {html.escape(source_doc)}"
             
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
-            type_badge = '<span class="template-badge" style="background:#2563eb;">改写</span>' if match_type == "paraphrase" else ''
-            if result:
-                locate_badge = '<span class="locate-badge ok">完整</span>' if result.get("mode") == "full" else '<span class="locate-badge partial">核心</span>'
-            else:
-                locate_badge = '<span class="locate-badge miss">未定位</span>'
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
-                <div class="nav-header">#{i} {template_badge} {type_badge} {locate_badge}</div>
+                <div class="nav-header">#{i} {template_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度: {similarity:.2f} | {source_info}</small>
             </button>''')
@@ -994,11 +1017,17 @@ class MammothPlagiarismReportBuilder:
     .nav-text {{ color: #374151; margin-bottom: 4px; }}
     .nav-item small {{ display: block; color: #6b7280; font-size: 11px; }}
     .template-badge {{ background: #f59e0b; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }}
-    .locate-badge {{ font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }}
-    .locate-badge.ok {{ background: #16a34a; color: #fff; }}
-    .locate-badge.partial {{ background: #2563eb; color: #fff; }}
-    .locate-badge.miss {{ background: #9ca3af; color: #fff; }}
-    .hit.paraphrase {{ background: rgba(37, 99, 235, 0.22) !important; color: #1e3a8a !important; }}
+    .docx-content .hit {{ color: inherit !important; }}
+    .docx-content .hit.strong {{ background: rgba(220, 38, 38, 0.34) !important; }}
+    .docx-content .hit.strong:hover {{ background: rgba(220, 38, 38, 0.42) !important; }}
+    .docx-content .hit.soft {{ background: rgba(248, 113, 113, 0.20) !important; }}
+    .docx-content .hit.soft:hover {{ background: rgba(248, 113, 113, 0.28) !important; }}
+    .docx-content .hit.active {{
+      box-shadow: 0 0 0 2px rgba(153, 27, 27, 0.35) !important;
+      outline: 1px solid rgba(127, 29, 29, 0.65);
+      background-image: linear-gradient(rgba(253, 224, 71, 0.72), rgba(253, 224, 71, 0.72)) !important;
+      background-blend-mode: multiply;
+    }}
     .empty {{ color: #9ca3af; font-size: 13px; padding: 20px; text-align: center; }}
     .stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; width: 100%; }}
     .stat-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }}

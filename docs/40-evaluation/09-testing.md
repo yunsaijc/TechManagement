@@ -88,3 +88,11 @@ tests/services/evaluation/
 1. PR 前：单元 + 集成测试全量通过  
 2. 合并前：API 回归 + 关键问答用例  
 3. 发布前：抽样真实项目做端到端校验（含页码引用核验）
+
+## 调试产物
+
+- 评审完成后应同步输出调试产物到 `debug_eval/`
+- 至少包含：
+  - `{evaluation_id}.json`：完整评审结果与章节调试信息
+  - `{evaluation_id}.html`：可直接查看的评审可视化报告
+  - `index.html`：调试报告索引页

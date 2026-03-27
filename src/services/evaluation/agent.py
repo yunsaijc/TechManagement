@@ -3,8 +3,10 @@
 正文评审服务的统一编排器，融合九维评审、划重点、产业贴合、技术摸底与聊天索引。
 """
 import asyncio
+import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.common.llm import get_default_llm_client
@@ -36,7 +38,7 @@ from .config import EvaluationConfig, evaluation_config
 from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
-from .scorers import EvaluationScorer
+from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
 from .tools import ToolGateway, ToolUnavailableError
 
@@ -62,6 +64,7 @@ class EvaluationAgent:
 
         self.parser = DocumentParser()
         self.scorer = EvaluationScorer()
+        self.report_generator = ReportGenerator()
         self.storage = EvaluationStorage()
         self.project_repo = EvaluationProjectRepository()
 
@@ -143,6 +146,12 @@ class EvaluationAgent:
         result.chat_ready = bool(module_outputs.get("chat_ready", False))
 
         await self.storage.save(result)
+        self._save_debug_artifacts(
+            result=result,
+            sections=sections,
+            meta=meta,
+            source_name=source_name,
+        )
         return result
 
     async def evaluate_by_project(self, request: EvaluationRequest) -> EvaluationResult:
@@ -438,6 +447,65 @@ class EvaluationAgent:
                 merged.append(item)
 
         return merged
+
+    def _save_debug_artifacts(
+        self,
+        result: EvaluationResult,
+        sections: Dict[str, str],
+        meta: Dict[str, Any],
+        source_name: str,
+    ) -> None:
+        """保存评审调试产物到 debug_eval 目录"""
+        debug_dir = Path("debug_eval")
+        debug_dir.mkdir(exist_ok=True)
+
+        stem = result.evaluation_id or f"{result.project_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        json_path = debug_dir / f"{stem}.json"
+        html_path = debug_dir / f"{stem}.html"
+
+        debug_payload = {
+            "evaluation_id": result.evaluation_id,
+            "project_id": result.project_id,
+            "project_name": result.project_name,
+            "source_name": source_name or meta.get("file_name") or "",
+            "meta": meta,
+            "section_names": list(sections.keys()),
+            "sections": sections,
+            "result": result.model_dump(mode="json"),
+        }
+
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(debug_payload, f, ensure_ascii=False, indent=2)
+
+        self.report_generator.build_from_debug_file(json_path, html_path)
+        self._refresh_debug_index(debug_dir)
+
+    def _refresh_debug_index(self, debug_dir: Path) -> None:
+        """刷新 debug_eval 索引页"""
+        records: List[Dict[str, Any]] = []
+        for path in sorted(debug_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            result = payload.get("result") or {}
+            records.append(
+                {
+                    "created_at": result.get("created_at"),
+                    "project_id": result.get("project_id"),
+                    "project_name": result.get("project_name"),
+                    "source_name": payload.get("source_name"),
+                    "overall_score": result.get("overall_score"),
+                    "grade": result.get("grade"),
+                    "partial": result.get("partial"),
+                    "html_file": f"{path.stem}.html",
+                    "json_file": path.name,
+                }
+            )
+
+        index_html = self.report_generator.build_index_html(records)
+        (debug_dir / "index.html").write_text(index_html, encoding="utf-8")
 
     def _build_module_error(self, module: str, exc: Exception) -> EvaluationError:
         """构建模块错误对象"""

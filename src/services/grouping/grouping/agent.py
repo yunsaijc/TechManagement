@@ -233,7 +233,7 @@ def _calculate_balance_metrics(
         groups: 分组列表
         quality_scores: 所有项目的质量分数
 def _text_for_project(project: Project, include_abstract: bool = True) -> str:
-    """构造项目语义文本，供调试和验证阶段复用。"""
+    构造项目语义文本供调试和验证阶段复用。"""
     # 解析关键词
     keywords = _parse_keywords_to_list(project.gjc)
     
