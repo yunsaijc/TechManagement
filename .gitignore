@@ -1,6 +1,7 @@
 .env
 .vscode
 *cache
+data
 
 # Python-generated files
 __pycache__/

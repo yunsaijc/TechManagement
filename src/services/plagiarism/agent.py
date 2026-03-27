@@ -23,6 +23,7 @@ from src.services.plagiarism.engine import ComparisonEngine
 from src.services.plagiarism.report_builder import PlagiarismHtmlReportBuilder
 from src.services.plagiarism.mammoth_report_builder import MammothPlagiarismReportBuilder
 from src.services.plagiarism.section_extractor import SectionExtractor
+from src.services.plagiarism.text_repairs import repair_extracted_text_artifacts
 from src.services.plagiarism.template_filter import TemplateFilter
 from src.services.plagiarism.template_prefilter import TemplatePreFilter
 from src.services.plagiarism.tokenizer import SentenceTokenizer
@@ -107,7 +108,7 @@ class PlagiarismAgent:
                 result = await parser.parse(file_data)
 
                 # 提取全部文本
-                full_text = result.content.to_text()
+                full_text = repair_extracted_text_artifacts(result.content.to_text())
                 texts[doc_id] = full_text
 
                 print(f"[Plagiarism] 提取文本 {doc_id}: {len(full_text)} chars")
