@@ -105,6 +105,146 @@ def _clean_html_text(text: Optional[str]) -> str:
     return clean.strip()
 
 
+def _calculate_quality_stats(quality_scores: Dict[str, float]) -> dict:
+    """计算质量分数统计信息
+    
+    Args:
+        quality_scores: {project_id: score}
+    
+    Returns:
+        {
+            mean, median, std, min, max,
+            distribution: {score_range: count}
+        }
+    """
+    if not quality_scores:
+        return {}
+    
+    scores = list(quality_scores.values())
+    
+    # 基本统计
+    mean = np.mean(scores)
+    median = np.median(scores)
+    std = np.std(scores)
+    min_score = min(scores)
+    max_score = max(scores)
+    
+    # 分布统计（每10分一段）
+    distribution = {}
+    for score in scores:
+        bucket = int(score // 10) * 10
+        distribution[f"{bucket}-{bucket+9}"] = distribution.get(f"{bucket}-{bucket+9}", 0) + 1
+    
+    return {
+        "mean": round(mean, 2),
+        "median": round(median, 2),
+        "std": round(std, 2),
+        "min": round(min_score, 2),
+        "max": round(max_score, 2),
+        "distribution": distribution
+    }
+
+
+def _generate_quality_charts(quality_scores: Dict[str, float], groups: List[ProjectGroup], year: str):
+    """生成质量统计图表并保存
+    
+    Args:
+        quality_scores: 所有项目质量分数
+        groups: 分组列表
+        year: 年份
+    """
+    try:
+        # 设置中文字体
+        plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial Unicode MS', 'SimHei']
+        plt.rcParams['axes.unicode_minus'] = False
+        
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        fig.suptitle(f'Grouping Quality Report - {year}', fontsize=14)
+        
+        # 1. 质量分数分布直方图
+        ax1 = axes[0, 0]
+        scores = list(quality_scores.values())
+        if scores:
+            ax1.hist(scores, bins=10, edgecolor='black', alpha=0.7, color='steelblue')
+            ax1.axvline(np.mean(scores), color='red', linestyle='--', label=f'Mean: {np.mean(scores):.1f}')
+            ax1.axvline(np.median(scores), color='green', linestyle='--', label=f'Median: {np.median(scores):.1f}')
+            ax1.set_xlabel('Quality Score')
+            ax1.set_ylabel('Count')
+            ax1.set_title('Quality Score Distribution')
+            ax1.legend()
+        
+        # 2. 各组项目数分布
+        ax2 = axes[0, 1]
+        group_counts = [g.count for g in groups]
+        if group_counts:
+            ax2.bar(range(1, len(group_counts)+1), group_counts, color='coral', alpha=0.7)
+            avg_count = np.mean(group_counts)
+            ax2.axhline(avg_count, color='red', linestyle='--', label=f'Avg: {avg_count:.1f}')
+            ax2.set_xlabel('Group ID')
+            ax2.set_ylabel('Project Count')
+            ax2.set_title('Projects per Group')
+            ax2.legend()
+        
+        # 3. 各组平均质量
+        ax3 = axes[1, 0]
+        group_means = [g.avg_quality for g in groups]
+        if group_means:
+            ax3.bar(range(1, len(group_means)+1), group_means, color='mediumseagreen', alpha=0.7)
+            avg_quality = np.mean(group_means)
+            ax3.axhline(avg_quality, color='red', linestyle='--', label=f'Avg: {avg_quality:.1f}')
+            ax3.set_xlabel('Group ID')
+            ax3.set_ylabel('Avg Quality')
+            ax3.set_title('Average Quality per Group')
+            ax3.legend()
+        
+        # 4. 质量均衡度雷达图
+        ax4 = axes[1, 1]
+        metrics = ['Quantity\nBalance', 'Quality\nBalance', 'Subject\nPurity', 'Split\nCorrectness']
+        values = [
+            np.mean(group_counts) / max(group_counts) if max(group_counts) > 0 else 1,  # 简化的数量均衡
+            1 - (np.std(group_means) / 100) if group_means else 1,  # 质量均衡
+            1 - (len([g for g in groups if '(' in (g.subject_name or '')]) / len(groups)) if groups else 1,  # 学科纯度
+            1.0  # 拆分正确率（简化）
+        ]
+        values = [max(0, min(1, v)) for v in values]  # 限制在0-1之间
+        
+        x = np.arange(len(metrics))
+        bars = ax4.bar(x, values, color=['steelblue', 'coral', 'mediumseagreen', 'gold'], alpha=0.7)
+        ax4.set_xticks(x)
+        ax4.set_xticklabels(metrics)
+        ax4.set_ylim(0, 1.1)
+        ax4.set_ylabel('Score (0-1)')
+        ax4.set_title('Grouping Quality Metrics')
+        
+        # 添加数值标签
+        for bar, val in zip(bars, values):
+            ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02, 
+                    f'{val:.2f}', ha='center', va='bottom', fontsize=9)
+        
+        plt.tight_layout()
+        
+        # 保存图片
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"quality_charts_{year}_{timestamp}.png"
+        filepath = os.path.join(DEBUG_DIR, filename)
+        plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        print(f"[Grouping] 已保存质量图表: {filename}")
+        
+    except Exception as e:
+        print(f"[Grouping] 生成图表失败: {e}")
+
+
+def _calculate_balance_metrics(
+    groups: List[ProjectGroup],
+    quality_scores: Dict[str, float]
+) -> dict:
+    """计算分组均衡度指标
+    
+    Args:
+        groups: 分组列表
+        quality_scores: 所有项目的质量分数
 def _text_for_project(project: Project, include_abstract: bool = True) -> str:
     """构造项目语义文本，供调试和验证阶段复用。"""
     # 解析关键词
