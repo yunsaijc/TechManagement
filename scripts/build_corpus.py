@@ -10,7 +10,8 @@ from src.services.plagiarism.corpus import CorpusManager
 
 async def main():
     """针对指定目录构建查重库索引"""
-    corpus_path = "/mnt/remote_corpus/2025/sbs"
+    # 从环境变量读取或使用默认值
+    corpus_path = os.getenv("PLAGIARISM_CORPUS_PATH", "/mnt/remote_corpus/2025/sbs")
     index_path = "data/plagiarism/corpus_index.json"
     
     print(f"--- 查重库索引构建开始 ---")

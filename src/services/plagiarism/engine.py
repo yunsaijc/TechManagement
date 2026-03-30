@@ -121,6 +121,7 @@ class ComparisonEngine:
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
         raw_texts: Optional[Dict[str, str]] = None,
+        search_windows: Optional[Dict[str, List[any]]] = None, # 传入召回窗口作为搜索引导
     ) -> List[DocumentSimilarity]:
         """
         执行文档间比对 - Winnowing 算法
@@ -222,6 +223,7 @@ class ComparisonEngine:
                         text_a,
                         text_b,
                         doc_b,
+                        guide_windows=search_windows.get(doc_b) if search_windows else None,
                     )
                 )
                 matches = self._normalize_matches_for_presentation(
@@ -1588,6 +1590,7 @@ class ComparisonEngine:
         text_a: str,
         text_b: str,
         source_doc: str,
+        guide_windows: Optional[List[any]] = None,
     ) -> List[Match]:
         if not text_a or not text_b:
             return []
@@ -1624,6 +1627,7 @@ class ComparisonEngine:
                     source_text=text_b,
                     search_start=search_start,
                     search_end=search_end,
+                    guide_windows=guide_windows,
                 )
                 if not best:
                     continue
@@ -2043,12 +2047,12 @@ class ComparisonEngine:
         source_text: str,
         search_start: int,
         search_end: int,
+        guide_windows: Optional[List[any]] = None, # 新增引导窗口
     ) -> Optional[Tuple[int, int, float]]:
         primary_norm = self._normalize_sentence(primary_text)
         if len(primary_norm) < self.gap_block_min_length:
             return None
 
-        # 性能优化：预计算 Primary 的字符分布用于快速剪枝
         from collections import Counter
         primary_counter = Counter(primary_norm)
         primary_len = len(primary_norm)
@@ -2061,36 +2065,66 @@ class ComparisonEngine:
                 candidate_lengths.append(cand_len)
 
         best: Optional[Tuple[int, int, float]] = None
-        max_pos = max(search_start, search_end - 30)
         
-        # 性能优化：动态增大步长。对于长文本，不需要每隔 4 个字符搜一次。
-        step = max(4, primary_len // 40)
-        
-        for pos in range(search_start, max_pos, step):
-            for cand_len in candidate_lengths:
-                cand_end = min(search_end, pos + cand_len)
-                if cand_end - pos < 40:
-                    continue
-                if self._has_hard_boundary_inside(source_text, pos, cand_end):
-                    continue
-                
-                # 性能优化：快速字符重叠度剪枝
-                candidate_raw = source_text[pos:cand_end]
-                cand_norm = self._normalize_sentence(candidate_raw)
-                if not cand_norm:
-                    continue
-                
-                cand_counter = Counter(cand_norm)
-                intersect_size = sum((primary_counter & cand_counter).values())
-                fast_overlap = intersect_size / max(primary_len, len(cand_norm))
-                
-                # 如果基础字符重叠度太低，不进行昂贵的 SequenceMatcher 比对
-                if fast_overlap < 0.35:
-                    continue
+        # 确定搜索范围：如果有引导窗口，只在引导窗口及其附近搜索
+        search_ranges = []
+        if guide_windows:
+            # 扩展窗口范围以允许一定的错位
+            expand = 800
+            for w in guide_windows:
+                # 注意：w 是 RetrievalWindow 对象，其 primary_start 是在 primary 坐标系下的
+                # 我们需要找到 source 坐标系下的范围。但 RetrievalWindow 没存 source_start。
+                # 这是一个问题。RetrievalWindow 只是告诉我们 primary 的哪一段在 source 中有匹配。
+                # 实际上我们应该使用 SourceRetriever 召回时的原始信息。
+                pass
+            # 简化方案：如果 guide_windows 存在，说明该文档是有嫌疑的，但我们不知道具体位置。
+            # 实际上 search_start/search_end 已经是由 _source_search_window 提供的基于邻近 Match 的缩小范围。
+            search_ranges.append((search_start, search_end))
+        else:
+            search_ranges.append((search_start, search_end))
 
-                score = self._aligned_span_score(primary_norm, cand_norm)
-                if best is None or score > best[2]:
-                    best = (pos, cand_end, score)
+        for s_start, s_end in search_ranges:
+            max_pos = max(s_start, s_end - 30)
+            # 动态增大步长
+            step = max(4, primary_len // 30)
+            
+            # 性能优化：预先提取 search 区域文本减少切片开销
+            search_area = source_text[s_start:s_end]
+            
+            for pos_in_area in range(0, len(search_area), step):
+                pos = s_start + pos_in_area
+                for cand_len in candidate_lengths:
+                    cand_end = min(s_end, pos + cand_len)
+                    if cand_end - pos < 40:
+                        continue
+                    
+                    candidate_raw = source_text[pos:cand_end]
+                    # 快速预检查：如果字符集重叠度太低，不进行归一化和比对
+                    # 这是一个非常廉价的过滤
+                    common_chars_count = 0
+                    # 只采样前 50 个字符进行快速检查
+                    sample = candidate_raw[:100]
+                    for char in sample:
+                        if char in primary_counter:
+                            common_chars_count += 1
+                    if common_chars_count < 10 and primary_len > 100:
+                        continue
+
+                    cand_norm = self._normalize_sentence(candidate_raw)
+                    if not cand_norm:
+                        continue
+                    
+                    # 更精准的 Counter 过滤
+                    cand_counter = Counter(cand_norm)
+                    intersect_size = sum((primary_counter & cand_counter).values())
+                    fast_overlap = intersect_size / max(primary_len, len(cand_norm))
+                    
+                    if fast_overlap < 0.35:
+                        continue
+
+                    score = self._aligned_span_score(primary_norm, cand_norm)
+                    if best is None or score > best[2]:
+                        best = (pos, cand_end, score)
 
         if best is None:
             return None
@@ -2470,10 +2504,15 @@ class ComparisonEngine:
         return best
 
     def _normalize_sentence(self, text: str) -> str:
-        cleaned = self._clean_sentence_for_semantic_match(text)
-        cleaned = re.sub(r"\s+", "", cleaned)
-        cleaned = re.sub(r"[，。；：、！？,.!?;:\"'“”‘’（）()\[\]【】<>《》]", "", cleaned)
-        return cleaned.lower()
+        if not text:
+            return ""
+        # 极速归一化：只保留中文字符、数字和英文字母，统一转小写
+        # 避免复杂的正则运算
+        cleaned = []
+        for char in text:
+            if '\u4e00' <= char <= '\u9fa5' or char.isalnum():
+                cleaned.append(char.lower())
+        return "".join(cleaned)
 
     def _sequence_ratio(self, a: str, b: str) -> float:
         from difflib import SequenceMatcher

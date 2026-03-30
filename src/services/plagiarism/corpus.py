@@ -36,16 +36,18 @@ class CorpusManager:
 
     def __init__(
         self,
-        corpus_path: str = "/mnt/remote_corpus/",
+        corpus_path: Optional[str] = None,
         index_save_path: str = "data/plagiarism/corpus_index.json",
     ):
         """初始化库管理器
 
         Args:
-            corpus_path: 库文档挂载路径
+            corpus_path: 库文档挂载路径，优先从环境变量 PLAGIARISM_CORPUS_PATH 读取
             index_save_path: 索引持久化路径
         """
-        self.corpus_path = Path(corpus_path)
+        # 优先从环境变量读取，确保环境一致性
+        env_path = os.getenv("PLAGIARISM_CORPUS_PATH")
+        self.corpus_path = Path(corpus_path or env_path or "/mnt/remote_corpus/2025/sbs")
         self.index_save_path = Path(index_save_path)
         self.index: CorpusIndex = CorpusIndex()
         self.retriever = SourceRetriever()
@@ -63,7 +65,7 @@ class CorpusManager:
                 with open(self.index_save_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.index = CorpusIndex(**data)
-                print(f"[Corpus] 已加载索引: {len(self.index.documents)} 个文档")
+                print(f"[Corpus] 已加载索引: {len(self.index.documents)} 个文档 (路径锁定: {self.corpus_path})")
             except Exception as e:
                 print(f"[Corpus] 加载索引失败: {e}")
                 self.index = CorpusIndex()
@@ -104,8 +106,13 @@ class CorpusManager:
                 
                 stats["scanned"] += 1
                 file_path = Path(root) / filename
-                doc_id = str(file_path.relative_to(self.corpus_path))
-                
+                # 统一使用相对于 corpus_path 的相对路径作为 ID 和存储路径
+                try:
+                    doc_id = str(file_path.relative_to(self.corpus_path))
+                except ValueError:
+                    # 如果不在 corpus_path 下（例如本地测试用例），使用绝对路径
+                    doc_id = f"custom_{filename}"
+
                 try:
                     file_hash = self._calculate_hash(file_path)
                     if doc_id in self.index.documents and self.index.documents[doc_id].file_hash == file_hash:
@@ -122,7 +129,7 @@ class CorpusManager:
                 break
 
         if not to_process:
-            print("[Corpus] 没有需要更新的 docx 文件")
+            print(f"[Corpus] {self.corpus_path} 下没有需要更新的 docx 文件")
             return stats
 
         print(f"[Corpus] 开始并发处理 {len(to_process)} 个文件...")
@@ -171,20 +178,23 @@ class CorpusManager:
             文档正文文本
         """
         if doc_id not in self.index.documents:
-            print(f"[Corpus] 文档不存在索引: {doc_id}")
+            print(f"[Corpus] 文档不存在: {doc_id}")
             return None
-
+            
         doc_entry = self.index.documents[doc_id]
-        # 尝试作为绝对路径，否则相对于 corpus_path
+        
+        # 路径解析策略：
+        # 1. 如果是绝对路径，直接尝试
+        # 2. 如果是相对路径，相对于当前的 corpus_path
+        
         file_path = Path(doc_entry.path)
         if not file_path.is_absolute():
             file_path = self.corpus_path / doc_entry.path
-
+        
         if not file_path.exists():
-            print(f"[Corpus] 文件物理路径不存在: {file_path}")
+            print(f"[Corpus] 错误: 无法定位文件物理路径 (当前路径锁定: {self.corpus_path})")
             print(f"[Corpus]   - doc_id: {doc_id}")
-            print(f"[Corpus]   - 索引中的路径: {doc_entry.path}")
-            print(f"[Corpus]   - corpus_path: {self.corpus_path}")
+            print(f"[Corpus]   - 期望路径: {file_path}")
             return None
             
         try:
