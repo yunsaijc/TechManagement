@@ -11,11 +11,12 @@
 5. 指纹索引 + 连续匹配检测
 6. 结果聚合 (位置追溯、片段合并)
 """
+import asyncio
 import json
 import re
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from src.common.file_handler import get_parser
 from src.services.plagiarism.aggregator import ResultAggregator, PlagiarismResult
@@ -219,59 +220,70 @@ class PlagiarismAgent:
                     char_count = doc_info.char_count if doc_info else 0
                     print(f"  [{i+1}] {cand.doc_id}: score={cand.document_suspiciousness:.4f}, chars={char_count:,}")
 
-            # 延迟加载库文档原文并进行预处理
+            # 并行延迟加载库文档原文并进行预处理
             t_load_start = time.time()
-            loaded_count = 0
-            failed_count = 0
-            for cand_id in corpus_retrieval.selected_source_docs:
-                if cand_id not in processed_texts:
-                    t_doc_start = time.time()
-                    print(f"[Plagiarism] 从库中延迟加载: {cand_id}")
-                    corpus_text = await self.corpus_manager.get_document_text(cand_id)
-                    print(f"[Plagiarism]   - 文档加载耗时: {time.time() - t_doc_start:.2f}s")
-                    if corpus_text:
-                        t_preprocess = time.time()
-                        processed_texts[cand_id] = corpus_text
-                        # 补全分句与过滤
-                        sentences = self.tokenizer.tokenize(corpus_text)
-                        sentences_map[cand_id] = sentences
-                        ranges = self.template_prefilter.mark_excluded_ranges(sentences)
-                        if ranges:
-                            excluded_ranges[cand_id] = ranges
-                        print(f"[Plagiarism]   - 预处理耗时: {time.time() - t_preprocess:.2f}s")
-                        candidate_doc_ids.append(cand_id)
-                        loaded_count += 1
-                    else:
-                        print(f"[Plagiarism]   - 跳过：文档加载失败")
-                        failed_count += 1
+            
+            async def load_and_preprocess(cand_id: str) -> Optional[str]:
+                if cand_id in processed_texts:
+                    return cand_id
+                
+                t_doc_start = time.time()
+                print(f"[Plagiarism] 从库中延迟加载: {cand_id}")
+                corpus_text = await self.corpus_manager.get_document_text(cand_id)
+                print(f"[Plagiarism]   - 文档加载耗时: {time.time() - t_doc_start:.2f}s")
+                
+                if corpus_text:
+                    t_preprocess = time.time()
+                    processed_texts[cand_id] = corpus_text
+                    # 补全分句与过滤
+                    sentences = self.tokenizer.tokenize(corpus_text)
+                    sentences_map[cand_id] = sentences
+                    ranges = self.template_prefilter.mark_excluded_ranges(sentences)
+                    if ranges:
+                        excluded_ranges[cand_id] = ranges
+                    print(f"[Plagiarism]   - 预处理耗时: {time.time() - t_preprocess:.2f}s")
+                    return cand_id
+                else:
+                    print(f"[Plagiarism]   - 跳过：文档加载失败 {cand_id}")
+                    return None
+
+            # 仅对尚未加载的文档启动任务
+            load_tasks = [load_and_preprocess(cid) for cid in corpus_retrieval.selected_source_docs]
+            load_results = await asyncio.gather(*load_tasks)
+            
+            # 更新 candidate_doc_ids，保持顺序并去重
+            loaded_ids = [rid for rid in load_results if rid]
+            for lid in loaded_ids:
+                if lid not in candidate_doc_ids:
+                    candidate_doc_ids.append(lid)
+            
+            loaded_count = len(loaded_ids)
+            failed_count = len(corpus_retrieval.selected_source_docs) - loaded_count
+            
             print(f"[Plagiarism] 库文档加载总耗时: {time.time() - t_load_start:.2f}s, 成功: {loaded_count}, 失败: {failed_count}")
 
             # 合并上传召回与库召回，并重新全局排序
             retrieval_result = self._merge_retrieval_results(retrieval_result, corpus_retrieval)
             candidate_doc_ids = list(retrieval_result.selected_source_docs or [])
 
+            # 重新构建引导窗口信息
+            doc_windows = {cand.doc_id: cand.matched_windows for cand in retrieval_result.candidates}
+
         print(f"[Plagiarism] 最终比对候选: {len(candidate_doc_ids)} 个来源文档")
 
         # 6. 仅对 primary 与召回候选 source 做精比对
         t_compare_start = time.time()
         similarities = []
+        doc_windows = doc_windows if use_corpus else {}
 
-        for idx, source_doc_id in enumerate(candidate_doc_ids):
+        async def compare_pair(idx: int, source_doc_id: str) -> List[Any]:
             t_pair_start = time.time()
             source_sentences = sentences_map.get(source_doc_id, [])
             primary_sentences = sentences_map.get(primary_doc_id, [])
             
             source_len = len(processed_texts.get(source_doc_id, ""))
             primary_len = len(processed_texts.get(primary_doc_id, ""))
-            print(f"[Plagiarism] 比对 [{idx+1}/{len(candidate_doc_ids)}]: {primary_doc_id} ({primary_len:,} chars) vs {source_doc_id} ({source_len:,} chars)")
-
-            if source_len > 100000 or primary_len > 100000:
-                print(f"[Plagiarism]   ⚠️  警告: 文档极长，比对可能耗时较久")
-
-            primary_chars = sum(len(s.text) for s in primary_sentences)
-            source_chars = sum(len(s.text) for s in source_sentences)
-            print(f"[Plagiarism]   - Primary: {len(primary_sentences)} 句 ({primary_chars:,} chars)")
-            print(f"[Plagiarism]   - Source: {len(source_sentences)} 句 ({source_chars:,} chars)")
+            print(f"[Plagiarism] 开始比对 [{idx+1}/{len(candidate_doc_ids)}]: {primary_doc_id} vs {source_doc_id} ({source_len:,} chars)")
 
             pair_sentences = {
                 primary_doc_id: primary_sentences,
@@ -285,18 +297,33 @@ class PlagiarismAgent:
                 primary_doc_id: processed_texts.get(primary_doc_id, ""),
                 source_doc_id: processed_texts.get(source_doc_id, ""),
             }
-            similarities.extend(
-                self.comparison_engine.compare(
-                    pair_sentences,
-                    pair_excluded_ranges,
-                    self.threshold_high,
-                    self.threshold_medium,
-                    raw_texts=pair_texts,
-                )
+            
+            # 使用 run_in_executor 将 CPU 密集型的 compare 放到线程池执行，避免阻塞事件循环
+            loop = asyncio.get_event_loop()
+            pair_similarities = await loop.run_in_executor(
+                None, 
+                self.comparison_engine.compare,
+                pair_sentences,
+                pair_excluded_ranges,
+                self.threshold_high,
+                self.threshold_medium,
+                pair_texts,
+                {source_doc_id: doc_windows.get(source_doc_id, [])} if use_corpus else None
             )
-            print(f"[Plagiarism]   - 比对耗时: {time.time() - t_pair_start:.2f}s")
+            
+            elapsed = time.time() - t_pair_start
+            print(f"[Plagiarism] 完成比对 [{idx+1}/{len(candidate_doc_ids)}]: {source_doc_id}, 耗时: {elapsed:.2f}s")
+            return pair_similarities
 
-        print(f"[Plagiarism] 比对完成: {len(similarities)} 对, 总耗时: {time.time() - t_compare_start:.2f}s")
+        # 并行执行所有比对任务
+        compare_tasks = [compare_pair(idx, sid) for idx, sid in enumerate(candidate_doc_ids)]
+        compare_results = await asyncio.gather(*compare_tasks)
+        
+        # 合并结果
+        for pair_res in compare_results:
+            similarities.extend(pair_res)
+
+        print(f"[Plagiarism] 全部比对完成: {len(similarities)} 对, 总耗时: {time.time() - t_compare_start:.2f}s")
 
         for r in similarities:
             print(f"  - {r.doc_a} vs {r.doc_b}: similarity={r.similarity:.4f}, type={r.type}")
