@@ -86,6 +86,19 @@ class DocumentParser:
 
     DOCX_PAGE_CHARS = 1800
     CHUNK_MAX_CHARS = 1200
+    CONTAINER_SECTION_CHILD_PATTERNS: Dict[str, List[str]] = {
+        "进度安排": [
+            r"^\d{4}\s*年\s*\d{1,2}\s*月\s*[-—~至]+\s*\d{4}\s*年\s*\d{1,2}\s*月$",
+            r"^第[一二三四五六七八九十]+年(?:度)?$",
+            r"^阶段[一二三四五六七八九十\d]+$",
+        ],
+        "项目组织实施机制": [
+            r"^项目组织管理$",
+            r"^组织管理$",
+            r"^协调机制$",
+            r"^实施机制$",
+        ],
+    }
 
     async def parse(self, file_path: str, source_name: str = "") -> Dict[str, Any]:
         """解析文档并输出统一结构
@@ -271,6 +284,8 @@ class DocumentParser:
             return False
         if self._is_budget_context(current_section) and self._is_budget_detail_title(raw_title, normalized_title):
             return False
+        if self._is_container_child_section(current_section, raw_title, normalized_title):
+            return False
         return True
 
     def _is_budget_context(self, section_name: str) -> bool:
@@ -325,6 +340,14 @@ class DocumentParser:
         if alias in name and len(name) <= len(alias) + 4:
             return True
         return name in alias and len(alias) <= len(name) + 2
+
+    def _is_container_child_section(self, current_section: str, raw_title: str, normalized_title: str) -> bool:
+        """判断当前标题是否应归入上级章节正文"""
+        patterns = self.CONTAINER_SECTION_CHILD_PATTERNS.get(current_section)
+        if not patterns:
+            return False
+        candidates = (raw_title.strip(), normalized_title.strip())
+        return any(re.fullmatch(pattern, candidate) for pattern in patterns for candidate in candidates if candidate)
 
     def _build_page_chunks(
         self,

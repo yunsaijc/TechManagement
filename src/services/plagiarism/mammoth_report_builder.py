@@ -66,12 +66,13 @@ class MammothPlagiarismReportBuilder:
         documents = data.get("documents", {})
         primary_scope = data.get("primary_scope") or {}
         primary_canonical = documents.get(primary_doc, "") if primary_doc else ""
-        source_doc = ""
-        for segment in data.get("duplicate_segments", []):
-            sources = segment.get("sources", [])
-            if sources:
-                source_doc = sources[0].get("doc", "")
-                break
+        source_doc = data.get("report_source_doc", "")
+        if not source_doc:
+            for segment in data.get("duplicate_segments", []):
+                sources = segment.get("sources", [])
+                if sources:
+                    source_doc = sources[0].get("doc", "")
+                    break
 
         # 转换DOCX为HTML
         left_html = ""
@@ -128,13 +129,14 @@ class MammothPlagiarismReportBuilder:
         data: Dict
     ) -> Tuple[str, str, Dict[str, Dict[str, Any]]]:
         """基于 canonical 坐标映射在两侧 HTML 应用高亮。"""
-        segments = data.get("duplicate_segments", [])
+        # 优先使用归并后的 match_groups
+        segments = data.get("match_groups") or data.get("duplicate_segments", [])
         if not segments:
             return left_html, right_html, {}
 
         primary_doc = data.get("primary_doc", "")
         documents = data.get("documents", {})
-        source_doc = next(
+        source_doc = data.get("report_source_doc", "") or next(
             (s.get("sources", [{}])[0].get("doc", "") for s in segments if s.get("sources")),
             "",
         )
@@ -155,54 +157,57 @@ class MammothPlagiarismReportBuilder:
         )
 
         for seg_idx, segment in sorted_segments:
-            match_id = segment.get("match_id") or f"m{seg_idx+1:03d}"
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
             match_type = segment.get("match_type", "exact")
             similarity = float(segment.get("similarity_score", segment.get("similarity", 0.0)) or 0.0)
             tone = self._highlight_tone(similarity)
-            sources = segment.get("sources", [])
-            if not sources:
-                continue
-
+            
+            # 过滤出属于当前右侧文档的来源
+            all_sources = segment.get("sources", [])
+            current_sources = [s for s in all_sources if s.get("doc") == source_doc]
+            
             primary_start = int(segment.get("primary_start", 0) or 0)
             primary_end = int(segment.get("primary_end", 0) or 0)
-            source_start = int(sources[0].get("start", 0) or 0) if sources else 0
-            source_end = int(sources[0].get("end", 0) or 0) if sources else 0
-            if primary_end <= primary_start or source_end <= source_start:
+            
+            if primary_end <= primary_start:
                 continue
 
-            if not left_map or not right_map:
-                continue
-            left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
-            right_fragments, right_cov = right_map.span_to_html_fragments(source_start, source_end)
-            if not left_fragments or not right_fragments:
-                continue
+            # 处理左侧（主文档）高亮
+            if left_map:
+                left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
+                if left_fragments:
+                    left_fragments = self._clean_fragments_for_side(left_fragments, left_html, "primary")
+                    left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
+                    for left_start, left_end in left_filtered:
+                        left_occupied.append((left_start, left_end))
+                        left_spans.append((left_start, left_end, match_id, is_template, match_type, tone))
 
-            left_fragments = self._clean_fragments_for_side(left_fragments, left_html, "primary")
-            right_fragments = self._clean_fragments_for_side(right_fragments, right_html, "source")
-            if not left_fragments or not right_fragments:
-                continue
+            # 处理右侧（来源文档）高亮
+            right_cov = 0.0
+            if right_map and current_sources:
+                source_start = int(current_sources[0].get("start", 0) or 0)
+                source_end = int(current_sources[0].get("end", 0) or 0)
+                if source_end > source_start:
+                    right_fragments, r_cov = right_map.span_to_html_fragments(source_start, source_end)
+                    right_cov = r_cov
+                    if right_fragments:
+                        right_fragments = self._clean_fragments_for_side(right_fragments, right_html, "source")
+                        right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
+                        for right_start, right_end in right_filtered:
+                            right_occupied.append((right_start, right_end))
+                            right_spans.append((right_start, right_end, match_id, is_template, match_type, tone))
 
-            left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
-            right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
-            if not left_filtered or not right_filtered:
-                continue
-
-            for left_start, left_end in left_filtered:
-                left_occupied.append((left_start, left_end))
-                left_spans.append((left_start, left_end, match_id, is_template, match_type, tone))
-            for right_start, right_end in right_filtered:
-                right_occupied.append((right_start, right_end))
-                right_spans.append((right_start, right_end, match_id, is_template, match_type, tone))
-
-            coverage = min(left_cov, right_cov)
+            coverage = similarity # 默认使用相似度作为置信度
             heading_mode = self._heading_alignment_mode(segment)
+            
             match_results[match_id] = {
-                "mode": "full" if coverage >= 0.85 and heading_mode == "aligned" else "core",
-                "confidence": round(coverage, 4),
+                "mode": "full" if similarity >= 0.85 and heading_mode == "aligned" else "core",
+                "confidence": round(similarity, 4),
                 "match_type": match_type,
                 "tone": tone,
                 "similarity": round(similarity, 4),
+                "source_count": len(all_sources),
             }
 
         return (
@@ -859,11 +864,13 @@ class MammothPlagiarismReportBuilder:
         documents = data.get("documents", {})
         
         if side == "primary":
-            text = documents.get("primary", "")
+            primary_doc = data.get("primary_doc", "")
+            text = documents.get(primary_doc, "")
             title = data.get("primary_doc", "主文档")
         else:
-            text = documents.get("source", "")
-            title = "来源文档"
+            source_doc = data.get("report_source_doc", "")
+            text = documents.get(source_doc, "")
+            title = source_doc or "来源文档"
         
         if not text:
             return f'<div class="docx-content"><p class="empty">无内容</p></div>'
@@ -881,40 +888,38 @@ class MammothPlagiarismReportBuilder:
         """构建统计信息HTML"""
         summary = data.get("summary", {})
         text_lengths = data.get("text_lengths", {})
-        segments = data.get("duplicate_segments", [])
-        template_segments = data.get("template_segments", [])
         primary_doc = data.get("primary_doc", "")
         
-        # 统计口径：统一按主文档字数计算，避免与普通HTML口径冲突
-        total_chars = int(text_lengths.get(primary_doc, 0)) if primary_doc else 0
+        # 统计口径：优先使用 MultiSourceAggregator 计算出的有效值
+        total_chars = int(summary.get("primary_scope_chars") or text_lengths.get(primary_doc, 0))
         if total_chars == 0:
             docs = data.get("documents", {})
             primary_text = docs.get(primary_doc, "") if primary_doc else ""
             if isinstance(primary_text, str) and primary_text:
                 total_chars = len(primary_text)
 
-        # 使用位置并集计算字符数，避免片段重叠导致重复计数
-        effective_chars = self._union_length([
+        # 优先使用归并后的值
+        effective_chars = int(summary.get("effective_duplicate_chars") or self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in segments
-        ])
+            for s in data.get("duplicate_segments", [])
+        ]))
 
-        template_chars = self._union_length([
+        template_chars = int(summary.get("total_template_chars") or self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in template_segments
-        ])
+            for s in data.get("template_segments", [])
+        ]))
         
         duplicate_chars = self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in segments + template_segments
+            for s in (data.get("duplicate_segments", []) + data.get("template_segments", []))
         ])
         
         # 计算重复率
-        total_rate = (duplicate_chars / total_chars * 100) if total_chars > 0 else 0
         effective_rate = (effective_chars / total_chars * 100) if total_chars > 0 else 0
         template_rate = (template_chars / total_chars * 100) if total_chars > 0 else 0
+        total_rate = effective_rate + template_rate
 
-        return f"""<div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">{template_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">{total_chars:,}</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">{duplicate_chars:,}</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">{effective_chars:,}</div></div>"""
+        return f"""<div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value" style="color: #dc2626;">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效/总字数</div><div class="stat-value" style="font-size: 16px;">{effective_chars:,} / {total_chars:,}</div></div>"""
 
     @staticmethod
     def _union_length(ranges: List[Tuple[int, int]]) -> int:
@@ -935,15 +940,15 @@ class MammothPlagiarismReportBuilder:
 
     def _build_match_nav(self, data: Dict, match_results: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
         """构建匹配片段导航"""
-        segments = data.get("duplicate_segments", [])
+        segments = data.get("match_groups") or data.get("duplicate_segments", [])
         if not segments:
             return '<p class="empty">无重复片段</p>'
 
         visible_ids = set((match_results or {}).keys())
         cards = []
         display_idx = 0
-        for i, segment in enumerate(segments[:50], 1):  # 最多显示50个
-            match_id = segment.get("match_id") or f"m{i:03d}"
+        for i, segment in enumerate(segments[:100], 1):  # 增加显示数量
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{i:03d}"
             if visible_ids and match_id not in visible_ids:
                 continue
             display_idx += 1
@@ -951,16 +956,24 @@ class MammothPlagiarismReportBuilder:
             is_template = segment.get("is_template", False)
             similarity = float(segment.get("similarity_score", segment.get("similarity", 1.0)) or 0.0)
 
-            sources = segment.get("sources", [])
-            source_info = ""
-            if sources:
-                source_doc = sources[0].get("doc", "")
-                source_info = f"来源: {html.escape(source_doc)}"
+            all_sources = segment.get("sources", [])
+            source_count = len(all_sources)
             
+            # 获取当前报告展示的来源文档
+            report_source_doc = data.get("report_source_doc", "")
+            current_source = next((s for s in all_sources if s.get("doc") == report_source_doc), None)
+            
+            source_info = ""
+            if current_source:
+                source_info = f"来源: {html.escape(report_source_doc)}"
+            elif all_sources:
+                source_info = f"主要来源: {html.escape(all_sources[0].get('doc', ''))}"
+            
+            source_badge = f'<span class="pill" style="padding: 2px 6px; font-size: 10px;">{source_count}个来源</span>' if source_count > 1 else ''
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
-                <div class="nav-header">#{display_idx} {template_badge}</div>
+                <div class="nav-header">#{display_idx} {template_badge} {source_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度: {similarity:.2f} | {source_info}</small>
             </button>''')

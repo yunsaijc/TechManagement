@@ -20,6 +20,9 @@ class BaseChecker(ABC):
     # 子类必须指定维度代码
     dimension: str = ""
     dimension_name: str = ""
+    PROJECT_PROFILE_TECHNICAL = "technical"
+    PROJECT_PROFILE_PLATFORM = "platform"
+    PROJECT_PROFILE_MEDICAL = "medical"
     SECTION_ALIASES: Dict[str, List[str]] = {
         "预期效益": [
             "预期效益",
@@ -318,6 +321,31 @@ class BaseChecker(ABC):
             return 0.5
         
         return round(sum(item.weight for item in items) / len(items), 2)
+
+    def infer_project_profile(self, content: Dict[str, Any]) -> str:
+        """识别项目类型，用于按不同评审口径降级判断"""
+        merged = "\n".join(f"{key}\n{value}" for key, value in content.items())
+        platform_hits = sum(
+            1
+            for keyword in ("科普", "宣教", "义诊", "活动", "资源库", "直播", "展览", "公众号", "视频号")
+            if keyword in merged
+        )
+        medical_hits = sum(
+            1
+            for keyword in ("骨科", "诊疗", "临床", "患者", "手术", "医学影像", "医院")
+            if keyword in merged
+        )
+        technical_hits = sum(
+            1
+            for keyword in ("技术路线", "算法", "模型", "传感器", "高光谱", "机器人", "影像", "系统研发", "应用示范")
+            if keyword in merged
+        )
+
+        if platform_hits >= 4 and technical_hits <= 3:
+            return self.PROJECT_PROFILE_PLATFORM
+        if medical_hits >= 4:
+            return self.PROJECT_PROFILE_MEDICAL
+        return self.PROJECT_PROFILE_TECHNICAL
 
     def build_degraded_result(self, content: Dict[str, Any], reason: str = "") -> CheckResult:
         """在模型不可用时，基于章节命中结果返回规则降级结果"""

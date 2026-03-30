@@ -28,6 +28,26 @@ class ReportGenerator:
         r"项目基本信息",
         r"基地负责人",
     ]
+    SECTION_PREVIEW_DROP_LINE_PATTERNS = [
+        r"^\[表格(?:行|表头)\d+\]",
+        r"^（?包括.+限\d+.*[）)]$",
+        r"^围绕.+限\d+.*$",
+        r"^具体内容应包括.+$",
+        r"^每项创新点的描述限\d+.*$",
+        r"^主要指标：?$",
+        r"^核心建设内容：?$",
+    ]
+    SECTION_PREVIEW_INLINE_HEADINGS = [
+        "背景与意义",
+        "建设目标",
+        "实施内容",
+        "创新亮点",
+        "预期效益",
+        "项目效益",
+        "实施地点",
+        "目的",
+        "意义",
+    ]
 
     def build_from_debug_file(self, debug_json_path: Path | str, output_html_path: Path | str) -> Path:
         """根据 debug JSON 生成 HTML 报告"""
@@ -556,7 +576,9 @@ class ReportGenerator:
         for name, text in sections.items():
             if self._should_skip_section_preview(name, text):
                 continue
-            preview = text if len(text) <= 1200 else f"{text[:1200]}..."
+            preview = self._build_section_preview(name, text)
+            if not preview:
+                continue
             blocks.append(
                 f"<details><summary>{html.escape(str(name))}</summary><pre>{html.escape(str(preview))}</pre></details>"
             )
@@ -699,3 +721,97 @@ class ReportGenerator:
         if "限" in text and "字以内" in text and len(text.strip()) <= 120:
             return True
         return False
+
+    def _build_section_preview(self, name: str, text: str) -> str:
+        """构建适合 HTML 展示的章节预览"""
+        cleaned_text = self._cleanup_preview_text(text)
+        lines = [line.strip() for line in cleaned_text.splitlines()]
+        preview_lines: List[str] = []
+        current_paragraph = ""
+
+        for raw_line in lines:
+            line = self._normalize_preview_line(raw_line)
+            if not line:
+                continue
+            if self._should_drop_preview_line(name, line):
+                continue
+            if name == "概述" and "填报说明" in line:
+                break
+
+            if self._is_structured_preview_line(line):
+                if current_paragraph:
+                    preview_lines.append(current_paragraph)
+                    current_paragraph = ""
+                preview_lines.append(line)
+                continue
+
+            if current_paragraph:
+                separator = "" if self._should_compact_preview_join(current_paragraph, line) else " "
+                current_paragraph = f"{current_paragraph}{separator}{line}".strip()
+            else:
+                current_paragraph = line
+
+        if current_paragraph:
+            preview_lines.append(current_paragraph)
+
+        preview = "\n".join(preview_lines).strip()
+        if not preview:
+            return ""
+        return preview if len(preview) <= 1200 else f"{preview[:1200].rstrip()}..."
+
+    def _cleanup_preview_text(self, text: str) -> str:
+        """清洗 PDF 断行和中文断空格，提升章节预览可读性"""
+        cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        cleaned = cleaned.replace("河北省科学技术厅制填报说明", "河北省科学技术厅制\n填报说明")
+        for heading in self.SECTION_PREVIEW_INLINE_HEADINGS:
+            cleaned = re.sub(
+                rf"(^|\n)({re.escape(heading)})(?=[^\n：:])",
+                rf"\1\2\n",
+                cleaned,
+            )
+        cleaned = re.sub(
+            r"(方向[一二三四五六七八九十]+：[^。\n]{4,80}?)(?=(?:该研究方向|该方向|本研究方向))",
+            r"\1\n",
+            cleaned,
+        )
+        cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])", "", cleaned)
+        cleaned = re.sub(r"(?<=[A-Za-z])[ \t]+(?=[A-Za-z])", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
+    def _normalize_preview_line(self, line: str) -> str:
+        """规范化单行预览文本"""
+        normalized = re.sub(r"\s+", " ", line).strip()
+        normalized = re.sub(r"(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])", "", normalized)
+        return normalized
+
+    def _should_drop_preview_line(self, section_name: str, line: str) -> bool:
+        """过滤表单提示语和表格噪声行"""
+        if not line:
+            return True
+        if section_name == "概述" and line in {"河北省科学技术厅制"}:
+            return False
+        return any(re.match(pattern, line) for pattern in self.SECTION_PREVIEW_DROP_LINE_PATTERNS)
+
+    def _is_structured_preview_line(self, line: str) -> bool:
+        """判断是否应单独成行，保留条目结构"""
+        if len(line) <= 18 and not re.search(r"[。；;，,]", line):
+            return True
+        if re.match(r"^(?:[-•]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫])", line):
+            return True
+        if re.match(r"^\d+[、\.．)]", line):
+            return True
+        if re.match(r"^第[一二三四五六七八九十\d]+[章节部分阶段年]", line):
+            return True
+        if re.match(r"^\d{4}\s*年\s*\d{1,2}\s*月\s*[-—~至]+\s*\d{4}\s*年\s*\d{1,2}\s*月$", line):
+            return True
+        return line.endswith(("：", ":"))
+
+    def _should_compact_preview_join(self, previous: str, current: str) -> bool:
+        """判断跨行拼接时是否应直接相连，避免中文词被断开"""
+        if not previous or not current:
+            return False
+        return bool(
+            re.match(r"[\u4e00-\u9fff]", previous[-1])
+            and re.match(r"[\u4e00-\u9fff]", current[0])
+        )
