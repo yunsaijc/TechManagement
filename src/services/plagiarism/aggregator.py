@@ -22,6 +22,13 @@ class PlagiarismResult:
     low_similarity: List[dict]
     processing_time: float
     filtered_pairs: List[dict] = field(default_factory=list)
+    
+    # 多源聚合字段
+    effective_duplicate_rate: float = 0.0
+    effective_duplicate_chars: int = 0
+    primary_scope_chars: int = 0
+    source_rankings: List[dict] = field(default_factory=list)
+    match_groups: List[dict] = field(default_factory=list)
 
 
 @dataclass
