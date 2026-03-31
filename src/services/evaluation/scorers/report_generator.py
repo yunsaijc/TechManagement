@@ -801,6 +801,8 @@ class ReportGenerator:
             return True
         if re.match(r"^\d+[、\.．)]", line):
             return True
+        if re.match(r"^方向[一二三四五六七八九十]+[：:]", line):
+            return True
         if re.match(r"^第[一二三四五六七八九十\d]+[章节部分阶段年]", line):
             return True
         if re.match(r"^\d{4}\s*年\s*\d{1,2}\s*月\s*[-—~至]+\s*\d{4}\s*年\s*\d{1,2}\s*月$", line):

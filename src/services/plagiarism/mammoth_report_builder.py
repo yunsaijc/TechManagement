@@ -1000,10 +1000,10 @@ class MammothPlagiarismReportBuilder:
     ) -> str:
         """渲染完整HTML页面"""
         
-        # 计算摘要数据
-        effective_count = summary.get("total_effective_segments", 0)
-        template_count = summary.get("total_template_segments", 0)
-        effective_chars = summary.get("total_effective_chars", 0)
+        # 统一使用多源归并后的统计口径；旧 summary 仅作为兼容兜底。
+        effective_count = int(summary.get("group_count") or summary.get("total_effective_segments") or 0)
+        template_count = int(summary.get("total_template_segments") or 0)
+        effective_chars = int(summary.get("effective_duplicate_chars") or summary.get("total_effective_chars") or 0)
         
         mammoth_styles = get_mammoth_styles()
         
