@@ -108,6 +108,17 @@ Agent 只接收结构化检索结果并完成分析与合并。
   - `patent_overlap=技术摸底工具不可用`
   - `conclusion=当前仅基于申报书内容，外部对比结论待补充`
 
+当前 `industry_fit` 降级语义：
+
+- 若 `guide_search` 未配置，则主流程不中断
+- 返回 `partial=true`
+- `errors[]` 追加一条 `code=TOOL_UNAVAILABLE, module=industry_fit`
+- `industry_fit` 字段填充占位结果：
+  - `fit_score=0.0`
+  - `matched=[]`
+  - `gaps=["产业指南检索不可用，结果待核验"]`
+  - `suggestions=["待检索工具恢复后补充指南映射"]`
+
 ## 代码锚点
 
 - 编排入口：`src/services/evaluation/agent.py`

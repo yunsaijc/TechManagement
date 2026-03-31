@@ -17,6 +17,7 @@ class EvaluationQAAgent:
     async def ask(self, question: str, index_payload: Dict[str, Any]) -> EvaluationChatAskResponse:
         """回答专家问题并返回引用"""
         chunks = self.indexer.search(index_payload, question, top_k=5)
+        chunks = self._rerank_chunks_for_question(question, chunks)
         citations = [
             ChatCitation(
                 file=str(chunk.get("file", "")),
@@ -34,6 +35,29 @@ class EvaluationQAAgent:
 
         answer = await self._generate_answer(question, chunks)
         return EvaluationChatAskResponse(answer=answer, citations=citations)
+
+    def _rerank_chunks_for_question(self, question: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """根据问题类型对已召回切片做二次排序，压制说明页与组织管理噪声"""
+        if not chunks:
+            return chunks
+
+        ranked: List[tuple[float, Dict[str, Any]]] = []
+        for chunk in chunks:
+            section = str(chunk.get("section", ""))
+            text = str(chunk.get("text", ""))
+            score = 0.0
+
+            if any(token in question for token in ("研究目标", "项目目标", "总体目标", "建设目标", "目的")):
+                score += self._score_goal_chunk(section, text)
+            elif any(token in question for token in ("进展", "进度", "阶段", "做到什么程度")):
+                score += self._score_progress_chunk(section, text)
+            elif any(token in question for token in ("预期效益", "效益", "收益", "价值")):
+                score += self._score_benefit_chunk(section, text)
+
+            ranked.append((score, chunk))
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return [chunk for _, chunk in ranked]
 
     async def _generate_answer(self, question: str, chunks: List[Dict[str, Any]]) -> str:
         """基于证据生成回答"""
@@ -188,3 +212,48 @@ class EvaluationQAAgent:
                     if len(points) >= 5:
                         return points
         return points
+
+    def _score_goal_chunk(self, section: str, text: str) -> float:
+        """目标类问题的切片重排评分"""
+        score = 0.0
+        if any(marker in section for marker in ("项目目的和意义", "项目简介", "研究目标", "项目目标", "总体目标")):
+            score += 5.0
+        if any(marker in text for marker in ("目的：", "建设目标", "研究目标", "项目目标")):
+            score += 4.0
+        if "总体目标是" in text and "[表格行" not in text:
+            score += 3.0
+        if any(marker in text for marker in ("填报说明", "填 报 说 明", "项目申报书分为")):
+            score -= 5.0
+        if any(marker in text for marker in ("总体组", "子项目组", "质量监督", "组织学术研讨会", "保障措施")):
+            score -= 4.0
+        if any(marker in text for marker in ("绩效指标", "一级指标", "二级指标", "三级指标")):
+            score -= 4.0
+        return score
+
+    def _score_progress_chunk(self, section: str, text: str) -> float:
+        """进展类问题的切片重排评分"""
+        score = 0.0
+        if any(marker in section for marker in ("进度安排", "实施计划", "工作计划", "研究计划")):
+            score += 5.0
+        if re.search(r"(20\d{2}\s*年|第[一二三四五六七八九十]+年|阶段[一二三四五六七八九十\d]+)", text):
+            score += 4.0
+        if any(marker in text for marker in ("临床测试", "初步测试", "试点", "阶段成果", "研发", "验证")):
+            score += 2.0
+        if any(marker in text for marker in ("填报说明", "填 报 说 明", "项目申报书分为")):
+            score -= 6.0
+        if any(marker in text for marker in ("总体组", "子项目组", "质量监督", "基地负责人", "基地秘书")):
+            score -= 4.0
+        if any(marker in text for marker in ("实施期目标", "第一年度目标", "第二年度目标", "第三年度目标", "第四年度目标")):
+            score -= 2.0
+        return score
+
+    def _score_benefit_chunk(self, section: str, text: str) -> float:
+        """效益类问题的切片重排评分"""
+        score = 0.0
+        if any(marker in section for marker in ("预期效益", "社会效益", "经济效益", "普及前景", "项目简介")):
+            score += 4.0
+        if any(marker in text for marker in ("社会效益", "经济效益", "医疗效益", "示范效应", "品牌建设")):
+            score += 3.0
+        if any(marker in text for marker in ("填报说明", "填 报 说 明")):
+            score -= 5.0
+        return score

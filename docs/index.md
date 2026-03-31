@@ -35,6 +35,11 @@ docs/
 │   ├── 04-document-parser.md       # 文档解析方案
 │   ├── 05-api.md                  # API 接口文档
 │   ├── 06-rules.md                # 规则系统
+│   ├── project-review/            # 📦 项目级形式审查
+│   │   └── 01-overview.md         # 项目级方案概述
+│   │   ├── 02-models.md           # 输入输出模型
+│   │   ├── 03-rules.md            # 规则与配置设计
+│   │   └── 04-flow-and-api.md     # 执行流程与接口草案
 │   └── plagiarism/                 # 📝 查重服务
 │       ├── 01-overview.md          # 服务概述
 │       ├── 03-agent.md             # Agent 设计
@@ -92,6 +97,7 @@ docs/
 │   ├── 04-document-parser.md
 │   ├── 05-api.md
 │   └── 06-rules.md
+│   └── project-review/
 │
 ├── 30-grouping/         ← 智能分组与专家匹配服务（依赖 common）
 │   ├── 01-overview.md

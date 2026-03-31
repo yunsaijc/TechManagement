@@ -209,3 +209,121 @@ async def test_evaluation_agent_ask_expected_benefits_extracts_benefit_points(tm
     assert any(keyword in answer.answer for keyword in ("社会效益", "经济效益"))
     assert answer.citations
     assert answer.citations[0].page == 7
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_ask_goal_reranks_away_from_kpi_and_instruction_pages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """研究目标问答应优先引用目标正文，而不是说明页或绩效表"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    content = {
+        "sections": {
+            "填报说明": "项目申报书分为研究内容、进度安排、绩效指标等部分。",
+            "项目绩效评价考核目标及指标": "总体目标：完成论文和专利等指标。",
+            "项目目的和意义": "目的：建设智能化科普咨询平台，整合资源并提升基层传播能力。",
+        },
+        "page_chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 2,
+                "section": "填报说明",
+                "text": "填报说明\n项目申报书分为研究内容、进度安排、绩效指标等部分。",
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 9,
+                "section": "项目绩效评价考核目标及指标",
+                "text": "[表格行1] 总体目标 | 实施期目标\n[表格行2] 完成论文和专利等指标。",
+            },
+            {
+                "id": 3,
+                "file": "demo.pdf",
+                "page": 5,
+                "section": "项目目的和意义",
+                "text": "目的：建设智能化科普咨询平台，整合资源并提升基层传播能力。",
+            },
+        ],
+        "meta": {
+            "file_name": "demo.pdf",
+            "page_count": 3,
+            "parser_version": "test",
+            "page_estimated": False,
+        },
+    }
+
+    request = EvaluationRequest(
+        project_id="demo-goal-rerank",
+        dimensions=["team"],
+        enable_highlight=False,
+        enable_industry_fit=False,
+        enable_benchmark=False,
+        enable_chat_index=True,
+    )
+
+    result = await agent.evaluate(request=request, content=content, source_name="demo.pdf")
+    answer = await agent.ask(result.evaluation_id, "这个项目的研究目标是什么？")
+
+    assert answer.citations
+    assert answer.citations[0].page == 5
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_ask_progress_reranks_to_schedule_page(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """进展问答应优先引用进度安排，而不是说明页"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    content = {
+        "sections": {
+            "填报说明": "项目申报书分为研究内容、进度安排等部分。",
+            "进度安排": "第二年（2026年）：优化系统并开展测试。第三年（2027年）：扩大试点并形成阶段成果。",
+        },
+        "page_chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 2,
+                "section": "填报说明",
+                "text": "填报说明\n项目申报书分为研究内容、进度安排等部分。",
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 14,
+                "section": "进度安排",
+                "text": "第二年（2026年）：优化系统并开展测试。第三年（2027年）：扩大试点并形成阶段成果。",
+            },
+        ],
+        "meta": {
+            "file_name": "demo.pdf",
+            "page_count": 2,
+            "parser_version": "test",
+            "page_estimated": False,
+        },
+    }
+
+    request = EvaluationRequest(
+        project_id="demo-progress-rerank",
+        dimensions=["team"],
+        enable_highlight=False,
+        enable_industry_fit=False,
+        enable_benchmark=False,
+        enable_chat_index=True,
+    )
+
+    result = await agent.evaluate(request=request, content=content, source_name="demo.pdf")
+    answer = await agent.ask(result.evaluation_id, "这项工作目前进展到什么程度了？")
+
+    assert answer.citations
+    assert answer.citations[0].page == 14
