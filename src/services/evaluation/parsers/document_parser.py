@@ -355,29 +355,90 @@ class DocumentParser:
         sections: Dict[str, str],
         file_name: str,
     ) -> List[Dict[str, Any]]:
-        """构建页码切片"""
+        """按章节上下文构建页码切片"""
         chunks: List[Dict[str, Any]] = []
         chunk_id = 1
+        current_section = "概述"
 
         for page_num, page_text in enumerate(page_texts, start=1):
-            page_parts = self._split_text(page_text, self.CHUNK_MAX_CHARS)
-            for part in page_parts:
-                clean_part = self._clean_text(part)
-                if not clean_part:
-                    continue
-                section_name = self._infer_chunk_section(clean_part, sections)
-                chunks.append(
-                    {
-                        "id": chunk_id,
-                        "file": file_name,
-                        "page": page_num,
-                        "section": section_name,
-                        "text": clean_part,
-                    }
-                )
-                chunk_id += 1
+            page_blocks, current_section = self._split_page_into_section_blocks(
+                page_text=page_text,
+                current_section=current_section,
+            )
+            if not page_blocks:
+                page_blocks = [(current_section, self._clean_text(page_text))]
+
+            for section_name, block_text in page_blocks:
+                for part in self._split_text(block_text, self.CHUNK_MAX_CHARS):
+                    clean_part = self._clean_text(part)
+                    if not clean_part:
+                        continue
+                    resolved_section = self._resolve_chunk_section(
+                        chunk_text=clean_part,
+                        preferred_section=section_name,
+                        sections=sections,
+                    )
+                    chunks.append(
+                        {
+                            "id": chunk_id,
+                            "file": file_name,
+                            "page": page_num,
+                            "section": resolved_section,
+                            "text": clean_part,
+                        }
+                    )
+                    chunk_id += 1
 
         return chunks
+
+    def _split_page_into_section_blocks(
+        self,
+        page_text: str,
+        current_section: str,
+    ) -> tuple[List[tuple[str, str]], str]:
+        """按页内标题切出章节块，并继承上一页章节上下文"""
+        blocks: List[tuple[str, str]] = []
+        active_section = current_section
+        buffer: List[str] = []
+
+        for raw_line in page_text.split("\n"):
+            normalized_line = raw_line.strip()
+            if not normalized_line:
+                continue
+            if self._is_noise_line(normalized_line):
+                continue
+
+            if self._is_section_title(normalized_line):
+                normalized_title = self._normalize_section_name(normalized_line)
+                if self._should_start_new_section(active_section, normalized_line, normalized_title):
+                    if buffer:
+                        merged = "\n".join(buffer).strip()
+                        if merged:
+                            blocks.append((active_section, merged))
+                    active_section = normalized_title
+                    buffer = [normalized_line]
+                    continue
+
+            buffer.append(normalized_line)
+
+        if buffer:
+            merged = "\n".join(buffer).strip()
+            if merged:
+                blocks.append((active_section, merged))
+
+        return blocks, active_section
+
+    def _resolve_chunk_section(
+        self,
+        chunk_text: str,
+        preferred_section: str,
+        sections: Dict[str, str],
+    ) -> str:
+        """优先使用页内上下文章节，必要时再做轻量纠偏"""
+        if preferred_section and preferred_section != "概述":
+            return preferred_section
+
+        return self._infer_chunk_section(chunk_text, sections)
 
     def _infer_chunk_section(self, chunk_text: str, sections: Dict[str, str]) -> str:
         """推断切片所属章节"""
@@ -422,7 +483,9 @@ class DocumentParser:
             if len(candidate) <= chunk_size:
                 current = candidate
             else:
-                chunks.append(current)
+                chunks.append(
+                    current
+                )
                 current = paragraph
 
         if current:

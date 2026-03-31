@@ -111,6 +111,17 @@ tests/services/evaluation/
   - `BenchmarkRetriever` 可将 `tech_search` 结果映射为标准 `BenchmarkReference`
   - `BenchmarkAnalyzer` 在有外部检索结果时可生成结论与证据
   - 未配置 `tech_search` 时，`EvaluationAgent` 返回 `partial=true`、`TOOL_UNAVAILABLE` 和降级 `benchmark`
+- `tests/services/evaluation/test_industry_fit.py`
+  - `IndustryFitAnalyzer` 在有 `guide_search` 结果时可生成 `matched/gaps/suggestions/evidence`
+  - 未配置 `guide_search` 时，`EvaluationAgent` 返回 `partial=true`、`TOOL_UNAVAILABLE` 和降级 `industry_fit`
+- `tests/services/evaluation/test_agent_orchestration.py`
+  - 同时开启 `highlight/industry_fit/benchmark/chat_index` 时，结果可被正确合并到同一 `EvaluationResult`
+  - 合并后保留 `highlights/industry_fit/benchmark/evidence/chat_ready`
+- `tests/services/evaluation/test_api_evaluation.py`
+  - `evaluate/file` 路由可解析表单参数并调用评审 Agent
+  - `chat/ask` 路由可返回 `answer + citations`
+  - `chat/ask` 会把“评审记录不存在”映射为 `404`
+  - `chat/ask` 会把“未构建聊天索引”映射为 `422`
 
 ## 调试产物
 

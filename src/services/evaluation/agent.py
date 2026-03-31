@@ -490,13 +490,17 @@ class EvaluationAgent:
     def _refresh_debug_index(self, debug_dir: Path) -> None:
         """刷新 debug_eval 索引页"""
         records: List[Dict[str, Any]] = []
-        for path in sorted(debug_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        for path in sorted(debug_dir.glob("EVAL_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
+            if not isinstance(payload, dict):
+                continue
 
             result = payload.get("result") or {}
+            if not isinstance(result, dict):
+                continue
             records.append(
                 {
                     "created_at": result.get("created_at"),
