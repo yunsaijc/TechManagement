@@ -66,12 +66,13 @@ class MammothPlagiarismReportBuilder:
         documents = data.get("documents", {})
         primary_scope = data.get("primary_scope") or {}
         primary_canonical = documents.get(primary_doc, "") if primary_doc else ""
-        source_doc = ""
-        for segment in data.get("duplicate_segments", []):
-            sources = segment.get("sources", [])
-            if sources:
-                source_doc = sources[0].get("doc", "")
-                break
+        source_doc = data.get("report_source_doc", "")
+        if not source_doc:
+            for segment in data.get("duplicate_segments", []):
+                sources = segment.get("sources", [])
+                if sources:
+                    source_doc = sources[0].get("doc", "")
+                    break
 
         # 转换DOCX为HTML
         left_html = ""
@@ -128,13 +129,14 @@ class MammothPlagiarismReportBuilder:
         data: Dict
     ) -> Tuple[str, str, Dict[str, Dict[str, Any]]]:
         """基于 canonical 坐标映射在两侧 HTML 应用高亮。"""
-        segments = data.get("duplicate_segments", [])
+        # 优先使用归并后的 match_groups
+        segments = data.get("match_groups") or data.get("duplicate_segments", [])
         if not segments:
             return left_html, right_html, {}
 
         primary_doc = data.get("primary_doc", "")
         documents = data.get("documents", {})
-        source_doc = next(
+        source_doc = data.get("report_source_doc", "") or next(
             (s.get("sources", [{}])[0].get("doc", "") for s in segments if s.get("sources")),
             "",
         )
@@ -143,8 +145,8 @@ class MammothPlagiarismReportBuilder:
         left_map = build_coordinate_map(left_canonical, left_html) if left_canonical else None
         right_map = build_coordinate_map(right_canonical, right_html) if right_canonical else None
 
-        left_spans: List[Tuple[int, int, str, bool, str]] = []
-        right_spans: List[Tuple[int, int, str, bool, str]] = []
+        left_spans: List[Tuple[int, int, str, bool, str, str]] = []
+        right_spans: List[Tuple[int, int, str, bool, str, str]] = []
         left_occupied: List[Tuple[int, int]] = []
         right_occupied: List[Tuple[int, int]] = []
         match_results: Dict[str, Dict[str, Any]] = {}
@@ -155,50 +157,57 @@ class MammothPlagiarismReportBuilder:
         )
 
         for seg_idx, segment in sorted_segments:
-            match_id = segment.get("match_id") or f"m{seg_idx+1:03d}"
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
             match_type = segment.get("match_type", "exact")
-            sources = segment.get("sources", [])
-            if not sources:
-                continue
-
+            similarity = float(segment.get("similarity_score", segment.get("similarity", 0.0)) or 0.0)
+            tone = self._highlight_tone(similarity)
+            
+            # 过滤出属于当前右侧文档的来源
+            all_sources = segment.get("sources", [])
+            current_sources = [s for s in all_sources if s.get("doc") == source_doc]
+            
             primary_start = int(segment.get("primary_start", 0) or 0)
             primary_end = int(segment.get("primary_end", 0) or 0)
-            source_start = int(sources[0].get("start", 0) or 0) if sources else 0
-            source_end = int(sources[0].get("end", 0) or 0) if sources else 0
-            if primary_end <= primary_start or source_end <= source_start:
+            
+            if primary_end <= primary_start:
                 continue
 
-            if not left_map or not right_map:
-                continue
-            left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
-            right_fragments, right_cov = right_map.span_to_html_fragments(source_start, source_end)
-            if not left_fragments or not right_fragments:
-                continue
+            # 处理左侧（主文档）高亮
+            if left_map:
+                left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
+                if left_fragments:
+                    left_fragments = self._clean_fragments_for_side(left_fragments, left_html, "primary")
+                    left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
+                    for left_start, left_end in left_filtered:
+                        left_occupied.append((left_start, left_end))
+                        left_spans.append((left_start, left_end, match_id, is_template, match_type, tone))
 
-            left_fragments = self._clean_fragments_for_side(left_fragments, left_html, "primary")
-            right_fragments = self._clean_fragments_for_side(right_fragments, right_html, "source")
-            if not left_fragments or not right_fragments:
-                continue
+            # 处理右侧（来源文档）高亮
+            right_cov = 0.0
+            if right_map and current_sources:
+                source_start = int(current_sources[0].get("start", 0) or 0)
+                source_end = int(current_sources[0].get("end", 0) or 0)
+                if source_end > source_start:
+                    right_fragments, r_cov = right_map.span_to_html_fragments(source_start, source_end)
+                    right_cov = r_cov
+                    if right_fragments:
+                        right_fragments = self._clean_fragments_for_side(right_fragments, right_html, "source")
+                        right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
+                        for right_start, right_end in right_filtered:
+                            right_occupied.append((right_start, right_end))
+                            right_spans.append((right_start, right_end, match_id, is_template, match_type, tone))
 
-            left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
-            right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
-            if not left_filtered or not right_filtered:
-                continue
-
-            for left_start, left_end in left_filtered:
-                left_occupied.append((left_start, left_end))
-                left_spans.append((left_start, left_end, match_id, is_template, match_type))
-            for right_start, right_end in right_filtered:
-                right_occupied.append((right_start, right_end))
-                right_spans.append((right_start, right_end, match_id, is_template, match_type))
-
-            coverage = min(left_cov, right_cov)
+            coverage = similarity # 默认使用相似度作为置信度
             heading_mode = self._heading_alignment_mode(segment)
+            
             match_results[match_id] = {
-                "mode": "full" if coverage >= 0.85 and heading_mode == "aligned" else "core",
-                "confidence": round(coverage, 4),
+                "mode": "full" if similarity >= 0.85 and heading_mode == "aligned" else "core",
+                "confidence": round(similarity, 4),
                 "match_type": match_type,
+                "tone": tone,
+                "similarity": round(similarity, 4),
+                "source_count": len(all_sources),
             }
 
         return (
@@ -211,16 +220,40 @@ class MammothPlagiarismReportBuilder:
         self,
         fragments: List[Tuple[int, int]],
         occupied: List[Tuple[int, int]],
-        min_len: int = 3,
     ) -> List[Tuple[int, int]]:
         filtered: List[Tuple[int, int]] = []
-        for start, end in fragments:
-            if end - start < min_len:
+        total = len(fragments)
+        for idx, (start, end) in enumerate(fragments):
+            if self._is_discardable_short_fragment(fragments, idx):
                 continue
             if self._has_overlap(occupied, start, end):
                 continue
             filtered.append((start, end))
         return filtered
+
+    def _is_discardable_short_fragment(
+        self,
+        fragments: List[Tuple[int, int]],
+        idx: int,
+    ) -> bool:
+        start, end = fragments[idx]
+        length = end - start
+        if length >= 3:
+            return False
+
+        fragment_count = len(fragments)
+        if fragment_count <= 1:
+            return True
+
+        prev_exists = idx > 0
+        next_exists = idx + 1 < fragment_count
+
+        # 被 Word 内联格式切开的连续高亮片段，2 字碎片也要保留。
+        if length == 2 and prev_exists and next_exists:
+            return False
+        if length == 2 and (prev_exists or next_exists):
+            return False
+        return True
 
     def _clean_fragments_for_side(
         self,
@@ -628,23 +661,25 @@ class MammothPlagiarismReportBuilder:
     def _inject_spans(
         self,
         html_content: str,
-        spans: List[Tuple[int, int, str, bool, str]],
+        spans: List[Tuple[int, int, str, bool, str, str]],
         side: str,
     ) -> str:
         result = html_content
-        for start, end, match_id, is_template, match_type in sorted(spans, key=lambda x: x[0], reverse=True):
+        for start, end, match_id, is_template, match_type, tone in sorted(spans, key=lambda x: x[0], reverse=True):
             classes = ["hit"]
             if is_template:
                 classes.append("template")
-            if match_type == "paraphrase":
-                classes.append("paraphrase")
+            classes.append(tone)
             class_attr = " ".join(classes)
             wrapped = (
-                f'<span class="{class_attr}" data-match-id="{match_id}" data-side="{side}" data-match-type="{match_type}">'
+                f'<span class="{class_attr}" data-match-id="{match_id}" data-side="{side}" data-match-type="{match_type}" data-tone="{tone}">'
                 f"{result[start:end]}</span>"
             )
             result = result[:start] + wrapped + result[end:]
         return result
+
+    def _highlight_tone(self, similarity: float) -> str:
+        return "strong" if similarity >= 0.78 else "soft"
 
     def _apply_highlights(
         self,
@@ -829,11 +864,13 @@ class MammothPlagiarismReportBuilder:
         documents = data.get("documents", {})
         
         if side == "primary":
-            text = documents.get("primary", "")
+            primary_doc = data.get("primary_doc", "")
+            text = documents.get(primary_doc, "")
             title = data.get("primary_doc", "主文档")
         else:
-            text = documents.get("source", "")
-            title = "来源文档"
+            source_doc = data.get("report_source_doc", "")
+            text = documents.get(source_doc, "")
+            title = source_doc or "来源文档"
         
         if not text:
             return f'<div class="docx-content"><p class="empty">无内容</p></div>'
@@ -851,40 +888,38 @@ class MammothPlagiarismReportBuilder:
         """构建统计信息HTML"""
         summary = data.get("summary", {})
         text_lengths = data.get("text_lengths", {})
-        segments = data.get("duplicate_segments", [])
-        template_segments = data.get("template_segments", [])
         primary_doc = data.get("primary_doc", "")
         
-        # 统计口径：统一按主文档字数计算，避免与普通HTML口径冲突
-        total_chars = int(text_lengths.get(primary_doc, 0)) if primary_doc else 0
+        # 统计口径：优先使用 MultiSourceAggregator 计算出的有效值
+        total_chars = int(summary.get("primary_scope_chars") or text_lengths.get(primary_doc, 0))
         if total_chars == 0:
             docs = data.get("documents", {})
             primary_text = docs.get(primary_doc, "") if primary_doc else ""
             if isinstance(primary_text, str) and primary_text:
                 total_chars = len(primary_text)
 
-        # 使用位置并集计算字符数，避免片段重叠导致重复计数
-        effective_chars = self._union_length([
+        # 优先使用归并后的值
+        effective_chars = int(summary.get("effective_duplicate_chars") or self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in segments
-        ])
+            for s in data.get("duplicate_segments", [])
+        ]))
 
-        template_chars = self._union_length([
+        template_chars = int(summary.get("total_template_chars") or self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in template_segments
-        ])
+            for s in data.get("template_segments", [])
+        ]))
         
         duplicate_chars = self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in segments + template_segments
+            for s in (data.get("duplicate_segments", []) + data.get("template_segments", []))
         ])
         
         # 计算重复率
-        total_rate = (duplicate_chars / total_chars * 100) if total_chars > 0 else 0
         effective_rate = (effective_chars / total_chars * 100) if total_chars > 0 else 0
         template_rate = (template_chars / total_chars * 100) if total_chars > 0 else 0
+        total_rate = effective_rate + template_rate
 
-        return f"""<div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">{template_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">{total_chars:,}</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">{duplicate_chars:,}</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">{effective_chars:,}</div></div>"""
+        return f"""<div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value" style="color: #dc2626;">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效/总字数</div><div class="stat-value" style="font-size: 16px;">{effective_chars:,} / {total_chars:,}</div></div>"""
 
     @staticmethod
     def _union_length(ranges: List[Tuple[int, int]]) -> int:
@@ -905,34 +940,40 @@ class MammothPlagiarismReportBuilder:
 
     def _build_match_nav(self, data: Dict, match_results: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
         """构建匹配片段导航"""
-        segments = data.get("duplicate_segments", [])
+        segments = data.get("match_groups") or data.get("duplicate_segments", [])
         if not segments:
             return '<p class="empty">无重复片段</p>'
 
+        visible_ids = set((match_results or {}).keys())
         cards = []
-        for i, segment in enumerate(segments[:50], 1):  # 最多显示50个
-            match_id = segment.get("match_id") or f"m{i:03d}"
+        display_idx = 0
+        for i, segment in enumerate(segments[:100], 1):  # 增加显示数量
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{i:03d}"
+            if visible_ids and match_id not in visible_ids:
+                continue
+            display_idx += 1
             primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:60]
             is_template = segment.get("is_template", False)
-            similarity = segment.get("similarity_score", segment.get("similarity", 1.0))
-            result = (match_results or {}).get(match_id)
-            match_type = segment.get("match_type", "exact")
+            similarity = float(segment.get("similarity_score", segment.get("similarity", 1.0)) or 0.0)
+
+            all_sources = segment.get("sources", [])
+            source_count = len(all_sources)
             
-            sources = segment.get("sources", [])
+            # 获取当前报告展示的来源文档
+            report_source_doc = data.get("report_source_doc", "")
+            current_source = next((s for s in all_sources if s.get("doc") == report_source_doc), None)
+            
             source_info = ""
-            if sources:
-                source_doc = sources[0].get("doc", "")
-                source_info = f"来源: {html.escape(source_doc)}"
+            if current_source:
+                source_info = f"来源: {html.escape(report_source_doc)}"
+            elif all_sources:
+                source_info = f"主要来源: {html.escape(all_sources[0].get('doc', ''))}"
             
+            source_badge = f'<span class="pill" style="padding: 2px 6px; font-size: 10px;">{source_count}个来源</span>' if source_count > 1 else ''
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
-            type_badge = '<span class="template-badge" style="background:#2563eb;">改写</span>' if match_type == "paraphrase" else ''
-            if result:
-                locate_badge = '<span class="locate-badge ok">完整</span>' if result.get("mode") == "full" else '<span class="locate-badge partial">核心</span>'
-            else:
-                locate_badge = '<span class="locate-badge miss">未定位</span>'
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
-                <div class="nav-header">#{i} {template_badge} {type_badge} {locate_badge}</div>
+                <div class="nav-header">#{display_idx} {template_badge} {source_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度: {similarity:.2f} | {source_info}</small>
             </button>''')
@@ -959,10 +1000,10 @@ class MammothPlagiarismReportBuilder:
     ) -> str:
         """渲染完整HTML页面"""
         
-        # 计算摘要数据
-        effective_count = summary.get("total_effective_segments", 0)
-        template_count = summary.get("total_template_segments", 0)
-        effective_chars = summary.get("total_effective_chars", 0)
+        # 统一使用多源归并后的统计口径；旧 summary 仅作为兼容兜底。
+        effective_count = int(summary.get("group_count") or summary.get("total_effective_segments") or 0)
+        template_count = int(summary.get("total_template_segments") or 0)
+        effective_chars = int(summary.get("effective_duplicate_chars") or summary.get("total_effective_chars") or 0)
         
         mammoth_styles = get_mammoth_styles()
         
@@ -994,11 +1035,17 @@ class MammothPlagiarismReportBuilder:
     .nav-text {{ color: #374151; margin-bottom: 4px; }}
     .nav-item small {{ display: block; color: #6b7280; font-size: 11px; }}
     .template-badge {{ background: #f59e0b; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }}
-    .locate-badge {{ font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }}
-    .locate-badge.ok {{ background: #16a34a; color: #fff; }}
-    .locate-badge.partial {{ background: #2563eb; color: #fff; }}
-    .locate-badge.miss {{ background: #9ca3af; color: #fff; }}
-    .hit.paraphrase {{ background: rgba(37, 99, 235, 0.22) !important; color: #1e3a8a !important; }}
+    .docx-content .hit {{ color: inherit !important; }}
+    .docx-content .hit.strong {{ background: rgba(220, 38, 38, 0.34) !important; }}
+    .docx-content .hit.strong:hover {{ background: rgba(220, 38, 38, 0.42) !important; }}
+    .docx-content .hit.soft {{ background: rgba(248, 113, 113, 0.20) !important; }}
+    .docx-content .hit.soft:hover {{ background: rgba(248, 113, 113, 0.28) !important; }}
+    .docx-content .hit.active {{
+      box-shadow: 0 0 0 2px rgba(153, 27, 27, 0.35) !important;
+      outline: 1px solid rgba(127, 29, 29, 0.65);
+      background-image: linear-gradient(rgba(253, 224, 71, 0.72), rgba(253, 224, 71, 0.72)) !important;
+      background-blend-mode: multiply;
+    }}
     .empty {{ color: #9ca3af; font-size: 13px; padding: 20px; text-align: center; }}
     .stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; width: 100%; }}
     .stat-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }}

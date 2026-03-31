@@ -3,8 +3,10 @@
 正文评审服务的统一编排器，融合九维评审、划重点、产业贴合、技术摸底与聊天索引。
 """
 import asyncio
+import json
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.common.llm import get_default_llm_client
@@ -36,7 +38,7 @@ from .config import EvaluationConfig, evaluation_config
 from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
-from .scorers import EvaluationScorer
+from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
 from .tools import ToolGateway, ToolUnavailableError
 
@@ -62,6 +64,7 @@ class EvaluationAgent:
 
         self.parser = DocumentParser()
         self.scorer = EvaluationScorer()
+        self.report_generator = ReportGenerator()
         self.storage = EvaluationStorage()
         self.project_repo = EvaluationProjectRepository()
 
@@ -143,6 +146,12 @@ class EvaluationAgent:
         result.chat_ready = bool(module_outputs.get("chat_ready", False))
 
         await self.storage.save(result)
+        self._save_debug_artifacts(
+            result=result,
+            sections=sections,
+            meta=meta,
+            source_name=source_name,
+        )
         return result
 
     async def evaluate_by_project(self, request: EvaluationRequest) -> EvaluationResult:
@@ -319,17 +328,21 @@ class EvaluationAgent:
             raw = await asyncio.gather(*[task for _, task in task_specs], return_exceptions=True)
             for (dimension, _), item in zip(task_specs, raw):
                 if isinstance(item, Exception):
-                    results.append(
-                        CheckResult(
-                            dimension=dimension,
-                            score=5.0,
-                            confidence=0.0,
-                            opinion=f"检查异常: {str(item)}",
-                            issues=["检查过程发生错误"],
-                            highlights=[],
-                            items=[],
+                    checker = self.get_checker(dimension)
+                    if checker:
+                        results.append(checker.build_degraded_result(sections, str(item)))
+                    else:
+                        results.append(
+                            CheckResult(
+                                dimension=dimension,
+                                score=5.0,
+                                confidence=0.0,
+                                opinion=f"检查异常: {str(item)}",
+                                issues=["检查过程发生错误"],
+                                highlights=[],
+                                items=[],
+                            )
                         )
-                    )
                 else:
                     results.append(item)
 
@@ -390,18 +403,21 @@ class EvaluationAgent:
     async def _safe_check(self, checker: BaseChecker, content: Dict[str, Any]) -> CheckResult:
         """安全执行检查"""
         try:
-            return await checker.check(content)
+            result = await checker.check(content)
+            if self._should_degrade_check_result(result):
+                return checker.build_degraded_result(content, result.opinion)
+            return result
         except Exception as e:
-            return CheckResult(
-                dimension=checker.dimension,
-                dimension_name=checker.dimension_name,
-                score=5.0,
-                confidence=0.0,
-                opinion=f"检查异常: {str(e)}",
-                issues=["检查过程发生错误"],
-                highlights=[],
-                items=[],
-            )
+            return checker.build_degraded_result(content, str(e))
+
+    def _should_degrade_check_result(self, result: CheckResult) -> bool:
+        """识别需要降级替换的检查结果"""
+        opinion = result.opinion or ""
+        issue_text = " ".join(result.issues or [])
+        return any(
+            marker in opinion or marker in issue_text
+            for marker in ("检查异常", "评审解析失败", "Request timed out", "Connection error")
+        )
 
     def _filter_sections(self, sections: Dict[str, Any], include_sections: List[str]) -> Dict[str, Any]:
         """按 include_sections 过滤章节"""
@@ -438,6 +454,69 @@ class EvaluationAgent:
                 merged.append(item)
 
         return merged
+
+    def _save_debug_artifacts(
+        self,
+        result: EvaluationResult,
+        sections: Dict[str, str],
+        meta: Dict[str, Any],
+        source_name: str,
+    ) -> None:
+        """保存评审调试产物到 debug_eval 目录"""
+        debug_dir = Path("debug_eval")
+        debug_dir.mkdir(exist_ok=True)
+
+        stem = f"EVAL_{result.project_id}"
+        json_path = debug_dir / f"{stem}.json"
+        html_path = debug_dir / f"{stem}.html"
+
+        debug_payload = {
+            "evaluation_id": result.evaluation_id,
+            "project_id": result.project_id,
+            "project_name": result.project_name,
+            "source_name": source_name or meta.get("file_name") or "",
+            "meta": meta,
+            "section_names": list(sections.keys()),
+            "sections": sections,
+            "result": result.model_dump(mode="json"),
+        }
+
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(debug_payload, f, ensure_ascii=False, indent=2)
+
+        self.report_generator.build_from_debug_file(json_path, html_path)
+        self._refresh_debug_index(debug_dir)
+
+    def _refresh_debug_index(self, debug_dir: Path) -> None:
+        """刷新 debug_eval 索引页"""
+        records: List[Dict[str, Any]] = []
+        for path in sorted(debug_dir.glob("EVAL_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+
+            result = payload.get("result") or {}
+            if not isinstance(result, dict):
+                continue
+            records.append(
+                {
+                    "created_at": result.get("created_at"),
+                    "project_id": result.get("project_id"),
+                    "project_name": result.get("project_name"),
+                    "source_name": payload.get("source_name"),
+                    "overall_score": result.get("overall_score"),
+                    "grade": result.get("grade"),
+                    "partial": result.get("partial"),
+                    "html_file": f"{path.stem}.html",
+                    "json_file": path.name,
+                }
+            )
+
+        index_html = self.report_generator.build_index_html(records)
+        (debug_dir / "index.html").write_text(index_html, encoding="utf-8")
 
     def _build_module_error(self, module: str, exc: Exception) -> EvaluationError:
         """构建模块错误对象"""

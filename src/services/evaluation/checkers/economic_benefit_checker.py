@@ -22,6 +22,12 @@ class EconomicBenefitChecker(BaseChecker):
     
     dimension = EvaluationDimension.ECONOMIC_BENEFIT.value
     dimension_name = "经济效益"
+    ALTERNATIVE_SECTION_KEYS = [
+        "项目简介",
+        "申报项目与所属指南或申报通知方向的关联关系",
+        "项目绩效评价考核目标及指标",
+        "申报单位在该研究方向的前期任务承担情况、相关研究成果",
+    ]
     
     def __init__(self, llm=None):
         super().__init__(llm)
@@ -36,8 +42,23 @@ class EconomicBenefitChecker(BaseChecker):
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行经济效益检查"""
         sections = self._extract_sections(content, self._required_sections)
+        project_profile = self.infer_project_profile(content)
         
         if not sections:
+            if project_profile == self.PROJECT_PROFILE_TECHNICAL:
+                alternative_sections = self._extract_sections(content, self.ALTERNATIVE_SECTION_KEYS)
+                if alternative_sections:
+                    matched_names = list(alternative_sections.keys())
+                    return CheckResult(
+                        dimension=self.dimension,
+                        dimension_name=self.dimension_name,
+                        score=6.0,
+                        confidence=0.45,
+                        opinion="未设置独立经济效益章节，但项目简介、成果转化目标和应用示范内容已体现产业化与转化预期，可进行基础判断。",
+                        issues=["经济效益未单列，已按成果转化与应用示范相关内容替代评估"],
+                        highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
+                        items=[],
+                    )
             return CheckResult(
                 dimension=self.dimension,
                 dimension_name=self.dimension_name,

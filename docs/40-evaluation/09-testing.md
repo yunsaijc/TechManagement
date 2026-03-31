@@ -27,7 +27,8 @@ tests/services/evaluation/
 │   └── test_gateway.py
 ├── test_highlight/
 ├── test_benchmark/
-├── test_chat/
+├── test_chat_indexer.py
+├── test_chat_agent.py
 ├── test_agent_orchestration.py
 ├── test_api_evaluation.py
 └── test_api_chat.py
@@ -61,6 +62,10 @@ tests/services/evaluation/
 - 断言：返回 `answer + citations[]`
 - 断言：每条 citation 包含 `file/page/snippet`
 - 断言：无证据时不输出“确定性结论”
+- 断言：LLM 异常时，`ask()` 仍返回降级回答和 citations，而不是抛出内部错误
+- 断言：研究目标问题不会优先命中附件或纯表格噪声页
+- 断言：预期效益问题能命中效益相关章节并抽取社会/经济/效益类信息
+- 断言：量产可能性问题在证据不足时保持谨慎，不直接输出“可以量产”
 
 ### E. 兼容与回归
 
@@ -88,3 +93,40 @@ tests/services/evaluation/
 1. PR 前：单元 + 集成测试全量通过  
 2. 合并前：API 回归 + 关键问答用例  
 3. 发布前：抽样真实项目做端到端校验（含页码引用核验）
+
+## 当前已落地的最小自动化测试
+
+当前仓库已补充以下聊天能力最小测试：
+
+- `tests/services/evaluation/test_chat_indexer.py`
+  - 研究目标问题优先命中目标/简介章节
+  - 量产/推广问题优先命中效益或推广章节
+- `tests/services/evaluation/test_chat_agent.py`
+  - 开启 `enable_chat_index` 后，`ask()` 可返回 citations
+  - LLM 异常时，`ask()` 走降级回答
+  - 未构建聊天索引时返回明确错误
+  - `验证数据` 问答保持谨慎
+  - `预期效益` 问答能抽取效益信息
+- `tests/services/evaluation/test_benchmark.py`
+  - `BenchmarkRetriever` 可将 `tech_search` 结果映射为标准 `BenchmarkReference`
+  - `BenchmarkAnalyzer` 在有外部检索结果时可生成结论与证据
+  - 未配置 `tech_search` 时，`EvaluationAgent` 返回 `partial=true`、`TOOL_UNAVAILABLE` 和降级 `benchmark`
+- `tests/services/evaluation/test_industry_fit.py`
+  - `IndustryFitAnalyzer` 在有 `guide_search` 结果时可生成 `matched/gaps/suggestions/evidence`
+  - 未配置 `guide_search` 时，`EvaluationAgent` 返回 `partial=true`、`TOOL_UNAVAILABLE` 和降级 `industry_fit`
+- `tests/services/evaluation/test_agent_orchestration.py`
+  - 同时开启 `highlight/industry_fit/benchmark/chat_index` 时，结果可被正确合并到同一 `EvaluationResult`
+  - 合并后保留 `highlights/industry_fit/benchmark/evidence/chat_ready`
+- `tests/services/evaluation/test_api_evaluation.py`
+  - `evaluate/file` 路由可解析表单参数并调用评审 Agent
+  - `chat/ask` 路由可返回 `answer + citations`
+  - `chat/ask` 会把“评审记录不存在”映射为 `404`
+  - `chat/ask` 会把“未构建聊天索引”映射为 `422`
+
+## 调试产物
+
+- 评审完成后应同步输出调试产物到 `debug_eval/`
+- 至少包含：
+  - `{evaluation_id}.json`：完整评审结果与章节调试信息
+  - `{evaluation_id}.html`：可直接查看的评审可视化报告
+  - `index.html`：调试报告索引页

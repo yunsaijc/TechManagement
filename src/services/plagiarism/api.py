@@ -23,6 +23,8 @@ class PlagiarismRequest(BaseModel):
 @router.post("")
 async def check_plagiarism(
     files: List[UploadFile] = File(...),
+    use_corpus: bool = Form(True),
+    corpus_id: Optional[str] = Form(None),
     threshold: float = Form(0.5),
     threshold_high: float = Form(0.8),
     threshold_medium: float = Form(0.5),
@@ -34,6 +36,8 @@ async def check_plagiarism(
     
     Args:
         files: 上传的文件列表（支持 pdf, docx）
+        use_corpus: 是否查比对库，默认 True
+        corpus_id: 预留参数，当前版本暂不支持多库切换
         threshold: 相似度阈值，默认 0.5
         threshold_high: 高相似度阈值，默认 0.8
         threshold_medium: 中相似度阈值，默认 0.5
@@ -46,6 +50,9 @@ async def check_plagiarism(
     """
     if not files:
         raise HTTPException(status_code=400, detail="请上传至少一个文件")
+
+    if corpus_id:
+        raise HTTPException(status_code=400, detail="当前版本暂不支持 corpus_id 多库切换")
     
     # 读取文件数据并保存临时文件
     import tempfile
@@ -71,7 +78,7 @@ async def check_plagiarism(
         file_paths[doc_id] = temp_file.name
         temp_files.append(temp_file.name)
     
-    if len(file_data_list) < 2:
+    if not file_data_list:
         # 清理临时文件
         import os
         for temp_file in temp_files:
@@ -79,8 +86,19 @@ async def check_plagiarism(
                 os.unlink(temp_file)
             except:
                 pass
-        raise HTTPException(status_code=400, detail="请上传至少 2 个文件进行比对")
+        raise HTTPException(status_code=400, detail="请上传至少 1 个文件进行比对")
     
+    # 逻辑检查：如果只上传 1 个文件，必须启用库查重
+    if len(file_data_list) < 2 and not use_corpus:
+        # 清理临时文件
+        import os
+        for temp_file in temp_files:
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+        raise HTTPException(status_code=400, detail="仅上传 1 个文件时，必须启用 use_corpus=True")
+
     # 解析 section 配置
     config = None
     if section_config:
@@ -107,7 +125,7 @@ async def check_plagiarism(
         debug=debug,
     )
     
-    result = await agent.check(file_data_list, file_paths=file_paths)
+    result = await agent.check(file_data_list, file_paths=file_paths, use_corpus=use_corpus)
     
     # 清理临时文件
     import os
@@ -122,11 +140,41 @@ async def check_plagiarism(
         data={
             "id": result.id,
             "total_pairs": result.total_pairs,
-            "high_similarity": result.high_similarity,
-            "medium_similarity": result.medium_similarity,
-            "low_similarity": result.low_similarity,
+            "effective_duplicate_rate": result.effective_duplicate_rate,
+            "effective_duplicate_chars": result.effective_duplicate_chars,
+            "primary_scope_chars": result.primary_scope_chars,
+            "source_rankings": result.source_rankings,
+            "match_groups": result.match_groups,
             "processing_time": round(result.processing_time, 2),
         },
+    )
+
+
+@router.get("/corpus/status")
+async def get_corpus_status() -> ApiResponse[dict]:
+    """获取库索引状态"""
+    from src.services.plagiarism.corpus import CorpusManager
+    manager = CorpusManager()
+    total_chars = sum(doc.char_count for doc in manager.index.documents.values())
+    return ApiResponse(
+        status="success",
+        data={
+            "document_count": len(manager.index.documents),
+            "total_chars": total_chars,
+            "last_updated": manager.index.last_updated,
+        },
+    )
+
+
+@router.post("/corpus/refresh")
+async def refresh_corpus() -> ApiResponse[dict]:
+    """刷新库索引（触发远程挂载目录扫描）"""
+    from src.services.plagiarism.corpus import CorpusManager
+    manager = CorpusManager()
+    stats = await manager.scan_and_update()
+    return ApiResponse(
+        status="success",
+        data=stats,
     )
 
 

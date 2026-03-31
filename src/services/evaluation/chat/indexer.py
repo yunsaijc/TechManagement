@@ -6,6 +6,77 @@ from typing import Any, Dict, List
 class ChatIndexer:
     """基于页码切片构建可检索索引"""
 
+    NOISE_SECTION_PATTERNS = (
+        "附件",
+        "项目组主要成员",
+        "项目基本信息",
+        "合作协议",
+        "国际合作",
+        "填报说明",
+    )
+    INTENT_SECTION_AVOID = {
+        "研究目标": (
+            "填报说明",
+            "项目组织实施机制",
+            "组织实施",
+            "保障措施",
+            "风险分析",
+            "项目绩效评价考核目标及指标",
+            "项目研究方法",
+            "技术路线",
+            "负责人及项目主要骨干人员",
+            "申报单位相关科研条件状况",
+            "合作单位的选择原因及其优势",
+            "项目组主要成员",
+        ),
+        "进展程度": (
+            "填报说明",
+            "项目组织实施机制",
+            "组织实施",
+            "项目组主要成员",
+            "国外研究现状及趋势",
+            "国内研究现状及趋势",
+            "申报单位相关科研条件状况",
+            "合作单位的选择原因及其优势",
+            "项目简介",
+            "项目目的和意义",
+        ),
+        "预期效益": ("填报说明", "项目组主要成员"),
+        "验证数据": ("填报说明", "项目组主要成员"),
+        "量产可能性": ("填报说明", "项目组主要成员"),
+    }
+    INTENT_SECTION_HINTS = {
+        "研究目标": ("研究目标", "项目目标", "总体目标", "建设目标", "项目目的和意义", "项目简介"),
+        "预期效益": ("预期效益", "项目效益", "社会效益", "经济效益", "普及前景", "项目简介", "合作网络构建"),
+        "验证数据": ("技术路线", "研究方法", "可行性", "预期成果", "绩效评价考核目标及指标", "项目绩效评价考核目标及指标"),
+        "进展程度": ("进度安排", "实施计划", "工作计划", "研究计划"),
+        "量产可能性": ("经济效益", "项目效益", "成果转化", "应用示范", "产业化", "项目简介", "普及前景"),
+    }
+    INTENT_SECTION_STRONG_ALLOW = {
+        "研究目标": (
+            "项目简介",
+            "项目目的和意义",
+            "研究目标",
+            "项目目标",
+            "总体目标",
+            "项目实施的预期经济社会效益目标",
+        ),
+        "进展程度": (
+            "进度安排",
+            "实施计划",
+            "工作计划",
+            "研究计划",
+        ),
+    }
+    INTENT_QUERY_HINTS = {
+        "研究目标": ("研究目标", "项目目标", "总体目标", "建设目标", "目的"),
+        "预期效益": ("预期效益", "项目效益", "社会效益", "经济效益", "效益"),
+        "验证数据": ("验证", "数据", "试验", "测试", "指标", "考核"),
+        "进展程度": ("进展", "阶段", "计划", "进度", "实施"),
+        "量产可能性": ("量产", "产业化", "推广", "应用", "转化", "示范"),
+    }
+    CHUNK_MAX_CHARS = 220
+
     def build(self, evaluation_id: str, page_chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
         """构建索引载荷"""
         indexed_chunks: List[Dict[str, Any]] = []
@@ -13,16 +84,22 @@ class ChatIndexer:
             text = str(chunk.get("text", "")).strip()
             if not text:
                 continue
-            indexed_chunks.append(
-                {
-                    "id": int(chunk.get("id", len(indexed_chunks) + 1) or len(indexed_chunks) + 1),
-                    "file": str(chunk.get("file", "")),
-                    "page": int(chunk.get("page", 0) or 0),
-                    "section": str(chunk.get("section", "")),
-                    "text": text,
-                    "tokens": self._tokenize(text),
-                }
+            sub_chunks = self._split_chunk(
+                text=text,
+                section=str(chunk.get("section", "")),
             )
+            for sub_chunk in sub_chunks:
+                indexed_chunks.append(
+                    {
+                        "id": len(indexed_chunks) + 1,
+                        "file": str(chunk.get("file", "")),
+                        "page": int(chunk.get("page", 0) or 0),
+                        "section": str(chunk.get("section", "")),
+                        "chunk_type": sub_chunk["chunk_type"],
+                        "text": sub_chunk["text"],
+                        "tokens": self._tokenize(sub_chunk["text"]),
+                    }
+                )
 
         return {
             "evaluation_id": evaluation_id,
@@ -32,7 +109,8 @@ class ChatIndexer:
 
     def search(self, index_payload: Dict[str, Any], query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """检索最相关切片"""
-        keywords = self._tokenize(query)
+        intent = self._detect_intent(query)
+        keywords = self._expand_query_keywords(query, intent)
         if not keywords:
             return []
 
@@ -43,18 +121,150 @@ class ChatIndexer:
             tokens = set(chunk.get("tokens", []))
             if not tokens:
                 continue
+            section = str(chunk.get("section", ""))
+            text = str(chunk.get("text", ""))
+            chunk_type = str(chunk.get("chunk_type", "paragraph"))
 
             overlap = sum(1 for keyword in keywords if keyword in tokens)
             if overlap <= 0:
-                text = str(chunk.get("text", ""))
                 overlap = sum(1 for keyword in keywords if keyword in text)
+            if overlap <= 0:
+                overlap = sum(1 for keyword in keywords if keyword in section)
             if overlap <= 0:
                 continue
 
-            scored.append({"score": overlap, "chunk": chunk})
+            score = float(overlap)
+
+            if self._is_noise_chunk(section, text):
+                score -= 2.5
+            if chunk_type == "table":
+                score -= 3.0
+            if chunk_type == "header":
+                score -= 1.0
+            if intent and self._section_matches_intent(section, intent):
+                score += 3.0
+            if intent and self._section_strongly_matches_intent(section, intent):
+                score += 5.0
+            if intent and self._section_should_avoid(section, intent):
+                score -= 3.5
+            if intent and any(hint in text for hint in self.INTENT_QUERY_HINTS.get(intent, ())):
+                score += 1.5
+            if section and section in query:
+                score += 2.0
+            if intent == "研究目标" and self._looks_like_kpi_table(text):
+                score -= 4.0
+            if intent == "进展程度" and self._looks_like_goal_table(text):
+                score -= 3.0
+
+            if score <= 0:
+                continue
+
+            scored.append({"score": score, "chunk": chunk})
 
         scored.sort(key=lambda item: item["score"], reverse=True)
         return [item["chunk"] for item in scored[:top_k]]
+
+    def _detect_intent(self, query: str) -> str:
+        """识别问题意图"""
+        if any(token in query for token in ("研究目标", "项目目标", "总体目标", "建设目标", "目的")):
+            return "研究目标"
+        if any(token in query for token in ("预期效益", "效益", "收益", "价值")):
+            return "预期效益"
+        if any(token in query for token in ("验证数据", "数据", "试验", "测试", "样本")):
+            return "验证数据"
+        if any(token in query for token in ("量产", "产业化", "成果转化", "推广应用", "可推广")):
+            return "量产可能性"
+        if any(token in query for token in ("进展", "进度", "阶段", "做到什么程度", "量产")):
+            return "进展程度"
+        return ""
+
+    def _expand_query_keywords(self, query: str, intent: str) -> List[str]:
+        """扩展问题关键词，改善召回"""
+        keywords = self._tokenize(query)
+        for hint in self.INTENT_QUERY_HINTS.get(intent, ()):
+            if hint not in keywords:
+                keywords.append(hint)
+        return keywords
+
+    def _is_noise_chunk(self, section: str, text: str) -> bool:
+        """判断噪声切片，避免附件/表格页误召回"""
+        if any(pattern in section for pattern in self.NOISE_SECTION_PATTERNS):
+            return True
+        noise_markers = ("[表格行", "填 报 说 明", "填报说明", "附件目录", "拟使用数量")
+        return sum(1 for marker in noise_markers if marker in text) >= 2
+
+    def _section_matches_intent(self, section: str, intent: str) -> bool:
+        """判断章节是否符合问题意图"""
+        return any(hint in section for hint in self.INTENT_SECTION_HINTS.get(intent, ()))
+
+    def _section_should_avoid(self, section: str, intent: str) -> bool:
+        """判断章节是否应在当前意图下降权"""
+        return any(hint in section for hint in self.INTENT_SECTION_AVOID.get(intent, ()))
+
+    def _section_strongly_matches_intent(self, section: str, intent: str) -> bool:
+        """判断章节是否属于当前意图的强白名单"""
+        return any(hint in section for hint in self.INTENT_SECTION_STRONG_ALLOW.get(intent, ()))
+
+    def _looks_like_kpi_table(self, text: str) -> bool:
+        """识别绩效目标/指标类表格，避免目标问答被表格切片带偏"""
+        markers = ("[表格行", "绩效指标", "指标值", "一级指标", "二级指标", "三级指标", "考核目标")
+        return sum(1 for marker in markers if marker in text) >= 2
+
+    def _looks_like_goal_table(self, text: str) -> bool:
+        """识别年度目标表格，避免进展问答被目标表格冒充真实进展"""
+        markers = ("[表格行", "实施期目标", "第一年度目标", "第二年度目标", "第三年度目标", "第四年度目标")
+        return sum(1 for marker in markers if marker in text) >= 2
+
+    def _split_chunk(self, text: str, section: str) -> List[Dict[str, str]]:
+        """将整页文本切成更细粒度的段落级索引块"""
+        raw_lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not raw_lines:
+            return []
+
+        chunks: List[Dict[str, str]] = []
+        current_lines: List[str] = []
+        current_type = "paragraph"
+
+        for line in raw_lines:
+            line_type = self._classify_line(line, section)
+            if line_type != current_type or self._joined_len(current_lines, line) > self.CHUNK_MAX_CHARS:
+                if current_lines:
+                    chunks.append(
+                        {
+                            "chunk_type": current_type,
+                            "text": "\n".join(current_lines).strip(),
+                        }
+                    )
+                current_lines = [line]
+                current_type = line_type
+                continue
+            current_lines.append(line)
+
+        if current_lines:
+            chunks.append(
+                {
+                    "chunk_type": current_type,
+                    "text": "\n".join(current_lines).strip(),
+                }
+            )
+
+        return [item for item in chunks if item["text"]]
+
+    def _classify_line(self, line: str, section: str) -> str:
+        """粗分类切片类型"""
+        if "[表格行" in line or "[表格表头" in line or "|" in line:
+            return "table"
+        if any(marker in line for marker in ("填报说明", "填 报 说 明", "项目申报书分为")):
+            return "instruction"
+        if line == section or re.fullmatch(r"[一二三四五六七八九十0-9（）()、.．A-Za-z\s]{1,24}", line):
+            return "header"
+        return "paragraph"
+
+    def _joined_len(self, current_lines: List[str], new_line: str) -> int:
+        """估算追加一行后的长度"""
+        if not current_lines:
+            return len(new_line)
+        return len("\n".join(current_lines)) + 1 + len(new_line)
 
     def _tokenize(self, text: str) -> List[str]:
         """简易分词"""

@@ -20,30 +20,85 @@ class DocumentParser:
         "html",
         "html.",
         "万元",
+        "其他",
     }
 
     SECTION_PATTERNS = [
+        r"^第[一二三四五六七八九十]+部分",
         r"^[一二三四五六七八九十]+[、\.．\s]",
         r"^\d+[、\.．\s]",
         r"^\d+\.\d+[、\.．\s]",
+        r"^[（(][一二三四五六七八九十\d]+[）)]",
         r"^(技术路线|研究方案|实施方案|创新点|研究内容|项目团队|人员分工|预期成果|考核指标|预期效益|社会效益|经济效益|风险分析|风险控制|进度安排|实施计划|政策依据|经费预算|伦理审查|预算说明|工作计划|研究计划|研究目标|项目目标)[：:\s]",
     ]
 
     SECTION_ALIASES: Dict[str, List[str]] = {
-        "研究目标": ["研究目标", "项目目标", "总体目标", "目标"],
+        "研究目标": ["研究目标", "项目目标", "总体目标", "建设目标"],
         "创新点": ["创新点", "创新性", "技术创新", "方法创新"],
         "技术路线": ["技术路线", "研究方案", "实施方案", "技术方案"],
-        "项目团队": ["项目团队", "人员分工", "团队", "团队能力"],
-        "预期成果": ["预期成果", "考核指标", "成果"],
-        "社会效益": ["社会效益", "社会价值"],
+        "项目团队": ["项目团队", "人员分工", "团队能力"],
+        "预期成果": ["预期成果", "考核指标"],
+        "社会效益": ["社会效益"],
         "经济效益": ["经济效益", "产业化", "应用前景"],
         "风险控制": ["风险分析", "风险控制", "风险管理"],
         "进度安排": ["进度安排", "实施计划", "工作计划"],
         "合规性": ["政策依据", "伦理审查", "经费预算"],
     }
 
+    NOISE_LINE_PATTERNS = [
+        r"^V\d{8,}$",
+        r"^\d+$",
+        r"^\[表格(?:行|表头)\d+\]$",
+    ]
+
+    BUDGET_SECTION_NAMES = {
+        "省级财政资金",
+        "直接费用",
+        "间接费用",
+        "自筹资金",
+        "项目预算表",
+        "项目预算",
+    }
+
+    BUDGET_DETAIL_TITLES = {
+        "设备费",
+        "业务费",
+        "劳务费",
+        "材料费",
+        "测试化验加工费",
+        "燃料动力费",
+        "出版/文献/信息传播/知识产权事务费",
+        "会议/差旅/国际合作与交流费",
+        "其他支出",
+        "学术论文发表费",
+        "文献、信息调研费",
+        "专家咨询",
+    }
+
+    TITLE_REJECT_PATTERNS = [
+        r"^\[表格(?:行|表头)\d+\]",
+        r"^\d+\s+其他$",
+        r"^(?:设备费|业务费|劳务费|差旅/会议/国际合作与交流费|出版/文献/信息传播/知识产权事务费)[：:].*万元$",
+        r"^(?:材料费|测试化验加工费|燃料动力费|会议/差旅/国际合作与交流费|其他支出|专家咨询)[：:].*万元$",
+        r"^年?\d{0,4}\s*月?.*致谢函",
+        r"^年省.+直播历史数据$",
+    ]
+
     DOCX_PAGE_CHARS = 1800
     CHUNK_MAX_CHARS = 1200
+    CONTAINER_SECTION_CHILD_PATTERNS: Dict[str, List[str]] = {
+        "进度安排": [
+            r"^\d{4}\s*年\s*\d{1,2}\s*月\s*[-—~至]+\s*\d{4}\s*年\s*\d{1,2}\s*月$",
+            r"^第[一二三四五六七八九十]+年(?:度)?$",
+            r"^阶段[一二三四五六七八九十\d]+$",
+        ],
+        "项目组织实施机制": [
+            r"^项目组织管理$",
+            r"^组织管理$",
+            r"^协调机制$",
+            r"^实施机制$",
+        ],
+    }
 
     async def parse(self, file_path: str, source_name: str = "") -> Dict[str, Any]:
         """解析文档并输出统一结构
@@ -162,8 +217,14 @@ class DocumentParser:
             normalized_line = line.strip()
             if not normalized_line:
                 continue
+            if self._is_noise_line(normalized_line):
+                continue
 
-            if self._is_section_title(normalized_line):
+            if current_section != "附件" and self._is_section_title(normalized_line):
+                normalized_title = self._normalize_section_name(normalized_line)
+                if not self._should_start_new_section(current_section, normalized_line, normalized_title):
+                    current_content.append(normalized_line)
+                    continue
                 if current_content:
                     merged = "\n".join(current_content).strip()
                     if merged:
@@ -171,7 +232,7 @@ class DocumentParser:
                         sections[current_section] = (
                             f"{existing}\n{merged}".strip() if existing else merged
                         )
-                current_section = self._normalize_section_name(normalized_line)
+                current_section = normalized_title
                 current_content = []
                 continue
 
@@ -189,12 +250,26 @@ class DocumentParser:
         """判断是否为章节标题"""
         if len(line) > 32:
             return False
+        if "|" in line:
+            return False
         if any(mark in line for mark in ("。", "；", ";", "？", "！", "，", ",")):
+            return False
+        if re.fullmatch(r"\d+(?:\.\d+)?(?:\s*[人万元%]+)?", line):
             return False
         normalized = self._normalize_section_name(line)
         if not normalized:
             return False
+        if len(normalized) <= 1:
+            return False
+        if any(re.match(pattern, line) for pattern in self.TITLE_REJECT_PATTERNS):
+            return False
+        if any(re.match(pattern, normalized) for pattern in self.TITLE_REJECT_PATTERNS):
+            return False
+        if self._is_budget_detail_title(line, normalized):
+            return False
         if normalized.lower() in self.INVALID_SECTION_TITLES:
+            return False
+        if re.fullmatch(r"(?:附件目录|实施期目标|总体目标|绩效指标)", normalized):
             return False
         if re.fullmatch(r"[0-9A-Za-z%.\-_/]+", normalized):
             return False
@@ -203,20 +278,76 @@ class DocumentParser:
                 return True
         return False
 
+    def _should_start_new_section(self, current_section: str, raw_title: str, normalized_title: str) -> bool:
+        """判断当前标题是否应该真的切出新章节"""
+        if normalized_title == "概述":
+            return False
+        if self._is_budget_context(current_section) and self._is_budget_detail_title(raw_title, normalized_title):
+            return False
+        if self._is_container_child_section(current_section, raw_title, normalized_title):
+            return False
+        return True
+
+    def _is_budget_context(self, section_name: str) -> bool:
+        """判断是否已进入预算相关章节"""
+        return section_name in self.BUDGET_SECTION_NAMES
+
+    def _is_budget_detail_title(self, raw_title: str, normalized_title: str) -> bool:
+        """过滤预算区明细行，避免被误切成章节"""
+        compact_title = re.sub(r"\s+", "", raw_title)
+        normalized = re.sub(r"^[、，]+", "", normalized_title.strip())
+        if normalized in self.BUDGET_DETAIL_TITLES:
+            return True
+        if "万元" in compact_title and re.search(
+            r"(?:费用|设备费|业务费|劳务费|材料费|测试化验加工费|燃料动力费|文献|调研费|论文发表费|差旅|会议|国际合作|交流费|知识产权事务费|其他支出|专家咨询)",
+            compact_title,
+        ):
+            return True
+        if re.fullmatch(r"(?:设备费|业务费|劳务费|材料费|测试化验加工费|燃料动力费)", normalized):
+            return True
+        return False
+
     def _normalize_section_name(self, title: str) -> str:
         """规范化章节名"""
-        name = re.sub(r"^[一二三四五六七八九十]+[、\.．\s]*", "", title)
+        name = re.sub(r"^第[一二三四五六七八九十]+部分\s*", "", title)
+        name = re.sub(r"^[（(][一二三四五六七八九十\d]+[）)]\s*", "", name)
+        name = re.sub(r"^[一二三四五六七八九十]+[、\.．\s]*", "", name)
         name = re.sub(r"^\d+(\.\d+)*[、\.．\s]*", "", name)
+        name = re.sub(r"^[\-•·]+\s*", "", name)
         name = re.sub(r"[：:\s]+$", "", name).strip()
+        name = re.sub(r"^\|\s*", "", name)
+        name = re.sub(r"\s+", " ", name)
         if not name:
             return "概述"
 
         for canonical, aliases in self.SECTION_ALIASES.items():
             for alias in aliases:
-                if alias in name or name in alias:
+                if self._alias_matches(name, alias):
                     return canonical
 
         return name
+
+    def _is_noise_line(self, line: str) -> bool:
+        """判断是否为无意义噪声行"""
+        return any(re.match(pattern, line) for pattern in self.NOISE_LINE_PATTERNS)
+
+    def _alias_matches(self, name: str, alias: str) -> bool:
+        """更保守的章节别名匹配，避免泛化误归类"""
+        if name == alias:
+            return True
+        if name.endswith(alias) and len(name) <= len(alias) + 6:
+            return True
+        if alias in name and len(name) <= len(alias) + 4:
+            return True
+        return name in alias and len(alias) <= len(name) + 2
+
+    def _is_container_child_section(self, current_section: str, raw_title: str, normalized_title: str) -> bool:
+        """判断当前标题是否应归入上级章节正文"""
+        patterns = self.CONTAINER_SECTION_CHILD_PATTERNS.get(current_section)
+        if not patterns:
+            return False
+        candidates = (raw_title.strip(), normalized_title.strip())
+        return any(re.fullmatch(pattern, candidate) for pattern in patterns for candidate in candidates if candidate)
 
     def _build_page_chunks(
         self,
@@ -224,29 +355,90 @@ class DocumentParser:
         sections: Dict[str, str],
         file_name: str,
     ) -> List[Dict[str, Any]]:
-        """构建页码切片"""
+        """按章节上下文构建页码切片"""
         chunks: List[Dict[str, Any]] = []
         chunk_id = 1
+        current_section = "概述"
 
         for page_num, page_text in enumerate(page_texts, start=1):
-            page_parts = self._split_text(page_text, self.CHUNK_MAX_CHARS)
-            for part in page_parts:
-                clean_part = self._clean_text(part)
-                if not clean_part:
-                    continue
-                section_name = self._infer_chunk_section(clean_part, sections)
-                chunks.append(
-                    {
-                        "id": chunk_id,
-                        "file": file_name,
-                        "page": page_num,
-                        "section": section_name,
-                        "text": clean_part,
-                    }
-                )
-                chunk_id += 1
+            page_blocks, current_section = self._split_page_into_section_blocks(
+                page_text=page_text,
+                current_section=current_section,
+            )
+            if not page_blocks:
+                page_blocks = [(current_section, self._clean_text(page_text))]
+
+            for section_name, block_text in page_blocks:
+                for part in self._split_text(block_text, self.CHUNK_MAX_CHARS):
+                    clean_part = self._clean_text(part)
+                    if not clean_part:
+                        continue
+                    resolved_section = self._resolve_chunk_section(
+                        chunk_text=clean_part,
+                        preferred_section=section_name,
+                        sections=sections,
+                    )
+                    chunks.append(
+                        {
+                            "id": chunk_id,
+                            "file": file_name,
+                            "page": page_num,
+                            "section": resolved_section,
+                            "text": clean_part,
+                        }
+                    )
+                    chunk_id += 1
 
         return chunks
+
+    def _split_page_into_section_blocks(
+        self,
+        page_text: str,
+        current_section: str,
+    ) -> tuple[List[tuple[str, str]], str]:
+        """按页内标题切出章节块，并继承上一页章节上下文"""
+        blocks: List[tuple[str, str]] = []
+        active_section = current_section
+        buffer: List[str] = []
+
+        for raw_line in page_text.split("\n"):
+            normalized_line = raw_line.strip()
+            if not normalized_line:
+                continue
+            if self._is_noise_line(normalized_line):
+                continue
+
+            if self._is_section_title(normalized_line):
+                normalized_title = self._normalize_section_name(normalized_line)
+                if self._should_start_new_section(active_section, normalized_line, normalized_title):
+                    if buffer:
+                        merged = "\n".join(buffer).strip()
+                        if merged:
+                            blocks.append((active_section, merged))
+                    active_section = normalized_title
+                    buffer = [normalized_line]
+                    continue
+
+            buffer.append(normalized_line)
+
+        if buffer:
+            merged = "\n".join(buffer).strip()
+            if merged:
+                blocks.append((active_section, merged))
+
+        return blocks, active_section
+
+    def _resolve_chunk_section(
+        self,
+        chunk_text: str,
+        preferred_section: str,
+        sections: Dict[str, str],
+    ) -> str:
+        """优先使用页内上下文章节，必要时再做轻量纠偏"""
+        if preferred_section and preferred_section != "概述":
+            return preferred_section
+
+        return self._infer_chunk_section(chunk_text, sections)
 
     def _infer_chunk_section(self, chunk_text: str, sections: Dict[str, str]) -> str:
         """推断切片所属章节"""
@@ -291,7 +483,9 @@ class DocumentParser:
             if len(candidate) <= chunk_size:
                 current = candidate
             else:
-                chunks.append(current)
+                chunks.append(
+                    current
+                )
                 current = paragraph
 
         if current:
