@@ -2,7 +2,7 @@
 
 ## 概述
 
-形式审查服务提供 RESTful API 接口，支持文件上传、审查执行、结果查询等功能。
+本文档描述当前已实现的**附件级形式审查**接口。该接口用于单附件检查，不直接承担完整项目级形式审查。
 
 ## 基础信息
 
@@ -19,16 +19,17 @@
 
 **POST** `/api/v1/review`
 
-提交文件进行形式审查。
+提交单个附件进行形式审查。
 
 #### 请求参数
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `file` | File | 是 | 上传的文件 |
-| `document_type` | String | 否 | 文档类型（自动识别时省略） |
+| `document_type` | String | 是 | 文档类型，由调用方指定 |
 | `check_items` | String | 否 | 检查项，逗号分隔 |
 | `enable_llm_analysis` | Boolean | 否 | 是否启用 LLM 深度分析（默认 false，用于调试 OCR 效果） |
+| `metadata` | String | 否 | 元数据 JSON 字符串 |
 
 #### 请求示例
 
@@ -137,6 +138,12 @@ curl -X POST "http://localhost:8000/api/v1/review" \
 **GET** `/api/v1/review/document-types`
 
 获取支持的文档类型列表。
+
+说明：
+
+- 这里返回的是当前附件级接口支持的 `document_type`
+- 它不等同于项目级的 `project_type`
+- 项目级形式审查应在上层单独建模
 
 #### 响应示例
 

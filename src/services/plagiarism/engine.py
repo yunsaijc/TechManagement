@@ -103,10 +103,14 @@ class ComparisonEngine:
         self._hard_boundary_pattern = re.compile(
             r"\[表格行\d+\]\s*(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|"
             r"[一二三四五六七八九十]+[、\.．]|"
-            r"\d+[、\.．])[^\n]*\n?"
+            r"[（(][一二三四五六七八九十]+[）)]|"
+            r"\d+[、\.．]|"
+            r"[（(]\d+[）)])[^\n]*\n?"
             r"|(?:^|\n)\s*(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|"
             r"[一二三四五六七八九十]+[、\.．]|"
-            r"\d+[、\.．])[^\n]*\n?",
+            r"[（(][一二三四五六七八九十]+[）)]|"
+            r"\d+[、\.．]|"
+            r"[（(]\d+[）)])[^\n]*\n?",
             re.MULTILINE,
         )
 
@@ -117,6 +121,7 @@ class ComparisonEngine:
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
         raw_texts: Optional[Dict[str, str]] = None,
+        search_windows: Optional[Dict[str, List[any]]] = None, # 传入召回窗口作为搜索引导
     ) -> List[DocumentSimilarity]:
         """
         执行文档间比对 - Winnowing 算法
@@ -218,7 +223,14 @@ class ComparisonEngine:
                         text_a,
                         text_b,
                         doc_b,
+                        guide_windows=search_windows.get(doc_b) if search_windows else None,
                     )
+                )
+                matches = self._normalize_matches_for_presentation(
+                    matches,
+                    text_a,
+                    text_b,
+                    doc_b,
                 )
                 matches = self._dedupe_and_filter_matches(matches)
                 
@@ -842,7 +854,7 @@ class ComparisonEngine:
                     break
                 ratio_a = overlap_a / max(min(m.end_pos - m.start_pos, kept.end_pos - kept.start_pos), 1)
                 ratio_b = overlap_b / max(min(m.source_end - m.source_start, kept.source_end - kept.source_start), 1)
-                if ratio_a < 0.85 or ratio_b < 0.70:
+                if ratio_a < 0.85 or (ratio_b < 0.70 and not (ratio_a >= 0.90 and ratio_b >= 0.45)):
                     continue
                 score_new = self._match_quality_score(m)
                 score_old = self._match_quality_score(kept)
@@ -858,7 +870,9 @@ class ComparisonEngine:
     def _match_quality_score(self, match: Match) -> float:
         primary_len = max(match.end_pos - match.start_pos, 1)
         source_len = max(match.source_end - match.source_start, 1)
-        lexical = self._segment_similarity(match.text or "", match.source_text or "")
+        norm_a = self._normalize_sentence(match.text or "")
+        norm_b = self._normalize_sentence(match.source_text or "")
+        lexical = self._segment_similarity(norm_a, norm_b)
         return lexical + min(primary_len, source_len) / 1000.0
 
     def _realign_matches_by_source_continuity(
@@ -893,7 +907,9 @@ class ComparisonEngine:
                 continue
 
             current_source_text = (text_b[current.source_start:current.source_end] or "").strip()
-            current_score = self._segment_similarity(primary_text, current_source_text)
+            norm_p = self._normalize_sentence(primary_text)
+            norm_s = self._normalize_sentence(current_source_text)
+            current_score = self._segment_similarity(norm_p, norm_s)
 
             best = self._find_best_local_source_window(
                 primary_text=primary_text,
@@ -998,7 +1014,9 @@ class ComparisonEngine:
                     if not source_segment:
                         continue
 
-                    similarity = self._segment_similarity(block_text, source_segment)
+                    norm_p = self._normalize_sentence(block_text)
+                    norm_s = self._normalize_sentence(source_segment)
+                    similarity = self._segment_similarity(norm_p, norm_s)
                     threshold = self._gap_rescue_threshold(block_text)
                     if similarity < threshold:
                         continue
@@ -1014,8 +1032,8 @@ class ComparisonEngine:
                         source_text=source_segment,
                         similarity_score=max(best_score, similarity),
                         match_type="paraphrase",
-                    confidence=max(best_score, similarity),
-                ))
+                        confidence=max(best_score, similarity),
+                    ))
         return rescued
 
     def _align_matches_to_numbered_outline_blocks(
@@ -1041,13 +1059,39 @@ class ComparisonEngine:
                 if overlap / max(block.end - block.start, 1) < 0.45:
                     continue
 
-                new_primary_start = min(match.start_pos, block.start)
-                new_primary_end = max(match.end_pos, block.end)
-                new_source_start = self._expand_source_start_to_outline_heading(text_b, match.source_start)
-                new_source_end = self._clip_end_before_hard_boundary(text_b, new_source_start, match.source_end)
+                new_primary_start = block.start
+                new_primary_end = block.end
+                source_block = self._find_best_source_outline_block(
+                    primary_block=block,
+                    primary_text=text_a[new_primary_start:new_primary_end],
+                    source_text=text_b,
+                    anchor_start=match.source_start,
+                    anchor_end=match.source_end,
+                )
+                if source_block:
+                    refined = self._refine_source_span_within_block(
+                        primary_text=text_a[new_primary_start:new_primary_end],
+                        source_text=text_b,
+                        source_block=source_block,
+                        anchor_start=match.source_start,
+                        anchor_end=match.source_end,
+                    )
+                    if refined:
+                        new_source_start, new_source_end = refined
+                    else:
+                        new_source_start = source_block.start
+                        new_source_end = source_block.end
+                else:
+                    new_source_start = self._expand_source_start_to_outline_heading(text_b, match.source_start)
+                    new_source_end = self._clip_end_before_hard_boundary(text_b, new_source_start, match.source_end)
                 if new_source_end <= new_source_start:
                     new_source_start = match.source_start
                     new_source_end = match.source_end
+
+                adjusted_similarity = self._aligned_span_score(
+                    self._normalize_sentence(text_a[new_primary_start:new_primary_end]),
+                    self._normalize_sentence(text_b[new_source_start:new_source_end]),
+                )
 
                 adjusted = Match(
                     text=text_a[new_primary_start:new_primary_end].replace("\n", " ").strip(),
@@ -1058,20 +1102,487 @@ class ComparisonEngine:
                     source_start=new_source_start,
                     source_end=new_source_end,
                     source_text=text_b[new_source_start:new_source_end].replace("\n", " ").strip(),
-                    similarity_score=max(
-                        match.similarity_score,
-                        self._segment_similarity(
-                            text_a[new_primary_start:new_primary_end],
-                            text_b[new_source_start:new_source_end],
-                        ),
-                    ),
+                    similarity_score=adjusted_similarity,
                     match_type=match.match_type,
-                    confidence=match.confidence,
+                    confidence=max(match.confidence, adjusted_similarity),
                     parent_match_id=match.parent_match_id,
                 )
                 break
             aligned.append(adjusted)
         return aligned
+
+    def _normalize_matches_for_presentation(
+        self,
+        matches: List[Match],
+        text_a: str,
+        text_b: str,
+        source_doc: str,
+    ) -> List[Match]:
+        if not matches or not text_a or not text_b:
+            return matches
+
+        blocks = self._find_numbered_outline_blocks(text_a)
+        if not blocks:
+            return matches
+
+        normalized: List[Match] = []
+        for match in sorted(matches, key=lambda m: (m.start_pos, m.end_pos)):
+            overlapping_blocks = [
+                block for block in blocks
+                if self._block_overlap_ratio(match, block) >= 0.45
+            ]
+            if not overlapping_blocks:
+                normalized.append(match)
+                continue
+
+            for block in overlapping_blocks:
+                block_match = self._build_presentation_match_for_block(
+                    block=block,
+                    seed_match=match,
+                    text_a=text_a,
+                    text_b=text_b,
+                    source_doc=source_doc,
+                )
+                if block_match:
+                    normalized.append(block_match)
+
+        return normalized or matches
+
+    def _block_overlap_ratio(self, match: Match, block: _OutlineBlock) -> float:
+        overlap = min(match.end_pos, block.end) - max(match.start_pos, block.start)
+        if overlap <= 0:
+            return 0.0
+        return overlap / max(block.end - block.start, 1)
+
+    def _build_presentation_match_for_block(
+        self,
+        block: _OutlineBlock,
+        seed_match: Match,
+        text_a: str,
+        text_b: str,
+        source_doc: str,
+    ) -> Optional[Match]:
+        primary_start = block.start
+        primary_end = block.end
+        primary_text = text_a[primary_start:primary_end]
+
+        source_block = self._find_best_source_outline_block(
+            primary_block=block,
+            primary_text=primary_text,
+            source_text=text_b,
+            anchor_start=seed_match.source_start,
+            anchor_end=seed_match.source_end,
+        )
+        if source_block:
+            refined = self._refine_source_span_within_block(
+                primary_text=primary_text,
+                source_text=text_b,
+                source_block=source_block,
+                anchor_start=seed_match.source_start,
+                anchor_end=seed_match.source_end,
+            )
+            if refined:
+                source_start, source_end = refined
+            else:
+                source_start, source_end = source_block.start, source_block.end
+        else:
+            local = self._find_best_local_source_window(
+                primary_text=primary_text,
+                source_text=text_b,
+                near_pos=seed_match.source_start,
+                search_back=160,
+                search_forward=max(len(primary_text) * 2, 600),
+                step=2,
+            )
+            if not local:
+                return None
+            source_start, source_end, _ = local
+            source_start, source_end = self._expand_source_window(
+                text_b,
+                source_start,
+                source_end,
+                max(0, source_start - 80),
+                min(len(text_b), source_end + 80),
+            )
+
+        if source_end - source_start < self.min_match_length:
+            return None
+
+        source_text = text_b[source_start:source_end]
+        primary_norm = self._normalize_sentence(primary_text)
+        source_norm = self._normalize_sentence(source_text)
+        similarity = self._aligned_span_score(primary_norm, source_norm)
+        if similarity < 0.30:
+            return None
+
+        return Match(
+            text=primary_text.replace("\n", " ").strip(),
+            start_pos=primary_start,
+            end_pos=primary_end,
+            ngram_count=max(len(primary_norm) // max(self.ngram_size, 1), 1),
+            source_doc=source_doc,
+            source_start=source_start,
+            source_end=source_end,
+            source_text=source_text.replace("\n", " ").strip(),
+            similarity_score=similarity,
+            match_type=seed_match.match_type,
+            confidence=max(seed_match.confidence, similarity),
+            parent_match_id=seed_match.parent_match_id,
+        )
+
+    def _find_best_source_outline_block(
+        self,
+        primary_block: _OutlineBlock,
+        primary_text: str,
+        source_text: str,
+        anchor_start: int,
+        anchor_end: int,
+    ) -> Optional[_OutlineBlock]:
+        if not source_text:
+            return None
+
+        source_blocks = self._find_numbered_outline_blocks(source_text)
+        if not source_blocks:
+            return None
+
+        candidates = source_blocks
+
+        primary_heading = self._normalize_outline_heading_body(primary_block.heading_text)
+        primary_full = primary_text or primary_block.heading_text
+        primary_norm = self._normalize_sentence(primary_full)
+
+        best_block: Optional[_OutlineBlock] = None
+        best_score = 0.0
+        for candidate in candidates:
+            candidate_heading = self._normalize_outline_heading_body(candidate.heading_text)
+            heading_score = self._heading_similarity(primary_heading, candidate_heading)
+            candidate_text = source_text[candidate.start:candidate.end]
+            candidate_norm = self._normalize_sentence(candidate_text)
+            body_score = self._segment_similarity(primary_norm, candidate_norm)
+            anchor_overlap = min(anchor_end, candidate.end) - max(anchor_start, candidate.start)
+            overlap_bonus = 0.08 if anchor_overlap > 0 else 0.0
+            anchor_distance = min(abs(candidate.start - anchor_start), abs(candidate.end - anchor_end))
+            distance_bonus = max(0.0, 0.04 - min(anchor_distance, 2400) / 2400 * 0.04)
+            score = max(body_score, heading_score * 0.9) + overlap_bonus + distance_bonus
+            if heading_score >= 0.72:
+                score += 0.12
+            if score > best_score:
+                best_score = score
+                best_block = candidate
+
+        if best_block is None:
+            return None
+
+        candidate_heading = self._normalize_outline_heading_body(best_block.heading_text)
+        heading_score = self._heading_similarity(primary_heading, candidate_heading)
+        if heading_score < 0.45 and best_score < 0.52:
+            return None
+        return best_block
+
+    def _refine_source_span_within_block(
+        self,
+        primary_text: str,
+        source_text: str,
+        source_block: _OutlineBlock,
+        anchor_start: int,
+        anchor_end: int,
+    ) -> Optional[Tuple[int, int]]:
+        block_text = source_text[source_block.start:source_block.end]
+        if not block_text or not primary_text:
+            return None
+
+        target_len = max(len(primary_text), self.min_match_length)
+        candidate_lengths = []
+        for factor in (0.75, 0.90, 1.0, 1.10, 1.25):
+            cand_len = int(target_len * factor)
+            if cand_len >= self.min_match_length:
+                candidate_lengths.append(cand_len)
+        candidate_lengths = sorted(set(candidate_lengths))
+
+        search_start = source_block.start
+        search_end = source_block.end
+        best: Optional[Tuple[int, int, float]] = None
+
+        preferred_starts = []
+        if source_block.body_start < source_block.end:
+            preferred_starts.append(source_block.body_start)
+        if source_block.start <= anchor_start < source_block.end:
+            preferred_starts.append(anchor_start)
+        preferred_starts.append(source_block.start)
+
+        seen = set()
+        primary_norm = self._normalize_sentence(primary_text)
+        for pos in preferred_starts:
+            if pos in seen:
+                continue
+            seen.add(pos)
+            for cand_len in candidate_lengths:
+                cand_end = min(search_end, pos + cand_len)
+                if cand_end - pos < self.min_match_length:
+                    continue
+                candidate = source_text[pos:cand_end]
+                cand_norm = self._normalize_sentence(candidate)
+                score = self._aligned_span_score(primary_norm, cand_norm)
+                if best is None or score > best[2]:
+                    best = (pos, cand_end, score)
+
+        if best is None:
+            best_window = self._find_best_source_window_for_block(
+                primary_text=primary_text,
+                source_text=source_text,
+                search_start=search_start,
+                search_end=search_end,
+            )
+            if not best_window:
+                return None
+            best = best_window
+
+        start, end, score = best
+        start, end = self._expand_source_window(source_text, start, end, search_start, search_end)
+        start = max(start, source_block.start)
+        end = min(end, source_block.end)
+        if end - start < self.min_match_length:
+            return None
+
+        head_shrunken = self._shrink_source_head_by_similarity(
+            primary_text=primary_text,
+            source_text=source_text,
+            start=start,
+            end=end,
+            lower_bound=source_block.start,
+            upper_bound=source_block.end,
+        )
+        if head_shrunken:
+            start, end = head_shrunken
+
+        shrunken = self._shrink_source_tail_by_similarity(
+            primary_text=primary_text,
+            source_text=source_text,
+            start=start,
+            end=end,
+            lower_bound=source_block.start,
+            upper_bound=source_block.end,
+        )
+        if shrunken:
+            start, end = shrunken
+
+        trimmed = self._trim_source_span_structural_noise(
+            primary_text=primary_text,
+            source_text=source_text,
+            start=start,
+            end=end,
+        )
+        if trimmed:
+            start, end = trimmed
+
+        cue_aligned = self._align_source_span_to_primary_cues(
+            primary_text=primary_text,
+            source_text=source_text,
+            start=start,
+            end=end,
+        )
+        if cue_aligned:
+            start, end = cue_aligned
+
+        return (start, end) if end - start >= self.min_match_length else None
+
+    def _shrink_source_head_by_similarity(
+        self,
+        primary_text: str,
+        source_text: str,
+        start: int,
+        end: int,
+        lower_bound: int,
+        upper_bound: int,
+    ) -> Optional[Tuple[int, int]]:
+        primary_norm = self._normalize_sentence(primary_text)
+        current = source_text[start:end]
+        current_norm = self._normalize_sentence(current)
+        current_score = self._aligned_span_score(primary_norm, current_norm)
+        if current_score <= 0:
+            return None
+
+        best_start = start
+        best_score = current_score
+        sentence_breaks = []
+        for marker in ("。", "！", "？", "；", "\n"):
+            idx = source_text.find(marker, start, end)
+            while idx != -1:
+                sentence_breaks.append(idx + 1)
+                idx = source_text.find(marker, idx + 1, end)
+        sentence_breaks = sorted(set(bp for bp in sentence_breaks if start < bp <= end - self.min_match_length))
+
+        for candidate_start in sentence_breaks:
+            candidate_text = source_text[candidate_start:end]
+            cand_norm = self._normalize_sentence(candidate_text)
+            score = self._aligned_span_score(primary_norm, cand_norm)
+            if score >= best_score + 0.03:
+                best_score = score
+                best_start = candidate_start
+
+        if best_start == start:
+            return (start, end)
+
+        best_start = max(lower_bound, self._clip_start_after_hard_boundary(source_text, best_start, end))
+        if end - best_start < self.min_match_length:
+            return (start, end)
+        return (best_start, min(end, upper_bound))
+
+    def _shrink_source_tail_by_similarity(
+        self,
+        primary_text: str,
+        source_text: str,
+        start: int,
+        end: int,
+        lower_bound: int,
+        upper_bound: int,
+    ) -> Optional[Tuple[int, int]]:
+        primary_norm = self._normalize_sentence(primary_text)
+        current = source_text[start:end]
+        current_norm = self._normalize_sentence(current)
+        current_score = self._aligned_span_score(primary_norm, current_norm)
+        if current_score <= 0:
+            return None
+
+        best_end = end
+        best_score = current_score
+        sentence_breaks = []
+        for marker in ("。", "！", "？", "；", "\n"):
+            idx = source_text.find(marker, start, end)
+            while idx != -1:
+                sentence_breaks.append(idx + 1)
+                idx = source_text.find(marker, idx + 1, end)
+        sentence_breaks = sorted(set(bp for bp in sentence_breaks if start + self.min_match_length <= bp < end))
+
+        for candidate_end in sentence_breaks:
+            candidate_text = source_text[start:candidate_end]
+            cand_norm = self._normalize_sentence(candidate_text)
+            score = self._aligned_span_score(primary_norm, cand_norm)
+            if score >= best_score + 0.03:
+                best_score = score
+                best_end = candidate_end
+
+        if best_end == end:
+            return (start, end)
+
+        best_end = min(upper_bound, self._clip_end_before_hard_boundary(source_text, start, best_end))
+        if best_end - start < self.min_match_length:
+            return (start, end)
+        return (start, best_end)
+
+    def _trim_source_span_structural_noise(
+        self,
+        primary_text: str,
+        source_text: str,
+        start: int,
+        end: int,
+    ) -> Optional[Tuple[int, int]]:
+        if end - start < self.min_match_length:
+            return None
+
+        primary_norm = self._normalize_sentence(primary_text)
+        current_start, current_end = start, end
+        current_norm = self._normalize_sentence(source_text[current_start:current_end])
+        best_score = self._aligned_span_score(primary_norm, current_norm)
+
+        changed = True
+        while changed:
+            changed = False
+            lines = list(self._iter_lines(source_text, current_start, current_end))
+            if len(lines) <= 1:
+                break
+
+            first_start, first_end, first_text = lines[0]
+            if self._is_source_structural_line(first_text, primary_norm):
+                candidate_start = first_end
+                if current_end - candidate_start >= self.min_match_length:
+                    cand_norm = self._normalize_sentence(source_text[candidate_start:current_end])
+                    candidate_score = self._aligned_span_score(primary_norm, cand_norm)
+                    if candidate_score >= best_score - 0.01:
+                        current_start = candidate_start
+                        best_score = max(best_score, candidate_score)
+                        changed = True
+                        continue
+
+            last_start, last_end, last_text = lines[-1]
+            if self._is_source_structural_line(last_text, primary_norm):
+                candidate_end = last_start
+                if candidate_end - current_start >= self.min_match_length:
+                    cand_norm = self._normalize_sentence(source_text[current_start:candidate_end])
+                    candidate_score = self._aligned_span_score(primary_norm, cand_norm)
+                    if candidate_score >= best_score - 0.01:
+                        current_end = candidate_end
+                        best_score = max(best_score, candidate_score)
+                        changed = True
+
+        return (current_start, current_end)
+
+    def _is_source_structural_line(self, text: str, primary_norm: str) -> bool:
+        cleaned = re.sub(r"\s+", "", text or "")
+        if not cleaned:
+            return True
+        if "[表格行" in cleaned:
+            return True
+        if re.match(r"^图\d+", cleaned):
+            return True
+        if "技术路线" in cleaned and "技术路线" not in primary_norm:
+            return True
+        if "研究方案" in cleaned and "研究方案" not in primary_norm:
+            return True
+        if re.match(r"^[a-zA-Z][\)）]", cleaned):
+            return True
+        if self._looks_like_heading(cleaned) and self._normalize_sentence(cleaned) not in primary_norm:
+            return True
+        return False
+
+    def _align_source_span_to_primary_cues(
+        self,
+        primary_text: str,
+        source_text: str,
+        start: int,
+        end: int,
+    ) -> Optional[Tuple[int, int]]:
+        if end - start < self.min_match_length:
+            return None
+
+        primary_lines = [line.strip() for line in primary_text.splitlines() if line.strip()]
+        body_lines = [line for line in primary_lines if not self._looks_like_heading(line)]
+        if not body_lines:
+            body_lines = primary_lines
+        if not body_lines:
+            return None
+
+        source_segment = source_text[start:end]
+        new_start, new_end = start, end
+
+        prefix_cue = self._cue_from_text(body_lines[0])
+        if prefix_cue:
+            pos = source_segment.find(prefix_cue)
+            if pos > 0:
+                candidate_start = start + pos
+                if end - candidate_start >= self.min_match_length:
+                    new_start = candidate_start
+
+        suffix_cue = self._cue_from_text(body_lines[-1], tail=True)
+        source_segment = source_text[new_start:new_end]
+        if suffix_cue:
+            pos = source_segment.rfind(suffix_cue)
+            if pos > 0:
+                candidate_end = new_start + pos + len(suffix_cue)
+                if candidate_end - new_start >= self.min_match_length:
+                    new_end = candidate_end
+
+        return (new_start, new_end)
+
+    def _cue_from_text(self, text: str, tail: bool = False) -> str:
+        cleaned = re.sub(r"\s+", "", text or "")
+        cleaned = re.sub(r"^[（(]\d+[）)]", "", cleaned)
+        cleaned = re.sub(r"^\d+[、\.．]", "", cleaned)
+        cleaned = cleaned.strip("：:，,；;。 ")
+        if len(cleaned) < 8:
+            return ""
+        cue_len = min(18, max(10, len(cleaned) // 2))
+        return cleaned[-cue_len:] if tail else cleaned[:cue_len]
 
     def _rescue_numbered_outline_blocks(
         self,
@@ -1079,6 +1590,7 @@ class ComparisonEngine:
         text_a: str,
         text_b: str,
         source_doc: str,
+        guide_windows: Optional[List[any]] = None,
     ) -> List[Match]:
         if not text_a or not text_b:
             return []
@@ -1100,6 +1612,12 @@ class ComparisonEngine:
                 search_start, search_end = section_window
             else:
                 prev_match, next_match = self._neighbor_matches_for_span(ordered, block.start, block.end)
+                # 关键性能护栏：
+                # 如果当前块既没有命中邻居，也找不到同名 section 锚点，
+                # 再继续搜索会退化成对整个 source 文档做全局扫描。
+                # 这在低相似长文上会非常慢，而且命中质量很差。
+                if prev_match is None and next_match is None:
+                    continue
                 search_start, search_end = self._source_search_window(text_b, prev_match, next_match)
             if search_end - search_start < 80:
                 continue
@@ -1115,6 +1633,7 @@ class ComparisonEngine:
                     source_text=text_b,
                     search_start=search_start,
                     search_end=search_end,
+                    guide_windows=guide_windows,
                 )
                 if not best:
                     continue
@@ -1126,10 +1645,16 @@ class ComparisonEngine:
                 if source_end <= source_start:
                     continue
 
-                primary_full = text_a[block.start:block.end]
                 source_full = text_b[source_start:source_end]
-                full_similarity = self._segment_similarity(primary_full, source_full)
-                candidate_similarity = self._segment_similarity(primary_candidate, matched_source_segment)
+                primary_full = text_a[block.start:block.end]
+                primary_full_norm = self._normalize_sentence(primary_full)
+                source_full_norm = self._normalize_sentence(source_full)
+                full_similarity = self._segment_similarity(primary_full_norm, source_full_norm)
+                
+                primary_candidate_norm = self._normalize_sentence(primary_candidate)
+                matched_source_norm = self._normalize_sentence(matched_source_segment)
+                candidate_similarity = self._segment_similarity(primary_candidate_norm, matched_source_norm)
+                
                 accepted_similarity = max(full_similarity, candidate_similarity)
                 threshold = 0.50 if cand_start == block.body_start else 0.54
                 if accepted_similarity < threshold:
@@ -1139,7 +1664,7 @@ class ComparisonEngine:
                     text=primary_full.replace("\n", " ").strip(),
                     start_pos=block.start,
                     end_pos=block.end,
-                    ngram_count=max(len(primary_full) // max(self.ngram_size, 1), 1),
+                    ngram_count=max(len(primary_full_norm) // max(self.ngram_size, 1), 1),
                     source_doc=source_doc,
                     source_start=source_start,
                     source_end=source_end,
@@ -1247,7 +1772,9 @@ class ComparisonEngine:
                     continue
 
                 source_candidate = text_b[source_start:source_end]
-                similarity = self._segment_similarity(primary_candidate, source_candidate)
+                primary_norm = self._normalize_sentence(primary_candidate)
+                source_norm = self._normalize_sentence(source_candidate)
+                similarity = self._segment_similarity(primary_norm, source_norm)
                 threshold = 0.54 if cand_start == block.body_start else 0.58
                 if similarity < threshold:
                     continue
@@ -1256,7 +1783,7 @@ class ComparisonEngine:
                     text=primary_candidate.replace("\n", " ").strip(),
                     start_pos=cand_start,
                     end_pos=cand_end,
-                    ngram_count=max(len(primary_candidate) // max(self.ngram_size, 1), 1),
+                    ngram_count=max(len(primary_norm) // max(self.ngram_size, 1), 1),
                     source_doc=source_doc,
                     source_start=source_start,
                     source_end=source_end,
@@ -1526,10 +2053,15 @@ class ComparisonEngine:
         source_text: str,
         search_start: int,
         search_end: int,
+        guide_windows: Optional[List[any]] = None, # 新增引导窗口
     ) -> Optional[Tuple[int, int, float]]:
         primary_norm = self._normalize_sentence(primary_text)
         if len(primary_norm) < self.gap_block_min_length:
             return None
+
+        from collections import Counter
+        primary_counter = Counter(primary_norm)
+        primary_len = len(primary_norm)
 
         length = len(primary_text)
         candidate_lengths = []
@@ -1539,26 +2071,74 @@ class ComparisonEngine:
                 candidate_lengths.append(cand_len)
 
         best: Optional[Tuple[int, int, float]] = None
-        max_pos = max(search_start, search_end - 30)
-        for pos in range(search_start, max_pos, 4):
-            for cand_len in candidate_lengths:
-                cand_end = min(search_end, pos + cand_len)
-                if cand_end - pos < 40:
-                    continue
-                if self._has_hard_boundary_inside(source_text, pos, cand_end):
-                    continue
-                candidate = source_text[pos:cand_end]
-                score = self._segment_similarity(primary_text, candidate)
-                if best is None or score > best[2]:
-                    best = (pos, cand_end, score)
+        
+        # 确定搜索范围：如果有引导窗口，只在引导窗口及其附近搜索
+        search_ranges = []
+        if guide_windows:
+            # 扩展窗口范围以允许一定的错位
+            expand = 800
+            for w in guide_windows:
+                # 注意：w 是 RetrievalWindow 对象，其 primary_start 是在 primary 坐标系下的
+                # 我们需要找到 source 坐标系下的范围。但 RetrievalWindow 没存 source_start。
+                # 这是一个问题。RetrievalWindow 只是告诉我们 primary 的哪一段在 source 中有匹配。
+                # 实际上我们应该使用 SourceRetriever 召回时的原始信息。
+                pass
+            # 简化方案：如果 guide_windows 存在，说明该文档是有嫌疑的，但我们不知道具体位置。
+            # 实际上 search_start/search_end 已经是由 _source_search_window 提供的基于邻近 Match 的缩小范围。
+            search_ranges.append((search_start, search_end))
+        else:
+            search_ranges.append((search_start, search_end))
+
+        for s_start, s_end in search_ranges:
+            max_pos = max(s_start, s_end - 30)
+            # 动态增大步长
+            step = max(4, primary_len // 30)
+            
+            # 性能优化：预先提取 search 区域文本减少切片开销
+            search_area = source_text[s_start:s_end]
+            
+            for pos_in_area in range(0, len(search_area), step):
+                pos = s_start + pos_in_area
+                for cand_len in candidate_lengths:
+                    cand_end = min(s_end, pos + cand_len)
+                    if cand_end - pos < 40:
+                        continue
+                    
+                    candidate_raw = source_text[pos:cand_end]
+                    # 快速预检查：如果字符集重叠度太低，不进行归一化和比对
+                    # 这是一个非常廉价的过滤
+                    common_chars_count = 0
+                    # 只采样前 50 个字符进行快速检查
+                    sample = candidate_raw[:100]
+                    for char in sample:
+                        if char in primary_counter:
+                            common_chars_count += 1
+                    if common_chars_count < 10 and primary_len > 100:
+                        continue
+
+                    cand_norm = self._normalize_sentence(candidate_raw)
+                    if not cand_norm:
+                        continue
+                    
+                    # 更精准的 Counter 过滤
+                    cand_counter = Counter(cand_norm)
+                    intersect_size = sum((primary_counter & cand_counter).values())
+                    fast_overlap = intersect_size / max(primary_len, len(cand_norm))
+                    
+                    if fast_overlap < 0.35:
+                        continue
+
+                    score = self._aligned_span_score(primary_norm, cand_norm)
+                    if best is None or score > best[2]:
+                        best = (pos, cand_end, score)
 
         if best is None:
             return None
 
         start, end, score = best
         start, end = self._expand_source_window(source_text, start, end, search_start, search_end)
-        final_text = source_text[start:end]
-        final_score = self._segment_similarity(primary_text, final_text)
+        final_norm = self._normalize_sentence(source_text[start:end])
+        final_score = self._aligned_span_score(primary_norm, final_norm)
         return start, end, max(score, final_score)
 
     def _expand_source_window(
@@ -1608,7 +2188,7 @@ class ComparisonEngine:
             return False
         return bool(re.match(
             r"^(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|"
-            r"[一二三四五六七八九十]+、|\d+[、\.．:：])",
+            r"[一二三四五六七八九十]+、|[（(][一二三四五六七八九十]+[）)]|\d+[、\.．:：]|[（(]\d+[）)])",
             normalized,
         )) and len(normalized) <= 40
 
@@ -1616,13 +2196,16 @@ class ComparisonEngine:
         normalized = re.sub(r"\s+", "", text or "")
         if not normalized:
             return False
-        return bool(re.match(r"^\d+[、\.．][^\n]{1,50}$", normalized))
+        return bool(re.match(r"^(?:\d+[、\.．]|[（(]\d+[）)])[^\n]{1,80}$", normalized))
 
     def _looks_like_named_section_heading(self, text: str) -> bool:
         normalized = re.sub(r"\s+", "", text or "")
         if not normalized:
             return False
-        return bool(re.match(r"^[一二三四五六七八九十]+[、\.．][^\n]{1,80}$", normalized))
+        return bool(re.match(
+            r"^(?:[一二三四五六七八九十]+[、\.．]|[（(][一二三四五六七八九十]+[）)])[^\n]{1,80}$",
+            normalized,
+        ))
 
     def _normalize_heading_text(self, text: str) -> str:
         normalized = re.sub(r"\s+", "", text or "")
@@ -1635,6 +2218,11 @@ class ComparisonEngine:
         if a == b:
             return 1.0
         return self._sequence_ratio(a, b)
+
+    def _normalize_outline_heading_body(self, text: str) -> str:
+        normalized = re.sub(r"\s+", "", text or "")
+        normalized = re.sub(r"^(?:\d+[、\.．]|[（(]\d+[）)]|[（(][一二三四五六七八九十]+[）)])", "", normalized)
+        return normalized
 
     def _expand_source_start_to_outline_heading(self, text: str, start: int, lookback: int = 120) -> int:
         if not text or start <= 0:
@@ -1796,7 +2384,9 @@ class ComparisonEngine:
         if not step_scores:
             return match
 
-        combined_similarity = self._segment_similarity(expanded_text, expanded_source)
+        norm_p = self._normalize_sentence(expanded_text)
+        norm_s = self._normalize_sentence(expanded_source)
+        combined_similarity = self._segment_similarity(norm_p, norm_s)
         if combined_similarity < 0.42 and (sum(step_scores) / len(step_scores)) < 0.55:
             return match
         confidence = sum(step_scores) / max(len(step_scores), 1)
@@ -1837,21 +2427,34 @@ class ComparisonEngine:
     def _sentence_similarity(self, text_a: str, text_b: str) -> float:
         norm_a = self._normalize_sentence(text_a)
         norm_b = self._normalize_sentence(text_b)
+        return self._segment_similarity(norm_a, norm_b)
+
+    def _segment_similarity(self, norm_a: str, norm_b: str) -> float:
+        """计算两个归一化字符串的相似度。"""
+        if len(norm_a) < 8 or len(norm_b) < 8:
+            return 0.0
+        
+        from difflib import SequenceMatcher
+        matcher = SequenceMatcher(None, norm_a, norm_b)
+        ratio = matcher.ratio()
+        
+        # 性能优化：如果 ratio 已经极高，不再进行昂贵的 get_matching_blocks 计算
+        if ratio >= 0.98:
+            return ratio
+            
+        matched = sum(block.size for block in matcher.get_matching_blocks())
+        base = max(min(len(norm_a), len(norm_b)), 1)
+        overlap = matched / base
+        return max(ratio, overlap)
+
+    def _aligned_span_score(self, norm_a: str, norm_b: str) -> float:
+        """计算对齐片段的分数，考虑长度平衡。"""
         if len(norm_a) < 8 or len(norm_b) < 8:
             return 0.0
 
-        ratio = self._sequence_ratio(norm_a, norm_b)
-        overlap = self._matched_char_ratio(norm_a, norm_b)
-        return max(ratio, overlap)
-
-    def _segment_similarity(self, text_a: str, text_b: str) -> float:
-        norm_a = self._normalize_sentence(text_a)
-        norm_b = self._normalize_sentence(text_b)
-        if len(norm_a) < 8 or len(norm_b) < 8:
-            return 0.0
-        ratio = self._sequence_ratio(norm_a, norm_b)
-        overlap = self._matched_char_ratio(norm_a, norm_b)
-        return max(ratio, overlap)
+        base_score = self._segment_similarity(norm_a, norm_b)
+        length_balance = min(len(norm_a), len(norm_b)) / max(len(norm_a), len(norm_b), 1)
+        return base_score * length_balance
 
     def _find_best_local_source_window(
         self,
@@ -1862,29 +2465,60 @@ class ComparisonEngine:
         search_forward: int = 900,
         step: int = 3,
     ) -> Optional[Tuple[int, int, float]]:
-        target_len = max(len(primary_text), 1)
+        primary_norm = self._normalize_sentence(primary_text)
+        if not primary_norm:
+            return None
+            
+        target_len = len(primary_text)
         start = max(0, near_pos - search_back)
         end = min(len(source_text), near_pos + search_forward)
         if end - start < 20:
             return None
 
+        # 性能优化：预计算 Primary 的字符分布用于快速剪枝
+        from collections import Counter
+        primary_counter = Counter(primary_norm)
+        primary_len = len(primary_norm)
+
         best: Optional[Tuple[int, int, float]] = None
         probe_end = max(start, end - 20)
-        for pos in range(start, probe_end, max(step, 1)):
+        
+        # 性能优化：动态调整步长
+        actual_step = max(step, primary_len // 50)
+
+        for pos in range(start, probe_end, actual_step):
             cand_end = min(len(source_text), pos + target_len)
             if cand_end - pos < max(20, target_len // 3):
                 continue
-            cand = source_text[pos:cand_end]
-            score = self._segment_similarity(primary_text, cand)
+            
+            # 性能优化：快速字符重叠度剪枝
+            cand_raw = source_text[pos:cand_end]
+            cand_norm = self._normalize_sentence(cand_raw)
+            if not cand_norm:
+                continue
+                
+            cand_counter = Counter(cand_norm)
+            intersect_size = sum((primary_counter & cand_counter).values())
+            fast_overlap = intersect_size / max(primary_len, len(cand_norm))
+            
+            if fast_overlap < 0.30:
+                continue
+
+            score = self._aligned_span_score(primary_norm, cand_norm)
             if best is None or score > best[2]:
                 best = (pos, cand_end, score)
         return best
 
     def _normalize_sentence(self, text: str) -> str:
-        cleaned = self._clean_sentence_for_semantic_match(text)
-        cleaned = re.sub(r"\s+", "", cleaned)
-        cleaned = re.sub(r"[，。；：、！？,.!?;:\"'“”‘’（）()\[\]【】<>《》]", "", cleaned)
-        return cleaned.lower()
+        if not text:
+            return ""
+        # 极速归一化：只保留中文字符、数字和英文字母，统一转小写
+        # 避免复杂的正则运算
+        cleaned = []
+        for char in text:
+            if '\u4e00' <= char <= '\u9fa5' or char.isalnum():
+                cleaned.append(char.lower())
+        return "".join(cleaned)
 
     def _sequence_ratio(self, a: str, b: str) -> float:
         from difflib import SequenceMatcher

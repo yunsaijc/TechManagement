@@ -212,6 +212,8 @@ class EvidenceItem(BaseModel):
     file: str = Field(default="", description="文件名")
     page: int = Field(default=0, ge=0, description="页码")
     snippet: str = Field(default="", description="证据片段")
+    category: str = Field(default="", description="证据分类，如 goal/innovation/route")
+    target: str = Field(default="", description="对应的摘要条目或结论")
 
 
 class EvaluationError(BaseModel):

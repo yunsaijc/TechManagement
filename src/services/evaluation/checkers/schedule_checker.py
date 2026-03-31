@@ -22,6 +22,15 @@ class ScheduleChecker(BaseChecker):
     
     dimension = EvaluationDimension.SCHEDULE.value
     dimension_name = "进度合理性"
+    ALTERNATIVE_SECTION_KEYS = [
+        "项目简介",
+        "主要内容及实施地点",
+        "项目绩效评价考核目标及指标",
+        "项目组织实施机制",
+        "基层能力辐射工程",
+        "科普活动开展",
+        "科普内容产出",
+    ]
     
     def __init__(self, llm=None):
         super().__init__(llm)
@@ -36,8 +45,23 @@ class ScheduleChecker(BaseChecker):
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行进度合理性检查"""
         sections = self._extract_sections(content, self._required_sections)
+        project_profile = self.infer_project_profile(content)
         
         if not sections:
+            if project_profile == self.PROJECT_PROFILE_PLATFORM:
+                alternative_sections = self._extract_sections(content, self.ALTERNATIVE_SECTION_KEYS)
+                if alternative_sections:
+                    matched_names = list(alternative_sections.keys())
+                    return CheckResult(
+                        dimension=self.dimension,
+                        dimension_name=self.dimension_name,
+                        score=6.0,
+                        confidence=0.45,
+                        opinion="该项目更偏平台/科普实施类，已基于实施内容、绩效节点和活动安排进行基础进度判断，不再强制要求独立进度章节。",
+                        issues=["未设置独立进度章节，已按实施安排与绩效节点内容替代评估"],
+                        highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
+                        items=[],
+                    )
             return CheckResult(
                 dimension=self.dimension,
                 dimension_name=self.dimension_name,
@@ -54,6 +78,7 @@ class ScheduleChecker(BaseChecker):
         result = self._parse_result(response.content if hasattr(response, 'content') else str(response))
         
         return result
+
     
     def _build_prompt(self, content: Dict[str, Any]) -> str:
         """构建提示词"""

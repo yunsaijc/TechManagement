@@ -22,6 +22,7 @@ Step 3 并行执行
   - Highlight Extractor
   - Industry Fit Analyzer
   - Benchmark Analyzer
+  - Chat Index Builder（按开关启用）
 Step 4 汇总评分与建议
 Step 5 写入 storage 并返回结果
 ```
@@ -30,7 +31,7 @@ Step 5 写入 storage 并返回结果
 
 - 使用 `asyncio.gather` 并行任务  
 - 通过 `Semaphore` 控制并发上限  
-- 子任务级超时与重试  
+- 子任务级超时控制  
 - 单任务失败不阻断主流程，返回 `partial=true` 与 `errors[]`
 
 ## 与工具调用的关系
@@ -43,6 +44,38 @@ Step 5 写入 storage 并返回结果
 - `tech_search`：文献/专利检索
 
 Agent 只接收结构化检索结果并完成分析与合并。
+
+## 与聊天能力的关系
+
+聊天能力分两段执行：
+
+1. 评审阶段：若 `enable_chat_index=true`，则根据解析器输出的 `page_chunks` 构建聊天索引并落盘  
+2. 问答阶段：`/chat/ask` 先加载评审结果，再加载聊天索引，最后执行页码检索与回答生成
+
+当前实现约束：
+
+- 聊天检索优先基于 `page_chunks`
+- 引用结果必须返回 `file/page/snippet`
+- 检索阶段会对问题做轻量意图识别，例如：
+  - 研究目标
+  - 预期效益
+  - 验证数据
+  - 进展程度
+  - 量产可能性
+- 检索排序会优先提升相关章节，抑制附件、表格噪声页
+
+## 聊天降级策略
+
+当前聊天问答采用“两层降级”：
+
+1. 无检索命中：直接返回“未检索到可支撑问题的正文证据”  
+2. LLM 不可用或调用失败：退回规则式回答，并保留 citation
+
+规则式回答要求：
+
+- 仍然返回 `answer + citations`
+- 若证据不足，必须明确说明“不足以形成确定性结论”
+- 对“验证数据”“量产可能性”这类高风险问题，优先输出谨慎判断，而不是直接肯定
 
 ## 结果合并规则
 
@@ -61,6 +94,30 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - 无项目文档：提示改用 `/api/v1/evaluation/evaluate/file`
 - 外部检索失败：关闭对应模块并标记 `partial`
 - 解析失败：返回可定位错误信息，保留已完成模块输出
+- 聊天阶段索引不存在：`/chat/ask` 返回“该评审记录未构建聊天索引”
+- 聊天阶段模型异常：不抛出内部异常，回退到规则式回答并保留引用
+
+当前 `benchmark` 降级语义：
+
+- 若 `tech_search` 未配置，则主流程不中断
+- 返回 `partial=true`
+- `errors[]` 追加一条 `code=TOOL_UNAVAILABLE, module=benchmark`
+- `benchmark` 字段填充占位结论：
+  - `novelty_level=unknown`
+  - `literature_position=技术摸底工具不可用`
+  - `patent_overlap=技术摸底工具不可用`
+  - `conclusion=当前仅基于申报书内容，外部对比结论待补充`
+
+当前 `industry_fit` 降级语义：
+
+- 若 `guide_search` 未配置，则主流程不中断
+- 返回 `partial=true`
+- `errors[]` 追加一条 `code=TOOL_UNAVAILABLE, module=industry_fit`
+- `industry_fit` 字段填充占位结果：
+  - `fit_score=0.0`
+  - `matched=[]`
+  - `gaps=["产业指南检索不可用，结果待核验"]`
+  - `suggestions=["待检索工具恢复后补充指南映射"]`
 
 ## 代码锚点
 
