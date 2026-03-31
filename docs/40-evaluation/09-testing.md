@@ -8,13 +8,15 @@
 2. 划重点/指南贴合/技术摸底可并行执行  
 3. 聊天问答可返回页码证据  
 4. 搜索工具不可用时可降级并标记 `partial/errors`
+5. 不同类型申报书可按画像应用不同评审口径
 
 ## 测试分层
 
 1. 单元测试：解析器、检查器、评分器、工具网关适配层  
-2. 集成测试：`EvaluationAgent` 并发编排与结果合并  
-3. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`  
-4. 回归测试：与历史评审结果字段兼容
+2. 单元测试：项目画像识别与维度覆盖规则  
+3. 集成测试：`EvaluationAgent` 并发编排与结果合并  
+4. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`  
+5. 回归测试：与历史评审结果字段兼容
 
 ## 目录建议
 
@@ -55,6 +57,8 @@ tests/services/evaluation/
 - 断言：存在 `page_chunks` 且页码递增
 - 用例：DOCX 解析  
 - 断言：支持近似分页并标记 `page_estimated=true`
+- 用例：封面/填报说明/附件目录/绩效表头混入正文  
+- 断言：不会被误归类为 `研究目标/进度安排/预期成果` 等业务章节
 
 ### D. 聊天问答
 
@@ -64,10 +68,21 @@ tests/services/evaluation/
 - 断言：无证据时不输出“确定性结论”
 - 断言：LLM 异常时，`ask()` 仍返回降级回答和 citations，而不是抛出内部错误
 - 断言：研究目标问题不会优先命中附件或纯表格噪声页
+- 断言：研究目标问题不会被泛化的“项目/研究/合作研究目的”字样带偏
+- 断言：进展问题不会优先命中封面、预算页或纯职责分工页
 - 断言：预期效益问题能命中效益相关章节并抽取社会/经济/效益类信息
 - 断言：量产可能性问题在证据不足时保持谨慎，不直接输出“可以量产”
 
 ### E. 兼容与回归
+
+- 用例：科普实施类项目缺少独立 `技术路线` 章节
+- 断言：`feasibility / schedule / risk_control` 不直接退化为默认 5 分缺失结论
+- 用例：科普实施类项目未单列成果/社会效益/经济效益章节
+- 断言：可按绩效指标、推广范围、模式复制等内容替代评估
+- 用例：平台建设类项目使用“建设目标/核心建设内容”等标题
+- 断言：可被识别为替代章节
+- 用例：同一 `EvaluationAgent` 连续评审不同项目
+- 断言：前一次 `project_profile` 不会污染后一次评审口径
 
 - 用例：不开启新增开关执行旧请求  
 - 断言：老字段结构不变，旧调用方可直接使用
@@ -101,6 +116,8 @@ tests/services/evaluation/
 - `tests/services/evaluation/test_chat_indexer.py`
   - 研究目标问题优先命中目标/简介章节
   - 量产/推广问题优先命中效益或推广章节
+  - 研究目标问题不会被泛化研究噪声带偏
+  - 进展问题不会优先命中封面信息
 - `tests/services/evaluation/test_chat_agent.py`
   - 开启 `enable_chat_index` 后，`ask()` 可返回 citations
   - LLM 异常时，`ask()` 走降级回答
@@ -117,6 +134,13 @@ tests/services/evaluation/
 - `tests/services/evaluation/test_agent_orchestration.py`
   - 同时开启 `highlight/industry_fit/benchmark/chat_index` 时，结果可被正确合并到同一 `EvaluationResult`
   - 合并后保留 `highlights/industry_fit/benchmark/evidence/chat_ready`
+- `tests/services/evaluation/test_project_profiler.py`
+  - 科普实施类/平台建设类/技术研发类画像可被识别
+  - 画像证据不足时回退到 `generic`
+- `tests/services/evaluation/test_profile_adaptation.py`
+  - 科普实施类项目缺少独立技术路线时，相关维度走放宽口径
+  - 科普实施类项目未单列成果/效益章节时，成果与效益维度走放宽口径
+  - 同一 agent 连续评审时，画像状态不会串用
 - `tests/services/evaluation/test_api_evaluation.py`
   - `evaluate/file` 路由可解析表单参数并调用评审 Agent
   - `chat/ask` 路由可返回 `answer + citations`
@@ -127,6 +151,6 @@ tests/services/evaluation/
 
 - 评审完成后应同步输出调试产物到 `debug_eval/`
 - 至少包含：
-  - `{evaluation_id}.json`：完整评审结果与章节调试信息
-  - `{evaluation_id}.html`：可直接查看的评审可视化报告
+  - `EVAL_{project_id}.json`：完整评审结果与章节调试信息
+  - `EVAL_{project_id}.html`：可直接查看的评审可视化报告
   - `index.html`：调试报告索引页

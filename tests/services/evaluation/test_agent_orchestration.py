@@ -25,7 +25,7 @@ async def test_evaluation_agent_merges_outputs_from_all_enabled_modules(
     agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
     monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
 
-    async def fake_run_checks(sections, dimensions):
+    async def fake_run_checks(sections, dimensions, profile_result):
         return [
             CheckResult(
                 dimension="team",

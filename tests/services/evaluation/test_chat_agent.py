@@ -5,6 +5,7 @@ import pytest
 
 from src.common.models.evaluation import EvaluationRequest
 from src.services.evaluation.agent import EvaluationAgent
+from src.services.evaluation.chat.qa_agent import EvaluationQAAgent
 from src.services.evaluation.storage.storage import EvaluationStorage
 
 
@@ -327,3 +328,77 @@ async def test_evaluation_agent_ask_progress_reranks_to_schedule_page(
 
     assert answer.citations
     assert answer.citations[0].page == 14
+
+
+def test_qa_agent_extract_progress_points_prefers_schedule_actions_over_prior_achievements():
+    """进展抽取应优先提取进度安排中的动作，不应被前期成果页带偏"""
+    agent = EvaluationQAAgent(llm=None)
+
+    chunks = [
+        {
+            "page": 15,
+            "section": "进度安排",
+            "text": (
+                "第四部分 进度安排\n"
+                "（1）进行激光雷达、高光谱相机、高清相机等设备选型，设计与无人机适配方案，完成装备样机试制与初步集成；\n"
+                "（2）构建多要素空间数据底座，形成超低空精细化空间数据库；\n"
+                "（3）完成路基边坡区域厘米级精细化三维建模；"
+            ),
+        },
+        {
+            "page": 12,
+            "section": "申报单位在该研究方向的前期任务承担情况、相关研究成果",
+            "text": "项目入选试点，顺利通过验收，荣获国家级科技奖励2项。",
+        },
+    ]
+
+    points = agent._extract_progress_points(chunks)
+
+    assert points
+    assert "完成装备样机试制与初步集成" in points[0]
+    assert all("通过验收" not in point for point in points)
+
+
+def test_qa_agent_extract_goal_points_handles_wrapped_overall_goal():
+    """目标抽取应能处理跨行的总体目标正文"""
+    agent = EvaluationQAAgent(llm=None)
+
+    chunks = [
+        {
+            "page": 7,
+            "section": "项目简介",
+            "text": (
+                "本项目的总体目标是通过创新驱动，通过智能和数字化技术研究与应用，提升骨科\n"
+                "领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地。"
+            ),
+        }
+    ]
+
+    points = agent._extract_goal_points(chunks)
+
+    assert points
+    assert "总体目标" not in points[0]
+    assert "提升骨科领域诊疗水平" in points[0]
+
+
+def test_qa_agent_extract_goal_points_handles_kpi_goal_fragment():
+    """目标抽取应能处理绩效表里倒序混入的总体目标内容"""
+    agent = EvaluationQAAgent(llm=None)
+
+    chunks = [
+        {
+            "page": 19,
+            "section": "项目绩效评价考核目标及指标",
+            "text": (
+                "实施期目标\n第一年度目标\n形成《低空多源感知病害检测和灾害监测装备研发与应用示范研究报\n"
+                "告》；研发一套高集成智能化检监测装备，建设基于多要素空间数据底座的超低空高精度数字航图；\n"
+                "开发适用于道路灾病害监测及路面异常状态识别等应用场景智能算法；完成5G、6G通信技术在低空监测场景的示范应用。\n"
+                "总体\n目标"
+            ),
+        }
+    ]
+
+    points = agent._extract_goal_points(chunks)
+
+    assert points
+    assert "研发一套高集成智能化检监测装备" in points[0]

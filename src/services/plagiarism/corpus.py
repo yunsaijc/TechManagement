@@ -11,7 +11,7 @@ import time
 from collections import defaultdict
 from itertools import islice
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -59,13 +59,17 @@ class CorpusManager:
         self.index_save_path = Path(index_save_path)
         self.shard_dir = self.index_save_path.with_suffix("")
         self.shard_dir = self.shard_dir.parent / f"{self.shard_dir.name}_shards"
+        self.inverted_dir = self.index_save_path.parent / "corpus_char4_inverted"
         self.shard_count = max(1, shard_count)
         self.index: CorpusIndex = CorpusIndex(shard_count=self.shard_count)
         self.retriever = SourceRetriever()
         self._feature_cache: Dict[str, Dict[str, Dict[str, List[str]]]] = {}
+        self._inverted_cache: Dict[str, Dict[str, List[str]]] = {}
+        self._inverted_shard_count = 64
 
         self.index_save_path.parent.mkdir(parents=True, exist_ok=True)
         self.shard_dir.mkdir(parents=True, exist_ok=True)
+        self.inverted_dir.mkdir(parents=True, exist_ok=True)
         self.load_index()
 
     def load_index(self):
@@ -116,11 +120,32 @@ class CorpusManager:
     async def scan_and_update(self, limit: Optional[int] = None) -> Dict[str, int]:
         """扫描挂载目录并增量更新索引。"""
         import asyncio
+        
+        return await self.scan_and_update_with_options(limit=limit)
+
+    async def scan_and_update_with_options(
+        self,
+        limit: Optional[int] = None,
+        batch_size: int = 100,
+        max_concurrency: int = 2,
+        save_every_batches: int = 5,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> Dict[str, int]:
+        """扫描挂载目录并增量更新索引。"""
+        import asyncio
 
         stats = {"scanned": 0, "new": 0, "updated": 0, "deleted": 0, "failed": 0, "unchanged": 0}
         if not self.corpus_path.exists():
             print(f"[Corpus] 错误: 挂载路径不存在 {self.corpus_path}")
             return stats
+
+        batch_size = max(1, int(batch_size))
+        max_concurrency = max(1, int(max_concurrency))
+        save_every_batches = max(1, int(save_every_batches))
+
+        if self.index.documents and not self.has_inverted_index():
+            print("[Corpus] char4 倒排索引缺失，开始一次性重建...")
+            self.rebuild_inverted_index(progress_callback=progress_callback)
 
         seen_doc_ids = set()
         to_process: List[Tuple[str, Path, int, float]] = []
@@ -172,8 +197,6 @@ class CorpusManager:
 
         if to_process:
             total_to_process = len(to_process)
-            batch_size = 200
-            max_concurrency = 6
             processed_count = 0
             started_at = time.time()
             print(
@@ -201,16 +224,16 @@ class CorpusManager:
             for batch_index, batch in enumerate(self._iter_batches(to_process, batch_size), start=1):
                 batch_started_at = time.time()
                 semaphore = asyncio.Semaphore(max_concurrency)
+                dirty_shards = set()
+                batch_changed = False
 
                 async def wrapped_process(item: Tuple[str, Path, int, float]):
                     async with semaphore:
                         return await process_task(*item)
 
-                results = await asyncio.gather(*(wrapped_process(item) for item in batch))
-
-                dirty_shards = set()
-                batch_changed = False
-                for doc_id, doc_entry, outcome in results:
+                tasks = [asyncio.create_task(wrapped_process(item)) for item in batch]
+                for completed in asyncio.as_completed(tasks):
+                    doc_id, doc_entry, outcome = await completed
                     if outcome == "new":
                         stats["new"] += 1
                         batch_changed = True
@@ -222,19 +245,40 @@ class CorpusManager:
                     else:
                         stats["failed"] += 1
 
+                    processed_so_far = processed_count + sum(
+                        1 for task in tasks if task.done()
+                    )
+                    if progress_callback:
+                        elapsed_now = time.time() - started_at
+                        avg_per_file_now = elapsed_now / processed_so_far if processed_so_far else 0.0
+                        remaining_now = max(total_to_process - processed_so_far, 0)
+                        progress_callback(
+                            {
+                                "processed": processed_so_far,
+                                "total": total_to_process,
+                                "batch_index": batch_index,
+                                "batch_size": len(batch),
+                                "elapsed_seconds": round(elapsed_now, 2),
+                                "eta_seconds": int(avg_per_file_now * remaining_now) if avg_per_file_now > 0 else 0,
+                                "stats": dict(stats),
+                            }
+                        )
+
                     if not doc_entry:
                         continue
 
+                    self._remove_doc_from_inverted(doc_id)
                     dirty_shards.add(doc_entry.shard_id)
                     self.index.documents[doc_id] = doc_entry.model_copy(update={"features": None})
                     shard_features = self._load_shard_features(doc_entry.shard_id)
                     shard_features[doc_id] = doc_entry.features or {}
+                    self._add_doc_to_inverted(doc_id, doc_entry.features or {})
 
                 for shard_id in dirty_shards:
                     self._save_shard_features(shard_id)
 
                 processed_count += len(batch)
-                if batch_changed:
+                if batch_changed and batch_index % save_every_batches == 0:
                     self.index.last_updated = time.time()
                     self.save_index()
 
@@ -253,6 +297,18 @@ class CorpusManager:
                     f"new={stats['new']}, updated={stats['updated']}, "
                     f"unchanged={stats['unchanged']}, failed={stats['failed']}"
                 )
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "processed": processed_count,
+                            "total": total_to_process,
+                            "batch_index": batch_index,
+                            "batch_size": len(batch),
+                            "elapsed_seconds": round(elapsed, 2),
+                            "eta_seconds": eta_seconds,
+                            "stats": dict(stats),
+                        }
+                    )
 
         if any(stats[key] > 0 for key in ("new", "updated", "deleted")):
             self.index.last_updated = time.time()
@@ -309,6 +365,144 @@ class CorpusManager:
                     update={"features": shard_features.get(doc_id, {})}
                 )
         return docs_with_features
+
+    def retrieve_candidate_doc_ids(
+        self,
+        primary_text: str,
+        primary_excluded_ranges,
+        top_k: int = 120,
+        min_hits: int = 2,
+        max_postings_per_gram: int = 400,
+    ) -> List[str]:
+        """基于 char4 倒排索引做粗召回，仅返回候选 doc_id。"""
+        windows = self.retriever._build_primary_windows(primary_text, primary_excluded_ranges or [])
+        if not windows:
+            return []
+
+        doc_scores: Dict[str, float] = defaultdict(float)
+        doc_window_hits: Dict[str, set] = defaultdict(set)
+        unique_query_grams = set()
+        for window in windows:
+            unique_query_grams.update(window.get("char4", set()))
+
+        for gram in unique_query_grams:
+            postings = self._get_inverted_postings(gram)
+            if not postings or len(postings) > max_postings_per_gram:
+                continue
+            idf = 1.0 / max(len(postings), 1)
+            for doc_id in postings:
+                doc_scores[doc_id] += idf
+
+        if not doc_scores:
+            return []
+
+        # 用窗口覆盖进一步去掉只靠零散短片段撞上的文档
+        for window_index, window in enumerate(windows):
+            hit_docs = set()
+            for gram in window.get("char4", set()):
+                postings = self._get_inverted_postings(gram)
+                if not postings or len(postings) > max_postings_per_gram:
+                    continue
+                hit_docs.update(postings)
+            for doc_id in hit_docs:
+                doc_window_hits[doc_id].add(window_index)
+
+        ranked = []
+        for doc_id, score in doc_scores.items():
+            window_hits = len(doc_window_hits.get(doc_id, set()))
+            if window_hits < min_hits:
+                continue
+            ranked.append((doc_id, score, window_hits))
+
+        ranked.sort(key=lambda item: (-item[1], -item[2], item[0]))
+        return [doc_id for doc_id, _, _ in ranked[:top_k]]
+
+    def has_inverted_index(self) -> bool:
+        return any(self.inverted_dir.glob("*.json"))
+
+    def rebuild_inverted_index(self, progress_callback: Optional[Callable[[dict], None]] = None) -> None:
+        self._inverted_cache = {}
+        for path in self.inverted_dir.glob("*.json"):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+        grouped_doc_ids = defaultdict(list)
+        for doc_id, doc in self.index.documents.items():
+            grouped_doc_ids[doc.shard_id or self._shard_id_for_doc(doc_id)].append(doc_id)
+
+        total_docs = len(self.index.documents)
+        processed_docs = 0
+        started_at = time.time()
+        print(f"[Corpus] 倒排重建开始: {total_docs} 个文档, feature_shards={len(grouped_doc_ids)}")
+
+        for feature_shard_id, doc_ids in grouped_doc_ids.items():
+            shard_started_at = time.time()
+            print(
+                f"[Corpus] 倒排重建: 读取 feature shard {feature_shard_id}, "
+                f"docs={len(doc_ids)}, done={processed_docs}/{total_docs}"
+            )
+            shard_features = self._load_shard_features(feature_shard_id)
+            for doc_id in doc_ids:
+                features = shard_features.get(doc_id, {})
+                for gram in features.get("char4", []) or []:
+                    inv_shard_id = self._inverted_shard_id_for_gram(gram)
+                    inv_shard = self._load_inverted_shard(inv_shard_id)
+                    postings = inv_shard.setdefault(gram, [])
+                    if doc_id not in postings:
+                        postings.append(doc_id)
+                processed_docs += 1
+                if progress_callback and (
+                    processed_docs <= 1
+                    or processed_docs % 100 == 0
+                    or processed_docs >= total_docs
+                ):
+                    elapsed = time.time() - started_at
+                    avg_per_doc = elapsed / processed_docs if processed_docs else 0.0
+                    remaining = max(total_docs - processed_docs, 0)
+                    progress_callback(
+                        {
+                            "stage": "rebuild_inverted_index",
+                            "processed": processed_docs,
+                            "total": total_docs,
+                            "feature_shard_id": feature_shard_id,
+                            "elapsed_seconds": round(elapsed, 2),
+                            "eta_seconds": int(avg_per_doc * remaining) if avg_per_doc > 0 else 0,
+                            "stats": {
+                                "documents": total_docs,
+                                "inverted_shards_loaded": len(self._inverted_cache),
+                            },
+                        }
+                    )
+            print(
+                f"[Corpus] 倒排重建: 完成 feature shard {feature_shard_id}, "
+                f"耗时={time.time() - shard_started_at:.2f}s, "
+                f"累计={processed_docs}/{total_docs}"
+            )
+
+        print(f"[Corpus] 倒排重建: 开始写回 {len(self._inverted_cache)} 个倒排分片")
+        for shard_id in list(self._inverted_cache.keys()):
+            self._save_inverted_shard(shard_id)
+        elapsed_total = time.time() - started_at
+        print(
+            f"[Corpus] 倒排重建完成: docs={processed_docs}, "
+            f"inverted_shards={len(self._inverted_cache)}, 耗时={elapsed_total:.2f}s"
+        )
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "rebuild_inverted_index_done",
+                    "processed": processed_docs,
+                    "total": total_docs,
+                    "elapsed_seconds": round(elapsed_total, 2),
+                    "eta_seconds": 0,
+                    "stats": {
+                        "documents": total_docs,
+                        "inverted_shards_loaded": len(self._inverted_cache),
+                    },
+                }
+            )
 
     def _calculate_hash(self, file_path: Path) -> str:
         hasher = hashlib.md5()
@@ -402,6 +596,7 @@ class CorpusManager:
         if doc_id in shard_features:
             del shard_features[doc_id]
             self._save_shard_features(shard_id)
+        self._remove_doc_from_inverted(doc_id)
 
     def _iter_batches(self, items: List[Tuple[str, Path, int, float]], batch_size: int):
         iterator = iter(items)
@@ -419,3 +614,72 @@ class CorpusManager:
             f.flush()
             os.fsync(f.fileno())
         os.replace(temp_path, target_path)
+
+    def _get_doc_features(self, doc_id: str) -> Dict[str, List[str]]:
+        doc = self.index.documents.get(doc_id)
+        if not doc:
+            return {}
+        shard_features = self._load_shard_features(doc.shard_id or self._shard_id_for_doc(doc_id))
+        return shard_features.get(doc_id, {})
+
+    def _inverted_shard_id_for_gram(self, gram: str) -> str:
+        digest = hashlib.md5(gram.encode("utf-8")).hexdigest()
+        shard_num = int(digest[:4], 16) % self._inverted_shard_count
+        return f"{shard_num:02d}"
+
+    def _inverted_shard_path(self, shard_id: str) -> Path:
+        return self.inverted_dir / f"{shard_id}.json"
+
+    def _load_inverted_shard(self, shard_id: str) -> Dict[str, List[str]]:
+        if shard_id in self._inverted_cache:
+            return self._inverted_cache[shard_id]
+
+        shard_path = self._inverted_shard_path(shard_id)
+        if not shard_path.exists():
+            self._inverted_cache[shard_id] = {}
+            return self._inverted_cache[shard_id]
+
+        try:
+            with open(shard_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._inverted_cache[shard_id] = data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"[Corpus] 加载倒排分片失败 {shard_path}: {e}")
+            self._inverted_cache[shard_id] = {}
+        return self._inverted_cache[shard_id]
+
+    def _save_inverted_shard(self, shard_id: str) -> None:
+        self._write_json_atomic(self._inverted_shard_path(shard_id), self._inverted_cache.get(shard_id, {}))
+
+    def _get_inverted_postings(self, gram: str) -> List[str]:
+        shard_id = self._inverted_shard_id_for_gram(gram)
+        shard = self._load_inverted_shard(shard_id)
+        return shard.get(gram, [])
+
+    def _add_doc_to_inverted(self, doc_id: str, features: Dict[str, List[str]]) -> None:
+        dirty_shards = set()
+        for gram in features.get("char4", []) or []:
+            shard_id = self._inverted_shard_id_for_gram(gram)
+            shard = self._load_inverted_shard(shard_id)
+            postings = shard.setdefault(gram, [])
+            if doc_id not in postings:
+                postings.append(doc_id)
+                dirty_shards.add(shard_id)
+        for shard_id in dirty_shards:
+            self._save_inverted_shard(shard_id)
+
+    def _remove_doc_from_inverted(self, doc_id: str) -> None:
+        old_features = self._get_doc_features(doc_id)
+        dirty_shards = set()
+        for gram in old_features.get("char4", []) or []:
+            shard_id = self._inverted_shard_id_for_gram(gram)
+            shard = self._load_inverted_shard(shard_id)
+            postings = shard.get(gram)
+            if not postings or doc_id not in postings:
+                continue
+            shard[gram] = [item for item in postings if item != doc_id]
+            if not shard[gram]:
+                del shard[gram]
+            dirty_shards.add(shard_id)
+        for shard_id in dirty_shards:
+            self._save_inverted_shard(shard_id)

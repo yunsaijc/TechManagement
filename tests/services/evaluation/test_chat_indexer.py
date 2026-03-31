@@ -124,7 +124,6 @@ def test_chat_indexer_avoids_kpi_table_for_goal_query(indexer: ChatIndexer):
     assert hits
     assert hits[0]["section"] == "项目目的和意义"
     assert all(hit["section"] != "填报说明" for hit in hits[:2])
-    assert all(hit["section"] != "项目绩效评价考核目标及指标" for hit in hits[:2])
 
 
 def test_chat_indexer_prefers_schedule_section_for_progress_query(indexer: ChatIndexer):
@@ -163,6 +162,66 @@ def test_chat_indexer_prefers_schedule_section_for_progress_query(indexer: ChatI
 
     assert hits
     assert hits[0]["section"] == "进度安排"
+
+
+def test_chat_indexer_goal_query_filters_generic_research_noise(indexer: ChatIndexer):
+    """研究目标问题不应被泛化的“项目/研究”字样带偏到资源保障或合作噪声"""
+    payload = {
+        "evaluation_id": "EVAL_TEST",
+        "chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 7,
+                "section": "资源支撑",
+                "text": "合作单位拥有多个研究平台和实验设备，为项目研究和实施提供资源保障。",
+                "tokens": indexer._tokenize("合作单位 拥有 多个 研究平台 实验设备 为 项目研究 和 实施 提供 资源保障"),
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 9,
+                "section": "项目绩效评价考核目标及指标",
+                "text": "总体目标：形成示范应用方案，完成专利和论文指标。",
+                "tokens": indexer._tokenize("总体目标 形成示范应用方案 完成专利和论文指标"),
+            },
+        ],
+    }
+
+    hits = indexer.search(payload, "这个项目的研究目标是什么？", top_k=2)
+
+    assert hits
+    assert hits[0]["section"] == "项目绩效评价考核目标及指标"
+
+
+def test_chat_indexer_progress_query_avoids_cover_page(indexer: ChatIndexer):
+    """进展问题不应命中只有封面信息的基本信息页"""
+    payload = {
+        "evaluation_id": "EVAL_TEST",
+        "chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 1,
+                "section": "项目基本信息",
+                "text": "河北省创新能力提升计划项目申报书 项目名称 生殖健康科普示范基地标准化建设与创新模式探索",
+                "tokens": indexer._tokenize("河北省创新能力提升计划项目申报书 项目名称 生殖健康科普示范基地标准化建设与创新模式探索"),
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 10,
+                "section": "现有工作基础及合作分工",
+                "text": "基地现有科普团队和传播机制，已形成视频审核、活动实施和内容策划分工。",
+                "tokens": indexer._tokenize("基地现有科普团队和传播机制 已形成视频审核 活动实施 和 内容策划分工"),
+            },
+        ],
+    }
+
+    hits = indexer.search(payload, "这项工作目前进展到什么程度了？", top_k=2)
+
+    assert hits
+    assert hits[0]["page"] == 10
 
 
 def test_chat_indexer_build_splits_page_into_paragraph_chunks(indexer: ChatIndexer):

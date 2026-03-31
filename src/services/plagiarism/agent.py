@@ -204,7 +204,19 @@ class PlagiarismAgent:
         # 5.2 库查重召回 (可选)
         if use_corpus:
             t_corpus_start = time.time()
-            corpus_retrieval_docs = self.corpus_manager.get_retrieval_documents()
+            use_inverted_index = self.corpus_manager.has_inverted_index()
+            candidate_doc_ids_from_index = []
+            if use_inverted_index:
+                candidate_doc_ids_from_index = self.corpus_manager.retrieve_candidate_doc_ids(
+                    primary_text=primary_text,
+                    primary_excluded_ranges=excluded_ranges.get(primary_doc_id or "", []),
+                    top_k=max(self.source_retriever.top_k_docs * 12, 80),
+                )
+            corpus_retrieval_docs = (
+                self.corpus_manager.get_retrieval_documents(candidate_doc_ids_from_index)
+                if use_inverted_index
+                else self.corpus_manager.get_retrieval_documents()
+            )
             corpus_retrieval = self.source_retriever.search_in_corpus(
                 primary_doc=primary_doc_id or "",
                 primary_text=primary_text,
@@ -212,6 +224,8 @@ class PlagiarismAgent:
                 primary_excluded_ranges=excluded_ranges.get(primary_doc_id or "", []),
             )
             print(f"[Plagiarism] 库召回耗时: {time.time() - t_corpus_start:.2f}s")
+            if candidate_doc_ids_from_index:
+                print(f"[Plagiarism] 倒排粗召回候选: {len(candidate_doc_ids_from_index)} 个")
 
             # 打印召回详情
             if corpus_retrieval.candidates:

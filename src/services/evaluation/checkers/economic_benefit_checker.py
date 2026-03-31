@@ -29,8 +29,8 @@ class EconomicBenefitChecker(BaseChecker):
         "申报单位在该研究方向的前期任务承担情况、相关研究成果",
     ]
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "直接经济效益", "weight": 0.3, "description": "直接产生的经济效益"},
             {"name": "间接经济效益", "weight": 0.25, "description": "间接带来的经济效益"},
@@ -41,21 +41,37 @@ class EconomicBenefitChecker(BaseChecker):
     
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行经济效益检查"""
-        sections = self._extract_sections(content, self._required_sections)
-        project_profile = self.infer_project_profile(content)
+        sections = self._extract_sections(content, self.required_sections)
         
         if not sections:
-            if project_profile == self.PROJECT_PROFILE_TECHNICAL:
-                alternative_sections = self._extract_sections(content, self.ALTERNATIVE_SECTION_KEYS)
+            if self.profile_matches(
+                content,
+                self.PROJECT_PROFILE_TECH_RND,
+                self.PROJECT_PROFILE_PLATFORM,
+                self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+            ):
+                alternative_sections = self._extract_sections(
+                    content,
+                    self.get_alternative_sections(self.ALTERNATIVE_SECTION_KEYS),
+                )
                 if alternative_sections:
                     matched_names = list(alternative_sections.keys())
+                    opinion = "未设置独立经济效益章节，但项目简介、成果转化目标和应用示范内容已体现产业化与转化预期，可进行基础判断。"
+                    issue = "经济效益未单列，已按成果转化与应用示范相关内容替代评估"
+                    if self.profile_matches(
+                        content,
+                        self.PROJECT_PROFILE_PLATFORM,
+                        self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                    ):
+                        opinion = "该项目更偏平台建设或科普实施类，已基于推广前景、运营延展性和模式复制能力进行基础经济效益判断，不再强制要求独立经济效益章节。"
+                        issue = "未设置独立经济效益章节，已按推广前景与运营转化相关内容替代评估"
                     return CheckResult(
                         dimension=self.dimension,
                         dimension_name=self.dimension_name,
                         score=6.0,
                         confidence=0.45,
-                        opinion="未设置独立经济效益章节，但项目简介、成果转化目标和应用示范内容已体现产业化与转化预期，可进行基础判断。",
-                        issues=["经济效益未单列，已按成果转化与应用示范相关内容替代评估"],
+                        opinion=opinion,
+                        issues=[issue],
                         highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
                         items=[],
                     )

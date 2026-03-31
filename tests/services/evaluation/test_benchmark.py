@@ -110,7 +110,7 @@ async def test_evaluation_agent_benchmark_degrades_when_tool_unavailable(
     agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
     monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
 
-    async def fake_run_checks(sections, dimensions):
+    async def fake_run_checks(sections, dimensions, profile_result):
         return []
 
     monkeypatch.setattr(agent, "_run_checks", fake_run_checks)

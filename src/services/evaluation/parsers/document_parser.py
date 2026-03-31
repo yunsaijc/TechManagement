@@ -23,6 +23,24 @@ class DocumentParser:
         "其他",
     }
 
+    GENERIC_FRAGMENT_TITLES = {
+        "总体",
+        "目标",
+        "指标",
+        "指标名称",
+        "指标值",
+        "实施期目标",
+        "第一年度目标",
+        "第二年度目标",
+        "第三年度目标",
+        "第四年度目标",
+        "当前年度",
+        "附件目录",
+        "附件类型",
+        "附件名称",
+        "序号",
+    }
+
     SECTION_PATTERNS = [
         r"^第[一二三四五六七八九十]+部分",
         r"^[一二三四五六七八九十]+[、\.．\s]",
@@ -90,6 +108,8 @@ class DocumentParser:
         "进度安排": [
             r"^\d{4}\s*年\s*\d{1,2}\s*月\s*[-—~至]+\s*\d{4}\s*年\s*\d{1,2}\s*月$",
             r"^第[一二三四五六七八九十]+年(?:度)?$",
+            r"^[一二三四五六七八九十]+年(?:度)?(?:[（(]\d{4}年[）)])?$",
+            r"^第[一二三四五六七八九十]+年(?:度)?(?:[（(]\d{4}年[）)])?$",
             r"^阶段[一二三四五六七八九十\d]+$",
         ],
         "项目组织实施机制": [
@@ -99,6 +119,18 @@ class DocumentParser:
             r"^实施机制$",
         ],
     }
+    COVER_PAGE_MARKERS = (
+        "项目申报书",
+        "项目名称",
+        "申报单位",
+        "项目负责人",
+        "河北省科学技术厅制",
+    )
+    INSTRUCTION_PAGE_MARKERS = (
+        "填报说明",
+        "项目申报书分为",
+        "实事求是、准确完整",
+    )
 
     async def parse(self, file_path: str, source_name: str = "") -> Dict[str, Any]:
         """解析文档并输出统一结构
@@ -261,6 +293,12 @@ class DocumentParser:
             return False
         if len(normalized) <= 1:
             return False
+        if normalized in self.GENERIC_FRAGMENT_TITLES:
+            return False
+        if normalized in self.SECTION_ALIASES:
+            return True
+        if any(normalized == alias for aliases in self.SECTION_ALIASES.values() for alias in aliases):
+            return True
         if any(re.match(pattern, line) for pattern in self.TITLE_REJECT_PATTERNS):
             return False
         if any(re.match(pattern, normalized) for pattern in self.TITLE_REJECT_PATTERNS):
@@ -281,6 +319,10 @@ class DocumentParser:
     def _should_start_new_section(self, current_section: str, raw_title: str, normalized_title: str) -> bool:
         """判断当前标题是否应该真的切出新章节"""
         if normalized_title == "概述":
+            return False
+        if current_section == "附件":
+            return False
+        if normalized_title in self.GENERIC_FRAGMENT_TITLES:
             return False
         if self._is_budget_context(current_section) and self._is_budget_detail_title(raw_title, normalized_title):
             return False
@@ -339,7 +381,7 @@ class DocumentParser:
             return True
         if alias in name and len(name) <= len(alias) + 4:
             return True
-        return name in alias and len(alias) <= len(name) + 2
+        return len(name) >= 4 and alias.startswith(name) and len(alias) <= len(name) + 2
 
     def _is_container_child_section(self, current_section: str, raw_title: str, normalized_title: str) -> bool:
         """判断当前标题是否应归入上级章节正文"""
@@ -361,10 +403,15 @@ class DocumentParser:
         current_section = "概述"
 
         for page_num, page_text in enumerate(page_texts, start=1):
-            page_blocks, current_section = self._split_page_into_section_blocks(
-                page_text=page_text,
-                current_section=current_section,
-            )
+            override_section = self._detect_page_override_section(page_text)
+            if override_section:
+                page_blocks = [(override_section, self._clean_text(page_text))]
+                current_section = override_section
+            else:
+                page_blocks, current_section = self._split_page_into_section_blocks(
+                    page_text=page_text,
+                    current_section=current_section,
+                )
             if not page_blocks:
                 page_blocks = [(current_section, self._clean_text(page_text))]
 
@@ -390,6 +437,18 @@ class DocumentParser:
                     chunk_id += 1
 
         return chunks
+
+    def _detect_page_override_section(self, page_text: str) -> str:
+        """识别整页级结构性页面，避免误归入业务章节"""
+        normalized = self._clean_text(page_text)
+        if not normalized:
+            return ""
+
+        if self._looks_like_cover_page(normalized):
+            return "项目基本信息"
+        if self._looks_like_instruction_page(normalized):
+            return "填报说明"
+        return ""
 
     def _split_page_into_section_blocks(
         self,
@@ -427,6 +486,14 @@ class DocumentParser:
                 blocks.append((active_section, merged))
 
         return blocks, active_section
+
+    def _looks_like_cover_page(self, page_text: str) -> bool:
+        """判断是否为封面/基本信息页"""
+        return sum(1 for marker in self.COVER_PAGE_MARKERS if marker in page_text) >= 4
+
+    def _looks_like_instruction_page(self, page_text: str) -> bool:
+        """判断是否为填报说明页"""
+        return sum(1 for marker in self.INSTRUCTION_PAGE_MARKERS if marker in page_text) >= 2
 
     def _resolve_chunk_section(
         self,

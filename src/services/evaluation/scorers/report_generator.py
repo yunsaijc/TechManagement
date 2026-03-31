@@ -1,7 +1,7 @@
 """
 评审 HTML 报告生成器
 
-负责将 EvaluationResult 渲染为可直接查看的 HTML 调试报告。
+负责将 EvaluationResult 渲染为正式报告与调试报告。
 """
 from __future__ import annotations
 
@@ -49,15 +49,20 @@ class ReportGenerator:
         "意义",
     ]
 
-    def build_from_debug_file(self, debug_json_path: Path | str, output_html_path: Path | str) -> Path:
+    def build_from_debug_file(
+        self,
+        debug_json_path: Path | str,
+        output_html_path: Path | str,
+        debug_mode: bool = False,
+    ) -> Path:
         """根据 debug JSON 生成 HTML 报告"""
         debug_json = Path(debug_json_path)
         output_html = Path(output_html_path)
         data = json.loads(debug_json.read_text(encoding="utf-8"))
-        output_html.write_text(self.build_html(data), encoding="utf-8")
+        output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
         return output_html
 
-    def build_html(self, data: Dict[str, Any]) -> str:
+    def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
         result = data.get("result", {})
         highlights = result.get("highlights") or {}
@@ -68,12 +73,34 @@ class ReportGenerator:
         industry_fit = result.get("industry_fit")
         benchmark = result.get("benchmark")
         sections = data.get("sections") or {}
+        expert_qna = data.get("expert_qna") or []
         evidence_map = self._build_evidence_map(evidence)
 
         score = result.get("overall_score", 0)
         grade = result.get("grade", "-")
         title = result.get("project_name") or result.get("project_id") or "评审报告"
         score_class = self._score_class(score)
+        report_title = "项目智能评审报告" if not debug_mode else "项目评审调试报告"
+        report_eyebrow = "Expert Evaluation Report" if not debug_mode else "Evaluation Debug Report"
+        report_summary_title = "评审结论" if not debug_mode else "综合意见"
+        left_tail = ""
+        right_tail = ""
+
+        if debug_mode:
+            left_tail = f"""
+        <section class="panel">
+          <h2>解析章节预览</h2>
+          <div class="section-preview">
+            {self._render_sections(sections)}
+          </div>
+        </section>
+            """
+            right_tail = f"""
+        <section class="panel">
+          <h2>错误与调试信息</h2>
+          {self._render_errors(errors, data.get("meta") or {})}
+        </section>
+            """
 
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -318,6 +345,38 @@ class ReportGenerator:
       color: var(--muted);
       font-size: 14px;
     }}
+    .qa-list {{
+      display: grid;
+      gap: 14px;
+    }}
+    .qa-card {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      padding: 16px;
+    }}
+    .qa-question {{
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }}
+    .qa-answer {{
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }}
+    .citation-list {{
+      display: grid;
+      gap: 8px;
+    }}
+    .citation {{
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: #fff8ef;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
+    }}
     @media (max-width: 980px) {{
       .layout,
       .grid-3 {{
@@ -340,8 +399,8 @@ class ReportGenerator:
     <section class="hero">
       <div class="hero-top">
         <div>
-          <div class="eyebrow">Evaluation Debug Report</div>
-          <h1>{html.escape(str(title))}</h1>
+          <div class="eyebrow">{report_eyebrow}</div>
+          <h1>{report_title} | {html.escape(str(title))}</h1>
           <div class="meta">
             <div>项目ID：{html.escape(str(result.get("project_id") or "-"))}</div>
             <div>评审ID：{html.escape(str(result.get("evaluation_id") or "-"))}</div>
@@ -356,17 +415,20 @@ class ReportGenerator:
         </div>
       </div>
       <div class="flags">
-        <span class="flag">降级结果：{"是" if result.get("partial") else "否"}</span>
+        <span class="flag">综合等级：{html.escape(str(grade))}</span>
+        <span class="flag">结构化摘要：{"已生成" if highlights else "未生成"}</span>
+        <span class="flag">专家问答：{"已生成" if expert_qna else "未生成"}</span>
         <span class="flag">聊天索引：{"已构建" if result.get("chat_ready") else "未构建"}</span>
         <span class="flag">章节数：{len(sections)}</span>
         <span class="flag">证据数：{len(evidence)}</span>
+        {f'<span class="flag">降级结果：{"是" if result.get("partial") else "否"}</span>' if debug_mode else ''}
       </div>
     </section>
 
     <div class="layout">
       <div class="stack">
         <section class="panel">
-          <h2>综合意见</h2>
+          <h2>{report_summary_title}</h2>
           <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
           <div class="grid-3" style="margin-top: 16px;">
             <div class="mini-card">
@@ -374,8 +436,8 @@ class ReportGenerator:
               <div class="value">{len(recommendations)}</div>
             </div>
             <div class="mini-card">
-              <div class="label">错误条数</div>
-              <div class="value">{len(errors)}</div>
+              <div class="label">问答条数</div>
+              <div class="value">{len(expert_qna)}</div>
             </div>
             <div class="mini-card">
               <div class="label">模型版本</div>
@@ -396,12 +458,7 @@ class ReportGenerator:
           {self._render_evidence(evidence)}
         </section>
 
-        <section class="panel">
-          <h2>解析章节预览</h2>
-          <div class="section-preview">
-            {self._render_sections(sections)}
-          </div>
-        </section>
+        {left_tail}
       </div>
 
       <div class="stack">
@@ -412,6 +469,11 @@ class ReportGenerator:
             <tr><th>创新点</th><td>{self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}</td></tr>
             <tr><th>技术路线</th><td>{self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}</td></tr>
           </table>
+        </section>
+
+        <section class="panel">
+          <h2>专家关注问答</h2>
+          {self._render_expert_qna(expert_qna)}
         </section>
 
         <section class="panel">
@@ -429,10 +491,7 @@ class ReportGenerator:
           {self._render_benchmark(benchmark)}
         </section>
 
-        <section class="panel">
-          <h2>错误与调试信息</h2>
-          {self._render_errors(errors, data.get("meta") or {})}
-        </section>
+        {right_tail}
       </div>
     </div>
   </div>
@@ -452,7 +511,8 @@ class ReportGenerator:
                 f"<td>{html.escape(str(record.get('overall_score') or '-'))}</td>"
                 f"<td>{html.escape(str(record.get('grade') or '-'))}</td>"
                 f"<td>{'是' if record.get('partial') else '否'}</td>"
-                f"<td><a href=\"{html.escape(str(record.get('html_file') or '#'))}\">HTML</a> / "
+                f"<td><a href=\"{html.escape(str(record.get('html_file') or '#'))}\">正式报告</a> / "
+                f"<a href=\"{html.escape(str(record.get('debug_html_file') or '#'))}\">调试报告</a> / "
                 f"<a href=\"{html.escape(str(record.get('json_file') or '#'))}\">JSON</a></td>"
                 "</tr>"
             )
@@ -595,6 +655,33 @@ class ReportGenerator:
         return "<ol class=\"list\">" + "".join(
             f"<li>{html.escape(str(item))}</li>" for item in items
         ) + "</ol>"
+
+    def _render_expert_qna(self, expert_qna: List[Dict[str, Any]]) -> str:
+        """渲染专家典型问答"""
+        if not expert_qna:
+            return '<div class="empty">当前未生成专家典型问答</div>'
+
+        cards: List[str] = []
+        for item in expert_qna:
+            citations = item.get("citations") or []
+            citation_html = "".join(
+                (
+                    "<div class=\"citation\">"
+                    f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
+                    f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
+                    "</div>"
+                )
+                for citation in citations[:3]
+            ) or '<div class="empty">暂无可展示证据</div>'
+
+            cards.append(
+                "<div class=\"qa-card\">"
+                f"<div class=\"qa-question\">{html.escape(str(item.get('question') or '-'))}</div>"
+                f"<div class=\"qa-answer\">{html.escape(str(item.get('answer') or '暂无回答'))}</div>"
+                f"<div class=\"citation-list\">{citation_html}</div>"
+                "</div>"
+            )
+        return f"<div class=\"qa-list\">{''.join(cards)}</div>"
 
     def _build_evidence_map(self, evidence: List[Dict[str, Any]]) -> Dict[tuple[str, str], Dict[str, Any]]:
         """按摘要分类和条目构建证据映射"""
