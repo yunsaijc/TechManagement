@@ -204,10 +204,11 @@ class PlagiarismAgent:
         # 5.2 库查重召回 (可选)
         if use_corpus:
             t_corpus_start = time.time()
+            corpus_retrieval_docs = self.corpus_manager.get_retrieval_documents()
             corpus_retrieval = self.source_retriever.search_in_corpus(
                 primary_doc=primary_doc_id or "",
                 primary_text=primary_text,
-                corpus_documents=self.corpus_manager.index.documents,
+                corpus_documents=corpus_retrieval_docs,
                 primary_excluded_ranges=excluded_ranges.get(primary_doc_id or "", []),
             )
             print(f"[Plagiarism] 库召回耗时: {time.time() - t_corpus_start:.2f}s")

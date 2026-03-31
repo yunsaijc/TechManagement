@@ -1612,6 +1612,12 @@ class ComparisonEngine:
                 search_start, search_end = section_window
             else:
                 prev_match, next_match = self._neighbor_matches_for_span(ordered, block.start, block.end)
+                # 关键性能护栏：
+                # 如果当前块既没有命中邻居，也找不到同名 section 锚点，
+                # 再继续搜索会退化成对整个 source 文档做全局扫描。
+                # 这在低相似长文上会非常慢，而且命中质量很差。
+                if prev_match is None and next_match is None:
+                    continue
                 search_start, search_end = self._source_search_window(text_b, prev_match, next_match)
             if search_end - search_start < 80:
                 continue
