@@ -22,9 +22,18 @@ class OutcomeChecker(BaseChecker):
     
     dimension = EvaluationDimension.OUTCOME.value
     dimension_name = "预期成果"
+    ALTERNATIVE_SECTION_KEYS = [
+        "项目绩效评价考核目标及指标",
+        "主要指标、效益",
+        "建设目标",
+        "核心建设内容",
+        "科普基础设施建设",
+        "科普内容产出",
+        "科普活动开展",
+    ]
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "成果量化", "weight": 0.25, "description": "成果是否可量化考核"},
             {"name": "技术指标", "weight": 0.3, "description": "技术指标是否先进"},
@@ -35,9 +44,30 @@ class OutcomeChecker(BaseChecker):
     
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行预期成果检查"""
-        sections = self._extract_sections(content, self._required_sections)
+        sections = self._extract_sections(content, self.required_sections)
         
         if not sections:
+            if self.profile_matches(
+                content,
+                self.PROJECT_PROFILE_PLATFORM,
+                self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+            ):
+                alternative_sections = self._extract_sections(
+                    content,
+                    self.get_alternative_sections(self.ALTERNATIVE_SECTION_KEYS),
+                )
+                if alternative_sections:
+                    matched_names = list(alternative_sections.keys())
+                    return CheckResult(
+                        dimension=self.dimension,
+                        dimension_name=self.dimension_name,
+                        score=6.0,
+                        confidence=0.45,
+                        opinion="该项目更偏平台建设或科普实施类，已基于绩效指标、内容产出和建设目标进行基础成果判断，不再强制要求独立预期成果章节。",
+                        issues=["未设置独立预期成果章节，已按绩效指标与建设产出内容替代评估"],
+                        highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
+                        items=[],
+                    )
             return CheckResult(
                 dimension=self.dimension,
                 dimension_name=self.dimension_name,

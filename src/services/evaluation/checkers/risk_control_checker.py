@@ -31,8 +31,8 @@ class RiskControlChecker(BaseChecker):
         "项目绩效评价考核目标及指标",
     ]
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "风险识别", "weight": 0.35, "description": "风险识别是否全面"},
             {"name": "风险分析", "weight": 0.3, "description": "风险分析是否深入"},
@@ -42,12 +42,18 @@ class RiskControlChecker(BaseChecker):
     
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行风险控制检查"""
-        sections = self._extract_sections(content, self._required_sections)
-        project_profile = self.infer_project_profile(content)
+        sections = self._extract_sections(content, self.required_sections)
         
         if not sections:
-            if project_profile == self.PROJECT_PROFILE_PLATFORM:
-                alternative_sections = self._extract_sections(content, self.ALTERNATIVE_SECTION_KEYS)
+            if self.profile_matches(
+                content,
+                self.PROJECT_PROFILE_PLATFORM,
+                self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+            ):
+                alternative_sections = self._extract_sections(
+                    content,
+                    self.get_alternative_sections(self.ALTERNATIVE_SECTION_KEYS),
+                )
                 if alternative_sections:
                     matched_names = list(alternative_sections.keys())
                     return CheckResult(
@@ -55,7 +61,7 @@ class RiskControlChecker(BaseChecker):
                         dimension_name=self.dimension_name,
                         score=6.0,
                         confidence=0.45,
-                        opinion="该项目更偏平台/科普实施类，已基于组织保障、实施安排和资源配置进行基础风险判断，不再强制要求独立风险章节。",
+                        opinion="该项目更偏平台建设或科普实施类，已基于组织保障、实施安排和资源配置进行基础风险判断，不再强制要求独立风险章节。",
                         issues=["未设置独立风险章节，已按组织实施与保障内容替代评估"],
                         highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
                         items=[],

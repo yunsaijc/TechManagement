@@ -9,6 +9,12 @@ from typing import Any, Dict, List, Optional
 
 from src.common.models.evaluation import CheckResult, CheckItem, EvaluationDimension
 from src.common.llm import get_default_llm_client
+from src.services.evaluation.profile import (
+    PROFILE_GENERIC,
+    PROFILE_PLATFORM,
+    PROFILE_SCIENCE_POPULARIZATION,
+    PROFILE_TECH_RND,
+)
 
 
 class BaseChecker(ABC):
@@ -20,9 +26,15 @@ class BaseChecker(ABC):
     # 子类必须指定维度代码
     dimension: str = ""
     dimension_name: str = ""
-    PROJECT_PROFILE_TECHNICAL = "technical"
-    PROJECT_PROFILE_PLATFORM = "platform"
-    PROJECT_PROFILE_MEDICAL = "medical"
+    PROJECT_PROFILE_TECH_RND = PROFILE_TECH_RND
+    PROJECT_PROFILE_PLATFORM = PROFILE_PLATFORM
+    PROJECT_PROFILE_SCIENCE_POPULARIZATION = PROFILE_SCIENCE_POPULARIZATION
+    PROJECT_PROFILE_GENERIC = PROFILE_GENERIC
+    MAX_PROMPT_SECTIONS = 4
+    MAX_PROMPT_SECTION_CHARS = 1800
+    MAX_PROMPT_TOTAL_CHARS = 6000
+    TABLE_LINE_PATTERN = re.compile(r"^\s*(?:\[表格行\d+\]|[|｜]|第?\d+[行列项])")
+    EXCESSIVE_SEPARATOR_PATTERN = re.compile(r"[|｜]\s*")
     SECTION_ALIASES: Dict[str, List[str]] = {
         "预期效益": [
             "预期效益",
@@ -154,7 +166,12 @@ class BaseChecker(ABC):
         ],
     }
     
-    def __init__(self, llm: Optional[Any] = None):
+    def __init__(
+        self,
+        llm: Optional[Any] = None,
+        project_profile: str = PROFILE_GENERIC,
+        dimension_overrides: Optional[Dict[str, Any]] = None,
+    ):
         """初始化检查器
         
         Args:
@@ -163,6 +180,8 @@ class BaseChecker(ABC):
         self.llm = llm or get_default_llm_client()
         self._check_items: List[Dict[str, str]] = []
         self._required_sections: List[str] = []
+        self.project_profile = project_profile
+        self.dimension_overrides = dimension_overrides or {}
     
     @property
     def check_items(self) -> List[Dict[str, str]]:
@@ -172,7 +191,15 @@ class BaseChecker(ABC):
     @property
     def required_sections(self) -> List[str]:
         """获取依赖的文档章节"""
+        override_sections = self.dimension_overrides.get("required_sections")
+        if override_sections:
+            return override_sections
         return self._required_sections
+
+    @property
+    def alternative_sections(self) -> List[str]:
+        """获取替代章节列表"""
+        return list(self.dimension_overrides.get("alternative_sections", []))
     
     @abstractmethod
     async def check(self, content: Dict[str, Any]) -> CheckResult:
@@ -283,11 +310,55 @@ class BaseChecker(ABC):
             str: 格式化后的文本
         """
         lines = []
-        for section, text in content.items():
+        total_chars = 0
+        selected_items = list(content.items())[: self.MAX_PROMPT_SECTIONS]
+
+        for section, text in selected_items:
+            normalized_text = self._normalize_text_for_prompt(str(text))
+            truncated_text = self._truncate_text_for_prompt(normalized_text, self.MAX_PROMPT_SECTION_CHARS)
+            if total_chars >= self.MAX_PROMPT_TOTAL_CHARS:
+                break
+
+            remaining = self.MAX_PROMPT_TOTAL_CHARS - total_chars
+            if len(truncated_text) > remaining:
+                truncated_text = self._truncate_text_for_prompt(truncated_text, remaining)
+
             lines.append(f"## {section}")
-            lines.append(str(text))
+            lines.append(truncated_text)
             lines.append("")
+            total_chars += len(truncated_text)
         return "\n".join(lines)
+
+    def _normalize_text_for_prompt(self, text: str) -> str:
+        """清理提示词中的长表格、空白和明显噪声"""
+        normalized_lines: List[str] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if self.TABLE_LINE_PATTERN.match(line):
+                continue
+            if self.EXCESSIVE_SEPARATOR_PATTERN.search(line) and len(line) > 80:
+                continue
+            normalized_lines.append(line)
+
+        normalized = "\n".join(normalized_lines)
+        normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+        return normalized.strip()
+
+    def _truncate_text_for_prompt(self, text: str, limit: int) -> str:
+        """截断长文本，保留头尾信息，降低超时概率"""
+        if limit <= 0:
+            return ""
+        if len(text) <= limit:
+            return text
+        if limit <= 120:
+            return text[:limit]
+
+        head = int(limit * 0.7)
+        tail = max(0, limit - head - 12)
+        suffix = text[-tail:] if tail else ""
+        return f"{text[:head]}\n[内容已截断]\n{suffix}".strip()
     
     def _calculate_weighted_score(self, items: List[CheckItem]) -> float:
         """计算加权得分
@@ -323,33 +394,41 @@ class BaseChecker(ABC):
         return round(sum(item.weight for item in items) / len(items), 2)
 
     def infer_project_profile(self, content: Dict[str, Any]) -> str:
-        """识别项目类型，用于按不同评审口径降级判断"""
-        merged = "\n".join(f"{key}\n{value}" for key, value in content.items())
-        platform_hits = sum(
-            1
-            for keyword in ("科普", "宣教", "义诊", "活动", "资源库", "直播", "展览", "公众号", "视频号")
-            if keyword in merged
-        )
-        medical_hits = sum(
-            1
-            for keyword in ("骨科", "诊疗", "临床", "患者", "手术", "医学影像", "医院")
-            if keyword in merged
-        )
-        technical_hits = sum(
-            1
-            for keyword in ("技术路线", "算法", "模型", "传感器", "高光谱", "机器人", "影像", "系统研发", "应用示范")
-            if keyword in merged
-        )
+        """向后兼容：优先使用 agent 注入画像，否则回退为通用口径"""
+        return self.get_project_profile(content)
 
-        if platform_hits >= 4 and technical_hits <= 3:
-            return self.PROJECT_PROFILE_PLATFORM
-        if medical_hits >= 4:
-            return self.PROJECT_PROFILE_MEDICAL
-        return self.PROJECT_PROFILE_TECHNICAL
+    def get_project_profile(self, content: Dict[str, Any]) -> str:
+        """获取当前检查执行使用的项目画像"""
+        explicit_profile = content.get("_project_profile")
+        if isinstance(explicit_profile, str) and explicit_profile:
+            return explicit_profile
+        return self.project_profile or self.PROJECT_PROFILE_GENERIC
+
+    def profile_matches(self, content: Dict[str, Any], *profiles: str) -> bool:
+        """判断当前画像是否命中指定类型"""
+        return self.get_project_profile(content) in profiles
+
+    def get_alternative_sections(self, *section_groups: List[str]) -> List[str]:
+        """合并检查器自身与画像覆盖的替代章节"""
+        merged: List[str] = []
+        seen: set[str] = set()
+
+        for section_name in self.alternative_sections:
+            if section_name not in seen:
+                merged.append(section_name)
+                seen.add(section_name)
+
+        for group in section_groups:
+            for section_name in group:
+                if section_name not in seen:
+                    merged.append(section_name)
+                    seen.add(section_name)
+
+        return merged
 
     def build_degraded_result(self, content: Dict[str, Any], reason: str = "") -> CheckResult:
         """在模型不可用时，基于章节命中结果返回规则降级结果"""
-        sections = self._extract_sections(content, self._required_sections)
+        sections = self._extract_sections(content, self.required_sections)
         if not sections:
             missing_issue = self._build_missing_sections_issue()
             return CheckResult(
@@ -388,9 +467,10 @@ class BaseChecker(ABC):
 
     def _build_missing_sections_issue(self) -> str:
         """生成缺失章节提示"""
-        if not self._required_sections:
+        required_sections = self.required_sections
+        if not required_sections:
             return "缺少相关章节"
-        if len(self._required_sections) == 1:
-            return f"缺少{self._required_sections[0]}章节"
-        primary = self._required_sections[:2]
+        if len(required_sections) == 1:
+            return f"缺少{required_sections[0]}章节"
+        primary = required_sections[:2]
         return f"缺少{'或'.join(primary)}章节"

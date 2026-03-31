@@ -45,6 +45,24 @@
 | 管理 | 进度合理性 | `schedule` | 10% | 1-10 | 进度安排章节 |
 | 管理 | 合规性 | `compliance` | 10% | 1-10 | 全文 |
 
+## 画像自适应原则
+
+九维框架固定，但不同类型项目的“缺失项”容忍度不同。当前按 `project_profile` 做最小自适应：
+
+| 项目画像 | 典型特征 | 当前放宽维度 | 放宽规则 |
+|----------|----------|--------------|----------|
+| `tech_rnd` | 技术研发、算法、模型、关键机理 | 暂无额外放宽 | 仍按标准研发口径评审 |
+| `platform` | 平台建设、资源平台、数据库、公共服务 | `feasibility / schedule / risk_control / outcome / social_benefit / economic_benefit` | 可接受“建设目标/实施内容/核心建设内容/主要指标、效益”等替代章节 |
+| `science_popularization` | 科普、宣教、活动、资源库、传播 | `feasibility / schedule / risk_control / outcome / social_benefit / economic_benefit` | 不强制要求独立“技术路线/进度安排/风险分析/社会效益/经济效益”章节，可按实施与推广类章节评估 |
+| `demonstration` | 示范应用、推广、产业化、中试 | 预留 | 当前仅做画像识别，后续扩展专门口径 |
+| `generic` | 证据不足 | 无 | 回退到默认通用口径 |
+
+说明：
+
+- 画像识别只基于正文规则，不依赖 LLM
+- 若画像证据不足，默认按 `generic` 处理，避免误判
+- 自适应的目标是“避免机械扣分”，不是“自动抬分”
+
 ---
 
 ## 核心维度

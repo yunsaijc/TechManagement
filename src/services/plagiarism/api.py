@@ -1,5 +1,12 @@
 """查重服务 API 路由"""
 import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -11,6 +18,39 @@ from src.services.plagiarism.config import get_section_config, get_all_doc_types
 from src.services.plagiarism.section_extractor import SectionExtractor
 
 router = APIRouter()
+_CORPUS_REFRESH_STATUS_PATH = Path("data/plagiarism/corpus_refresh_status.json")
+
+
+def _read_corpus_refresh_status() -> dict:
+    if not _CORPUS_REFRESH_STATUS_PATH.exists():
+        return {
+            "running": False,
+            "task_id": None,
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+            "params": None,
+            "progress": None,
+            "result": None,
+            "pid": None,
+        }
+
+    try:
+        with open(_CORPUS_REFRESH_STATUS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {"running": False}
+    except Exception as exc:
+        return {"running": False, "error": f"状态文件读取失败: {exc}"}
+
+    pid = data.get("pid")
+    if data.get("running") and pid:
+        try:
+            os.kill(int(pid), 0)
+        except OSError:
+            data["running"] = False
+            data.setdefault("error", "refresh 进程已退出")
+    return data
 
 
 class PlagiarismRequest(BaseModel):
@@ -166,15 +206,130 @@ async def get_corpus_status() -> ApiResponse[dict]:
     )
 
 
-@router.post("/corpus/refresh")
-async def refresh_corpus() -> ApiResponse[dict]:
-    """刷新库索引（触发远程挂载目录扫描）"""
-    from src.services.plagiarism.corpus import CorpusManager
-    manager = CorpusManager()
-    stats = await manager.scan_and_update()
+@router.get("/corpus/refresh/status")
+async def get_corpus_refresh_status() -> ApiResponse[dict]:
     return ApiResponse(
         status="success",
-        data=stats,
+        data=_read_corpus_refresh_status(),
+    )
+
+
+@router.post("/corpus/refresh")
+async def refresh_corpus(
+    limit: Optional[int] = Form(None),
+    batch_size: int = Form(100),
+    max_concurrency: int = Form(2),
+    save_every_batches: int = Form(5),
+    wait: bool = Form(False),
+) -> ApiResponse[dict]:
+    """刷新库索引（触发远程挂载目录扫描）"""
+    from src.services.plagiarism.corpus import CorpusManager
+
+    current_status = _read_corpus_refresh_status()
+    if current_status.get("running"):
+        return ApiResponse(
+            status="success",
+            data={
+                "accepted": False,
+                "message": "refresh 任务已在运行",
+                "task": current_status,
+            },
+        )
+
+    params = {
+        "limit": limit,
+        "batch_size": batch_size,
+        "max_concurrency": max_concurrency,
+        "save_every_batches": save_every_batches,
+        "wait": wait,
+    }
+
+    task_id = uuid.uuid4().hex
+
+    if wait:
+        manager = CorpusManager()
+        stats = await manager.scan_and_update_with_options(
+            limit=limit,
+            batch_size=batch_size,
+            max_concurrency=max_concurrency,
+            save_every_batches=save_every_batches,
+        )
+        return ApiResponse(
+            status="success",
+            data={
+                "accepted": True,
+                "task": {
+                    "running": False,
+                    "task_id": task_id,
+                    "params": params,
+                },
+                "result": stats,
+            },
+        )
+
+    _CORPUS_REFRESH_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_CORPUS_REFRESH_STATUS_PATH, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "running": True,
+                "task_id": task_id,
+                "started_at": time.time(),
+                "finished_at": None,
+                "error": None,
+                "params": params,
+                "progress": None,
+                "result": None,
+                "pid": None,
+            },
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    cmd = []
+    if shutil.which("ionice"):
+        cmd.extend(["ionice", "-c3"])
+    if shutil.which("nice"):
+        cmd.extend(["nice", "-n", "19"])
+    cmd.extend(
+        [
+            sys.executable,
+            "-m",
+            "src.services.plagiarism.corpus_refresh_runner",
+            "--status-path",
+            str(_CORPUS_REFRESH_STATUS_PATH),
+            "--task-id",
+            task_id,
+            "--batch-size",
+            str(batch_size),
+            "--max-concurrency",
+            str(max_concurrency),
+            "--save-every-batches",
+            str(save_every_batches),
+        ]
+    )
+    if limit is not None:
+        cmd.extend(["--limit", str(limit)])
+
+    subprocess.Popen(
+        cmd,
+        cwd=str(Path.cwd()),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    return ApiResponse(
+        status="success",
+        data={
+            "accepted": True,
+            "message": "refresh 已在后台启动",
+            "task": {
+                "task_id": task_id,
+                "running": True,
+                "params": params,
+            },
+        },
     )
 
 
