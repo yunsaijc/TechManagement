@@ -15,6 +15,13 @@ class ChatIndexer:
         "填报说明",
     )
     INTENT_SECTION_AVOID = {
+        "创新点": (
+            "填报说明",
+            "项目组主要成员",
+            "项目组织实施机制",
+            "项目绩效评价考核目标及指标",
+        ),
+        "预期成果": ("填报说明", "项目组主要成员"),
         "研究目标": (
             "填报说明",
             "项目组织实施机制",
@@ -40,19 +47,26 @@ class ChatIndexer:
             "合作单位的选择原因及其优势",
             "项目简介",
             "项目目的和意义",
+            "直接费用",
+            "间接费用",
+            "自筹资金",
         ),
         "预期效益": ("填报说明", "项目组主要成员"),
         "验证数据": ("填报说明", "项目组主要成员"),
         "量产可能性": ("填报说明", "项目组主要成员"),
     }
     INTENT_SECTION_HINTS = {
+        "创新点": ("创新点", "创新亮点", "技术创新", "模式创新", "传播创新", "内容创新"),
+        "预期成果": ("预期成果", "主要指标、效益", "项目效益", "科普内容产出", "科普活动开展", "合作网络构建"),
         "研究目标": ("研究目标", "项目目标", "总体目标", "建设目标", "项目目的和意义", "项目简介"),
         "预期效益": ("预期效益", "项目效益", "社会效益", "经济效益", "普及前景", "项目简介", "合作网络构建"),
         "验证数据": ("技术路线", "研究方法", "可行性", "预期成果", "绩效评价考核目标及指标", "项目绩效评价考核目标及指标"),
-        "进展程度": ("进度安排", "实施计划", "工作计划", "研究计划"),
+        "进展程度": ("进度安排", "实施计划", "工作计划", "研究计划", "现有工作基础", "前期任务承担情况"),
         "量产可能性": ("经济效益", "项目效益", "成果转化", "应用示范", "产业化", "项目简介", "普及前景"),
     }
     INTENT_SECTION_STRONG_ALLOW = {
+        "创新点": ("创新点", "创新亮点", "技术创新", "模式创新", "传播创新", "内容创新"),
+        "预期成果": ("预期成果", "主要指标、效益", "项目效益", "科普内容产出", "科普活动开展"),
         "研究目标": (
             "项目简介",
             "项目目的和意义",
@@ -66,14 +80,34 @@ class ChatIndexer:
             "实施计划",
             "工作计划",
             "研究计划",
+            "现有工作基础",
+            "前期任务承担情况",
         ),
     }
     INTENT_QUERY_HINTS = {
-        "研究目标": ("研究目标", "项目目标", "总体目标", "建设目标", "目的"),
+        "创新点": ("创新点", "创新", "创新亮点", "技术创新", "模式创新", "特色"),
+        "预期成果": ("预期成果", "成果", "指标", "产出", "目标", "效益"),
+        "研究目标": ("研究目标", "项目目标", "总体目标", "建设目标", "研究目的", "目的："),
         "预期效益": ("预期效益", "项目效益", "社会效益", "经济效益", "效益"),
         "验证数据": ("验证", "数据", "试验", "测试", "指标", "考核"),
         "进展程度": ("进展", "阶段", "计划", "进度", "实施"),
         "量产可能性": ("量产", "产业化", "推广", "应用", "转化", "示范"),
+    }
+    GENERIC_QUERY_STOPWORDS = {
+        "这个项目的研究目标是什么？",
+        "这个项目的研究目标是什么",
+        "这项工作目前进展到什么程度了？",
+        "这项工作目前进展到什么程度了",
+        "这个项目",
+        "这项工作",
+        "项目",
+        "工作",
+        "研究",
+        "什么",
+        "目前",
+        "程度",
+        "这个",
+        "这项",
     }
     CHUNK_MAX_CHARS = 220
 
@@ -130,6 +164,8 @@ class ChatIndexer:
                 overlap = sum(1 for keyword in keywords if keyword in text)
             if overlap <= 0:
                 overlap = sum(1 for keyword in keywords if keyword in section)
+            if overlap <= 0 and intent and self._has_direct_intent_evidence(intent, section, text):
+                overlap = 1
             if overlap <= 0:
                 continue
 
@@ -149,6 +185,10 @@ class ChatIndexer:
                 score -= 3.5
             if intent and any(hint in text for hint in self.INTENT_QUERY_HINTS.get(intent, ())):
                 score += 1.5
+            if intent and self._has_direct_intent_evidence(intent, section, text):
+                score += 3.0
+            if intent and not self._has_direct_intent_evidence(intent, section, text):
+                score -= 4.0
             if section and section in query:
                 score += 2.0
             if intent == "研究目标" and self._looks_like_kpi_table(text):
@@ -166,6 +206,10 @@ class ChatIndexer:
 
     def _detect_intent(self, query: str) -> str:
         """识别问题意图"""
+        if any(token in query for token in ("创新点", "创新亮点", "技术创新", "模式创新", "创新性")):
+            return "创新点"
+        if any(token in query for token in ("预期成果", "成果产出", "成果和效益")):
+            return "预期成果"
         if any(token in query for token in ("研究目标", "项目目标", "总体目标", "建设目标", "目的")):
             return "研究目标"
         if any(token in query for token in ("预期效益", "效益", "收益", "价值")):
@@ -180,7 +224,7 @@ class ChatIndexer:
 
     def _expand_query_keywords(self, query: str, intent: str) -> List[str]:
         """扩展问题关键词，改善召回"""
-        keywords = self._tokenize(query)
+        keywords = [token for token in self._tokenize(query) if token not in self.GENERIC_QUERY_STOPWORDS]
         for hint in self.INTENT_QUERY_HINTS.get(intent, ()):
             if hint not in keywords:
                 keywords.append(hint)
@@ -214,6 +258,35 @@ class ChatIndexer:
         """识别年度目标表格，避免进展问答被目标表格冒充真实进展"""
         markers = ("[表格行", "实施期目标", "第一年度目标", "第二年度目标", "第三年度目标", "第四年度目标")
         return sum(1 for marker in markers if marker in text) >= 2
+
+    def _has_direct_intent_evidence(self, intent: str, section: str, text: str) -> bool:
+        """判断切片是否具备当前意图的直接证据"""
+        if intent == "创新点":
+            if any(marker in section for marker in ("创新点", "创新亮点", "技术创新", "模式创新", "传播创新", "内容创新")):
+                return True
+            return bool(re.search(r"(创新点|创新亮点|技术创新|模式创新|传播创新|内容创新)", text))
+
+        if intent == "预期成果":
+            if any(marker in section for marker in ("预期成果", "主要指标、效益", "项目效益", "科普内容产出", "科普活动开展")):
+                return True
+            return bool(re.search(r"(预期成果|项目效益|社会效益|经济效益|主要指标|原创.*作品|覆盖.*人次)", text))
+
+        if intent == "研究目标":
+            if any(marker in section for marker in ("研究目标", "项目目标", "总体目标", "建设目标", "项目目的和意义")):
+                return True
+            return bool(re.search(r"(研究目标|项目目标|总体\s*目标|建设目标|(?:^|\n)研究目的[：:]?|目的：)", text))
+
+        if intent == "进展程度":
+            if self._section_matches_intent(section, intent):
+                return True
+            return bool(
+                re.search(
+                    r"((20\d{2}\s*年|第[一二三四五六七八九十]+年|阶段[一二三四五六七八九十\d]+).{0,24}(完成|开展|推进|测试|试点|形成|优化|建设))|(进度|节点|目前|现有|前期|已完成|累计)",
+                    text,
+                )
+            )
+
+        return True
 
     def _split_chunk(self, text: str, section: str) -> List[Dict[str, str]]:
         """将整页文本切成更细粒度的段落级索引块"""

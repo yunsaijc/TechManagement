@@ -1,13 +1,20 @@
-"""统一提取器（Layer 4）
+"""统一提取器入口。
 
-职责：统一提取器，能提取到则返回内容，提取不到返回 null
+避免在包初始化阶段强制加载 PIL / OCR 等重依赖。
 """
-from .field import FieldExtractor
-from .signature import SignatureExtractor
-from .stamp import StampExtractor
 
-__all__ = [
-    "FieldExtractor",
-    "SignatureExtractor", 
-    "StampExtractor",
-]
+__all__ = ["FieldExtractor", "SignatureExtractor", "StampExtractor"]
+
+
+def __getattr__(name: str):
+    """按需加载具体提取器，兼容既有导入方式。"""
+    if name == "FieldExtractor":
+        from .field import FieldExtractor
+        return FieldExtractor
+    if name == "SignatureExtractor":
+        from .signature import SignatureExtractor
+        return SignatureExtractor
+    if name == "StampExtractor":
+        from .stamp import StampExtractor
+        return StampExtractor
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

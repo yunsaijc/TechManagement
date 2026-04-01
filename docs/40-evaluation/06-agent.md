@@ -8,23 +8,25 @@
 
 1. 输入归一化：解析 `project_id` / 上传文件、维度、权重、功能开关  
 2. 文档准备：调用解析器完成章节提取与页码索引准备  
-3. 并发调度：并行执行九维检查、划重点、指南贴合、技术摸底  
-4. 结果合并：统一评分、总结、证据去重、异常归并  
-5. 持久化：写入评审结果与证据链
+3. 项目画像识别：在九维检查前推断 `project_profile` 与维度覆盖规则  
+4. 并发调度：并行执行九维检查、划重点、指南贴合、技术摸底  
+5. 结果合并：统一评分、总结、证据去重、异常归并  
+6. 持久化：写入评审结果与证据链
 
 ## 编排流程
 
 ```
 Step 1 读取项目与文档
 Step 2 解析正文并建立页码索引
-Step 3 并行执行
+Step 3 推断 project_profile（规则式）
+Step 4 并行执行
   - 9D Checkers
   - Highlight Extractor
   - Industry Fit Analyzer
   - Benchmark Analyzer
   - Chat Index Builder（按开关启用）
-Step 4 汇总评分与建议
-Step 5 写入 storage 并返回结果
+Step 5 汇总评分与建议
+Step 6 写入 storage 并返回结果
 ```
 
 ## 并发策略
@@ -44,6 +46,22 @@ Step 5 写入 storage 并返回结果
 - `tech_search`：文献/专利检索
 
 Agent 只接收结构化检索结果并完成分析与合并。
+
+## 项目画像自适应
+
+`EvaluationAgent` 在运行九维检查前，会调用 `ProjectProfiler` 做一次规则式画像识别，输出：
+
+- `project_profile`
+- `confidence`
+- `evidence`
+- `dimension_overrides`
+
+当前设计约束：
+
+- 画像推断只使用正文章节和关键词规则
+- 画像是单次评审上下文，不做全局缓存
+- checker 必须按本次画像实例化，不能复用带状态的共享实例
+- 画像覆盖仅用于放宽章节口径，不改变维度权重与评分区间
 
 ## 与聊天能力的关系
 
@@ -122,6 +140,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 ## 代码锚点
 
 - 编排入口：`src/services/evaluation/agent.py`
+- 项目画像：`src/services/evaluation/profile/`
 - 维度检查：`src/services/evaluation/checkers/`
 - 解析能力：`src/services/evaluation/parsers/`
 - 存储：`src/services/evaluation/storage/`

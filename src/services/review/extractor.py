@@ -22,7 +22,7 @@ os.environ.setdefault("FLAGS_enable_pir_api", "0")
 from paddleocr import PaddleOCR
 from PIL import Image
 
-from src.common.vision import MultimodalLLM
+from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
 

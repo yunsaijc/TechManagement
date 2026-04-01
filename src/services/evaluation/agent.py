@@ -38,6 +38,7 @@ from .config import EvaluationConfig, evaluation_config
 from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
+from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler
 from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
 from .tools import ToolGateway, ToolUnavailableError
@@ -45,6 +46,15 @@ from .tools import ToolGateway, ToolUnavailableError
 
 class EvaluationAgent:
     """正文评审编排器"""
+
+    EXPERT_QA_QUESTIONS = [
+        "这个项目的研究目标是什么？",
+        "这个项目的创新点是什么？",
+        "申报书里有验证数据吗？",
+        "这项工作目前进展到什么程度了？",
+        "这项技术有可能落地或量产吗？",
+        "这个项目的预期成果和效益是什么？",
+    ]
 
     DIMENSION_CHECKERS = {
         "feasibility": FeasibilityChecker,
@@ -74,22 +84,30 @@ class EvaluationAgent:
         self.benchmark_analyzer = BenchmarkAnalyzer(BenchmarkRetriever(self.tool_gateway))
         self.chat_indexer = ChatIndexer()
         self.qa_agent = EvaluationQAAgent(llm=self.llm, indexer=self.chat_indexer)
-
-        self._checkers: Dict[str, BaseChecker] = {}
+        self.project_profiler = ProjectProfiler()
         self._task_semaphore = asyncio.Semaphore(max(1, self.config.concurrency))
 
-    def get_checker(self, dimension: str) -> Optional[BaseChecker]:
+    def get_checker(
+        self,
+        dimension: str,
+        profile_result: Optional[ProjectProfileResult] = None,
+    ) -> Optional[BaseChecker]:
         """获取指定维度检查器"""
-        if dimension in self._checkers:
-            return self._checkers[dimension]
-
         checker_class = self.DIMENSION_CHECKERS.get(dimension)
         if not checker_class:
             return None
 
-        checker = checker_class(llm=self.llm)
-        self._checkers[dimension] = checker
-        return checker
+        overrides = {}
+        project_profile = PROFILE_GENERIC
+        if profile_result:
+            project_profile = profile_result.project_profile
+            overrides = profile_result.dimension_overrides.get(dimension, {})
+
+        return checker_class(
+            llm=self.llm,
+            project_profile=project_profile,
+            dimension_overrides=overrides,
+        )
 
     async def evaluate(
         self,
@@ -107,6 +125,9 @@ class EvaluationAgent:
         if request.include_sections:
             sections = self._filter_sections(sections, request.include_sections)
 
+        profile_result = self.project_profiler.infer(sections)
+        meta["project_profile"] = profile_result.as_dict()
+
         dimensions = request.get_dimensions()
         weights = request.weights or self.config.default_weights
         valid, message, normalized_weights = self.config.validate_weights(weights)
@@ -121,6 +142,7 @@ class EvaluationAgent:
             meta=meta,
             dimensions=dimensions,
             evaluation_id=evaluation_id,
+            profile_result=profile_result,
         )
 
         check_results = module_outputs.get("checks", [])
@@ -146,11 +168,12 @@ class EvaluationAgent:
         result.chat_ready = bool(module_outputs.get("chat_ready", False))
 
         await self.storage.save(result)
-        self._save_debug_artifacts(
+        await self._save_debug_artifacts(
             result=result,
             sections=sections,
             meta=meta,
             source_name=source_name,
+            page_chunks=page_chunks,
         )
         return result
 
@@ -222,6 +245,7 @@ class EvaluationAgent:
         meta: Dict[str, Any],
         dimensions: List[str],
         evaluation_id: str,
+        profile_result: ProjectProfileResult,
     ) -> tuple[Dict[str, Any], List[EvaluationError], bool]:
         """并发执行评审与增强模块"""
         outputs: Dict[str, Any] = {}
@@ -229,7 +253,7 @@ class EvaluationAgent:
         partial = False
 
         module_tasks: Dict[str, asyncio.Task] = {
-            "checks": asyncio.create_task(self._run_task(self._run_checks(sections, dimensions))),
+            "checks": asyncio.create_task(self._run_task(self._run_checks(sections, dimensions, profile_result))),
         }
 
         if request.enable_highlight:
@@ -302,13 +326,20 @@ class EvaluationAgent:
         async with self._task_semaphore:
             return await asyncio.wait_for(coro, timeout=self.config.timeout)
 
-    async def _run_checks(self, sections: Dict[str, str], dimensions: List[str]) -> List[CheckResult]:
+    async def _run_checks(
+        self,
+        sections: Dict[str, str],
+        dimensions: List[str],
+        profile_result: ProjectProfileResult,
+    ) -> List[CheckResult]:
         """并行执行维度检查"""
         task_specs: List[tuple[str, asyncio.Task]] = []
         results: List[CheckResult] = []
+        checker_content = dict(sections)
+        checker_content["_project_profile"] = profile_result.project_profile
 
         for dimension in dimensions:
-            checker = self.get_checker(dimension)
+            checker = self.get_checker(dimension, profile_result)
             if not checker:
                 results.append(
                     CheckResult(
@@ -322,15 +353,15 @@ class EvaluationAgent:
                     )
                 )
                 continue
-            task_specs.append((dimension, asyncio.create_task(self._safe_check(checker, sections))))
+            task_specs.append((dimension, asyncio.create_task(self._safe_check(checker, checker_content))))
 
         if task_specs:
             raw = await asyncio.gather(*[task for _, task in task_specs], return_exceptions=True)
             for (dimension, _), item in zip(task_specs, raw):
                 if isinstance(item, Exception):
-                    checker = self.get_checker(dimension)
+                    checker = self.get_checker(dimension, profile_result)
                     if checker:
-                        results.append(checker.build_degraded_result(sections, str(item)))
+                        results.append(checker.build_degraded_result(checker_content, str(item)))
                     else:
                         results.append(
                             CheckResult(
@@ -455,12 +486,13 @@ class EvaluationAgent:
 
         return merged
 
-    def _save_debug_artifacts(
+    async def _save_debug_artifacts(
         self,
         result: EvaluationResult,
         sections: Dict[str, str],
         meta: Dict[str, Any],
         source_name: str,
+        page_chunks: List[Dict[str, Any]],
     ) -> None:
         """保存评审调试产物到 debug_eval 目录"""
         debug_dir = Path("debug_eval")
@@ -469,6 +501,11 @@ class EvaluationAgent:
         stem = f"EVAL_{result.project_id}"
         json_path = debug_dir / f"{stem}.json"
         html_path = debug_dir / f"{stem}.html"
+        debug_html_path = debug_dir / f"{stem}.debug.html"
+        expert_qna = await self._build_expert_qna(
+            evaluation_id=result.evaluation_id or stem,
+            page_chunks=page_chunks,
+        )
 
         debug_payload = {
             "evaluation_id": result.evaluation_id,
@@ -478,14 +515,48 @@ class EvaluationAgent:
             "meta": meta,
             "section_names": list(sections.keys()),
             "sections": sections,
+            "expert_qna": expert_qna,
             "result": result.model_dump(mode="json"),
         }
 
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(debug_payload, f, ensure_ascii=False, indent=2)
 
-        self.report_generator.build_from_debug_file(json_path, html_path)
+        self.report_generator.build_from_debug_file(json_path, html_path, debug_mode=False)
+        self.report_generator.build_from_debug_file(json_path, debug_html_path, debug_mode=True)
         self._refresh_debug_index(debug_dir)
+
+    async def _build_expert_qna(
+        self,
+        evaluation_id: str,
+        page_chunks: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """生成用于报告展示的专家典型问答"""
+        if not page_chunks:
+            return []
+
+        index_payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+        if not index_payload.get("chunk_count"):
+            return []
+
+        report_qa_agent = EvaluationQAAgent(llm=None, indexer=self.chat_indexer)
+
+        async def ask_one(question: str) -> Dict[str, Any]:
+            try:
+                response = await report_qa_agent.ask(question=question, index_payload=index_payload)
+            except Exception as exc:
+                return {
+                    "question": question,
+                    "answer": f"当前未能生成该问题回答：{str(exc)}",
+                    "citations": [],
+                }
+            return {
+                "question": question,
+                "answer": response.answer,
+                "citations": [citation.model_dump(mode="json") for citation in response.citations],
+            }
+
+        return await asyncio.gather(*(ask_one(question) for question in self.EXPERT_QA_QUESTIONS))
 
     def _refresh_debug_index(self, debug_dir: Path) -> None:
         """刷新 debug_eval 索引页"""
@@ -511,6 +582,7 @@ class EvaluationAgent:
                     "grade": result.get("grade"),
                     "partial": result.get("partial"),
                     "html_file": f"{path.stem}.html",
+                    "debug_html_file": f"{path.stem}.debug.html",
                     "json_file": path.name,
                 }
             )
