@@ -13,6 +13,8 @@ class ProjectInfo(BaseModel):
     project_id: str = Field(..., description="项目唯一标识")
     project_type: str = Field(..., description="项目类型")
     project_name: str = Field(default="", description="项目名称")
+    year: str = Field(default="", description="年度")
+    guide_name: str = Field(default="", description="指南名称")
     applicant_unit: str = Field(default="", description="申报单位")
     applicant_unit_type: str = Field(default="", description="申报单位类型")
     registered_date: str = Field(default="", description="注册时间")
@@ -43,6 +45,7 @@ class ProjectAttachment(BaseModel):
     file_ref: str = Field(..., description="文件引用")
     document_type: Optional[str] = Field(default=None, description="附件级审查类型")
     required: bool = Field(False, description="是否必需")
+    recognition_confidence: float = Field(0.0, description="类型识别置信度")
 
 
 class ExternalChecks(BaseModel):
@@ -64,11 +67,41 @@ class ProjectReviewRequest(BaseModel):
     external_checks: Optional[ExternalChecks] = None
 
 
+class BatchReviewRequest(BaseModel):
+    """批次形式审查请求"""
+
+    zxmc: str = Field(..., description="专项/批次标识")
+    limit: Optional[int] = Field(default=None, ge=1, description="最多处理的项目数")
+    project_ids: List[str] = Field(default_factory=list, description="指定处理的项目ID列表")
+
+
+class ProjectIndexRow(BaseModel):
+    """项目索引记录"""
+
+    project_id: str = Field(..., description="项目ID")
+    year: str = Field(default="", description="年度")
+    project_name: str = Field(default="", description="项目名称")
+    guide_name: str = Field(default="", description="指南名称")
+    applicant_unit: str = Field(default="", description="承担单位")
+    unit_name: str = Field(default="", description="单位名称")
+    project_leader: str = Field(default="", description="项目负责人")
+    start_date: str = Field(default="", description="开始日期")
+    end_date: str = Field(default="", description="结束日期")
+
+
 class MissingAttachment(BaseModel):
     """缺失附件"""
 
     doc_kind: str = Field(..., description="缺失的附件类型")
     reason: str = Field(..., description="缺失原因")
+
+
+class ManualReviewItem(BaseModel):
+    """待人工复核项"""
+
+    item: str = Field(..., description="复核项编码")
+    message: str = Field(..., description="复核说明")
+    evidence: Dict[str, Any] = Field(default_factory=dict, description="证据")
 
 
 class ProjectReviewResult(BaseModel):
@@ -80,7 +113,22 @@ class ProjectReviewResult(BaseModel):
     results: List[CheckResult] = Field(default_factory=list, description="项目级规则结果")
     missing_attachments: List[MissingAttachment] = Field(default_factory=list, description="缺失附件")
     attachment_results: List[ReviewResult] = Field(default_factory=list, description="附件级结果")
+    manual_review_items: List[ManualReviewItem] = Field(default_factory=list, description="待人工复核项")
     summary: str = Field(..., description="审查总结")
+    suggestions: List[str] = Field(default_factory=list, description="建议")
+    processed_at: datetime = Field(default_factory=datetime.now)
+    processing_time: float = Field(..., description="处理时间（秒）")
+
+
+class BatchReviewResult(BaseModel):
+    """批次形式审查结果"""
+
+    id: str = Field(..., description="批次审查ID")
+    zxmc: str = Field(..., description="专项/批次标识")
+    project_count: int = Field(..., description="项目数量")
+    project_results: List[ProjectReviewResult] = Field(default_factory=list, description="项目审查结果")
+    debug_dir: str = Field(default="", description="调试输出目录")
+    summary: str = Field(..., description="批次审查总结")
     suggestions: List[str] = Field(default_factory=list, description="建议")
     processed_at: datetime = Field(default_factory=datetime.now)
     processing_time: float = Field(..., description="处理时间（秒）")
@@ -97,8 +145,11 @@ class ProjectTypeInfo(BaseModel):
 class ProjectReviewContext(BaseModel):
     """项目级审查上下文"""
 
+    project_index_row: Optional[ProjectIndexRow] = None
     project_info: ProjectInfo
     cooperation_info: Optional[CooperationInfo] = None
     attachments: List[ProjectAttachment] = Field(default_factory=list)
     attachment_results: Dict[str, ReviewResult] = Field(default_factory=dict)
     external_checks: Optional[ExternalChecks] = None
+    attachment_classification_reliable: bool = Field(False, description="附件类型识别是否可靠")
+    scan_info: Dict[str, Any] = Field(default_factory=dict, description="目录扫描信息")

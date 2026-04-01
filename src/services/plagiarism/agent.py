@@ -14,6 +14,7 @@
 import asyncio
 import json
 import re
+import resource
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -204,25 +205,29 @@ class PlagiarismAgent:
         # 5.2 库查重召回 (可选)
         if use_corpus:
             t_corpus_start = time.time()
+            print(f"[Plagiarism] RSS before corpus retrieval: {self._rss_mb():.1f}MB")
             use_inverted_index = self.corpus_manager.has_inverted_index()
             candidate_doc_ids_from_index = []
             if use_inverted_index:
                 candidate_doc_ids_from_index = self.corpus_manager.retrieve_candidate_doc_ids(
                     primary_text=primary_text,
                     primary_excluded_ranges=excluded_ranges.get(primary_doc_id or "", []),
-                    top_k=max(self.source_retriever.top_k_docs * 12, 80),
+                    top_k=max(self.source_retriever.top_k_docs * 4, 24),
                 )
+                print(f"[Plagiarism] RSS after coarse retrieval: {self._rss_mb():.1f}MB")
             corpus_retrieval_docs = (
                 self.corpus_manager.get_retrieval_documents(candidate_doc_ids_from_index)
                 if use_inverted_index
                 else self.corpus_manager.get_retrieval_documents()
             )
+            print(f"[Plagiarism] RSS after feature load: {self._rss_mb():.1f}MB")
             corpus_retrieval = self.source_retriever.search_in_corpus(
                 primary_doc=primary_doc_id or "",
                 primary_text=primary_text,
                 corpus_documents=corpus_retrieval_docs,
                 primary_excluded_ranges=excluded_ranges.get(primary_doc_id or "", []),
             )
+            print(f"[Plagiarism] RSS after corpus ranking: {self._rss_mb():.1f}MB")
             print(f"[Plagiarism] 库召回耗时: {time.time() - t_corpus_start:.2f}s")
             if candidate_doc_ids_from_index:
                 print(f"[Plagiarism] 倒排粗召回候选: {len(candidate_doc_ids_from_index)} 个")
@@ -454,6 +459,19 @@ class PlagiarismAgent:
             int(uploaded_result.total_source_docs or 0) + int(corpus_result.total_source_docs or 0)
         )
         return uploaded_result
+
+    def _rss_mb(self) -> float:
+        try:
+            with open("/proc/self/status", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        return float(line.split()[1]) / 1024
+        except OSError:
+            pass
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if rss_kb > 10_000_000:
+            return rss_kb / (1024 * 1024)
+        return rss_kb / 1024
 
     def _detect_type_from_bytes(self, file_data: bytes) -> str:
         """根据文件数据检测类型"""

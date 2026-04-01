@@ -23,6 +23,9 @@ class RequiredProjectFieldsRule(BaseProjectRule):
             value = info.get(field)
             if value in (None, "", []):
                 missing.append(field)
+                continue
+            if field == "execution_period_years" and float(value) <= 0:
+                missing.append(field)
 
         if missing:
             return CheckResult(

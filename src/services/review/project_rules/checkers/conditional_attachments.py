@@ -28,6 +28,13 @@ class ConditionalAttachmentsRule(BaseProjectRule):
                 missing.append({"doc_kind": doc_kind, "reason": reason})
 
         if missing:
+            if context.attachments and not context.attachment_classification_reliable:
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.WARNING,
+                    message="附件类型识别不可靠，无法自动确认条件性附件是否齐全",
+                    evidence={"missing_conditional_attachments": missing},
+                )
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,
