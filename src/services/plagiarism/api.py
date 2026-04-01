@@ -19,6 +19,7 @@ from src.services.plagiarism.section_extractor import SectionExtractor
 
 router = APIRouter()
 _CORPUS_REFRESH_STATUS_PATH = Path("data/plagiarism/corpus_refresh_status.json")
+_CORPUS_REFRESH_LOG_PATH = Path("data/plagiarism/corpus_refresh.log")
 
 
 def _read_corpus_refresh_status() -> dict:
@@ -51,6 +52,16 @@ def _read_corpus_refresh_status() -> dict:
             data["running"] = False
             data.setdefault("error", "refresh 进程已退出")
     return data
+
+
+def _write_corpus_refresh_status(data: dict) -> None:
+    _CORPUS_REFRESH_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = _CORPUS_REFRESH_STATUS_PATH.with_name(f"{_CORPUS_REFRESH_STATUS_PATH.name}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, _CORPUS_REFRESH_STATUS_PATH)
 
 
 class PlagiarismRequest(BaseModel):
@@ -267,24 +278,26 @@ async def refresh_corpus(
             },
         )
 
-    _CORPUS_REFRESH_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_CORPUS_REFRESH_STATUS_PATH, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "running": True,
-                "task_id": task_id,
-                "started_at": time.time(),
-                "finished_at": None,
-                "error": None,
-                "params": params,
-                "progress": None,
-                "result": None,
-                "pid": None,
-            },
-            f,
-            ensure_ascii=False,
-            indent=2,
-        )
+    initial_status = {
+        "running": True,
+        "task_id": task_id,
+        "started_at": time.time(),
+        "finished_at": None,
+        "error": None,
+        "params": params,
+        "progress": {
+            "stage": "spawn_pending",
+            "processed": 0,
+            "total": 0,
+            "elapsed_seconds": 0,
+            "eta_seconds": 0,
+            "stats": {},
+        },
+        "result": None,
+        "pid": None,
+        "log_path": str(_CORPUS_REFRESH_LOG_PATH),
+    }
+    _write_corpus_refresh_status(initial_status)
 
     cmd = []
     if shutil.which("ionice"):
@@ -311,13 +324,44 @@ async def refresh_corpus(
     if limit is not None:
         cmd.extend(["--limit", str(limit)])
 
-    subprocess.Popen(
+    _CORPUS_REFRESH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(_CORPUS_REFRESH_LOG_PATH, "ab")
+    process = subprocess.Popen(
         cmd,
         cwd=str(Path.cwd()),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=log_file,
         start_new_session=True,
     )
+    log_file.close()
+
+    initial_status["pid"] = process.pid
+    initial_status["progress"] = {
+        "stage": "spawned",
+        "processed": 0,
+        "total": 0,
+        "elapsed_seconds": 0,
+        "eta_seconds": 0,
+        "stats": {},
+    }
+    _write_corpus_refresh_status(initial_status)
+
+    time.sleep(0.2)
+    return_code = process.poll()
+    if return_code is not None:
+        failed_status = _read_corpus_refresh_status()
+        failed_status.update(
+            {
+                "running": False,
+                "finished_at": time.time(),
+                "error": f"refresh 子进程启动失败，exit_code={return_code}",
+                "pid": process.pid,
+            }
+        )
+        progress = failed_status.get("progress") or {}
+        progress["stage"] = "spawn_failed"
+        failed_status["progress"] = progress
+        _write_corpus_refresh_status(failed_status)
 
     return ApiResponse(
         status="success",

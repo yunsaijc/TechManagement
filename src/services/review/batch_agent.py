@@ -1,4 +1,6 @@
 """批次级形式审查 Agent"""
+import asyncio
+import os
 import time
 from typing import List
 
@@ -21,6 +23,10 @@ class BatchReviewAgent:
         self.project_repo = project_repo or ProjectIndexRepository()
         self.context_builder = context_builder or ProjectContextBuilder()
         self.project_review_agent = project_review_agent or ProjectReviewAgent()
+        self.project_concurrency = max(
+            1,
+            int(os.getenv("REVIEW_BATCH_PROJECT_CONCURRENCY", "2")),
+        )
 
     async def process(self, request: BatchReviewRequest) -> BatchReviewResult:
         """执行批次级形式审查"""
@@ -37,24 +43,29 @@ class BatchReviewAgent:
             "project_index.json",
             [row.model_dump() for row in project_rows],
         )
-        project_results: List[ProjectReviewResult] = []
+        semaphore = asyncio.Semaphore(self.project_concurrency)
 
-        for row in project_rows:
-            context = self.context_builder.build(row)
-            debug_writer.write_json(
-                f"projects/{row.project_id}.scan.json",
-                context.scan_info,
-            )
-            debug_writer.write_json(
-                f"projects/{row.project_id}.context.json",
-                context.model_dump(mode="json"),
-            )
-            project_result = await self.project_review_agent.process_context(context)
-            debug_writer.write_json(
-                f"projects/{row.project_id}.result.json",
-                project_result.model_dump(mode="json"),
-            )
-            project_results.append(project_result)
+        async def _process_project(row) -> ProjectReviewResult:
+            async with semaphore:
+                context = await self.context_builder.build(row)
+                debug_writer.write_json(
+                    f"projects/{row.project_id}.scan.json",
+                    context.scan_info,
+                )
+                debug_writer.write_json(
+                    f"projects/{row.project_id}.context.json",
+                    context.model_dump(mode="json"),
+                )
+                project_result = await self.project_review_agent.process_context(context)
+                debug_writer.write_json(
+                    f"projects/{row.project_id}.result.json",
+                    project_result.model_dump(mode="json"),
+                )
+                return project_result
+
+        project_results: List[ProjectReviewResult] = list(
+            await asyncio.gather(*[_process_project(row) for row in project_rows])
+        )
 
         summary = self._generate_summary(project_results)
         suggestions = self._generate_suggestions(project_results)

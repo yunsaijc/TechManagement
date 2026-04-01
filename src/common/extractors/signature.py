@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Any
 from PIL import Image
 
 from src.common.llm import get_default_llm_client
-from src.common.vision import MultimodalLLM
+from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
 

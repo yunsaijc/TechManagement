@@ -15,8 +15,10 @@
 
 ### 2. 库查重召回 (Corpus-based Retrieval)
 - 调用 `SourceRetriever.rank_sources`。
-- 检索预构建的 `CorpusIndex`（内存索引），找回与 Primary 最相似的 Top-K 库文档。
-- 这一步是全量库搜索，但不涉及磁盘原文读取。
+- 优先通过 `CorpusManager` 的倒排索引做粗召回，先把候选范围缩小到几十级。
+- 在线倒排与候选特征读取优先走 SQLite，而不是大 JSON 分片。
+- 再对候选集合运行 `SourceRetriever` 的窗口级重排，输出最终 Top-K。
+- 这一步不应退化为“全库逐文档扫描”，也不应在在线请求里把大量特征分片整批常驻内存。
 
 ### 3. 按需精比对 (Lazy Matching)
 - 对于召回出的 Top-K 文档，通过 `CorpusManager` 获取挂载目录下的原文。
@@ -38,7 +40,9 @@ async def check(files, use_corpus=True):
     
     # 2. 库召回
     if use_corpus:
-        candidates = source_retriever.rank_sources(primary_scope, corpus_index)
+        candidate_ids = corpus_manager.retrieve_candidate_doc_ids(primary_scope)
+        candidate_docs = corpus_manager.get_retrieval_documents(candidate_ids)
+        candidates = source_retriever.search_in_corpus(primary_scope, candidate_docs)
     
     # 3. 精比对 (Top-K)
     all_similarities = []
@@ -56,6 +60,6 @@ async def check(files, use_corpus=True):
 
 ## 设计原则
 
-- **内存优先**：检索阶段只使用 N-gram 指纹，保证千万级文档检索速度。
-- **IO 隔离**：只有召回成功的 Top-K 文档才会触发远程磁盘读取。
+- **分阶段检索**：先粗召回，再重排，最后精比对。
+- **IO 隔离**：只有最终 Top-K 文档才会触发远程原文读取。
 - **坐标一致性**：所有的 `start/end` 坐标均以 Primary 文档提取后的正文为基准。

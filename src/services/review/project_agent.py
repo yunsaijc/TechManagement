@@ -1,7 +1,10 @@
 """项目级形式审查 Agent"""
+import asyncio
+import os
 import time
 from pathlib import Path
 from typing import List
+from uuid import uuid4
 
 from src.common.models import (
     CheckResult,
@@ -15,7 +18,11 @@ from src.common.models import (
     ReviewResult,
 )
 from src.services.review.agent import ReviewAgent
-from src.services.review.project_config import get_project_config, resolve_document_type
+from src.services.review.project_config import (
+    get_attachment_review_doc_kinds,
+    get_project_config,
+    resolve_document_type,
+)
 from src.services.review.project_rules import ProjectRuleRegistry
 
 
@@ -24,6 +31,11 @@ class ProjectReviewAgent:
 
     def __init__(self, review_agent: ReviewAgent | None = None):
         self.review_agent = review_agent or ReviewAgent()
+        self.attachment_review_concurrency = max(
+            1,
+            int(os.getenv("REVIEW_ATTACHMENT_REVIEW_CONCURRENCY", "2")),
+        )
+        self.reviewable_doc_kinds = set(get_attachment_review_doc_kinds())
 
     async def process(self, request: ProjectReviewRequest) -> ProjectReviewResult:
         """执行项目级形式审查"""
@@ -58,7 +70,7 @@ class ProjectReviewAgent:
             )
 
         result = ProjectReviewResult(
-            id=f"project_review_{int(time.time() * 1000)}",
+            id=f"project_review_{context.project_info.project_id}_{uuid4().hex[:8]}",
             project_id=context.project_info.project_id,
             project_type=project_type,
             results=project_rule_results,
@@ -73,20 +85,28 @@ class ProjectReviewAgent:
 
     async def _review_attachments(self, attachments: List[ProjectAttachment]) -> List[tuple[str, ReviewResult]]:
         """调用附件级审查能力"""
-        results: List[tuple[str, ReviewResult]] = []
-        for attachment in attachments:
-            if not attachment.document_type:
-                continue
-            file_data = self._load_file_data(attachment.file_ref)
-            document_type = resolve_document_type(attachment.doc_kind, attachment.document_type)
-            review_result = await self.review_agent.process(
-                file_data=file_data,
-                file_type=self._detect_file_type(attachment.file_name),
-                document_type=document_type,
-                metadata={"doc_kind": attachment.doc_kind},
-            )
-            results.append((attachment.attachment_id, review_result))
-        return results
+        semaphore = asyncio.Semaphore(self.attachment_review_concurrency)
+        candidates = [
+            attachment
+            for attachment in attachments
+            if attachment.document_type and attachment.doc_kind in self.reviewable_doc_kinds
+        ]
+
+        async def _review(attachment: ProjectAttachment) -> tuple[str, ReviewResult]:
+            async with semaphore:
+                file_data = self._load_file_data(attachment.file_ref)
+                document_type = resolve_document_type(attachment.doc_kind, attachment.document_type)
+                review_result = await self.review_agent.process(
+                    file_data=file_data,
+                    file_type=self._detect_file_type(attachment.file_name),
+                    document_type=document_type,
+                    metadata={"doc_kind": attachment.doc_kind},
+                )
+                return attachment.attachment_id, review_result
+
+        if not candidates:
+            return []
+        return list(await asyncio.gather(*[_review(attachment) for attachment in candidates]))
 
     async def _run_project_rules(self, context: ProjectReviewContext) -> List[CheckResult]:
         """执行项目级规则"""
@@ -153,8 +173,14 @@ class ProjectReviewAgent:
     ) -> List[ManualReviewItem]:
         """生成待人工复核项"""
         items: List[ManualReviewItem] = []
-        unknown_attachments = [attachment for attachment in context.attachments if not attachment.document_type]
+        existing_items: set[str] = set()
+        unknown_attachments = [
+            attachment
+            for attachment in context.attachments
+            if attachment.doc_kind == "unknown_attachment"
+        ]
         if unknown_attachments:
+            existing_items.add("attachment_classification_uncertain")
             items.append(
                 ManualReviewItem(
                     item="attachment_classification_uncertain",
@@ -168,6 +194,9 @@ class ProjectReviewAgent:
 
         for result in results:
             if result.item in {"required_attachments", "conditional_attachments"} and result.status == CheckStatus.WARNING:
+                if result.item in existing_items:
+                    continue
+                existing_items.add(result.item)
                 items.append(
                     ManualReviewItem(
                         item=result.item,
@@ -175,6 +204,22 @@ class ProjectReviewAgent:
                         evidence=result.evidence,
                     )
                 )
+            elif result.item == "policy_review_points_check" and result.status == CheckStatus.WARNING:
+                for point in result.evidence.get("pending_review_points", []):
+                    item_code = point.get("code", "policy_review_point")
+                    if item_code in existing_items:
+                        continue
+                    existing_items.add(item_code)
+                    items.append(
+                        ManualReviewItem(
+                            item=item_code,
+                            message=point.get("requirement", "存在未自动核验的政策审查要点"),
+                            evidence={
+                                "automation": point.get("automation", ""),
+                                "reason": point.get("reason", ""),
+                            },
+                        )
+                    )
         return items
 
     def _generate_summary(
@@ -186,7 +231,7 @@ class ProjectReviewAgent:
         """生成摘要"""
         failed = sum(1 for result in results if result.status == CheckStatus.FAILED)
         warnings = sum(1 for result in results if result.status == CheckStatus.WARNING)
-        if failed == 0 and not missing_attachments and not manual_review_items:
+        if failed == 0 and warnings == 0 and not missing_attachments and not manual_review_items:
             return "项目形式审查通过"
         return (
             f"项目形式审查完成：失败 {failed} 项，警告 {warnings} 项，"
