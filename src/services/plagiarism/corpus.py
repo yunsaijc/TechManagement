@@ -7,11 +7,12 @@
 import hashlib
 import json
 import os
+import resource
 import time
 from collections import defaultdict
 from itertools import islice
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -356,7 +357,7 @@ class CorpusManager:
 
         docs_with_features: Dict[str, CorpusDocument] = {}
         for shard_id, shard_doc_ids in grouped_doc_ids.items():
-            shard_features = self._load_shard_features(shard_id)
+            shard_features = self._load_shard_features(shard_id, cache=False)
             for doc_id in shard_doc_ids:
                 doc = self.index.documents.get(doc_id)
                 if not doc:
@@ -364,58 +365,74 @@ class CorpusManager:
                 docs_with_features[doc_id] = doc.model_copy(
                     update={"features": shard_features.get(doc_id, {})}
                 )
+            del shard_features
         return docs_with_features
 
     def retrieve_candidate_doc_ids(
         self,
         primary_text: str,
         primary_excluded_ranges,
-        top_k: int = 120,
-        min_hits: int = 2,
-        max_postings_per_gram: int = 400,
+        top_k: int = 32,
+        min_hits: int = 8,
+        max_postings_per_gram: int = 80,
+        max_query_grams: int = 1200,
     ) -> List[str]:
         """基于 char4 倒排索引做粗召回，仅返回候选 doc_id。"""
         windows = self.retriever._build_primary_windows(primary_text, primary_excluded_ranges or [])
         if not windows:
             return []
 
+        print(f"[Corpus] 粗召回开始: windows={len(windows)}, rss={self._rss_mb():.1f}MB")
         doc_scores: Dict[str, float] = defaultdict(float)
-        doc_window_hits: Dict[str, set] = defaultdict(set)
-        unique_query_grams = set()
+        doc_gram_hits: Dict[str, int] = defaultdict(int)
+        unique_query_grams: Set[str] = set()
         for window in windows:
             unique_query_grams.update(window.get("char4", set()))
 
+        if len(unique_query_grams) > max_query_grams:
+            unique_query_grams = set(list(unique_query_grams)[:max_query_grams])
+
+        grams_by_shard: Dict[str, List[str]] = defaultdict(list)
         for gram in unique_query_grams:
-            postings = self._get_inverted_postings(gram)
-            if not postings or len(postings) > max_postings_per_gram:
-                continue
-            idf = 1.0 / max(len(postings), 1)
-            for doc_id in postings:
-                doc_scores[doc_id] += idf
+            grams_by_shard[self._inverted_shard_id_for_gram(gram)].append(gram)
+
+        skipped_high_df = 0
+        for shard_id, grams in grams_by_shard.items():
+            shard = self._load_inverted_shard(shard_id, cache=False)
+            for gram in grams:
+                postings = shard.get(gram, [])
+                if not postings:
+                    continue
+                if len(postings) > max_postings_per_gram:
+                    skipped_high_df += 1
+                    continue
+                idf = 1.0 / max(len(postings), 1)
+                for doc_id in postings:
+                    doc_scores[doc_id] += idf
+                    doc_gram_hits[doc_id] += 1
+            del shard
 
         if not doc_scores:
+            print(
+                f"[Corpus] 粗召回结束: candidates=0, query_grams={len(unique_query_grams)}, "
+                f"skipped_high_df={skipped_high_df}, rss={self._rss_mb():.1f}MB"
+            )
             return []
-
-        # 用窗口覆盖进一步去掉只靠零散短片段撞上的文档
-        for window_index, window in enumerate(windows):
-            hit_docs = set()
-            for gram in window.get("char4", set()):
-                postings = self._get_inverted_postings(gram)
-                if not postings or len(postings) > max_postings_per_gram:
-                    continue
-                hit_docs.update(postings)
-            for doc_id in hit_docs:
-                doc_window_hits[doc_id].add(window_index)
 
         ranked = []
         for doc_id, score in doc_scores.items():
-            window_hits = len(doc_window_hits.get(doc_id, set()))
-            if window_hits < min_hits:
+            gram_hits = doc_gram_hits.get(doc_id, 0)
+            if gram_hits < min_hits:
                 continue
-            ranked.append((doc_id, score, window_hits))
+            ranked.append((doc_id, score, gram_hits))
 
         ranked.sort(key=lambda item: (-item[1], -item[2], item[0]))
-        return [doc_id for doc_id, _, _ in ranked[:top_k]]
+        selected = [doc_id for doc_id, _, _ in ranked[:top_k]]
+        print(
+            f"[Corpus] 粗召回结束: candidates={len(selected)}, query_grams={len(unique_query_grams)}, "
+            f"scored_docs={len(doc_scores)}, skipped_high_df={skipped_high_df}, rss={self._rss_mb():.1f}MB"
+        )
+        return selected
 
     def has_inverted_index(self) -> bool:
         return any(self.inverted_dir.glob("*.json"))
@@ -564,23 +581,31 @@ class CorpusManager:
     def _shard_path(self, shard_id: str) -> Path:
         return self.shard_dir / f"{shard_id}.json"
 
-    def _load_shard_features(self, shard_id: str) -> Dict[str, Dict[str, List[str]]]:
-        if shard_id in self._feature_cache:
+    def _load_shard_features(self, shard_id: str, cache: bool = True) -> Dict[str, Dict[str, List[str]]]:
+        if cache and shard_id in self._feature_cache:
             return self._feature_cache[shard_id]
 
         shard_path = self._shard_path(shard_id)
         if not shard_path.exists():
-            self._feature_cache[shard_id] = {}
-            return self._feature_cache[shard_id]
+            if cache:
+                self._feature_cache[shard_id] = {}
+                return self._feature_cache[shard_id]
+            return {}
 
         try:
             with open(shard_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._feature_cache[shard_id] = data if isinstance(data, dict) else {}
+            shard_data = data if isinstance(data, dict) else {}
+            if cache:
+                self._feature_cache[shard_id] = shard_data
+                return self._feature_cache[shard_id]
+            return shard_data
         except Exception as e:
             print(f"[Corpus] 加载分片失败 {shard_path}: {e}")
-            self._feature_cache[shard_id] = {}
-        return self._feature_cache[shard_id]
+            if cache:
+                self._feature_cache[shard_id] = {}
+                return self._feature_cache[shard_id]
+            return {}
 
     def _save_shard_features(self, shard_id: str) -> None:
         shard_path = self._shard_path(shard_id)
@@ -630,23 +655,31 @@ class CorpusManager:
     def _inverted_shard_path(self, shard_id: str) -> Path:
         return self.inverted_dir / f"{shard_id}.json"
 
-    def _load_inverted_shard(self, shard_id: str) -> Dict[str, List[str]]:
-        if shard_id in self._inverted_cache:
+    def _load_inverted_shard(self, shard_id: str, cache: bool = True) -> Dict[str, List[str]]:
+        if cache and shard_id in self._inverted_cache:
             return self._inverted_cache[shard_id]
 
         shard_path = self._inverted_shard_path(shard_id)
         if not shard_path.exists():
-            self._inverted_cache[shard_id] = {}
-            return self._inverted_cache[shard_id]
+            if cache:
+                self._inverted_cache[shard_id] = {}
+                return self._inverted_cache[shard_id]
+            return {}
 
         try:
             with open(shard_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._inverted_cache[shard_id] = data if isinstance(data, dict) else {}
+            shard_data = data if isinstance(data, dict) else {}
+            if cache:
+                self._inverted_cache[shard_id] = shard_data
+                return self._inverted_cache[shard_id]
+            return shard_data
         except Exception as e:
             print(f"[Corpus] 加载倒排分片失败 {shard_path}: {e}")
-            self._inverted_cache[shard_id] = {}
-        return self._inverted_cache[shard_id]
+            if cache:
+                self._inverted_cache[shard_id] = {}
+                return self._inverted_cache[shard_id]
+            return {}
 
     def _save_inverted_shard(self, shard_id: str) -> None:
         self._write_json_atomic(self._inverted_shard_path(shard_id), self._inverted_cache.get(shard_id, {}))
@@ -683,3 +716,16 @@ class CorpusManager:
             dirty_shards.add(shard_id)
         for shard_id in dirty_shards:
             self._save_inverted_shard(shard_id)
+
+    def _rss_mb(self) -> float:
+        try:
+            with open("/proc/self/status", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        return float(line.split()[1]) / 1024
+        except OSError:
+            pass
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if rss_kb > 10_000_000:
+            return rss_kb / (1024 * 1024)
+        return rss_kb / 1024

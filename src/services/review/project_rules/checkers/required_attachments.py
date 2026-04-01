@@ -20,6 +20,13 @@ class RequiredAttachmentsRule(BaseProjectRule):
         missing = [doc_kind for doc_kind in required_doc_kinds if doc_kind not in existing_doc_kinds]
 
         if missing:
+            if context.attachments and not context.attachment_classification_reliable:
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.WARNING,
+                    message="附件类型识别不可靠，无法自动确认必需附件是否齐全",
+                    evidence={"missing_doc_kinds": missing},
+                )
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,

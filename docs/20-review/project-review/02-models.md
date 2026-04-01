@@ -2,8 +2,9 @@
 
 ## 目标
 
-项目级形式审查不再以“单文件 + 任意 metadata”为输入，而是以**完整项目上下文**为输入。这样可以同时承载：
+项目级形式审查不再以“单文件 + 任意 metadata”为输入，而是以**批次查询结果 + 完整项目上下文**为输入。这样可以同时承载：
 
+- 批次标识
 - 项目基础字段
 - 附件清单
 - 附件级审查结果
@@ -22,6 +23,27 @@
 ## 新增模型建议
 
 项目级形式审查建议新增以下模型。
+
+## 批次入口模型
+
+### `BatchReviewRequest`
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `zxmc` | `str` | 批次标识 |
+
+### `ProjectIndexRow`
+
+表示从数据库项目列表查询得到的一条记录。建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `project_id` | `str` | 对应 `sbxx.id` |
+| `year` | `str` 或 `int` | 对应 `sbxx.year` |
+| `project_name` | `str` | 对应 `sbxx.xmmc` |
+| `guide_name` | `str` | 对应 `zn.name` |
 
 ### `ProjectInfo`
 
@@ -61,17 +83,19 @@
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `attachment_id` | `str` | 附件唯一标识 |
-| `doc_kind` | `str` | 附件业务类型 |
+| `doc_kind` | `str` | 附件业务类型，无法识别时使用 `unknown_attachment` |
 | `file_name` | `str` | 文件名 |
 | `file_ref` | `str` | 文件引用，例如存储路径、对象键、上传标识 |
 | `document_type` | `str \| None` | 供附件级审查使用的 `document_type` |
 | `required` | `bool` | 是否为必需附件 |
+| `recognition_confidence` | `float` | 附件类型识别置信度 |
 
 说明：
 
 - `doc_kind` 是项目级材料识别维度
 - `document_type` 是附件级审查维度
 - 两者应分离，不应混用
+- 在附件文件名乱码且无元数据时，`doc_kind` 应允许退化为 `unknown_attachment`
 
 ### `ExternalChecks`
 
@@ -96,6 +120,7 @@
 | `attachments` | `list[ProjectAttachment]` | 附件列表 |
 | `attachment_results` | `dict[str, ReviewResult]` | 已跑过的附件级结果，以 `attachment_id` 为键 |
 | `external_checks` | `ExternalChecks \| None` | 外部校验结果 |
+| `project_index_row` | `ProjectIndexRow \| None` | 原始项目索引记录 |
 
 ## 结果模型建议
 
@@ -107,6 +132,18 @@
 |------|------|------|
 | `doc_kind` | `str` | 缺失的附件类型 |
 | `reason` | `str` | 缺失原因 |
+
+只有在附件类型识别可靠时，才应输出该模型。
+
+### `ManualReviewItem`
+
+表示待人工复核项。建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `item` | `str` | 复核项编码 |
+| `message` | `str` | 复核说明 |
+| `evidence` | `dict` | 证据 |
 
 ### `ProjectReviewResult`
 
@@ -120,6 +157,7 @@
 | `results` | `list[CheckResult]` | 项目级规则结果 |
 | `missing_attachments` | `list[MissingAttachment]` | 缺失附件列表 |
 | `attachment_results` | `list[ReviewResult]` | 附件级审查结果 |
+| `manual_review_items` | `list[ManualReviewItem]` | 待人工复核项 |
 | `summary` | `str` | 项目级总结 |
 | `suggestions` | `list[str]` | 建议 |
 | `processed_at` | `datetime` | 处理时间 |
@@ -131,6 +169,7 @@
 
 ```text
 ProjectReviewContext
+  -> project_index_row
   -> project_info
   -> cooperation_info
   -> attachments
@@ -141,6 +180,7 @@ ProjectReviewResult
   -> 项目级 CheckResult 列表
   -> 缺失附件列表
   -> 附件级 ReviewResult 列表
+  -> 待人工复核项
 ```
 
 ## 与现有实现的衔接
@@ -150,5 +190,8 @@ ProjectReviewResult
 推荐做法：
 
 - 现有 `/api/v1/review` 保持不变
-- 项目级编排内部调用现有 `ReviewAgent.process(...)`
+- 批次入口只接收 `zxmc`
+- 项目级编排先查库拿 `id/year/xmmc/guide_name`
+- 再按 `/mnt/remote_corpus/{year}/sbs/{project_id}` 与 `/mnt/remote_corpus/{year}/sbsfj/{project_id}` 扫描目录
+- 仅对可识别附件调用现有 `ReviewAgent.process(...)`
 - `ProjectReviewResult.attachment_results` 直接承接现有 `ReviewResult`

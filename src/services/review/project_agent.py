@@ -6,6 +6,7 @@ from typing import List
 from src.common.models import (
     CheckResult,
     CheckStatus,
+    ManualReviewItem,
     MissingAttachment,
     ProjectAttachment,
     ProjectReviewContext,
@@ -26,34 +27,46 @@ class ProjectReviewAgent:
 
     async def process(self, request: ProjectReviewRequest) -> ProjectReviewResult:
         """执行项目级形式审查"""
-        start_time = time.time()
-        project_type = request.project_info.project_type
-        config = get_project_config(project_type)
-        if not config:
-            raise ValueError(f"不支持的 project_type: {project_type}")
-
         context = ProjectReviewContext(
             project_info=request.project_info,
             cooperation_info=request.cooperation_info,
             attachments=request.attachments,
             external_checks=request.external_checks,
         )
+        return await self.process_context(context)
 
-        attachment_results = await self._review_attachments(request.attachments)
+    async def process_context(self, context: ProjectReviewContext) -> ProjectReviewResult:
+        """基于上下文执行项目级形式审查"""
+        start_time = time.time()
+        project_type = context.project_info.project_type
+        config = get_project_config(project_type) or {}
+
+        attachment_results = await self._review_attachments(context.attachments)
         context.attachment_results = {attachment_id: result for attachment_id, result in attachment_results}
 
         project_rule_results = await self._run_project_rules(context)
         missing_attachments = self._collect_missing_attachments(project_rule_results)
+        manual_review_items = self._collect_manual_review_items(context, project_rule_results)
+        if not config:
+            project_rule_results.append(
+                CheckResult(
+                    item="project_type_resolution",
+                    status=CheckStatus.WARNING,
+                    message=f"无法识别项目类型: {project_type}",
+                    evidence={"project_type": project_type, "guide_name": context.project_info.guide_name},
+                )
+            )
 
         result = ProjectReviewResult(
             id=f"project_review_{int(time.time() * 1000)}",
-            project_id=request.project_info.project_id,
+            project_id=context.project_info.project_id,
             project_type=project_type,
             results=project_rule_results,
             missing_attachments=missing_attachments,
             attachment_results=[result for _, result in attachment_results],
-            summary=self._generate_summary(project_rule_results, missing_attachments),
-            suggestions=self._generate_suggestions(project_rule_results, missing_attachments),
+            manual_review_items=manual_review_items,
+            summary=self._generate_summary(project_rule_results, missing_attachments, manual_review_items),
+            suggestions=self._generate_suggestions(project_rule_results, missing_attachments, manual_review_items),
             processing_time=time.time() - start_time,
         )
         return result
@@ -62,6 +75,8 @@ class ProjectReviewAgent:
         """调用附件级审查能力"""
         results: List[tuple[str, ReviewResult]] = []
         for attachment in attachments:
+            if not attachment.document_type:
+                continue
             file_data = self._load_file_data(attachment.file_ref)
             document_type = resolve_document_type(attachment.doc_kind, attachment.document_type)
             review_result = await self.review_agent.process(
@@ -118,10 +133,10 @@ class ProjectReviewAgent:
         """从规则结果中提取缺失附件"""
         missing: List[MissingAttachment] = []
         for result in results:
-            if result.item == "required_attachments":
+            if result.item == "required_attachments" and result.status == CheckStatus.FAILED:
                 for doc_kind in result.evidence.get("missing_doc_kinds", []):
                     missing.append(MissingAttachment(doc_kind=doc_kind, reason="缺少必需附件"))
-            elif result.item == "conditional_attachments":
+            elif result.item == "conditional_attachments" and result.status == CheckStatus.FAILED:
                 for item in result.evidence.get("missing_conditional_attachments", []):
                     missing.append(
                         MissingAttachment(
@@ -131,15 +146,59 @@ class ProjectReviewAgent:
                     )
         return missing
 
-    def _generate_summary(self, results: List[CheckResult], missing_attachments: List[MissingAttachment]) -> str:
+    def _collect_manual_review_items(
+        self,
+        context: ProjectReviewContext,
+        results: List[CheckResult],
+    ) -> List[ManualReviewItem]:
+        """生成待人工复核项"""
+        items: List[ManualReviewItem] = []
+        unknown_attachments = [attachment for attachment in context.attachments if not attachment.document_type]
+        if unknown_attachments:
+            items.append(
+                ManualReviewItem(
+                    item="attachment_classification_uncertain",
+                    message="存在无法可靠识别类型的附件，建议人工确认材料类别",
+                    evidence={
+                        "count": len(unknown_attachments),
+                        "files": [attachment.file_name for attachment in unknown_attachments[:20]],
+                    },
+                )
+            )
+
+        for result in results:
+            if result.item in {"required_attachments", "conditional_attachments"} and result.status == CheckStatus.WARNING:
+                items.append(
+                    ManualReviewItem(
+                        item=result.item,
+                        message=result.message,
+                        evidence=result.evidence,
+                    )
+                )
+        return items
+
+    def _generate_summary(
+        self,
+        results: List[CheckResult],
+        missing_attachments: List[MissingAttachment],
+        manual_review_items: List[ManualReviewItem],
+    ) -> str:
         """生成摘要"""
         failed = sum(1 for result in results if result.status == CheckStatus.FAILED)
         warnings = sum(1 for result in results if result.status == CheckStatus.WARNING)
-        if failed == 0 and not missing_attachments:
+        if failed == 0 and not missing_attachments and not manual_review_items:
             return "项目形式审查通过"
-        return f"项目形式审查完成：失败 {failed} 项，警告 {warnings} 项，缺失附件 {len(missing_attachments)} 个"
+        return (
+            f"项目形式审查完成：失败 {failed} 项，警告 {warnings} 项，"
+            f"缺失附件 {len(missing_attachments)} 个，人工复核 {len(manual_review_items)} 项"
+        )
 
-    def _generate_suggestions(self, results: List[CheckResult], missing_attachments: List[MissingAttachment]) -> List[str]:
+    def _generate_suggestions(
+        self,
+        results: List[CheckResult],
+        missing_attachments: List[MissingAttachment],
+        manual_review_items: List[ManualReviewItem],
+    ) -> List[str]:
         """生成建议"""
         suggestions: List[str] = []
         if missing_attachments:
@@ -148,6 +207,8 @@ class ProjectReviewAgent:
             suggestions.append("修复未通过的附件级审查问题后重新提交")
         if any(result.item == "external_status_check" and result.status == CheckStatus.WARNING for result in results):
             suggestions.append("补充外部校验结果后重新提交")
+        if manual_review_items:
+            suggestions.append("存在无法自动判断的材料项，建议人工复核")
         return suggestions
 
     def _load_file_data(self, file_ref: str) -> bytes:

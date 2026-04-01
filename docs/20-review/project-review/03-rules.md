@@ -25,6 +25,8 @@
 
 它适合继续服务于附件级审查。
 
+但在当前数据条件下，附件文件名存在乱码，且尚未确认是否有附件元数据表。因此，附件级规则不能默认覆盖所有项目附件，只能覆盖**可识别附件**。
+
 ## 分层规则设计
 
 ### 1. 附件级规则
@@ -40,6 +42,11 @@
 - `work_unit_consistency`
 
 附件级规则的输入对象仍然是单文件上下文，例如现有 `ReviewContext`。
+
+附件级规则的触发前提：
+
+- 附件类型可识别
+- 或调用方明确指定了 `document_type`
 
 ### 2. 项目级规则
 
@@ -68,6 +75,11 @@
 - 涉及特种行业时必须上传行业准入许可
 - 涉及生物安全活动时必须上传生物安全承诺书
 - 存在合作单位时必须上传合作协议
+
+说明：
+
+- 当附件类型识别可靠时，这些规则可以自动判定
+- 当附件类型识别不可靠时，这些规则应降级为 `warning` 或待人工复核
 
 #### 项目属性类
 
@@ -106,6 +118,7 @@ PROJECT_CONFIG = {
         "conditional_doc_rules": [...],
         "project_rules": [...],
         "constraints": {...},
+        "guide_names": [...],
     },
 }
 ```
@@ -119,6 +132,13 @@ PROJECT_CONFIG = {
 | `conditional_doc_rules` | 条件性附件规则 |
 | `project_rules` | 项目级规则列表 |
 | `constraints` | 执行期、单位类型、地域等约束 |
+| `guide_names` | 中文指南名称映射 |
+
+此外建议新增独立配置：
+
+- `GUIDE_NAME_TO_PROJECT_TYPE`
+- `ATTACHMENT_CLASSIFICATION_RULES`
+- `ATTACHMENT_FALLBACK_POLICY`
 
 ## 规则命名建议
 
@@ -139,6 +159,8 @@ PROJECT_CONFIG = {
 - `execution_period_limit`
 - `duplicate_submission_check`
 - `applicant_unit_type_check`
+- `attachment_classification_uncertain`
+- `attachment_presence_check`
 
 ## 2026 审查要点映射方式
 
@@ -160,6 +182,10 @@ PROJECT_CONFIG = {
 - 推荐函要求
 - 执行期上限 2 年
 - 重复申报检查
+
+说明：
+
+- 若无法从附件中稳定识别“合作协议”“推荐函”等类型，则应输出人工复核项，而不是直接判失败
 
 ### `innovation_base`
 
@@ -213,5 +239,12 @@ PROJECT_CONFIG = {
 - 项目级规则新增独立 `ProjectRuleRegistry`
 - 两类规则都复用 `CheckResult`
 - 项目级编排负责调用两套规则并聚合结果
+
+当前更合适的项目级优先级顺序是：
+
+1. 项目字段规则
+2. 附件目录存在性
+3. 可识别附件的附件级检查
+4. 附件识别不确定时的人工复核提示
 
 这样可以保持现有风格一致，同时避免把项目级逻辑塞进附件级 checker。

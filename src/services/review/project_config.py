@@ -5,12 +5,14 @@ from typing import Any, Dict, List, Optional
 PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
     "regional_innovation": {
         "label": "区域创新体系建设项目",
+        "guide_names": ["区域创新体系建设项目"],
         "required_project_fields": [
             "project_id",
             "project_type",
+            "project_name",
             "applicant_unit",
-            "registered_date",
             "execution_period_years",
+            "year",
         ],
         "required_doc_kinds": ["commitment_letter"],
         "conditional_doc_rules": [
@@ -33,13 +35,14 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "innovation_base": {
         "label": "科技创新基地项目",
+        "guide_names": ["科技创新基地项目"],
         "required_project_fields": [
             "project_id",
             "project_type",
+            "project_name",
             "applicant_unit",
-            "registered_date",
             "execution_period_years",
-            "applicant_unit_type",
+            "year",
         ],
         "required_doc_kinds": ["commitment_letter", "base_staff_proof"],
         "conditional_doc_rules": [
@@ -61,13 +64,14 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "achievement_transformation": {
         "label": "科技成果转化项目",
+        "guide_names": ["科技成果转化项目"],
         "required_project_fields": [
             "project_id",
             "project_type",
+            "project_name",
             "applicant_unit",
-            "applicant_unit_type",
-            "registered_date",
             "execution_period_years",
+            "year",
         ],
         "required_doc_kinds": ["commitment_letter"],
         "conditional_doc_rules": [
@@ -91,12 +95,14 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "basic_research": {
         "label": "基础研究项目",
+        "guide_names": ["基础研究项目"],
         "required_project_fields": [
             "project_id",
             "project_type",
+            "project_name",
             "applicant_unit",
-            "registered_date",
             "execution_period_years",
+            "year",
         ],
         "required_doc_kinds": ["commitment_letter"],
         "conditional_doc_rules": [
@@ -135,6 +141,13 @@ DOC_KIND_TO_DOCUMENT_TYPE: Dict[str, str] = {
 }
 
 
+GUIDE_NAME_TO_PROJECT_TYPE: Dict[str, str] = {
+    guide_name: project_type
+    for project_type, config in PROJECT_CONFIG.items()
+    for guide_name in config.get("guide_names", [])
+}
+
+
 def get_project_types() -> List[str]:
     """获取所有项目类型"""
     return list(PROJECT_CONFIG.keys())
@@ -148,6 +161,16 @@ def get_project_config(project_type: str) -> Optional[Dict[str, Any]]:
 def get_project_label(project_type: str) -> str:
     """获取项目类型标签"""
     return PROJECT_CONFIG.get(project_type, {}).get("label", project_type)
+
+
+def resolve_project_type(guide_name: str) -> str:
+    """根据指南名称解析项目类型"""
+    if guide_name in GUIDE_NAME_TO_PROJECT_TYPE:
+        return GUIDE_NAME_TO_PROJECT_TYPE[guide_name]
+    for known_name, project_type in GUIDE_NAME_TO_PROJECT_TYPE.items():
+        if known_name and known_name in guide_name:
+            return project_type
+    return "unknown"
 
 
 def resolve_document_type(doc_kind: str, explicit_document_type: Optional[str] = None) -> str:
