@@ -1,8 +1,7 @@
-"""规则引擎模块
+"""形式审查服务包。
 
-提供形式审查的规则检查能力。
+避免在包初始化阶段加载整套规则和视觉/OCR依赖。
+需要具体能力时，请从对应子模块显式导入。
 """
-from src.services.review.rules.base import BaseRule, CheckResult, ReviewContext
-from src.services.review.rules.registry import RuleRegistry
 
-__all__ = ["BaseRule", "CheckResult", "ReviewContext", "RuleRegistry"]
+__all__: list[str] = []

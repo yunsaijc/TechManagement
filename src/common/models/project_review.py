@@ -46,6 +46,9 @@ class ProjectAttachment(BaseModel):
     document_type: Optional[str] = Field(default=None, description="附件级审查类型")
     required: bool = Field(False, description="是否必需")
     recognition_confidence: float = Field(0.0, description="类型识别置信度")
+    classification_source: str = Field(default="", description="分类来源")
+    classification_reason: str = Field(default="", description="分类原因")
+    classification_details: Dict[str, Any] = Field(default_factory=dict, description="分类调试信息")
 
 
 class ExternalChecks(BaseModel):

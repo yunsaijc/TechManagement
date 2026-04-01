@@ -53,7 +53,14 @@ async def _run(args: argparse.Namespace) -> None:
             "max_concurrency": args.max_concurrency,
             "save_every_batches": args.save_every_batches,
         },
-        "progress": None,
+        "progress": {
+            "stage": "runner_started",
+            "processed": 0,
+            "total": 0,
+            "elapsed_seconds": 0,
+            "eta_seconds": 0,
+            "stats": {},
+        },
         "result": None,
     }
     _write_json_atomic(status_path, status)
