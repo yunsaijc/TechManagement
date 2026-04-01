@@ -4,18 +4,37 @@
 
 项目级形式审查建议采用以下执行顺序。
 
-### 第一步：接收项目输入
+### 第一步：接收批次输入
 
 接收：
 
-- `project_info`
-- `cooperation_info`
-- `attachments`
-- `external_checks`
+- `zxmc`
 
-并组装成 `ProjectReviewContext`。
+然后执行数据库查询，拿到项目索引结果：
 
-### 第二步：材料齐套性预检查
+- `sbxx.id`
+- `sbxx.year`
+- `sbxx.xmmc`
+- `zn.name`
+
+### 第二步：扫描材料目录
+
+根据 `year + project_id` 扫描：
+
+- `/mnt/remote_corpus/{year}/sbs/{project_id}`
+- `/mnt/remote_corpus/{year}/sbsfj/{project_id}`
+
+说明：
+
+- 当前不默认把申报书作为形式审查主对象
+- 当前主审对象是项目级字段和附件集合
+- 申报书目录主要用于项目材料存在性和后续扩展，不作为第一阶段主审入口
+
+### 第三步：组装项目上下文
+
+结合数据库项目记录、目录扫描结果和外部校验结果，组装 `ProjectReviewContext`。
+
+### 第四步：材料齐套性预检查
 
 根据 `project_type` 和 `PROJECT_CONFIG`，先判断：
 
@@ -25,7 +44,12 @@
 
 这一阶段不依赖 OCR 和 LLM，可以快速发现明显问题。
 
-### 第三步：附件分发审查
+但要注意：
+
+- 若附件类型识别不可靠，不应直接判定“缺少某类附件”
+- 这类情况应先降级为待人工复核
+
+### 第五步：附件分发审查
 
 对已上传附件按 `doc_kind` 进行分发，并映射到附件级 `document_type`。
 
@@ -37,7 +61,12 @@
 - `src/services/review/agent.py`
 - `src/services/review/rules/config.py`
 
-### 第四步：项目级规则执行
+这一阶段只处理：
+
+- 类型可识别的附件
+- 或外部明确指定类型的附件
+
+### 第六步：项目级规则执行
 
 汇总：
 
@@ -48,7 +77,7 @@
 
 再执行项目级规则，生成项目级 `CheckResult` 列表。
 
-### 第五步：结果聚合
+### 第七步：结果聚合
 
 输出 `ProjectReviewResult`，其中包含：
 
@@ -61,12 +90,13 @@
 ## 参考流程图
 
 ```text
-ProjectReviewRequest
+zxmc
+  -> query project index rows
+  -> scan sbs/sbsfj directories
   -> build ProjectReviewContext
   -> validate required fields
-  -> validate required attachments
-  -> dispatch attachments to ReviewAgent
-  -> collect ReviewResult list
+  -> classify attachments when possible
+  -> review identifiable attachments
   -> run project rules
   -> build ProjectReviewResult
 ```
@@ -93,60 +123,24 @@ ProjectReviewRequest
 建议新增独立项目级入口，例如：
 
 ```text
-POST /api/v1/review/projects
-GET  /api/v1/review/projects/{project_review_id}
+POST /api/v1/review/batches
+GET  /api/v1/review/batches/{batch_review_id}
 GET  /api/v1/review/project-types
 ```
 
 说明：
 
 - `POST /api/v1/review` 继续表示附件级入口
-- `POST /api/v1/review/projects` 表示项目级入口
-- 这样路径语义清晰，且对现有调用方影响最小
+- `POST /api/v1/review/batches` 表示批次级项目形式审查入口
+- 这样更符合真实业务输入
 
 ## 请求体草案
 
-建议项目级接口使用 `application/json`。
+建议批次级接口使用 `application/json`。
 
 ```json
 {
-  "project_info": {
-    "project_id": "2026-001",
-    "project_type": "regional_innovation",
-    "project_name": "示例项目",
-    "applicant_unit": "某单位",
-    "applicant_unit_type": "enterprise",
-    "registered_date": "2020-05-01",
-    "execution_period_years": 2,
-    "fiscal_funding": 100,
-    "self_funding": 200,
-    "has_clinical_research": false,
-    "has_special_industry_requirement": false,
-    "has_biosafety_activity": false,
-    "has_cooperation_unit": true
-  },
-  "cooperation_info": {
-    "cooperation_units": ["某合作单位"],
-    "cooperation_regions": ["北京"],
-    "has_formal_cooperation_agreement": true,
-    "has_management_recommendation_letter": true
-  },
-  "attachments": [
-    {
-      "attachment_id": "att-1",
-      "doc_kind": "commitment_letter",
-      "file_name": "承诺书.pdf",
-      "file_ref": "object://bucket/commitment.pdf",
-      "document_type": "acceptance_report",
-      "required": true
-    }
-  ],
-  "external_checks": {
-    "integrity_status": "passed",
-    "social_credit_status": "passed",
-    "duplicate_submission_status": "passed",
-    "applicant_region": "河北"
-  }
+  "zxmc": "db832d940a2843e6b3c33970336d0e9e"
 }
 ```
 
@@ -157,22 +151,11 @@ GET  /api/v1/review/project-types
   "status": "success",
   "data": {
     "id": "project_review_001",
-    "project_id": "2026-001",
-    "project_type": "regional_innovation",
-    "results": [
-      {
-        "item": "execution_period_limit",
-        "status": "passed",
-        "message": "执行期符合要求",
-        "evidence": {},
-        "confidence": 1.0
-      }
-    ],
-    "missing_attachments": [],
-    "attachment_results": [],
-    "summary": "项目形式审查完成",
-    "suggestions": [],
-    "processing_time": 1.2
+    "zxmc": "db832d940a2843e6b3c33970336d0e9e",
+    "project_count": 12,
+    "project_results": [],
+    "summary": "批次形式审查完成",
+    "processing_time": 12.3
   }
 }
 ```
@@ -183,13 +166,17 @@ GET  /api/v1/review/project-types
 
 推荐新增：
 
-- `src/services/review/project_agent.py`
+- `src/services/review/batch_agent.py`
+- `src/services/review/project_index_repo.py`
+- `src/services/review/project_context_builder.py`
 - `src/services/review/project_rules/`
 - `src/app/routes/project_review.py`
 
 其中：
 
-- `project_agent.py` 负责项目级编排
+- `batch_agent.py` 负责批次级编排
+- `project_index_repo.py` 负责根据 `zxmc` 查询项目列表
+- `project_context_builder.py` 负责根据 `year + project_id` 扫描目录并构造上下文
 - `project_rules/` 负责项目级规则
 - `project_review.py` 提供项目级 API
 
@@ -203,5 +190,7 @@ GET  /api/v1/review/project-types
 - 不把项目级逻辑塞进现有 `ReviewAgent`
 - 项目级结果复用现有 `CheckResult`
 - 附件级结果直接复用现有 `ReviewResult`
+- 附件文件名乱码时优先降级到人工复核，而不是武断判失败
+- 不默认把申报书作为当前主审对象
 
 这样可以在最小风险下完成能力扩展，并保持文档和实现一致。

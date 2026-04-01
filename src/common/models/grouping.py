@@ -118,7 +118,10 @@ class ProjectInGroup(BaseModel):
     # 新增debug字段
     original_subject_code: Optional[str] = Field(None, description="原始学科代码")
     original_subject_name: Optional[str] = Field(None, description="原始学科名称")
+    original_subject_code_2: Optional[str] = Field(None, description="原始第二学科代码")
+    original_subject_name_2: Optional[str] = Field(None, description="原始第二学科名称")
     keywords: List[str] = Field(default_factory=list, description="项目关键词")
+    risk_flags: List[str] = Field(default_factory=list, description="项目级风险标记")
 
     class Config:
         from_attributes = True
@@ -146,6 +149,9 @@ class ProjectGroup(BaseModel):
     
     # 兼容旧版
     summary: Optional[GroupSummary] = Field(None, description="分组摘要(兼容)")
+    subject_code_2_distribution: Dict[str, int] = Field(default_factory=dict, description="组内第二学科代码分布")
+    risk_flags: List[str] = Field(default_factory=list, description="组级风险标记")
+    risk_details: List[str] = Field(default_factory=list, description="组级风险详情")
 
     class Config:
         from_attributes = True
