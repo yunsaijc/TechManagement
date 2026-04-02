@@ -7,7 +7,12 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from src.common.models.evaluation import EvaluationChatAskRequest, EvaluationChatAskResponse, EvaluationResult
+from src.common.models.evaluation import (
+    EvaluationChatAskRequest,
+    EvaluationChatAskResponse,
+    EvaluationResult,
+    GuideEvaluationResult,
+)
 
 
 class StubEvaluationAgent:
@@ -16,6 +21,7 @@ class StubEvaluationAgent:
     def __init__(self):
         self.evaluate_calls = []
         self.ask_calls = []
+        self.evaluate_by_guide_calls = []
 
     async def evaluate(self, request, file_path=None, content=None, source_name=""):
         self.evaluate_calls.append(
@@ -53,6 +59,30 @@ class StubEvaluationAgent:
                     "snippet": "项目目标：建设智能科普服务平台。",
                 }
             ],
+        )
+
+    async def evaluate_by_guide(self, request):
+        self.evaluate_by_guide_calls.append({"request": request})
+        return GuideEvaluationResult(
+            zndm=request.zndm,
+            guide_name="示例指南",
+            total=1,
+            success=1,
+            failed=0,
+            results=[
+                EvaluationResult(
+                    project_id="guide-project",
+                    project_name="示例项目",
+                    overall_score=8.2,
+                    grade="B",
+                    dimension_scores=[],
+                    summary="按指南代码评审完成",
+                    recommendations=[],
+                    evaluation_id="EVAL_GUIDE_DEMO",
+                    chat_ready=bool(request.enable_chat_index),
+                )
+            ],
+            errors=[],
         )
 
 
@@ -188,3 +218,54 @@ def test_chat_ask_route_maps_missing_index_to_422():
     except HTTPException as exc:
         assert exc.status_code == 422
         assert "未构建聊天索引" in exc.detail
+
+
+def test_evaluate_by_guide_route_forwards_zndm_request():
+    """按指南代码评审路由应转发真实参数"""
+    route_module = load_evaluation_route_module()
+    stub_agent = StubEvaluationAgent()
+    route_module._agent = stub_agent
+
+    result = asyncio.run(
+        route_module.evaluate_by_guide(
+            route_module.GuideEvaluationRequest(
+                zndm="c2f3b7b1f9534463ad726e6936c91859",
+                limit=10,
+                enable_highlight=True,
+                enable_chat_index=True,
+            )
+        )
+    )
+
+    assert result.zndm == "c2f3b7b1f9534463ad726e6936c91859"
+    assert result.total == 1
+    assert result.results[0].evaluation_id == "EVAL_GUIDE_DEMO"
+    assert len(stub_agent.evaluate_by_guide_calls) == 1
+    call = stub_agent.evaluate_by_guide_calls[0]
+    assert call["request"].limit == 10
+    assert call["request"].enable_highlight is True
+    assert call["request"].enable_chat_index is True
+
+
+def test_evaluate_by_guide_route_maps_missing_document_to_422():
+    """按指南代码评审应透传真实正文缺失错误"""
+    route_module = load_evaluation_route_module()
+
+    class MissingDocAgent(StubEvaluationAgent):
+        async def evaluate_by_guide(self, request):
+            raise ValueError(
+                "未找到项目申报文档: demo。当前按真实路径规则查找: /mnt/remote_corpus/2025/sbs/demo/demo.docx"
+            )
+
+    route_module._agent = MissingDocAgent()
+
+    try:
+        asyncio.run(
+            route_module.evaluate_by_guide(
+                route_module.GuideEvaluationRequest(zndm="demo")
+            )
+        )
+        raise AssertionError("预期抛出 HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 422
+        assert "/mnt/remote_corpus/2025/sbs/demo/demo.docx" in exc.detail

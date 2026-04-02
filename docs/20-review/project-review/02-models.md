@@ -145,6 +145,26 @@
 | `message` | `str` | 复核说明 |
 | `evidence` | `dict` | 证据 |
 
+### `PolicyRuleCheck`
+
+表示与 `docx` 单条审查要点一一对应的规则对照结果。建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `code` | `str` | 对应 `policy_review_points` 中的规则编码 |
+| `requirement` | `str` | `docx` 原始审查要点文本 |
+| `status` | `str` | `passed` / `failed` / `warning` / `manual` / `requires_data` / `not_applicable` |
+| `source_rule` | `str` | 映射到的项目级规则名，例如 `registered_date_limit` |
+| `matched_result_item` | `str \| None` | 实际命中的 `CheckResult.item` |
+| `evidence` | `dict` | 对应该条规则的证据 |
+| `reason` | `str` | 状态说明，例如缺少数据源、当前不适用、需人工复核 |
+
+说明：
+
+- 这是面向 `docx` 逐条对照的主结果模型
+- 它不是为了替代 `results`，而是把 `results`、配置和人工复核状态统一折叠成单条规则视图
+- 最终调用方应优先查看它，而不是自行拼 `results + manual_review_items`
+
 ### `ProjectReviewResult`
 
 表示项目级形式审查结果。建议字段：
@@ -155,6 +175,7 @@
 | `project_id` | `str` | 项目 ID |
 | `project_type` | `str` | 项目类型 |
 | `results` | `list[CheckResult]` | 项目级规则结果 |
+| `policy_rule_checks` | `list[PolicyRuleCheck]` | 与 `docx` 每条审查要点逐条对照的结果 |
 | `missing_attachments` | `list[MissingAttachment]` | 缺失附件列表 |
 | `attachment_results` | `list[ReviewResult]` | 附件级审查结果 |
 | `manual_review_items` | `list[ManualReviewItem]` | 待人工复核项 |
@@ -178,10 +199,20 @@ ProjectReviewContext
 
 ProjectReviewResult
   -> 项目级 CheckResult 列表
+  -> docx 逐条规则对照列表
   -> 缺失附件列表
   -> 附件级 ReviewResult 列表
   -> 待人工复核项
 ```
+
+推荐读取顺序：
+
+1. `policy_rule_checks`
+   说明：直接回答 `docx` 每一条是否通过
+2. `results`
+   说明：查看项目级规则链实际执行了哪些规则
+3. `manual_review_items`
+   说明：查看当前仍需人工复核的剩余项
 
 ## 与现有实现的衔接
 
@@ -195,3 +226,4 @@ ProjectReviewResult
 - 再按 `/mnt/remote_corpus/{year}/sbs/{project_id}` 与 `/mnt/remote_corpus/{year}/sbsfj/{project_id}` 扫描目录
 - 仅对可识别附件调用现有 `ReviewAgent.process(...)`
 - `ProjectReviewResult.attachment_results` 直接承接现有 `ReviewResult`
+- `ProjectReviewResult.policy_rule_checks` 通过 `PROJECT_CONFIG.policy_review_points + results + manual_review_items` 组装生成

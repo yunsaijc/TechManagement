@@ -1,9 +1,8 @@
 """项目级形式审查 Agent"""
 import asyncio
-import os
 import time
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 from uuid import uuid4
 
 from src.common.models import (
@@ -11,15 +10,18 @@ from src.common.models import (
     CheckStatus,
     ManualReviewItem,
     MissingAttachment,
+    PolicyRuleCheck,
     ProjectAttachment,
     ProjectReviewContext,
     ProjectReviewRequest,
     ProjectReviewResult,
     ReviewResult,
 )
+from src.common.review_runtime import ReviewRuntime
 from src.services.review.agent import ReviewAgent
 from src.services.review.project_config import (
     get_attachment_review_doc_kinds,
+    get_effective_policy_review_points,
     get_project_config,
     resolve_document_type,
 )
@@ -31,10 +33,7 @@ class ProjectReviewAgent:
 
     def __init__(self, review_agent: ReviewAgent | None = None):
         self.review_agent = review_agent or ReviewAgent()
-        self.attachment_review_concurrency = max(
-            1,
-            int(os.getenv("REVIEW_ATTACHMENT_REVIEW_CONCURRENCY", "2")),
-        )
+        self.attachment_review_concurrency = max(1, int(ReviewRuntime.ATTACHMENT_REVIEW_CONCURRENCY))
         self.reviewable_doc_kinds = set(get_attachment_review_doc_kinds())
 
     async def process(self, request: ProjectReviewRequest) -> ProjectReviewResult:
@@ -59,6 +58,7 @@ class ProjectReviewAgent:
         project_rule_results = await self._run_project_rules(context)
         missing_attachments = self._collect_missing_attachments(project_rule_results)
         manual_review_items = self._collect_manual_review_items(context, project_rule_results)
+        policy_rule_checks = self._build_policy_rule_checks(context, project_rule_results, manual_review_items)
         if not config:
             project_rule_results.append(
                 CheckResult(
@@ -74,6 +74,7 @@ class ProjectReviewAgent:
             project_id=context.project_info.project_id,
             project_type=project_type,
             results=project_rule_results,
+            policy_rule_checks=policy_rule_checks,
             missing_attachments=missing_attachments,
             attachment_results=[result for _, result in attachment_results],
             manual_review_items=manual_review_items,
@@ -221,6 +222,258 @@ class ProjectReviewAgent:
                         )
                     )
         return items
+
+    def _build_policy_rule_checks(
+        self,
+        context: ProjectReviewContext,
+        results: List[CheckResult],
+        manual_review_items: List[ManualReviewItem],
+    ) -> List[PolicyRuleCheck]:
+        """组装 docx 逐条规则对照结果"""
+        policy_points = get_effective_policy_review_points(
+            context.project_info.project_type,
+            context.notice_context,
+        )
+        if not policy_points:
+            return []
+
+        result_by_item = {result.item: result for result in results}
+        manual_by_item = {item.item: item for item in manual_review_items}
+        checks: List[PolicyRuleCheck] = []
+
+        for point in policy_points:
+            checks.append(
+                self._build_single_policy_rule_check(
+                    point=point,
+                    context=context,
+                    result_by_item=result_by_item,
+                    manual_by_item=manual_by_item,
+                )
+            )
+
+        return checks
+
+    def _build_single_policy_rule_check(
+        self,
+        point: Dict[str, Any],
+        context: ProjectReviewContext,
+        result_by_item: Dict[str, CheckResult],
+        manual_by_item: Dict[str, ManualReviewItem],
+    ) -> PolicyRuleCheck:
+        """构造单条政策规则对照结果"""
+        code = point.get("code", "")
+        requirement = point.get("requirement", "")
+        automation = point.get("automation", "")
+        reason = point.get("reason", "")
+        metadata = self._resolve_policy_point_mapping(code)
+        source_rule = metadata["source_rule"]
+        doc_kind = metadata.get("doc_kind", "")
+        condition_field = metadata.get("condition_field", "")
+
+        if condition_field and not getattr(context.project_info, condition_field, False):
+            return PolicyRuleCheck(
+                code=code,
+                requirement=requirement,
+                status="not_applicable",
+                source_rule=source_rule,
+                matched_result_item=source_rule or None,
+                evidence={"condition_field": condition_field, "condition_value": False},
+                reason="当前项目未触发该条规则",
+            )
+
+        source_result = result_by_item.get(source_rule) if source_rule else None
+        if source_result:
+            status, evidence, resolved_reason = self._resolve_status_from_result(
+                code=code,
+                source_result=source_result,
+                doc_kind=doc_kind,
+            )
+            if status:
+                return PolicyRuleCheck(
+                    code=code,
+                    requirement=requirement,
+                    status=status,
+                    source_rule=source_rule,
+                    matched_result_item=source_result.item,
+                    evidence=evidence,
+                    reason=resolved_reason,
+                )
+
+        manual_item = manual_by_item.get(code)
+        if manual_item:
+            manual_status = manual_item.evidence.get("automation") or automation or "manual"
+            return PolicyRuleCheck(
+                code=code,
+                requirement=requirement,
+                status=manual_status,
+                source_rule=source_rule,
+                matched_result_item=source_rule or None,
+                evidence=manual_item.evidence,
+                reason=manual_item.evidence.get("reason", manual_item.message),
+            )
+
+        if automation == "manual":
+            return PolicyRuleCheck(
+                code=code,
+                requirement=requirement,
+                status="manual",
+                source_rule=source_rule,
+                matched_result_item=source_rule or None,
+                evidence={},
+                reason=reason or "当前阶段保留人工复核",
+            )
+
+        if automation == "system_managed":
+            return PolicyRuleCheck(
+                code=code,
+                requirement=requirement,
+                status="system_managed",
+                source_rule=source_rule,
+                matched_result_item=source_rule or None,
+                evidence={},
+                reason=reason or "该限制由上游申报系统前置控制，不纳入本服务重复审查",
+            )
+
+        if automation == "requires_data":
+            return PolicyRuleCheck(
+                code=code,
+                requirement=requirement,
+                status="requires_data",
+                source_rule=source_rule,
+                matched_result_item=source_rule or None,
+                evidence={},
+                reason=reason or "当前缺少自动核验所需数据",
+            )
+
+        return PolicyRuleCheck(
+            code=code,
+            requirement=requirement,
+            status="not_applicable",
+            source_rule=source_rule,
+            matched_result_item=source_rule or None,
+            evidence={},
+            reason="当前项目未触发该条规则或暂无可用证据",
+        )
+
+    def _resolve_status_from_result(
+        self,
+        code: str,
+        source_result: CheckResult,
+        doc_kind: str = "",
+    ) -> tuple[str, Dict[str, Any], str]:
+        """从项目级规则结果推导 docx 单条规则状态"""
+        if source_result.item == "required_attachments":
+            missing = set(source_result.evidence.get("missing_doc_kinds", []))
+            if doc_kind in missing:
+                return source_result.status.value, source_result.evidence, source_result.message
+            if source_result.status == CheckStatus.PASSED:
+                return "passed", source_result.evidence, source_result.message
+            if source_result.status == CheckStatus.WARNING:
+                return "warning", source_result.evidence, "附件识别不稳定，暂无法确认该条附件规则"
+            return "passed", {"doc_kind": doc_kind}, "该附件规则已满足"
+
+        if source_result.item == "conditional_attachments":
+            missing_items = source_result.evidence.get("missing_conditional_attachments", [])
+            missing_doc_kinds = {item.get("doc_kind", "") for item in missing_items}
+            if doc_kind in missing_doc_kinds:
+                evidence = next((item for item in missing_items if item.get("doc_kind") == doc_kind), source_result.evidence)
+                return source_result.status.value, evidence, source_result.message
+            if source_result.status == CheckStatus.PASSED:
+                return "passed", source_result.evidence, source_result.message
+            if source_result.status == CheckStatus.WARNING:
+                return "warning", source_result.evidence, "附件识别不稳定，暂无法确认该条条件性附件规则"
+            return "passed", {"doc_kind": doc_kind}, "该条件性附件规则已满足"
+
+        if source_result.item == "external_status_check":
+            if code == "duplicate_submission_check":
+                duplicate_status = source_result.evidence.get("duplicate_submission_status", "")
+                evidence = {
+                    "duplicate_submission_status": duplicate_status,
+                    **source_result.evidence,
+                }
+                if source_result.status == CheckStatus.WARNING:
+                    return "warning", evidence, source_result.message
+                return source_result.status.value, evidence, source_result.message
+            return source_result.status.value, source_result.evidence, source_result.message
+
+        if source_result.status == CheckStatus.SKIPPED:
+            if code == "registered_date_limit":
+                return "requires_data", source_result.evidence, source_result.message
+            return "not_applicable", source_result.evidence, source_result.message
+
+        if source_result.status == CheckStatus.WARNING and code == "registered_date_limit":
+            return "requires_data", source_result.evidence, source_result.message
+
+        return source_result.status.value, source_result.evidence, source_result.message
+
+    def _resolve_policy_point_mapping(self, code: str) -> Dict[str, str]:
+        """推导政策规则与项目级规则的映射关系"""
+        mapping: Dict[str, Dict[str, str]] = {
+            "registered_date_limit": {"source_rule": "registered_date_limit"},
+            "funding_ratio_check": {"source_rule": "funding_ratio_check"},
+            "external_status_check": {"source_rule": "external_status_check"},
+            "integrity_and_credit_check": {"source_rule": "external_status_check"},
+            "duplicate_submission_check": {"source_rule": "external_status_check"},
+            "execution_period_limit": {"source_rule": "execution_period_limit"},
+            "applicant_unit_type_check": {"source_rule": "applicant_unit_type_check"},
+            "commitment_letter_required": {
+                "source_rule": "required_attachments",
+                "doc_kind": "commitment_letter",
+            },
+            "base_staff_proof_required": {
+                "source_rule": "required_attachments",
+                "doc_kind": "base_staff_proof",
+            },
+            "ethics_approval_required": {
+                "source_rule": "conditional_attachments",
+                "doc_kind": "ethics_approval",
+                "condition_field": "has_clinical_research",
+            },
+            "industry_permit_required": {
+                "source_rule": "conditional_attachments",
+                "doc_kind": "industry_permit",
+                "condition_field": "has_special_industry_requirement",
+            },
+            "biosafety_commitment_required": {
+                "source_rule": "conditional_attachments",
+                "doc_kind": "biosafety_commitment",
+                "condition_field": "has_biosafety_activity",
+            },
+            "cooperation_agreement_required": {
+                "source_rule": "conditional_attachments",
+                "doc_kind": "cooperation_agreement",
+                "condition_field": "has_cooperation_unit",
+            },
+            "recommendation_letter_required": {
+                "source_rule": "conditional_attachments",
+                "doc_kind": "recommendation_letter",
+                "condition_field": "has_cooperation_unit",
+            },
+            "cooperation_region_check": {
+                "source_rule": "",
+                "condition_field": "has_cooperation_unit",
+            },
+            "platform_scope_check": {"source_rule": ""},
+            "joint_application_check": {"source_rule": ""},
+            "unfinished_guidance_project_check": {"source_rule": ""},
+            "joint_updownstream_application_check": {"source_rule": ""},
+            "shared_mechanism_check": {"source_rule": ""},
+            "provincial_nsf_conflict_check": {"source_rule": ""},
+            "unfinished_basic_project_check": {"source_rule": ""},
+            "applicant_qualification_check": {"source_rule": ""},
+            "project_leader_age_check": {"source_rule": "project_leader_age_check"},
+            "active_guidance_project_leader_check": {"source_rule": ""},
+            "project_count_limit_check": {"source_rule": ""},
+            "enterprise_batch_limit_check": {"source_rule": ""},
+            "enterprise_active_guidance_project_check": {"source_rule": ""},
+            "performance_metric_count_check": {"source_rule": "performance_metric_count_check"},
+            "budget_forbidden_expense_check": {"source_rule": "budget_forbidden_expense_check"},
+            "leader_achievement_attachment_check": {"source_rule": ""},
+            "beijing_tianjin_partner_check": {"source_rule": ""},
+            "cluster_region_check": {"source_rule": ""},
+            "other_policy_compliance": {"source_rule": ""},
+        }
+        return mapping.get(code, {"source_rule": code})
 
     def _generate_summary(
         self,

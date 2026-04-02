@@ -283,7 +283,9 @@ class FullGroupingResult(BaseModel):
 
 class GroupingRequest(BaseModel):
     """分组请求"""
+    guide_codes: Optional[List[str]] = Field(None, description="按 zndm 过滤的代码列表（可选）")
     category: Optional[str] = Field(None, description="奖种类别")
+    min_per_group: int = Field(3, description="每组最小项目数")
     max_per_group: int = Field(15, description="每组目标项目数")
     strategy: GroupingStrategy = Field(GroupingStrategy.SEMANTIC, description="分组策略")
     merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
@@ -310,7 +312,9 @@ class MatchingRequest(BaseModel):
 
 class FullGroupingRequest(BaseModel):
     """完整分组与匹配请求"""
+    guide_codes: Optional[List[str]] = Field(None, description="按 zndm 过滤的代码列表（可选）")
     category: Optional[str] = Field(None, description="奖种类别")
+    min_per_group: int = Field(3, description="每组最小项目数")
     max_per_group: int = Field(15, description="每组目标项目数")
     merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
     merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")

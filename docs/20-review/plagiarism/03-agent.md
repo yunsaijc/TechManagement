@@ -20,6 +20,12 @@
 - 再对候选集合运行 `SourceRetriever` 的窗口级重排，输出最终 Top-K。
 - 这一步不应退化为“全库逐文档扫描”，也不应在在线请求里把大量特征分片整批常驻内存。
 
+说明：
+
+- Agent 只消费当前已经构建好的索引
+- Agent 不负责触发危险的全量 refresh
+- 建库、扫描、断点续跑属于离线维护职责，而不是在线查重职责
+
 ### 3. 按需精比对 (Lazy Matching)
 - 对于召回出的 Top-K 文档，通过 `CorpusManager` 获取挂载目录下的原文。
 - 逐一运行 `ComparisonEngine.compare(primary, corpus_doc)`。
@@ -29,6 +35,12 @@
 - 调用 `MultiSourceAggregator.build_summary`。
 - **归并**：如果一段话在 A 库文档和 B 库文档中都有发现，则合并为一个 Match Group。
 - **统计**：计算主文档去重后的 `effective_duplicate_rate`。
+
+### 5. 报告生成 (Reporting)
+- Mammoth 报告必须对齐 `match_groups` 的多来源结构。
+- 左侧展示 Primary 全文并高亮命中区间。
+- 右侧展示“按命中组聚合的来源片段列表”，每组可包含多个 `sources`。
+- 禁止再假设“一个报告只对应一个 Source 全文”。
 
 ## 流程编排 (Workflow)
 

@@ -146,11 +146,17 @@ tests/services/evaluation/
   - `chat/ask` 路由可返回 `answer + citations`
   - `chat/ask` 会把“评审记录不存在”映射为 `404`
   - `chat/ask` 会把“未构建聊天索引”映射为 `422`
+- `tests/services/evaluation/test_report_generator.py`
+  - 正式报告 HTML 内包含交互式聊天面板与 `/chat/ask` 调用脚本
+  - debug 报告不包含交互式聊天面板
+- `tests/app/test_main.py`
+  - 应用层为本地 HTML 报告开放 CORS，允许 `file://` 场景调用正文评审 API
 
 ## 调试产物
 
 - 评审完成后应同步输出调试产物到 `debug_eval/`
 - 至少包含：
   - `EVAL_{project_id}.json`：完整评审结果与章节调试信息
-  - `EVAL_{project_id}.html`：可直接查看的评审可视化报告
+  - `EVAL_{project_id}.html`：专家阅览版正式报告，包含专家关注问答
+  - `EVAL_{project_id}.debug.html`：开发调试版报告，保留章节预览等排障信息
   - `index.html`：调试报告索引页

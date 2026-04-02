@@ -3,6 +3,7 @@
 正文评审服务的统一编排器，融合九维评审、划重点、产业贴合、技术摸底与聊天索引。
 """
 import asyncio
+import inspect
 import json
 import os
 from datetime import datetime
@@ -15,6 +16,8 @@ from src.common.models.evaluation import (
     CheckResult,
     EvaluationChatAskResponse,
     EvaluationError,
+    GuideEvaluationRequest,
+    GuideEvaluationResult,
     EvaluationRequest,
     EvaluationResult,
     IndustryFitResult,
@@ -168,13 +171,15 @@ class EvaluationAgent:
         result.chat_ready = bool(module_outputs.get("chat_ready", False))
 
         await self.storage.save(result)
-        await self._save_debug_artifacts(
+        debug_task = self._save_debug_artifacts(
             result=result,
             sections=sections,
             meta=meta,
             source_name=source_name,
             page_chunks=page_chunks,
         )
+        if inspect.isawaitable(debug_task):
+            await debug_task
         return result
 
     async def evaluate_by_project(self, request: EvaluationRequest) -> EvaluationResult:
@@ -185,9 +190,10 @@ class EvaluationAgent:
 
         file_path = self.project_repo.get_primary_document_path(request.project_id)
         if not file_path:
+            expected_path = self.project_repo.get_expected_document_path(request.project_id)
             raise ValueError(
                 f"未找到项目申报文档: {request.project_id}。"
-                "请先配置 EVALUATION_PROJECT_DOC_ROOT，或改用 /api/v1/evaluation/evaluate/file 上传文档评审。"
+                f"当前按真实路径规则查找: {expected_path or '无法根据 year 推断路径'}"
             )
 
         parsed = await self.parser.parse(file_path, source_name=os.path.basename(file_path))
@@ -201,6 +207,60 @@ class EvaluationAgent:
             file_path=file_path,
             content=parsed,
             source_name=os.path.basename(file_path),
+        )
+
+    async def evaluate_by_guide(self, request: GuideEvaluationRequest) -> GuideEvaluationResult:
+        """按指南代码批量执行评审"""
+        projects = self.project_repo.get_projects_by_guide_code(request.zndm, limit=request.limit)
+        if not projects:
+            raise ValueError(f"未找到已提交项目: {request.zndm}")
+
+        semaphore = asyncio.Semaphore(max(1, request.concurrency))
+        results: List[EvaluationResult] = []
+        errors: List[Dict[str, Any]] = []
+
+        async def evaluate_one(project: Dict[str, str]) -> None:
+            async with semaphore:
+                project_id = str(project.get("id") or "").strip()
+                if not project_id:
+                    raise ValueError("项目记录缺少 id")
+
+                eval_request = EvaluationRequest(
+                    project_id=project_id,
+                    dimensions=request.dimensions,
+                    weights=request.weights,
+                    include_sections=request.include_sections,
+                    enable_highlight=request.enable_highlight,
+                    enable_industry_fit=request.enable_industry_fit,
+                    enable_benchmark=request.enable_benchmark,
+                    enable_chat_index=request.enable_chat_index,
+                )
+                result = await self.evaluate_by_project(eval_request)
+                results.append(result)
+
+        raw_results = await asyncio.gather(
+            *(evaluate_one(project) for project in projects),
+            return_exceptions=True,
+        )
+
+        for project, item in zip(projects, raw_results):
+            if isinstance(item, Exception):
+                errors.append(
+                    {
+                        "project_id": project.get("id"),
+                        "project_name": project.get("xmmc"),
+                        "error": str(item),
+                    }
+                )
+
+        return GuideEvaluationResult(
+            zndm=request.zndm,
+            guide_name=projects[0].get("guide_name") or None,
+            total=len(projects),
+            success=len(results),
+            failed=len(errors),
+            results=results,
+            errors=errors,
         )
 
     async def ask(self, evaluation_id: str, question: str) -> EvaluationChatAskResponse:

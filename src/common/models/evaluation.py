@@ -170,6 +170,31 @@ class BatchEvaluationRequest(BaseModel):
     concurrency: int = Field(default=3, ge=1, le=10, description="并发数")
 
 
+class GuideEvaluationRequest(BaseModel):
+    """按指南代码批量评审请求"""
+    zndm: str = Field(..., min_length=1, description="指南代码")
+    limit: Optional[int] = Field(default=None, ge=1, le=100, description="最多评审项目数，不传则全量")
+    dimensions: Optional[List[str]] = Field(default=None, description="评审维度列表，默认全部9个维度")
+    weights: Optional[Dict[str, float]] = Field(default=None, description="自定义权重")
+    include_sections: List[str] = Field(default_factory=list, description="指定解析的章节，默认全部")
+    enable_highlight: bool = Field(default=False, description="是否启用划重点")
+    enable_industry_fit: bool = Field(default=False, description="是否启用产业指南贴合评估")
+    enable_benchmark: bool = Field(default=False, description="是否启用技术摸底")
+    enable_chat_index: bool = Field(default=False, description="是否构建聊天索引")
+    concurrency: int = Field(default=3, ge=1, le=10, description="并发数")
+
+
+class GuideEvaluationResult(BaseModel):
+    """按指南代码批量评审结果"""
+    zndm: str = Field(..., description="指南代码")
+    guide_name: Optional[str] = Field(default=None, description="指南名称")
+    total: int = Field(..., description="总数")
+    success: int = Field(..., description="成功数")
+    failed: int = Field(..., description="失败数")
+    results: List["EvaluationResult"] = Field(default_factory=list, description="评审结果列表")
+    errors: List[Dict[str, Any]] = Field(default_factory=list, description="错误列表")
+
+
 # ============ 融合输出模型 ============
 
 class StructuredHighlights(BaseModel):

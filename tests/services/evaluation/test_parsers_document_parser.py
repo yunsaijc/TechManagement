@@ -63,6 +63,37 @@ def test_document_parser_build_page_chunks_carries_section_across_pages():
     assert any("扩大试点并形成阶段成果" in chunk["text"] for chunk in page_two_chunks)
 
 
+def test_document_parser_build_page_chunks_stitches_cross_page_continuation():
+    """同章节跨页且上一页未句终时，下一页切片应补充上一页尾部上下文"""
+    parser = DocumentParser()
+
+    sections = {
+        "项目实施内容、技术路线及创新点": "方向三\n方向四",
+    }
+    page_texts = [
+        "\n".join(
+            [
+                "二、项目实施内容、技术路线及创新点",
+                "方向三：精准手术与3D打印研究",
+                "通过开发智能化手术规划",
+            ]
+        ),
+        "\n".join(
+            [
+                "系统，进一步优化导板设计与创新应用。",
+                "方向四：康复机器人研究。",
+            ]
+        ),
+    ]
+
+    chunks = parser._build_page_chunks(page_texts=page_texts, sections=sections, file_name="demo.pdf")
+
+    page_two_chunks = [chunk for chunk in chunks if chunk["page"] == 2]
+    assert page_two_chunks
+    assert any("通过开发智能化手术规划" in chunk["text"] for chunk in page_two_chunks)
+    assert any("系统，进一步优化导板设计与创新应用。" in chunk["text"] for chunk in page_two_chunks)
+
+
 def test_document_parser_build_page_chunks_marks_instruction_page_as_fill_guide():
     """填报说明页不应因列举章节名称被误归入业务章节"""
     parser = DocumentParser()

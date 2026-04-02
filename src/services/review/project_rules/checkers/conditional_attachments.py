@@ -1,6 +1,7 @@
 """条件性附件检查"""
 from src.common.models import CheckResult, CheckStatus
 from src.services.review.project_config import get_project_config
+from src.services.review.project_rules.checkers._attachment_kinds import collect_specific_doc_kinds
 from src.services.review.project_rules.base import BaseProjectRule
 from src.services.review.project_rules.registry import ProjectRuleRegistry
 
@@ -17,7 +18,7 @@ class ConditionalAttachmentsRule(BaseProjectRule):
         config = get_project_config(context.project_info.project_type) or {}
         conditional_rules = config.get("conditional_doc_rules", [])
         info = context.project_info.model_dump()
-        existing_doc_kinds = {attachment.doc_kind for attachment in context.attachments}
+        existing_doc_kinds = collect_specific_doc_kinds(context.attachments)
 
         missing = []
         for rule in conditional_rules:

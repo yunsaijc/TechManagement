@@ -13,13 +13,19 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.common.models import ApiResponse
+from src.services.grouping.storage.project_repo import ProjectRepository
 from src.services.plagiarism.agent import PlagiarismAgent
-from src.services.plagiarism.config import get_section_config, get_all_doc_types
+from src.services.plagiarism.config import (
+    PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT,
+    get_all_doc_types,
+    get_section_config,
+)
 from src.services.plagiarism.section_extractor import SectionExtractor
 
 router = APIRouter()
 _CORPUS_REFRESH_STATUS_PATH = Path("data/plagiarism/corpus_refresh_status.json")
 _CORPUS_REFRESH_LOG_PATH = Path("data/plagiarism/corpus_refresh.log")
+_CORPUS_REFRESH_CHECKPOINT_PATH = Path("data/plagiarism/corpus_refresh_checkpoint.json")
 
 
 def _read_corpus_refresh_status() -> dict:
@@ -64,11 +70,116 @@ def _write_corpus_refresh_status(data: dict) -> None:
     os.replace(temp_path, _CORPUS_REFRESH_STATUS_PATH)
 
 
+def _read_corpus_refresh_checkpoint() -> dict:
+    if not _CORPUS_REFRESH_CHECKPOINT_PATH.exists():
+        return {
+            "next_cursor": None,
+            "has_more": False,
+            "updated_at": None,
+            "last_task_id": None,
+        }
+    try:
+        with open(_CORPUS_REFRESH_CHECKPOINT_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {
+            "next_cursor": None,
+            "has_more": False,
+            "updated_at": None,
+            "last_task_id": None,
+        }
+
+
+def _write_corpus_refresh_checkpoint(data: dict) -> None:
+    _CORPUS_REFRESH_CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = _CORPUS_REFRESH_CHECKPOINT_PATH.with_name(f"{_CORPUS_REFRESH_CHECKPOINT_PATH.name}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, _CORPUS_REFRESH_CHECKPOINT_PATH)
+
+
 class PlagiarismRequest(BaseModel):
     """查重请求"""
     threshold: float = 0.8
     threshold_high: float = 0.9
     threshold_medium: float = 0.7
+
+
+def _normalize_guide_codes(
+    guide_codes_raw: Optional[str],
+    guide_codes_list: Optional[List[str]],
+) -> List[str]:
+    codes: List[str] = []
+    if guide_codes_raw:
+        raw = guide_codes_raw.strip()
+        if raw:
+            if raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=400, detail=f"guide_codes JSON 解析失败: {exc}") from exc
+                if not isinstance(parsed, list):
+                    raise HTTPException(status_code=400, detail="guide_codes 必须是字符串数组")
+                codes.extend(str(item).strip() for item in parsed if str(item).strip())
+            else:
+                codes.extend(part.strip() for part in raw.split(",") if part.strip())
+    if guide_codes_list:
+        codes.extend(code.strip() for code in guide_codes_list if code and code.strip())
+
+    deduped: List[str] = []
+    seen = set()
+    for code in codes:
+        if code in seen:
+            continue
+        seen.add(code)
+        deduped.append(code)
+    return deduped
+
+
+def _serialize_plagiarism_result(result) -> dict:
+    return {
+        "id": result.id,
+        "total_pairs": result.total_pairs,
+        "effective_duplicate_rate": result.effective_duplicate_rate,
+        "effective_duplicate_chars": result.effective_duplicate_chars,
+        "primary_scope_chars": result.primary_scope_chars,
+        "source_rankings": result.source_rankings,
+        "match_groups": result.match_groups,
+        "processing_time": round(result.processing_time, 2),
+    }
+
+
+def _resolve_local_project_doc_candidates(project_id: str, year: str) -> List[Path]:
+    filename = f"{project_id}.docx"
+    local_root = PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT
+    candidates = [
+        local_root / "sbs_5000" / filename,
+        local_root / "sbs_10000" / filename,
+        local_root / year / "sbs" / filename if year else None,
+        local_root / filename,
+    ]
+    ordered: List[Path] = []
+    seen = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        normalized = str(candidate)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(candidate)
+    return ordered
+
+
+def _find_local_project_doc(project_id: str, year: str) -> tuple[Optional[Path], List[str]]:
+    candidates = _resolve_local_project_doc_candidates(project_id, year)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate, [str(path) for path in candidates]
+    return None, [str(path) for path in candidates]
 
 
 @router.post("")
@@ -188,15 +299,138 @@ async def check_plagiarism(
     
     return ApiResponse(
         status="success",
+        data=_serialize_plagiarism_result(result),
+    )
+
+
+@router.post("/by-guide-codes")
+async def check_plagiarism_by_guide_codes(
+    guide_codes_raw: Optional[str] = Form(None, alias="guide_codes"),
+    guide_codes_list: Optional[List[str]] = Form(None, alias="guide_codes_list"),
+    threshold: float = Form(0.5),
+    threshold_high: float = Form(0.8),
+    threshold_medium: float = Form(0.5),
+    doc_type: str = Form("default"),
+    section_config: Optional[str] = Form(None),
+    debug: bool = Form(False),
+    limit: Optional[int] = Form(None),
+) -> ApiResponse[dict]:
+    """按指南代码批量执行“单项目 vs 库”查重。"""
+    cleaned_codes = _normalize_guide_codes(guide_codes_raw, guide_codes_list)
+    if not cleaned_codes:
+        raise HTTPException(status_code=400, detail="guide_codes 不能为空")
+
+    config = None
+    if section_config:
+        try:
+            config = json.loads(section_config)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="section_config 必须是有效的 JSON 字符串")
+    else:
+        config = get_section_config(doc_type)
+
+    if not SectionExtractor.validate_config(config):
+        raise HTTPException(
+            status_code=400,
+            detail="section_config 无效：primary 必须配置 start_pattern（可选 end_pattern）",
+        )
+
+    projects = ProjectRepository.get_submitted_projects_by_guide_codes(cleaned_codes, limit=limit)
+    if not projects:
+        return ApiResponse(
+            status="success",
+            data={
+                "guide_codes": cleaned_codes,
+                "selected_projects": 0,
+                "available_docs": 0,
+                "missing_docs": [],
+                "results": [],
+            },
+        )
+
+    available_projects = []
+    missing_docs = []
+    for project in projects:
+        doc_path, expected_paths = _find_local_project_doc(project["id"], project["year"])
+        remote_path = f"/mnt/remote_corpus/{project['year']}/sbs/{project['id']}.docx"
+        project_info = {
+            "id": project["id"],
+            "xmmc": project["xmmc"],
+            "year": project["year"],
+            "zndm": project["zndm"],
+            "guide_name": project["guide_name"],
+        }
+        if doc_path is None:
+            missing_docs.append(
+                {
+                    **project_info,
+                    "expected_local_paths": expected_paths,
+                    "remote_path": remote_path,
+                }
+            )
+            continue
+        available_projects.append(
+            {
+                **project_info,
+                "local_path": str(doc_path),
+                "remote_path": remote_path,
+            }
+        )
+
+    results = []
+    agent = PlagiarismAgent(
+        threshold=threshold,
+        threshold_high=threshold_high,
+        threshold_medium=threshold_medium,
+        section_config=config,
+        debug=debug,
+    )
+    for project in available_projects:
+        file_path = Path(project["local_path"])
+        try:
+            file_data = file_path.read_bytes()
+        except Exception as exc:
+            missing_docs.append(
+                {
+                    "id": project["id"],
+                    "xmmc": project["xmmc"],
+                    "year": project["year"],
+                    "zndm": project["zndm"],
+                    "guide_name": project["guide_name"],
+                    "expected_local_paths": [project["local_path"]],
+                    "remote_path": project["remote_path"],
+                    "error": f"读取本地文件失败: {exc}",
+                }
+            )
+            continue
+
+        result = await agent.check(
+            [(f"{project['id']}.docx", file_data)],
+            file_paths={f"{project['id']}.docx": str(file_path)},
+            use_corpus=True,
+        )
+        results.append(
+            {
+                "project": {
+                    "id": project["id"],
+                    "xmmc": project["xmmc"],
+                    "year": project["year"],
+                    "zndm": project["zndm"],
+                    "guide_name": project["guide_name"],
+                    "local_path": project["local_path"],
+                },
+                "result": _serialize_plagiarism_result(result),
+            }
+        )
+
+    return ApiResponse(
+        status="success",
         data={
-            "id": result.id,
-            "total_pairs": result.total_pairs,
-            "effective_duplicate_rate": result.effective_duplicate_rate,
-            "effective_duplicate_chars": result.effective_duplicate_chars,
-            "primary_scope_chars": result.primary_scope_chars,
-            "source_rankings": result.source_rankings,
-            "match_groups": result.match_groups,
-            "processing_time": round(result.processing_time, 2),
+            "guide_codes": cleaned_codes,
+            "selected_projects": len(projects),
+            "available_docs": len(results),
+            "missing_docs": missing_docs,
+            "results": results,
         },
     )
 
@@ -219,9 +453,11 @@ async def get_corpus_status() -> ApiResponse[dict]:
 
 @router.get("/corpus/refresh/status")
 async def get_corpus_refresh_status() -> ApiResponse[dict]:
+    data = _read_corpus_refresh_status()
+    data["checkpoint"] = _read_corpus_refresh_checkpoint()
     return ApiResponse(
         status="success",
-        data=_read_corpus_refresh_status(),
+        data=data,
     )
 
 
@@ -231,149 +467,18 @@ async def refresh_corpus(
     batch_size: int = Form(100),
     max_concurrency: int = Form(2),
     save_every_batches: int = Form(5),
+    cursor_doc_id: Optional[str] = Form(None),
+    max_scan: Optional[int] = Form(None),
+    reset_cursor: bool = Form(False),
     wait: bool = Form(False),
 ) -> ApiResponse[dict]:
-    """刷新库索引（触发远程挂载目录扫描）"""
-    from src.services.plagiarism.corpus import CorpusManager
-
-    current_status = _read_corpus_refresh_status()
-    if current_status.get("running"):
-        return ApiResponse(
-            status="success",
-            data={
-                "accepted": False,
-                "message": "refresh 任务已在运行",
-                "task": current_status,
-            },
-        )
-
-    params = {
-        "limit": limit,
-        "batch_size": batch_size,
-        "max_concurrency": max_concurrency,
-        "save_every_batches": save_every_batches,
-        "wait": wait,
-    }
-
-    task_id = uuid.uuid4().hex
-
-    if wait:
-        manager = CorpusManager()
-        stats = await manager.scan_and_update_with_options(
-            limit=limit,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-            save_every_batches=save_every_batches,
-        )
-        return ApiResponse(
-            status="success",
-            data={
-                "accepted": True,
-                "task": {
-                    "running": False,
-                    "task_id": task_id,
-                    "params": params,
-                },
-                "result": stats,
-            },
-        )
-
-    initial_status = {
-        "running": True,
-        "task_id": task_id,
-        "started_at": time.time(),
-        "finished_at": None,
-        "error": None,
-        "params": params,
-        "progress": {
-            "stage": "spawn_pending",
-            "processed": 0,
-            "total": 0,
-            "elapsed_seconds": 0,
-            "eta_seconds": 0,
-            "stats": {},
-        },
-        "result": None,
-        "pid": None,
-        "log_path": str(_CORPUS_REFRESH_LOG_PATH),
-    }
-    _write_corpus_refresh_status(initial_status)
-
-    cmd = []
-    if shutil.which("ionice"):
-        cmd.extend(["ionice", "-c3"])
-    if shutil.which("nice"):
-        cmd.extend(["nice", "-n", "19"])
-    cmd.extend(
-        [
-            sys.executable,
-            "-m",
-            "src.services.plagiarism.corpus_refresh_runner",
-            "--status-path",
-            str(_CORPUS_REFRESH_STATUS_PATH),
-            "--task-id",
-            task_id,
-            "--batch-size",
-            str(batch_size),
-            "--max-concurrency",
-            str(max_concurrency),
-            "--save-every-batches",
-            str(save_every_batches),
-        ]
-    )
-    if limit is not None:
-        cmd.extend(["--limit", str(limit)])
-
-    _CORPUS_REFRESH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    log_file = open(_CORPUS_REFRESH_LOG_PATH, "ab")
-    process = subprocess.Popen(
-        cmd,
-        cwd=str(Path.cwd()),
-        stdout=log_file,
-        stderr=log_file,
-        start_new_session=True,
-    )
-    log_file.close()
-
-    initial_status["pid"] = process.pid
-    initial_status["progress"] = {
-        "stage": "spawned",
-        "processed": 0,
-        "total": 0,
-        "elapsed_seconds": 0,
-        "eta_seconds": 0,
-        "stats": {},
-    }
-    _write_corpus_refresh_status(initial_status)
-
-    time.sleep(0.2)
-    return_code = process.poll()
-    if return_code is not None:
-        failed_status = _read_corpus_refresh_status()
-        failed_status.update(
-            {
-                "running": False,
-                "finished_at": time.time(),
-                "error": f"refresh 子进程启动失败，exit_code={return_code}",
-                "pid": process.pid,
-            }
-        )
-        progress = failed_status.get("progress") or {}
-        progress["stage"] = "spawn_failed"
-        failed_status["progress"] = progress
-        _write_corpus_refresh_status(failed_status)
-
-    return ApiResponse(
-        status="success",
-        data={
-            "accepted": True,
-            "message": "refresh 已在后台启动",
-            "task": {
-                "task_id": task_id,
-                "running": True,
-                "params": params,
-            },
-        },
+    """危险 refresh API 已禁用，只保留状态查询。"""
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "危险 refresh API 已禁用。"
+            "请改用离线命令执行 scan_manifest / build_batch。"
+        ),
     )
 
 
