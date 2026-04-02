@@ -8,7 +8,7 @@
 - **库驱动查重**：支持从大规模预索引库（Corpus）中自动召回可疑来源。
 - **Primary 驱动归并**：以主文档为中心，自动合并来自多个来源的重叠命中。
 - **有效重复统计**：计算主文档去重后的物理重复覆盖率，而非简单的 Pairwise 相似度。
-- **Mammoth HTML 报告**：生成保留 Word 原始格式的高亮查重报告。
+- **Mammoth HTML 报告**：生成保留 Word 原始格式的高亮查重报告，主文档高亮与多来源片段联动展示。
 
 ## 模块定位
 
@@ -44,7 +44,7 @@ src/services/plagiarism/
   -> 多源归并 (Multi-source Merging)
      - 以 Primary 坐标系合并所有来源的命中片段
   -> 结果统计与报告生成
-     - 计算有效重复率，生成 Mammoth HTML
+     - 计算有效重复率，生成 Mammoth HTML（Primary 全文 + 多来源片段面板）
 ```
 
 ## 库管理原则 (Corpus Principles)

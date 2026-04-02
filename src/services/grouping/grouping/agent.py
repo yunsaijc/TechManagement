@@ -282,8 +282,8 @@ def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
 
 def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"grouping_{dataset_tag}_{timestamp}.json"
+        safe_tag = re.sub(r"[^0-9A-Za-z_.-]+", "_", dataset_tag or "fixed")
+        filename = f"grouping_{safe_tag}.json"
         filepath = os.path.join(DEBUG_DIR, filename)
         created_at = result.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(result.created_at, "strftime") else str(result.created_at)
 
@@ -1832,6 +1832,7 @@ class GroupingAgent:
 
     async def group_projects(self, request: GroupingRequest) -> GroupingResult:
         start_time = time.time()
+        self.min_per_group = request.min_per_group
         self.max_per_group = request.max_per_group
         if request.merge_min_total_score is not None:
             self.merge_min_total_score = request.merge_min_total_score
@@ -1844,18 +1845,38 @@ class GroupingAgent:
         if request.merge_candidate_limit is not None:
             self.merge_candidate_limit = request.merge_candidate_limit
 
-        projects = self.project_repo.get_grouping_test_projects(category=request.category)
+        guide_codes: List[str] = []
+        if request.guide_codes:
+            seen = set()
+            for code in request.guide_codes:
+                normalized = (code or "").strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                guide_codes.append(normalized)
+
+        if guide_codes:
+            projects = self.project_repo.get_grouping_projects_by_guide_codes(
+                guide_codes=guide_codes,
+                category=request.category,
+            )
+            dataset_filter = self.project_repo.get_grouping_dataset_filter_by_guide_codes(guide_codes)
+        else:
+            projects = self.project_repo.get_grouping_test_projects(category=request.category)
+            dataset_filter = self.project_repo.get_grouping_dataset_filter()
+
         if not projects:
+            if guide_codes:
+                raise ValueError("指定 guide_codes 下没有可用的已提交项目（isSubmit=1）")
             raise ValueError("固定分组测试数据集中没有可用项目")
 
         projects = [project for project in projects if project.xmmc and project.xmmc.strip()]
         if not projects:
             raise ValueError("没有可用于分组的项目名称")
 
-        dataset_filter = self.project_repo.get_grouping_dataset_filter()
         print(
             f"[Grouping] 获取到 {len(projects)} 个项目，"
-            f"使用固定测试数据集 guide={dataset_filter['guide_code']} audit={dataset_filter['audit_status']}，开始分组"
+            f"数据过滤条件={dataset_filter}，开始分组"
         )
 
         cluster_start = time.time()
@@ -1863,7 +1884,7 @@ class GroupingAgent:
         print(f"[Grouping] 初步生成 {len(clusters)} 个语义簇，用时 {time.time() - cluster_start:.2f} 秒")
 
         build_group_start = time.time()
-        groups = await self._build_groups(clusters, vector_map)
+        groups = await self._build_groups(clusters)
         print(f"[Grouping] ProjectGroup 构建完成，用时 {time.time() - build_group_start:.2f} 秒")
 
         counts = [group.count for group in groups]
@@ -1893,11 +1914,16 @@ class GroupingAgent:
         )
 
         save_start = time.time()
-        filename = _save_grouping_result("fixed", result, meta={
+        dataset_tag = "fixed"
+        if guide_codes:
+            dataset_tag = f"fixed_{'_'.join(guide_codes)}"
+        filename = _save_grouping_result(dataset_tag, result, meta={
             "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
             "dataset_filter": dataset_filter,
             "input": {
                 "category": request.category,
+                "guide_codes": guide_codes,
+                "min_per_group": request.min_per_group,
                 "max_per_group": request.max_per_group,
                 "merge_min_total_score": self.merge_min_total_score,
                 "merge_min_text_score": self.merge_min_text_score,
@@ -1919,7 +1945,9 @@ class GroupingAgent:
 
     async def full_grouping(self, request: FullGroupingRequest) -> FullGroupingResult:
         grouping_request = GroupingRequest(
+            guide_codes=request.guide_codes,
             category=request.category,
+            min_per_group=request.min_per_group,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC,
             merge_min_total_score=request.merge_min_total_score,

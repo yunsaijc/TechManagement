@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable, List
 
 from src.common.models import CooperationInfo, ProjectAttachment, ProjectIndexRow, ProjectInfo, ProjectReviewContext
+from src.common.review_runtime import ReviewRuntime
 from src.services.review.attachment_classifier import AttachmentClassifier
 from src.services.review.project_config import resolve_document_type, resolve_project_type
 from src.services.review.project_fact_resolver import ProjectFactResolver
@@ -26,7 +28,7 @@ class ProjectContextBuilder:
     ):
         self.attachment_classifier = attachment_classifier or AttachmentClassifier()
         self.project_fact_resolver = project_fact_resolver or ProjectFactResolver()
-        self.classification_concurrency = max(1, int(os.getenv("REVIEW_ATTACHMENT_CLASSIFY_CONCURRENCY", "3")))
+        self.classification_concurrency = max(1, int(ReviewRuntime.ATTACHMENT_CLASSIFY_CONCURRENCY))
 
     async def build(self, project_row: ProjectIndexRow) -> ProjectReviewContext:
         """构造项目上下文"""
@@ -43,12 +45,17 @@ class ProjectContextBuilder:
             project_name=project_row.project_name,
             year=project_row.year,
             guide_name=project_row.guide_name,
-            applicant_unit=project_row.applicant_unit or project_row.unit_name,
+            applicant_unit=project_row.unit_name or project_row.applicant_unit,
             applicant_unit_type=project_info_updates.get("applicant_unit_type", ""),
             registered_date=project_info_updates.get("registered_date", ""),
+            project_leader_birth_date=project_info_updates.get("project_leader_birth_date", ""),
             execution_period_years=self._calculate_execution_period(project_row.start_date, project_row.end_date),
             fiscal_funding=project_info_updates.get("fiscal_funding", 0.0),
             self_funding=project_info_updates.get("self_funding", 0.0),
+            budget_line_items=project_info_updates.get("budget_line_items", []),
+            performance_metric_count=project_info_updates.get("performance_metric_count", 0),
+            performance_first_year_ratio=project_info_updates.get("performance_first_year_ratio"),
+            performance_metric_rows=project_info_updates.get("performance_metric_rows", []),
             has_clinical_research=project_info_updates.get("has_clinical_research", False),
             has_special_industry_requirement=project_info_updates.get("has_special_industry_requirement", False),
             has_biosafety_activity=project_info_updates.get("has_biosafety_activity", False),
@@ -67,16 +74,19 @@ class ProjectContextBuilder:
 
     async def _scan_attachments(self, project_row: ProjectIndexRow) -> tuple[List[ProjectAttachment], dict, dict]:
         """扫描附件目录并生成附件列表"""
+        scan_started = time.perf_counter()
         proposal_root = self.CORPUS_ROOT / str(project_row.year) / "sbs"
         proposal_dir = proposal_root / project_row.project_id
         attachments_dir = self.CORPUS_ROOT / str(project_row.year) / "sbsfj" / project_row.project_id
         proposal_file_paths = self._find_proposal_files(proposal_root, project_row.project_id, proposal_dir)
         proposal_files = [str(path) for path in proposal_file_paths]
+        proposal_started = time.perf_counter()
         proposal_facts = await self.project_fact_resolver.resolve(
             proposal_file_paths,
             applicant_unit=project_row.applicant_unit,
             unit_name=project_row.unit_name,
         )
+        proposal_elapsed = round(time.perf_counter() - proposal_started, 3)
         if not attachments_dir.exists() or not attachments_dir.is_dir():
             return [], {
                 "proposal_dir": str(proposal_dir),
@@ -87,11 +97,21 @@ class ProjectContextBuilder:
                 "attachments_dir_exists": False,
                 "attachment_files": [],
                 "unknown_attachment_count": 0,
+                "timings": {
+                    "proposal_fact_seconds": proposal_elapsed,
+                    "attachment_classification_seconds": 0.0,
+                    "total_scan_seconds": round(time.perf_counter() - scan_started, 3),
+                },
+                "concurrency": {
+                    "attachment_classify_concurrency": self.classification_concurrency,
+                },
             }, proposal_facts
 
         attachments: List[ProjectAttachment] = []
         attachment_files = list(self._iter_files(attachments_dir))
-        classified = await self._classify_attachments(attachment_files)
+        classify_started = time.perf_counter()
+        classified, classify_perf = await self._classify_attachments(attachment_files)
+        classify_elapsed = round(time.perf_counter() - classify_started, 3)
         unknown_attachment_count = 0
         attachment_debug_items = []
         for index, path in enumerate(attachment_files, start=1):
@@ -136,18 +156,38 @@ class ProjectContextBuilder:
             "attachment_files": [str(path) for path in attachment_files],
             "attachments": attachment_debug_items,
             "unknown_attachment_count": unknown_attachment_count,
+            "timings": {
+                "proposal_fact_seconds": proposal_elapsed,
+                "attachment_classification_seconds": classify_elapsed,
+                "total_scan_seconds": round(time.perf_counter() - scan_started, 3),
+            },
+            "concurrency": {
+                "attachment_classify_concurrency": self.classification_concurrency,
+            },
+            "classification_perf": classify_perf,
         }, proposal_facts
 
-    async def _classify_attachments(self, attachment_files: List[Path]) -> dict[str, dict]:
+    async def _classify_attachments(self, attachment_files: List[Path]) -> tuple[dict[str, dict], dict]:
         """并发分类附件"""
         semaphore = asyncio.Semaphore(self.classification_concurrency)
 
-        async def _classify(path: Path) -> tuple[str, dict]:
+        async def _classify(path: Path) -> tuple[str, dict, float]:
             async with semaphore:
-                return str(path), await self.attachment_classifier.classify(path)
+                started = time.perf_counter()
+                result = await self.attachment_classifier.classify(path)
+                elapsed = round(time.perf_counter() - started, 3)
+                return str(path), result, elapsed
 
         classified_items = await asyncio.gather(*[_classify(path) for path in attachment_files])
-        return {path: payload for path, payload in classified_items}
+        classified = {path: payload for path, payload, _ in classified_items}
+        elapsed_items = [{"file": path, "seconds": elapsed} for path, _, elapsed in classified_items]
+        elapsed_sorted = sorted(elapsed_items, key=lambda item: item["seconds"], reverse=True)
+        perf = {
+            "attachment_count": len(attachment_files),
+            "total_attachment_seconds_sum": round(sum(item["seconds"] for item in elapsed_items), 3),
+            "slowest_files_top10": elapsed_sorted[:10],
+        }
+        return classified, perf
 
     def _iter_files(self, root: Path) -> Iterable[Path]:
         """遍历目录中的文件"""

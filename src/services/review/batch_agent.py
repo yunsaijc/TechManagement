@@ -1,11 +1,15 @@
 """批次级形式审查 Agent"""
 import asyncio
-import os
+import ast
+import re
 import time
-from typing import List
+from html import escape
+from typing import Any, Dict, List
 
+from src.common.review_runtime import ReviewRuntime
 from src.common.models import BatchReviewRequest, BatchReviewResult, ProjectReviewResult
 from src.services.review.debug_writer import ReviewDebugWriter
+from src.services.review.notice_rules import build_notice_context
 from src.services.review.project_agent import ProjectReviewAgent
 from src.services.review.project_context_builder import ProjectContextBuilder
 from src.services.review.project_index_repo import ProjectIndexRepository
@@ -13,6 +17,77 @@ from src.services.review.project_index_repo import ProjectIndexRepository
 
 class BatchReviewAgent:
     """批次级形式审查 Agent"""
+    DOC_KIND_LABELS = {
+        "commitment_letter": "承诺书",
+        "recommendation_letter": "合作方科技管理部门推荐函",
+        "cooperation_agreement": "合作协议（合同）",
+        "ethics_approval": "伦理审查意见",
+        "biosafety_commitment": "生物安全承诺书",
+        "industry_permit": "行业准入资格/许可材料",
+        "business_license": "营业执照（统一社会信用代码证）",
+        "financial_statement": "财务报表",
+        "acceptance_report": "验收报告",
+        "patent_certificate": "专利证书",
+        "award_certificate": "获奖证书",
+        "retrieval_report": "检索报告",
+        "technical_route_diagram": "技术路线图",
+        "research_paper": "科研论文（发表论文）",
+        "other_supporting_material": "其他支撑材料",
+        "unknown_attachment": "未识别附件",
+    }
+    RULE_LABELS = {
+        "required_project_fields": "必填字段完整性",
+        "registered_date_limit": "注册时间限制",
+        "required_attachments": "必需附件",
+        "conditional_attachments": "条件性附件",
+        "execution_period_limit": "执行期限制",
+        "external_status_check": "外部状态校验",
+        "policy_review_points_check": "形式审查要点对照",
+        "applicant_unit_type_check": "申报单位类型校验",
+        "funding_ratio_check": "财政资金与自筹资金比例",
+        "cooperation_region_check": "合作单位注册地区",
+        "recommendation_letter_required": "推荐函要求",
+        "ethics_approval_required": "伦理审查意见要求",
+        "industry_permit_required": "行业准入材料要求",
+        "biosafety_commitment_required": "生物安全承诺书要求",
+        "commitment_letter_required": "承诺书要求",
+        "cooperation_agreement_required": "合作协议要求",
+        "duplicate_submission_check": "重复申报/多头申报",
+        "other_policy_compliance": "其他政策符合性",
+        "base_staff_proof_required": "基地固定人员证明要求",
+        "platform_scope_check": "依托平台范围",
+        "joint_application_check": "联合申报要求",
+        "beijing_tianjin_partner_check": "京津合作单位要求",
+        "cluster_region_check": "集群地区匹配",
+        "unfinished_guidance_project_check": "基地未结题项目限制",
+        "joint_updownstream_application_check": "产业链上下游联合申报",
+        "shared_mechanism_check": "共投共研共享机制",
+        "provincial_nsf_conflict_check": "省自然基金冲突限制",
+        "unfinished_basic_project_check": "基础研究项目未验收限制",
+        "applicant_qualification_check": "申报单位资格",
+        "project_leader_age_check": "项目负责人年龄限制",
+        "active_guidance_project_leader_check": "负责人在研项目限制",
+        "integrity_and_credit_check": "科研诚信与信用记录",
+        "project_count_limit_check": "负责人项目数量限制",
+        "enterprise_batch_limit_check": "企业申报数量限制",
+        "enterprise_active_guidance_project_check": "企业在研项目限制",
+        "performance_metric_count_check": "绩效指标设置要求",
+        "budget_forbidden_expense_check": "经费禁列项检查",
+        "leader_achievement_attachment_check": "负责人及骨干成果证明材料",
+    }
+    FIELD_LABELS = {
+        "project_id": "项目ID",
+        "project_type": "项目类型",
+        "project_name": "项目名称",
+        "applicant_unit": "申报单位",
+        "execution_period_years": "执行期（年）",
+        "year": "年度",
+        "budget_line_count": "预算明细行数",
+        "project_leader_birth_date": "项目负责人出生日期",
+        "limit_birth_date": "年龄限制日期",
+        "performance_metric_count": "绩效指标数量",
+        "performance_first_year_ratio": "第一年度目标占比",
+    }
 
     def __init__(
         self,
@@ -23,17 +98,20 @@ class BatchReviewAgent:
         self.project_repo = project_repo or ProjectIndexRepository()
         self.context_builder = context_builder or ProjectContextBuilder()
         self.project_review_agent = project_review_agent or ProjectReviewAgent()
-        self.project_concurrency = max(
-            1,
-            int(os.getenv("REVIEW_BATCH_PROJECT_CONCURRENCY", "2")),
-        )
+        self.project_concurrency = max(1, int(ReviewRuntime.BATCH_PROJECT_CONCURRENCY))
 
     async def process(self, request: BatchReviewRequest) -> BatchReviewResult:
         """执行批次级形式审查"""
         start_time = time.time()
-        batch_id = f"batch_review_{int(time.time() * 1000)}"
+        normalized_zxmc = re.sub(r"[^0-9A-Za-z_-]", "_", request.zxmc.strip()) or "unknown"
+        batch_id = f"batch_review_{normalized_zxmc}"
+        notice_context = build_notice_context(
+            notice_url=request.notice_url,
+            notice_html=request.notice_html,
+        )
         debug_writer = ReviewDebugWriter(batch_id)
         debug_writer.write_json("request.json", request.model_dump())
+        debug_writer.write_json("notice_context.json", notice_context)
         project_rows = self.project_repo.get_projects_by_zxmc(
             request.zxmc,
             limit=request.limit,
@@ -45,9 +123,10 @@ class BatchReviewAgent:
         )
         semaphore = asyncio.Semaphore(self.project_concurrency)
 
-        async def _process_project(row) -> ProjectReviewResult:
+        async def _process_project(row) -> tuple[ProjectReviewResult, Dict[str, Any]]:
             async with semaphore:
                 context = await self.context_builder.build(row)
+                context.notice_context = notice_context
                 debug_writer.write_json(
                     f"projects/{row.project_id}.scan.json",
                     context.scan_info,
@@ -61,11 +140,15 @@ class BatchReviewAgent:
                     f"projects/{row.project_id}.result.json",
                     project_result.model_dump(mode="json"),
                 )
-                return project_result
+                return project_result, context.model_dump(mode="json")
 
-        project_results: List[ProjectReviewResult] = list(
+        project_items = list(
             await asyncio.gather(*[_process_project(row) for row in project_rows])
         )
+        project_results: List[ProjectReviewResult] = [item[0] for item in project_items]
+        project_context_map: Dict[str, Dict[str, Any]] = {
+            result.project_id: context_payload for result, context_payload in project_items
+        }
 
         summary = self._generate_summary(project_results)
         suggestions = self._generate_suggestions(project_results)
@@ -75,9 +158,24 @@ class BatchReviewAgent:
             {
                 "zxmc": request.zxmc,
                 "project_count": len(project_results),
+                "concurrency": {
+                    "batch_project_concurrency": self.project_concurrency,
+                    "attachment_classify_concurrency": self.context_builder.classification_concurrency,
+                },
                 "summary": summary,
                 "suggestions": suggestions,
             },
+        )
+        debug_writer.write_text(
+            "index.html",
+            self._build_batch_debug_html(
+                batch_id=batch_id,
+                request=request,
+                project_results=project_results,
+                project_context_map=project_context_map,
+                summary=summary,
+                suggestions=suggestions,
+            ),
         )
 
         return BatchReviewResult(
@@ -107,3 +205,921 @@ class BatchReviewAgent:
         if any(result.manual_review_items for result in project_results):
             return ["存在附件类型识别不确定的项目，建议优先人工复核材料类型"]
         return []
+
+    def _build_batch_debug_html(
+        self,
+        batch_id: str,
+        request: BatchReviewRequest,
+        project_results: List[ProjectReviewResult],
+        project_context_map: Dict[str, Dict[str, Any]],
+        summary: str,
+        suggestions: List[str],
+    ) -> str:
+        """生成批次调试 HTML 页面"""
+        project_sections = "\n".join(
+            self._render_project_section(index + 1, result, project_context_map.get(result.project_id, {}))
+            for index, result in enumerate(project_results)
+        )
+        suggestion_items = "".join(
+            f"<li>{escape(item)}</li>"
+            for item in suggestions
+        ) or "<li>无</li>"
+        project_count = len(project_results)
+        failed_count = sum(
+            1
+            for result in project_results
+            if any(item.status in {"failed", "warning"} for item in result.results) or result.manual_review_items
+        )
+        return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(batch_id)} 调试结果</title>
+  <style>
+    :root {{
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --line: #d8dfeb;
+      --text: #1f2937;
+      --muted: #667085;
+      --passed: #067647;
+      --failed: #b42318;
+      --warning: #b54708;
+      --manual: #6941c6;
+      --requires: #175cd3;
+      --na: #344054;
+      --system: #2b6cb0;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 140px);
+      color: var(--text);
+    }}
+    .page {{
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 24px;
+    }}
+    .hero, .card {{
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }}
+    .hero {{
+      padding: 24px;
+      margin-bottom: 20px;
+    }}
+    .hero h1 {{
+      margin: 0 0 8px;
+      font-size: 28px;
+    }}
+    .hero p {{
+      margin: 6px 0;
+      color: var(--muted);
+    }}
+    .metrics {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }}
+    .metric {{
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfcfe;
+    }}
+    .metric strong {{
+      display: block;
+      font-size: 24px;
+      margin-top: 6px;
+    }}
+    .links {{
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }}
+    a {{
+      color: #175cd3;
+      text-decoration: none;
+    }}
+    .project {{
+      margin-bottom: 18px;
+      overflow: hidden;
+    }}
+    .project summary {{
+      list-style: none;
+      cursor: pointer;
+      padding: 18px 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+    }}
+    .project summary::-webkit-details-marker {{ display: none; }}
+    .project h2 {{
+      margin: 0 0 6px;
+      font-size: 20px;
+    }}
+    .project-meta {{
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }}
+    .project-body {{
+      border-top: 1px solid var(--line);
+      padding: 18px 20px 22px;
+    }}
+    .badges {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .badge {{
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 0;
+      background: #f3f4f6;
+      white-space: nowrap;
+    }}
+    .status-passed {{ color: var(--passed); background: #ecfdf3; }}
+    .status-failed {{ color: var(--failed); background: #fef3f2; }}
+    .status-warning {{ color: var(--manual); background: #f5f3ff; }}
+    .status-manual {{ color: var(--manual); background: #f5f3ff; }}
+    .status-requires_data {{ color: var(--manual); background: #f5f3ff; }}
+    .status-not_applicable {{ color: var(--na); background: #f2f4f7; }}
+    .status-system_managed {{ color: var(--system); background: #eff6ff; }}
+    .status-skipped {{ color: var(--na); background: #f2f4f7; }}
+    .section-grid {{
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }}
+    .panel {{
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: #fcfdff;
+    }}
+    .panel h3 {{
+      margin: 0 0 10px;
+      font-size: 16px;
+    }}
+    .inline-toggle {{
+      margin-top: 12px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      background: #fafcff;
+    }}
+    .inline-toggle summary {{
+      cursor: pointer;
+      padding: 12px 14px;
+      color: var(--muted);
+      font-weight: 700;
+      list-style: none;
+    }}
+    .inline-toggle summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .inline-toggle-body {{
+      padding: 0 14px 14px;
+    }}
+    .kv {{
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 8px 12px;
+      font-size: 14px;
+    }}
+    .kv div:nth-child(odd) {{
+      color: var(--muted);
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 10px;
+    }}
+    th, td {{
+      border-top: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }}
+    th {{
+      color: var(--muted);
+      font-weight: 700;
+      background: #f8fafc;
+    }}
+    .policy-table th.group-left {{
+      background: #eef4ff;
+      color: #1d4ed8;
+      border-right: 2px solid var(--line);
+      text-align: center;
+    }}
+    .policy-table th.group-right {{
+      background: #fff4e8;
+      color: #b54708;
+      text-align: center;
+    }}
+    .policy-table td.left-block {{
+      width: 44%;
+      border-right: 2px solid var(--line);
+      background: #fbfdff;
+    }}
+    .policy-table td.right-block {{
+      width: 56%;
+      background: #fffdf9;
+    }}
+    .policy-point {{
+      font-weight: 700;
+      margin-bottom: 6px;
+    }}
+    .policy-req {{
+      color: var(--text);
+      line-height: 1.6;
+    }}
+    .policy-result {{
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+    }}
+    .policy-result .label {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .extra-table th.group-left {{
+      background: #eefaf3;
+      color: #067647;
+      border-right: 2px solid var(--line);
+      text-align: center;
+    }}
+    .extra-table th.group-right {{
+      background: #fff7ed;
+      color: #c2410c;
+      text-align: center;
+    }}
+    .extra-table td.left-block {{
+      width: 38%;
+      border-right: 2px solid var(--line);
+      background: #fbfefc;
+    }}
+    .extra-table td.right-block {{
+      width: 62%;
+      background: #fffdfa;
+    }}
+    .extra-title {{
+      font-weight: 700;
+      margin-bottom: 6px;
+    }}
+    .extra-message {{
+      line-height: 1.6;
+    }}
+    .extra-result {{
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+    }}
+    .extra-result .label {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    ul {{
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }}
+    .mono {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }}
+    pre.mono {{
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }}
+    .empty {{
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    @media (max-width: 960px) {{
+      .section-grid {{ grid-template-columns: 1fr; }}
+      .project summary {{ flex-direction: column; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>批次调试视图</h1>
+      <p>批次 ID：<span class="mono">{escape(batch_id)}</span></p>
+      <p>zxmc：<span class="mono">{escape(request.zxmc)}</span></p>
+      <p>摘要：{escape(summary)}</p>
+      <div class="metrics">
+        <div class="metric"><div>项目数</div><strong>{project_count}</strong></div>
+        <div class="metric"><div>需关注项目</div><strong>{failed_count}</strong></div>
+        <div class="metric"><div>limit</div><strong>{escape(str(request.limit or "未限制"))}</strong></div>
+      </div>
+      <div class="links">
+        <a href="request.json">request.json</a>
+        <a href="project_index.json">project_index.json</a>
+        <a href="batch_summary.json">batch_summary.json</a>
+      </div>
+      <ul>{suggestion_items}</ul>
+    </section>
+    {project_sections or '<div class="card" style="padding:20px;">无项目结果</div>'}
+  </div>
+</body>
+</html>"""
+
+    def _render_project_section(self, order: int, result: ProjectReviewResult, context_payload: Dict[str, Any]) -> str:
+        """渲染单项目调试区块"""
+        result_path = f"projects/{result.project_id}.result.json"
+        context_path = f"projects/{result.project_id}.context.json"
+        scan_path = f"projects/{result.project_id}.scan.json"
+        rule_evidence_table = self._render_rule_evidence_table(result, context_payload)
+        summary_badges = self._render_status_badges([
+            ("失败", str(sum(1 for item in result.results if item.status == "failed")), "failed"),
+            (
+                "需人工处理",
+                str(
+                    sum(1 for item in result.results if item.status in {"warning", "requires_data"})
+                    + len(result.manual_review_items)
+                ),
+                "manual",
+            ),
+        ])
+        project_rules_table = self._render_project_results_table(result)
+        policy_rules_table = self._render_policy_rule_checks_table(result)
+        missing_items = self._render_simple_list(
+            [f"{self._doc_kind_with_code(item.doc_kind)}: {item.reason}" for item in result.missing_attachments]
+        )
+        manual_items = self._render_simple_list(
+            [f"{item.item}: {item.message}" for item in result.manual_review_items]
+        )
+        suggestions = self._render_simple_list(result.suggestions)
+        return f"""
+<details class="card project" open>
+  <summary>
+    <div>
+      <h2>{order}. {escape(result.project_id)} / {escape(result.project_type)}</h2>
+      <div class="project-meta">{escape(result.summary)}</div>
+      <div class="links">
+        <a href="{escape(context_path)}">context.json</a>
+        <a href="{escape(result_path)}">result.json</a>
+        <a href="{escape(scan_path)}">scan.json</a>
+      </div>
+    </div>
+    <div class="badges">{summary_badges}</div>
+  </summary>
+  <div class="project-body">
+    <div class="section-grid">
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h3>形式审查要点对照结果</h3>
+        {policy_rules_table}
+      </section>
+    </div>
+    <div class="section-grid">
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h3>额外检查项</h3>
+        {project_rules_table}
+      </section>
+    </div>
+    <div class="section-grid">
+      <section class="panel">
+        <h3>缺失附件</h3>
+        {missing_items}
+      </section>
+      <section class="panel">
+        <h3>人工复核项</h3>
+        {manual_items}
+      </section>
+    </div>
+    <div class="section-grid">
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h3>错误来源定位（规则 -> 文件 -> 片段）</h3>
+        {rule_evidence_table}
+      </section>
+    </div>
+    <div class="section-grid">
+      <section class="panel">
+        <h3>建议</h3>
+        {suggestions}
+      </section>
+      <section class="panel">
+        <h3>处理信息</h3>
+        <div class="kv">
+          <div>project_id</div><div class="mono">{escape(result.project_id)}</div>
+          <div>project_type</div><div>{escape(result.project_type)}</div>
+          <div>processed_at</div><div>{escape(str(result.processed_at))}</div>
+          <div>processing_time</div><div>{escape(f"{result.processing_time:.3f}s")}</div>
+        </div>
+      </section>
+    </div>
+  </div>
+</details>"""
+
+    def _render_project_results_table(self, result: ProjectReviewResult) -> str:
+        """渲染额外检查项结果表"""
+        covered_rules = {
+            item.code for item in result.policy_rule_checks if getattr(item, "code", None)
+        } | {
+            item.source_rule for item in result.policy_rule_checks if getattr(item, "source_rule", None)
+        }
+        rows = []
+        for item in result.results:
+            if item.item in covered_rules:
+                continue
+            rows.append(
+                "<tr>"
+                "<td class='left-block'>"
+                f"<div class='extra-title'>{escape(self._rule_label(item.item))}</div>"
+                f"<div class='extra-message'>{escape(item.message)}</div>"
+                "</td>"
+                "<td class='right-block'>"
+                "<div class='extra-result'>"
+                f"<div class='label'>状态</div><div>{self._render_status_badge(item.status)}</div>"
+                f"<div class='label'>证据</div><div><pre class='mono'>{escape(self._format_evidence_for_table(item.evidence))}</pre></div>"
+                "</div>"
+                "</td>"
+                "</tr>"
+            )
+        if not rows:
+            return "<div class='empty'>无额外检查项</div>"
+        return (
+            "<table class='extra-table'><thead>"
+            "<tr><th class='group-left'>额外检查项</th><th class='group-right'>检查结果</th></tr>"
+            "</thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+
+    def _format_evidence_for_table(self, evidence: Any) -> str:
+        """项目级规则 evidence 可读化（多行）"""
+        if evidence is None:
+            return "-"
+        if isinstance(evidence, (dict, list)):
+            return self._format_evidence_clip(evidence)
+        if isinstance(evidence, str):
+            text = evidence.strip()
+            if text.startswith("{") or text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                    return self._format_evidence_clip(parsed)
+                except Exception:
+                    try:
+                        parsed = ast.literal_eval(text)
+                        if isinstance(parsed, (dict, list)):
+                            return self._format_evidence_clip(parsed)
+                    except Exception:
+                        pass
+            return text
+        return str(evidence)
+
+    def _render_policy_rule_checks_table(self, result: ProjectReviewResult) -> str:
+        """渲染 docx 逐条规则对照表"""
+        primary_rows = []
+        folded_rows = []
+        for item in result.policy_rule_checks:
+            row_html = (
+                "<tr>"
+                "<td class='left-block'>"
+                f"<div class='policy-point'>{escape(self._rule_label(item.code))}</div>"
+                f"<div class='policy-req'>{escape(item.requirement)}</div>"
+                "</td>"
+                "<td class='right-block'>"
+                "<div class='policy-result'>"
+                f"<div class='label'>状态</div><div>{self._render_status_badge(item.status)}</div>"
+                f"<div class='label'>核验来源</div><div>{escape(self._rule_label(item.source_rule or '-'))}</div>"
+                f"<div class='label'>说明</div><div>{escape(self._render_reason_text(item.status, item.reason))}</div>"
+                "</div>"
+                "</td>"
+                "</tr>"
+            )
+            if item.status in {"system_managed", "not_applicable"}:
+                folded_rows.append(row_html)
+            else:
+                primary_rows.append(row_html)
+        if not primary_rows and not folded_rows:
+            return "<div class='empty'>无 docx 逐条规则结果</div>"
+        sections = []
+        if primary_rows:
+            sections.append(
+                "<table class='policy-table'><thead>"
+                "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
+                "</thead><tbody>"
+                + "".join(primary_rows)
+                + "</tbody></table>"
+            )
+        else:
+            sections.append("<div class='empty'>主要审查结果中无需要展示的项目</div>")
+        if folded_rows:
+            sections.append(
+                "<details class='inline-toggle'>"
+                f"<summary>系统前置限制 / 不适用（{len(folded_rows)} 项）</summary>"
+                "<div class='inline-toggle-body'>"
+                "<table class='policy-table'><thead>"
+                "<tr><th class='group-left'>限制项</th><th class='group-right'>说明</th></tr>"
+                "</thead><tbody>"
+                + "".join(folded_rows)
+                + "</tbody></table>"
+                "</div></details>"
+            )
+        return "".join(sections)
+
+    def _render_rule_evidence_table(self, result: ProjectReviewResult, context_payload: Dict[str, Any]) -> str:
+        """渲染异常规则的来源定位信息"""
+        rows = []
+        evidence_items = self._collect_rule_evidence_items(result, context_payload)
+        if not evidence_items:
+            return "<div class='empty'>无异常规则来源定位信息</div>"
+        for item in evidence_items:
+            rows.append(
+                "<tr>"
+                f"<td>{escape(item['rule'])}</td>"
+                f"<td>{self._render_status_badge(item['status'])}</td>"
+                f"<td class='mono'>{escape(item['source_file'])}</td>"
+                f"<td><pre class='mono'>{escape(item['clip'])}</pre></td>"
+                "</tr>"
+            )
+        return (
+            "<table><thead><tr><th>rule</th><th>status</th><th>source_file</th><th>evidence_clip</th></tr></thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+
+    def _collect_rule_evidence_items(self, result: ProjectReviewResult, context_payload: Dict[str, Any]) -> List[Dict[str, str]]:
+        """收集异常规则定位项"""
+        items: List[Dict[str, str]] = []
+        scan_info = context_payload.get("scan_info", {}) if isinstance(context_payload, dict) else {}
+        proposal_facts = scan_info.get("proposal_facts", {}) if isinstance(scan_info, dict) else {}
+        proposal_file = (
+            scan_info.get("proposal_main_file")
+            or proposal_facts.get("proposal_main_file")
+            or "-"
+        )
+        proposal_excerpt = proposal_facts.get("proposal_text_excerpt", "")
+        attachments = context_payload.get("attachments", []) if isinstance(context_payload, dict) else []
+        attachment_index = {
+            str(att.get("doc_kind", "")): att
+            for att in attachments
+            if isinstance(att, dict)
+        }
+
+        for rule_item in result.results:
+            if rule_item.status not in {"failed", "warning"}:
+                continue
+            if rule_item.item == "registered_date_limit":
+                clip = self._extract_keyword_snippet(proposal_excerpt, "注册时间")
+                items.append(
+                    {
+                        "rule": rule_item.item,
+                        "status": rule_item.status,
+                        "source_file": str(proposal_file),
+                        "clip": clip or self._format_evidence_clip(rule_item.evidence, rule_item.message),
+                    }
+                )
+                continue
+            if rule_item.item in {"required_attachments", "conditional_attachments"}:
+                missing_doc_kinds = self._extract_missing_doc_kinds(rule_item.evidence)
+                if not missing_doc_kinds:
+                    items.append(
+                        {
+                            "rule": rule_item.item,
+                            "status": rule_item.status,
+                            "source_file": "附件目录（未定位具体文件）",
+                            "clip": self._format_evidence_clip(rule_item.evidence, rule_item.message),
+                        }
+                    )
+                    continue
+                for doc_kind in missing_doc_kinds:
+                    matched = attachment_index.get(doc_kind)
+                    if matched:
+                        clip = self._build_attachment_clip(matched)
+                        source_file = str(matched.get("file_ref") or matched.get("file_name") or "附件文件")
+                    else:
+                        source_file = "附件目录（未找到匹配类别）"
+                        clip = self._build_attachment_overview_clip(attachments)
+                    items.append(
+                        {
+                            "rule": f"{self._rule_label(rule_item.item)}:{self._doc_kind_with_code(doc_kind)}",
+                            "status": rule_item.status,
+                            "source_file": source_file,
+                            "clip": clip,
+                        }
+                    )
+                continue
+            if rule_item.item == "external_status_check":
+                items.append(
+                    {
+                        "rule": self._rule_label(rule_item.item),
+                        "status": rule_item.status,
+                        "source_file": "外部校验数据源（当前未接入）",
+                        "clip": self._format_evidence_clip(rule_item.evidence, rule_item.message),
+                    }
+                )
+                continue
+            items.append(
+                {
+                    "rule": self._rule_label(rule_item.item),
+                    "status": rule_item.status,
+                    "source_file": str(proposal_file),
+                    "clip": self._format_evidence_clip(rule_item.evidence, rule_item.message),
+                }
+            )
+        return items
+
+    def _format_evidence_clip(self, evidence: Any, fallback_message: str = "") -> str:
+        """将规则 evidence 转为人可读的短文本"""
+        if isinstance(evidence, dict):
+            if not evidence:
+                return fallback_message or "无附加证据字段"
+            if isinstance(evidence.get("pending_review_points"), list):
+                lines: List[str] = []
+                pending_points = evidence["pending_review_points"]
+                for index, point in enumerate(pending_points[:6], start=1):
+                    if not isinstance(point, dict):
+                        continue
+                    code = self._rule_label(str(point.get("code", "")).strip() or "-")
+                    requirement = str(point.get("requirement", "")).strip() or "-"
+                    reason = str(point.get("reason", "")).strip() or "-"
+                    lines.append(f"{index}. {code}")
+                    lines.append(f"   要求: {requirement}")
+                    lines.append(f"   原因: {reason}")
+                if not lines:
+                    return fallback_message or "待补核验点为空"
+                return "待补核验点：\n" + "\n".join(lines)
+            if isinstance(evidence.get("required_fields"), list):
+                fields = [self.FIELD_LABELS.get(str(item), str(item)) for item in evidence["required_fields"] if item]
+                if fields:
+                    return "已核验字段：\n" + "\n".join(f"- {field}" for field in fields)
+            if isinstance(evidence.get("missing_doc_kinds"), list):
+                kinds = [str(item) for item in evidence["missing_doc_kinds"] if item]
+                if kinds:
+                    return "缺失附件类别：" + "、".join(self._doc_kind_with_code(kind) for kind in kinds)
+            if isinstance(evidence.get("missing_conditional_attachments"), list):
+                lines = []
+                for item in evidence["missing_conditional_attachments"][:6]:
+                    if isinstance(item, dict):
+                        kind = str(item.get("doc_kind", "-"))
+                        lines.append(f"{self._doc_kind_with_code(kind)}: {item.get('reason', '-')}")
+                if lines:
+                    return "缺失条件性附件：\n" + "\n".join(lines)
+            if isinstance(evidence.get("forbidden_hits"), list):
+                lines = []
+                for item in evidence["forbidden_hits"][:8]:
+                    if isinstance(item, dict):
+                        term = str(item.get("term", "-")).strip()
+                        line = str(item.get("line", "-")).strip()
+                        lines.append(f"- 命中词: {term}")
+                        lines.append(f"  预算行: {line}")
+                if lines:
+                    return "预算禁列项命中：\n" + "\n".join(lines)
+            if isinstance(evidence.get("sample_budget_lines"), list):
+                lines = [str(item).strip() for item in evidence["sample_budget_lines"][:6] if str(item).strip()]
+                if lines:
+                    return "已检查预算行示例：\n" + "\n".join(f"- {line}" for line in lines)
+            if isinstance(evidence.get("performance_metric_rows"), list):
+                metric_lines = []
+                for item in evidence["performance_metric_rows"][:8]:
+                    if not isinstance(item, dict):
+                        continue
+                    name = str(item.get("metric_name", "-")).strip()
+                    total_value = item.get("total_value", "-")
+                    first_year_value = item.get("first_year_value", "-")
+                    metric_lines.append(f"- {name}: 总体={total_value}，第一年={first_year_value}")
+                prefix = []
+                if isinstance(evidence.get("performance_metric_count"), (int, float)):
+                    prefix.append(f"绩效指标数量: {evidence['performance_metric_count']}")
+                ratio = evidence.get("performance_first_year_ratio")
+                if isinstance(ratio, (int, float)):
+                    prefix.append(f"第一年度目标占比: {ratio:.2%}")
+                if metric_lines:
+                    return "\n".join(prefix + ["已识别绩效指标："] + metric_lines)
+            if isinstance(evidence.get("required_ratio"), (int, float)):
+                ratio_lines = [
+                    f"财政资金: {evidence.get('fiscal_funding', '-')}",
+                    f"自筹资金: {evidence.get('self_funding', '-')}",
+                    f"要求比例: {float(evidence['required_ratio']):.2f}",
+                ]
+                if isinstance(evidence.get("actual_ratio"), (int, float)):
+                    ratio_lines.append(f"实际比例: {float(evidence['actual_ratio']):.2f}")
+                applicant_unit_type = evidence.get("applicant_unit_type")
+                if applicant_unit_type:
+                    ratio_lines.append(f"申报单位类型: {applicant_unit_type}")
+                cooperation_types = evidence.get("cooperation_unit_types")
+                if isinstance(cooperation_types, list) and cooperation_types:
+                    ratio_lines.append("合作单位类型: " + "、".join(str(item) for item in cooperation_types))
+                return "\n".join(ratio_lines)
+            lines = []
+            for key, value in evidence.items():
+                if isinstance(value, (str, int, float, bool)):
+                    label = self.FIELD_LABELS.get(key, self._rule_label(key))
+                    lines.append(f"{label}: {value}")
+            if lines:
+                return "\n".join(lines[:8])
+            return fallback_message or "证据字段较复杂，详见 result.json"
+        if isinstance(evidence, list):
+            if not evidence:
+                return fallback_message or "无附加证据列表"
+            return "\n".join(str(item) for item in evidence[:6])
+        text = str(evidence).strip() if evidence is not None else ""
+        return text or fallback_message or "无附加证据"
+
+    def _extract_missing_doc_kinds(self, evidence: Dict[str, Any]) -> List[str]:
+        """抽取缺失材料类别"""
+        if not isinstance(evidence, dict):
+            return []
+        values: List[str] = []
+        if isinstance(evidence.get("missing_doc_kinds"), list):
+            values.extend(str(item) for item in evidence["missing_doc_kinds"] if item)
+        if isinstance(evidence.get("missing_conditional_attachments"), list):
+            for item in evidence["missing_conditional_attachments"]:
+                if isinstance(item, dict) and item.get("doc_kind"):
+                    values.append(str(item["doc_kind"]))
+        seen = set()
+        deduped: List[str] = []
+        for item in values:
+            if item not in seen:
+                seen.add(item)
+                deduped.append(item)
+        return deduped
+
+    def _build_attachment_clip(self, attachment: Dict[str, Any]) -> str:
+        """构造附件证据片段"""
+        details = attachment.get("classification_details", {})
+        llm_info = details.get("llm", {}) if isinstance(details, dict) else {}
+        visible_clues = llm_info.get("visible_clues", []) if isinstance(llm_info, dict) else []
+        clues = "；".join(str(item) for item in visible_clues[:4])
+        if not clues:
+            clues = str(attachment.get("classification_reason", ""))
+        doc_kind = str(attachment.get("doc_kind", ""))
+        secondary_hits = self._format_secondary_refine_hits(details) if doc_kind == "other_supporting_material" else ""
+        return (
+            f"file_name={attachment.get('file_name', '')}\n"
+            f"doc_kind={self._doc_kind_with_code(doc_kind)}\n"
+            f"classification_source={attachment.get('classification_source', '')}\n"
+            f"clues={clues}"
+            + (f"\n{secondary_hits}" if secondary_hits else "")
+        )
+
+    def _build_attachment_overview_clip(self, attachments: List[Any]) -> str:
+        """构造附件总览片段"""
+        if not attachments:
+            return "未扫描到附件文件"
+        lines: List[str] = []
+        for index, item in enumerate(attachments[:5], start=1):
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("doc_kind", ""))
+            details = item.get("classification_details", {})
+            secondary_hits = (
+                self._format_secondary_refine_hits_inline(details)
+                if kind == "other_supporting_material"
+                else ""
+            )
+            file_name = str(item.get("file_name", ""))
+            chunk = [
+                f"[{index}] 文件: {file_name}",
+                f"    主分类: {self._doc_kind_with_code(kind)}",
+            ]
+            if secondary_hits:
+                chunk.append(f"    {secondary_hits}")
+            chunk.append("")
+            lines.extend(chunk)
+        if not lines:
+            return "附件列表为空"
+        return "已识别附件（前5）：\n" + "\n".join(lines)
+
+    def _extract_keyword_snippet(self, text: str, keyword: str, radius: int = 90) -> str:
+        """提取关键词附近片段"""
+        if not text:
+            return ""
+        index = text.find(keyword)
+        if index < 0:
+            return text[: min(220, len(text))]
+        start = max(0, index - radius)
+        end = min(len(text), index + len(keyword) + radius)
+        return text[start:end]
+
+    def _doc_kind_label(self, doc_kind: str) -> str:
+        """附件类别中文标签"""
+        return self.DOC_KIND_LABELS.get(doc_kind, doc_kind or "-")
+
+    def _doc_kind_with_code(self, doc_kind: str) -> str:
+        """附件类别中文标签"""
+        label = self._doc_kind_label(doc_kind)
+        return label
+
+    def _format_contains_doc_kinds(self, attachment: Dict[str, Any]) -> str:
+        """格式化单文件包含的多类别"""
+        details = attachment.get("classification_details", {})
+        if not isinstance(details, dict):
+            return "-"
+        values = details.get("contains_doc_kinds", [])
+        if not isinstance(values, list) or not values:
+            return "-"
+        return "、".join(self._doc_kind_with_code(str(item)) for item in values if str(item).strip())
+
+    def _rule_label(self, rule_code: str) -> str:
+        """规则编码转中文标签"""
+        text = str(rule_code or "").strip()
+        if not text or text == "-":
+            return "-"
+        return self.RULE_LABELS.get(text, text)
+
+    def _format_secondary_refine_hits(self, details: Any) -> str:
+        """格式化二次复核页命中详情"""
+        if not isinstance(details, dict):
+            return "二次复核页命中=-"
+        refine = details.get("llm_secondary_refine", {})
+        if not isinstance(refine, dict):
+            return "二次复核页命中=-"
+        page_candidates = refine.get("page_candidates", [])
+        if not isinstance(page_candidates, list) or not page_candidates:
+            return "二次复核页命中=-"
+        lines: List[str] = []
+        for item in page_candidates[:6]:
+            if not isinstance(item, dict):
+                continue
+            page = item.get("page", "-")
+            doc_kind = self._doc_kind_with_code(str(item.get("doc_kind", "")))
+            confidence = item.get("confidence", "-")
+            reason = str(item.get("reason", "")).strip()
+            lines.append(f"第{page}页 -> {doc_kind} @ {confidence} | {reason}")
+        if not lines:
+            return "二次复核页命中=-"
+        return "二次复核页命中=\n" + "\n".join(lines)
+
+    def _format_secondary_refine_hits_inline(self, details: Any) -> str:
+        """格式化二次复核页命中详情（多行简版）"""
+        if not isinstance(details, dict):
+            return "二次复核页命中: 无"
+        refine = details.get("llm_secondary_refine", {})
+        if not isinstance(refine, dict):
+            return "二次复核页命中: 无"
+        page_candidates = refine.get("page_candidates", [])
+        if not isinstance(page_candidates, list) or not page_candidates:
+            return "二次复核页命中: 无"
+        lines: List[str] = []
+        for item in page_candidates[:3]:
+            if not isinstance(item, dict):
+                continue
+            page = item.get("page", "-")
+            doc_kind = self._doc_kind_label(str(item.get("doc_kind", "")))
+            confidence = item.get("confidence", "-")
+            lines.append(f"      - 第{page}页 -> {doc_kind} @ {confidence}")
+        if not lines:
+            return "二次复核页命中: 无"
+        return "二次复核页命中:\n" + "\n".join(lines)
+
+    def _render_simple_list(self, values: List[str]) -> str:
+        """渲染简单列表"""
+        if not values:
+            return "<div class='empty'>无</div>"
+        return "<ul>" + "".join(f"<li>{escape(value)}</li>" for value in values) + "</ul>"
+
+    def _render_status_badges(self, values: List[tuple[str, str, str]]) -> str:
+        """渲染一组状态标签"""
+        badges = []
+        for label, value, status in values:
+            text = str(value).strip()
+            if text in {"0", "0.0", ""}:
+                continue
+            _, css_class = self._display_status_meta(status)
+            badges.append(f"<span class='badge status-{escape(css_class)}'>{escape(label)} {escape(text)}</span>")
+        return "".join(badges)
+
+    def _render_status_badge(self, status: str) -> str:
+        """渲染状态标签"""
+        label, css_class = self._display_status_meta(status)
+        return f"<span class='badge status-{escape(css_class)}'>{escape(label)}</span>"
+
+    def _display_status_meta(self, status: str) -> tuple[str, str]:
+        """对外展示状态与样式类"""
+        if status in {"warning", "manual", "requires_data"}:
+            return "需人工处理", "manual"
+        labels = {
+            "passed": "通过",
+            "failed": "不通过",
+            "not_applicable": "不适用",
+            "system_managed": "系统已限制",
+            "skipped": "跳过",
+        }
+        return labels.get(status, status), status
+
+    def _render_reason_text(self, status: str, reason: str) -> str:
+        """统一说明文案前缀，避免同类状态出现多套口径"""
+        text = (reason or "").strip()
+        if status in {"warning", "manual", "requires_data"} and text:
+            return f"需人工处理：{text}"
+        return text

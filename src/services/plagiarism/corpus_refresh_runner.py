@@ -34,9 +34,19 @@ def _load_status(path: Path) -> Dict[str, Any]:
         return {}
 
 
+def _write_checkpoint(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f"{path.name}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, path)
+
+
 async def _run(args: argparse.Namespace) -> None:
     status_path = Path(args.status_path)
-    manager = CorpusManager()
+    checkpoint_path = Path(args.checkpoint_path)
     started_at = time.time()
     last_status_write_at = 0.0
     last_status_processed = 0
@@ -52,6 +62,8 @@ async def _run(args: argparse.Namespace) -> None:
             "batch_size": args.batch_size,
             "max_concurrency": args.max_concurrency,
             "save_every_batches": args.save_every_batches,
+            "cursor_doc_id": args.cursor_doc_id,
+            "max_scan": args.max_scan,
         },
         "progress": {
             "stage": "runner_started",
@@ -62,6 +74,38 @@ async def _run(args: argparse.Namespace) -> None:
             "stats": {},
         },
         "result": None,
+    }
+    _write_json_atomic(status_path, status)
+    status["progress"] = {
+        "stage": "runner_init",
+        "processed": 0,
+        "total": 0,
+        "elapsed_seconds": 0,
+        "eta_seconds": 0,
+        "stats": {},
+    }
+    _write_json_atomic(status_path, status)
+
+    status["progress"] = {
+        "stage": "load_index",
+        "processed": 0,
+        "total": 0,
+        "elapsed_seconds": 0,
+        "eta_seconds": 0,
+        "stats": {},
+    }
+    _write_json_atomic(status_path, status)
+
+    manager = CorpusManager(scan_only=True)
+    status["progress"] = {
+        "stage": "scan_manifest_ready",
+        "processed": 0,
+        "total": 0,
+        "elapsed_seconds": 0,
+        "eta_seconds": 0,
+        "stats": {
+            "document_count": len(manager.index.documents),
+        },
     }
     _write_json_atomic(status_path, status)
 
@@ -85,14 +129,21 @@ async def _run(args: argparse.Namespace) -> None:
         _write_json_atomic(status_path, status)
 
     try:
-        stats = await manager.scan_and_update_with_options(
-            limit=args.limit,
-            batch_size=args.batch_size,
-            max_concurrency=args.max_concurrency,
-            save_every_batches=args.save_every_batches,
+        stats = manager.scan_manifest(
+            cursor_doc_id=args.cursor_doc_id,
+            max_scan=args.max_scan,
             progress_callback=on_progress,
         )
         status["result"] = stats
+        _write_checkpoint(
+            checkpoint_path,
+            {
+                "next_cursor": stats.get("next_cursor") if stats.get("has_more") else None,
+                "has_more": bool(stats.get("has_more")),
+                "updated_at": time.time(),
+                "last_task_id": args.task_id,
+            },
+        )
     except Exception as exc:
         status["error"] = str(exc)
         raise
@@ -105,11 +156,14 @@ async def _run(args: argparse.Namespace) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--status-path", required=True)
+    parser.add_argument("--checkpoint-path", required=True)
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--save-every-batches", type=int, default=10)
+    parser.add_argument("--cursor-doc-id", default=None)
+    parser.add_argument("--max-scan", type=int, default=None)
     args = parser.parse_args(argv)
     asyncio.run(_run(args))
     return 0

@@ -1,8 +1,19 @@
-"""查重 section 配置
+"""查重配置。
 
-定义不同文档类型需要查重的区域配置。
+定义不同文档类型的 section 配置，以及默认 corpus 路径。
 """
+from pathlib import Path
 from typing import Dict, List, Any
+
+
+PLAGIARISM_DEFAULT_CORPUS_PATH = Path("/home/tdkx/workspace/tech/data/corpus_local/sbs_5000")
+PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT = Path("/home/tdkx/workspace/tech/data/corpus_local")
+PLAGIARISM_DEFAULT_REMOTE_CORPUS_ROOT = Path("/mnt/remote_corpus")
+PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR = Path("/home/tdkx/workspace/tech/data/plagiarism/local_ingest")
+PLAGIARISM_DEFAULT_INDEX_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_index.json"
+PLAGIARISM_DEFAULT_SQLITE_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_index.db"
+PLAGIARISM_DEFAULT_MANIFEST_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_manifest.json"
+PLAGIARISM_DEFAULT_CHECKPOINT_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_refresh_checkpoint.json"
 
 
 # 白名单模板短语（不计入重复）

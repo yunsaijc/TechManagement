@@ -104,6 +104,7 @@ class DocumentParser:
 
     DOCX_PAGE_CHARS = 1800
     CHUNK_MAX_CHARS = 1200
+    CONTINUATION_CONTEXT_CHARS = 220
     CONTAINER_SECTION_CHILD_PATTERNS: Dict[str, List[str]] = {
         "进度安排": [
             r"^\d{4}\s*年\s*\d{1,2}\s*月\s*[-—~至]+\s*\d{4}\s*年\s*\d{1,2}\s*月$",
@@ -401,6 +402,7 @@ class DocumentParser:
         chunks: List[Dict[str, Any]] = []
         chunk_id = 1
         current_section = "概述"
+        previous_chunk_by_section: Dict[str, str] = {}
 
         for page_num, page_text in enumerate(page_texts, start=1):
             override_section = self._detect_page_override_section(page_text)
@@ -416,6 +418,7 @@ class DocumentParser:
                 page_blocks = [(current_section, self._clean_text(page_text))]
 
             for section_name, block_text in page_blocks:
+                first_part_in_block = True
                 for part in self._split_text(block_text, self.CHUNK_MAX_CHARS):
                     clean_part = self._clean_text(part)
                     if not clean_part:
@@ -425,6 +428,18 @@ class DocumentParser:
                         preferred_section=section_name,
                         sections=sections,
                     )
+                    if (
+                        first_part_in_block
+                        and self._should_stitch_previous_context(
+                            previous_chunk=previous_chunk_by_section.get(resolved_section, ""),
+                            current_chunk=clean_part,
+                        )
+                    ):
+                        previous_tail = self._extract_tail_context(
+                            previous_chunk_by_section[resolved_section],
+                            self.CONTINUATION_CONTEXT_CHARS,
+                        )
+                        clean_part = f"{previous_tail}\n{clean_part}".strip()
                     chunks.append(
                         {
                             "id": chunk_id,
@@ -434,7 +449,9 @@ class DocumentParser:
                             "text": clean_part,
                         }
                     )
+                    previous_chunk_by_section[resolved_section] = clean_part
                     chunk_id += 1
+                    first_part_in_block = False
 
         return chunks
 
@@ -560,10 +577,45 @@ class DocumentParser:
 
         return chunks
 
+    def _should_stitch_previous_context(self, previous_chunk: str, current_chunk: str) -> bool:
+        """判断当前切片是否应补上上一切片尾部上下文"""
+        previous = self._clean_text(previous_chunk)
+        current = self._clean_text(current_chunk)
+        if not previous or not current:
+            return False
+        if previous.endswith(("。", "！", "？", "；", ":", "：")):
+            return False
+
+        first_line = current.split("\n", 1)[0].strip()
+        if not first_line:
+            return False
+        if self._is_section_title(first_line):
+            return False
+        if re.match(r"^(方向[一二三四五六七八九十\d]+|第[一二三四五六七八九十\d]+[章节部分阶段年]|[（(]?[一二三四五六七八九十\d]+[）)]|[一二三四五六七八九十\d]+[、\.．])", first_line):
+            return False
+        if len(first_line) <= 18 and not re.search(r"[，,。；;：:、]", first_line):
+            return False
+        return True
+
+    def _extract_tail_context(self, text: str, max_chars: int) -> str:
+        """截取上一切片尾部上下文，避免从半句中间生硬拼接"""
+        normalized = self._clean_text(text)
+        if len(normalized) <= max_chars:
+            return normalized
+
+        tail = normalized[-max_chars:].strip()
+        for idx, char in enumerate(tail[:80]):
+            if char in "\n。！？；":
+                candidate = tail[idx + 1 :].strip()
+                if candidate:
+                    return candidate
+        return tail
+
     def _clean_text(self, text: str) -> str:
         """清洗文本"""
         compact = re.sub(r"\u00a0", " ", text)
         compact = re.sub(r"\r\n?", "\n", compact)
+        compact = re.sub(r"(?m)^V\d{8,}\s*", "", compact)
         compact = re.sub(r"\n{3,}", "\n\n", compact)
         compact = re.sub(r"[\t ]+", " ", compact)
         return compact.strip()

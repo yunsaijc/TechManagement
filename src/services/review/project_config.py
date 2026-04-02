@@ -3,6 +3,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from src.services.review.notice_rules import get_merged_policy_review_points
+
 
 PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
     "regional_innovation": {
@@ -27,6 +29,10 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "funding_ratio_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -41,6 +47,7 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
                 "新疆生产建设兵团第二师铁门关市",
                 "西藏自治区阿里地区",
             ],
+            "min_self_funding_ratio": 1.0,
         },
         "policy_review_points": [
             {"code": "registered_date_limit", "requirement": "单位注册时间在2025年1月1日后。", "automation": "requires_data", "reason": "当前项目上下文未接入注册时间字段"},
@@ -79,6 +86,10 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "funding_ratio_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -88,6 +99,14 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "constraints": {
             "registered_after": "2025-01-01",
             "max_execution_period_years": 2,
+            "funding_ratio_by_applicant_type": {
+                "enterprise": 2.0,
+                "institution": 1.0,
+                "university": 1.0,
+                "research_institute": 1.0,
+                "hospital": 1.0,
+                "default": 1.0,
+            },
         },
         "policy_review_points": [
             {"code": "registered_date_limit", "requirement": "单位注册时间在2025年1月1日后。", "automation": "requires_data", "reason": "当前项目上下文未接入注册时间字段"},
@@ -127,6 +146,10 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "funding_ratio_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -140,6 +163,7 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
             "allowed_applicant_unit_types": ["enterprise"],
             "requires_beijing_tianjin_partner": True,
             "requires_cluster_region_match": True,
+            "min_self_funding_ratio": 3.0,
         },
         "policy_review_points": [
             {"code": "registered_date_limit", "requirement": "单位注册时间在2025年1月1日后。", "automation": "requires_data", "reason": "当前项目上下文未接入注册时间字段"},
@@ -179,6 +203,9 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -218,6 +245,8 @@ DOC_KIND_TO_DOCUMENT_TYPE: Dict[str, str] = {
     "patent_certificate": "patent_certificate",
     "award_certificate": "award_certificate",
     "base_staff_proof": "acceptance_report",
+    "business_license": "acceptance_report",
+    "research_paper": "acceptance_report",
 }
 
 
@@ -270,6 +299,14 @@ ATTACHMENT_KIND_CONFIG: Dict[str, Dict[str, str]] = {
         "label": "基地固定人员证明",
         "description": "创新基地固定人员名单、聘任证明、人员证明材料等。",
     },
+    "business_license": {
+        "label": "营业执照（统一社会信用代码证）",
+        "description": "营业执照、统一社会信用代码证、事业单位法人证书等主体资格证明材料。",
+    },
+    "research_paper": {
+        "label": "科研论文（发表论文）",
+        "description": "已发表或已录用的学术论文、Research Article、期刊论文首页及全文等成果论文材料。",
+    },
     "other_supporting_material": {
         "label": "其他支撑材料",
         "description": "确属项目附件，但不属于上述重点材料类别的其他附件。",
@@ -296,6 +333,18 @@ ATTACHMENT_DOC_KIND_ALIASES: Dict[str, str] = {
     "专利证书": "patent_certificate",
     "获奖证书": "award_certificate",
     "基地固定人员证明": "base_staff_proof",
+    "营业执照": "business_license",
+    "营业执照（统一社会信用代码证）": "business_license",
+    "统一社会信用代码证": "business_license",
+    "事业单位法人证书": "business_license",
+    "法人证书": "business_license",
+    "科研论文": "research_paper",
+    "发表论文": "research_paper",
+    "期刊论文": "research_paper",
+    "学术论文": "research_paper",
+    "research article": "research_paper",
+    "journal article": "research_paper",
+    "paper": "research_paper",
     "其他支撑材料": "other_supporting_material",
     "其他材料": "other_supporting_material",
     "无法识别": "unknown_attachment",
@@ -319,6 +368,14 @@ ATTACHMENT_FILENAME_HINTS: List[tuple[str, str]] = [
     ("许可", "industry_permit"),
     ("生物安全", "biosafety_commitment"),
     ("固定人员", "base_staff_proof"),
+    ("营业执照", "business_license"),
+    ("统一社会信用代码", "business_license"),
+    ("法人证书", "business_license"),
+    ("论文", "research_paper"),
+    ("research article", "research_paper"),
+    ("journal article", "research_paper"),
+    ("article", "research_paper"),
+    ("doi", "research_paper"),
 ]
 
 
@@ -348,6 +405,12 @@ def get_project_config(project_type: str) -> Optional[Dict[str, Any]]:
 def get_policy_review_points(project_type: str) -> List[Dict[str, Any]]:
     """获取项目类型对应的形式审查要点矩阵"""
     return list(PROJECT_CONFIG.get(project_type, {}).get("policy_review_points", []))
+
+
+def get_effective_policy_review_points(project_type: str, notice_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """获取项目类型生效的形式审查要点（基础规则 + 通知规则）"""
+    base_points = get_policy_review_points(project_type)
+    return get_merged_policy_review_points(project_type, base_points, notice_context or {})
 
 
 def get_project_label(project_type: str) -> str:

@@ -293,6 +293,7 @@ class ChatIndexer:
         raw_lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not raw_lines:
             return []
+        raw_lines = self._merge_wrapped_lines(raw_lines, section)
 
         chunks: List[Dict[str, str]] = []
         current_lines: List[str] = []
@@ -322,6 +323,62 @@ class ChatIndexer:
             )
 
         return [item for item in chunks if item["text"]]
+
+    def _merge_wrapped_lines(self, raw_lines: List[str], section: str) -> List[str]:
+        """合并 OCR/排版导致的断行，避免检索块从半句中间开始"""
+        merged: List[str] = []
+        for line in raw_lines:
+            if not merged:
+                merged.append(line)
+                continue
+            previous = merged[-1]
+            if self._should_merge_wrapped_line(previous, line, section):
+                merged[-1] = self._join_wrapped_lines(previous, line)
+                continue
+            merged.append(line)
+        return merged
+
+    def _should_merge_wrapped_line(self, previous: str, current: str, section: str) -> bool:
+        """判断当前行是否只是上一行的续写"""
+        if self._classify_line(previous, section) != "paragraph":
+            return False
+        if self._classify_line(current, section) != "paragraph":
+            return False
+        if previous == section or self._looks_like_section_title_line(previous, section) or self._looks_like_structural_anchor(previous):
+            return False
+        if previous.endswith(("。", "！", "？", "；", ":", "：")):
+            return False
+        if self._looks_like_structural_anchor(current):
+            return False
+        if len(previous) <= 16 and not re.search(r"[，,。；;：:、]", previous):
+            return False
+        return True
+
+    def _looks_like_structural_anchor(self, line: str) -> bool:
+        """识别应单独保留的结构锚点，避免错误拼接小标题"""
+        return bool(
+            re.match(
+                r"^(方向[一二三四五六七八九十\d]+[：:]|第[一二三四五六七八九十\d]+年(?:度)?|阶段[一二三四五六七八九十\d]+|[（(]?[一二三四五六七八九十\d]+[）)]|[一二三四五六七八九十\d]+[、\.．])",
+                line,
+            )
+        )
+
+    def _looks_like_section_title_line(self, line: str, section: str) -> bool:
+        """轻量识别章节标题行，避免标题与正文误拼接"""
+        normalized = re.sub(r"^[一二三四五六七八九十\d]+[、\.．\s]*", "", line).strip()
+        normalized = re.sub(r"[：:\s]+$", "", normalized)
+        if not normalized:
+            return False
+        if normalized == section:
+            return True
+        return len(normalized) <= 24 and normalized.endswith(("目标", "意义", "创新点", "前景", "内容", "方案", "效益", "安排", "计划"))
+
+    def _join_wrapped_lines(self, previous: str, current: str) -> str:
+        """拼接断行内容，英文单词边界保留空格，中文默认直接相连"""
+        separator = ""
+        if re.search(r"[A-Za-z0-9]$", previous) and re.match(r"[A-Za-z0-9]", current):
+            separator = " "
+        return f"{previous}{separator}{current}".strip()
 
     def _classify_line(self, line: str, section: str) -> str:
         """粗分类切片类型"""

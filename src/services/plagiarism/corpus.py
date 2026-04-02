@@ -10,14 +10,22 @@ import os
 import resource
 import sqlite3
 import time
+import zipfile
 from collections import defaultdict
 from itertools import islice
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
+from xml.etree import ElementTree as ET
 
 from pydantic import BaseModel, Field
 
 from src.common.file_handler import get_parser
+from src.services.plagiarism.config import (
+    PLAGIARISM_DEFAULT_CORPUS_PATH,
+    PLAGIARISM_DEFAULT_INDEX_PATH,
+    PLAGIARISM_DEFAULT_MANIFEST_PATH,
+    PLAGIARISM_DEFAULT_SQLITE_PATH,
+)
 from src.services.plagiarism.retrieval import SourceRetriever
 from src.services.plagiarism.text_repairs import repair_extracted_text_artifacts
 
@@ -53,18 +61,28 @@ class CorpusManager:
     def __init__(
         self,
         corpus_path: Optional[str] = None,
-        index_save_path: str = "data/plagiarism/corpus_index.json",
+        index_save_path: str = str(PLAGIARISM_DEFAULT_INDEX_PATH),
         shard_count: int = 16,
+        scan_only: bool = False,
     ):
         env_path = os.getenv("PLAGIARISM_CORPUS_PATH")
-        self.corpus_path = Path(corpus_path or env_path or "/mnt/remote_corpus/2025/sbs")
-        self.index_save_path = Path(index_save_path)
+        env_index_path = os.getenv("PLAGIARISM_CORPUS_INDEX_PATH")
+        env_sqlite_path = os.getenv("PLAGIARISM_CORPUS_SQLITE_PATH")
+        env_manifest_path = os.getenv("PLAGIARISM_CORPUS_MANIFEST_PATH")
+        self.corpus_path = Path(corpus_path or env_path or PLAGIARISM_DEFAULT_CORPUS_PATH)
+        self.index_save_path = Path(env_index_path or index_save_path)
         self.shard_dir = self.index_save_path.with_suffix("")
         self.shard_dir = self.shard_dir.parent / f"{self.shard_dir.name}_shards"
         self.inverted_dir = self.index_save_path.parent / "corpus_char4_inverted"
-        self.sqlite_path = self.index_save_path.parent / "corpus_index.db"
+        self.sqlite_path = Path(env_sqlite_path) if env_sqlite_path else Path(PLAGIARISM_DEFAULT_SQLITE_PATH)
+        self.manifest_path = Path(env_manifest_path) if env_manifest_path else Path(PLAGIARISM_DEFAULT_MANIFEST_PATH)
         self.shard_count = max(1, shard_count)
+        self.max_postings_grams_per_doc = max(
+            256,
+            int(os.getenv("PLAGIARISM_CORPUS_MAX_POSTINGS_GRAMS_PER_DOC", "4096")),
+        )
         self.write_json_debug = os.getenv("PLAGIARISM_CORPUS_WRITE_JSON", "0") == "1"
+        self.scan_only = scan_only
         self.index: CorpusIndex = CorpusIndex(shard_count=self.shard_count)
         self.retriever = SourceRetriever()
         self._feature_cache: Dict[str, Dict[str, Dict[str, List[str]]]] = {}
@@ -77,8 +95,9 @@ class CorpusManager:
             self.shard_dir.mkdir(parents=True, exist_ok=True)
             self.inverted_dir.mkdir(parents=True, exist_ok=True)
         self.load_index()
-        self._ensure_sqlite_schema()
-        self._sqlite_ready = self._has_sqlite_retrieval_index()
+        if not self.scan_only:
+            self._ensure_sqlite_schema()
+            self._sqlite_ready = self._has_sqlite_retrieval_index()
 
     def load_index(self):
         """从磁盘加载索引清单。兼容旧版单文件结构。"""
@@ -131,14 +150,479 @@ class CorpusManager:
         
         return await self.scan_and_update_with_options(limit=limit)
 
+    def scan_manifest(
+        self,
+        cursor_doc_id: Optional[str] = None,
+        max_scan: Optional[int] = None,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> Dict[str, object]:
+        """仅扫描目录并生成待处理 manifest，不执行解析建库。"""
+        stats = {"scanned": 0, "new": 0, "updated": 0, "deleted": 0, "failed": 0, "unchanged": 0}
+        if not self.corpus_path.exists():
+            print(f"[Corpus] 错误: 挂载路径不存在 {self.corpus_path}")
+            return stats
+
+        max_scan = int(max_scan) if max_scan else None
+        scan_started_at = time.time()
+        last_seen_doc_id: Optional[str] = cursor_doc_id
+        scan_truncated = False
+        manifest = self._load_manifest()
+        all_docx_files = sorted(
+            self._iter_docx_files(self.corpus_path),
+            key=lambda path: self._doc_id_for_path(path),
+        )
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "scan_manifest",
+                    "processed": 0,
+                    "total": 0,
+                    "elapsed_seconds": 0,
+                    "eta_seconds": 0,
+                    "stats": dict(stats),
+                }
+            )
+
+        for file_path in all_docx_files:
+            doc_id = self._doc_id_for_path(file_path)
+            if cursor_doc_id and doc_id <= cursor_doc_id:
+                continue
+
+            stats["scanned"] += 1
+            last_seen_doc_id = doc_id
+            if progress_callback and (stats["scanned"] <= 1 or stats["scanned"] % 200 == 0):
+                progress_callback(
+                    {
+                        "stage": "scan_manifest",
+                        "processed": stats["scanned"],
+                        "total": 0,
+                        "elapsed_seconds": round(time.time() - scan_started_at, 2),
+                        "eta_seconds": 0,
+                        "stats": {
+                            **dict(stats),
+                            "current_path": str(file_path),
+                            "cursor_doc_id": cursor_doc_id,
+                        },
+                    }
+                )
+
+            try:
+                stat = file_path.stat()
+            except OSError as e:
+                print(f"[Corpus] 读取文件状态失败 {file_path.name}: {e}")
+                stats["failed"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
+                continue
+
+            file_size = int(stat.st_size)
+            file_mtime = float(stat.st_mtime)
+            stored_path = self._storage_path_for_file(file_path)
+            existing = self.index.documents.get(doc_id)
+            manifest_existing = manifest.get(doc_id) if isinstance(manifest.get(doc_id), dict) else None
+            action = "unchanged"
+            if existing:
+                if existing.path != stored_path:
+                    action = "fix_path"
+                    stats["updated"] += 1
+                elif existing.file_size != file_size or abs(existing.file_mtime - file_mtime) >= 1e-6:
+                    action = "update"
+                    stats["updated"] += 1
+                else:
+                    stats["unchanged"] += 1
+            else:
+                action = "new"
+                stats["new"] += 1
+
+            if (
+                manifest_existing
+                and manifest_existing.get("action") == "failed"
+                and float(manifest_existing.get("file_mtime") or 0.0) == file_mtime
+                and int(manifest_existing.get("file_size") or 0) == file_size
+            ):
+                action = "failed"
+                stats["unchanged"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
+                continue
+
+            if action != "unchanged":
+                manifest[doc_id] = {
+                    "doc_id": doc_id,
+                    "path": stored_path,
+                    "file_size": file_size,
+                    "file_mtime": file_mtime,
+                    "action": action,
+                    "updated_at": time.time(),
+                }
+
+            if max_scan and stats["scanned"] >= max_scan:
+                scan_truncated = True
+                break
+
+        self._save_manifest(manifest)
+        elapsed = time.time() - scan_started_at
+        print(
+            f"[Corpus] manifest 扫描完成: scanned={stats['scanned']}, "
+            f"pending={len(manifest)}, elapsed={elapsed:.2f}s, "
+            f"cursor={cursor_doc_id or '-'}, next_cursor={last_seen_doc_id or '-'}, truncated={scan_truncated}"
+        )
+        return {
+            **stats,
+            "pending": len(manifest),
+            "cursor_doc_id": cursor_doc_id,
+            "next_cursor": last_seen_doc_id,
+            "has_more": scan_truncated,
+        }
+
+    async def build_batch_from_manifest(
+        self,
+        limit: int = 5,
+        max_concurrency: int = 1,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> Dict[str, object]:
+        """从 manifest 中取一小批文档构建 SQLite 索引。"""
+        import asyncio
+
+        manifest = self._load_manifest()
+        pending_items = [
+            item for _, item in sorted(manifest.items(), key=lambda pair: pair[0])
+            if item.get("action") in {"new", "update", "fix_path"}
+        ]
+        selected = pending_items[: max(1, int(limit))]
+        max_concurrency = max(1, int(max_concurrency))
+        stats = {
+            "selected": len(selected),
+            "processed": 0,
+            "indexed": 0,
+            "fixed_path": 0,
+            "failed": 0,
+            "remaining": max(len(pending_items) - len(selected), 0),
+            "max_concurrency": max_concurrency,
+        }
+        if not selected:
+            return {
+                **stats,
+                "has_more": False,
+                "next_doc_id": None,
+            }
+
+        batch_started_at = time.time()
+        parse_started_at = time.time()
+        parse_jobs: List[dict] = []
+        for item in selected:
+            action = str(item["action"])
+            if action == "fix_path":
+                continue
+            parse_jobs.append(item)
+
+        async def parse_job(item: dict, semaphore: asyncio.Semaphore):
+            async with semaphore:
+                doc_id = str(item["doc_id"])
+                file_path = Path(str(item["path"]))
+                try:
+                    stat = file_path.stat()
+                    file_hash = self._calculate_hash(file_path)
+                    doc_entry = await self._build_doc_entry(
+                        doc_id=doc_id,
+                        file_path=file_path,
+                        file_hash=file_hash,
+                        file_size=int(stat.st_size),
+                        file_mtime=float(stat.st_mtime),
+                    )
+                    if not doc_entry:
+                        raise RuntimeError(f"构建索引项失败: {doc_id}")
+                    return doc_id, doc_entry, None
+                except Exception as e:
+                    return doc_id, None, str(e)
+
+        parsed_results: Dict[str, Tuple[Optional[CorpusDocument], Optional[str]]] = {}
+        if parse_jobs:
+            semaphore = asyncio.Semaphore(max_concurrency)
+            tasks = [
+                asyncio.create_task(parse_job(item, semaphore))
+                for item in parse_jobs
+            ]
+            for completed in asyncio.as_completed(tasks):
+                doc_id, doc_entry, error = await completed
+                parsed_results[doc_id] = (doc_entry, error)
+        parse_elapsed = time.time() - parse_started_at
+
+        fix_path_docs: List[CorpusDocument] = []
+        sqlite_updates: List[CorpusDocument] = []
+        processed_doc_ids: List[str] = []
+        failed_docs: List[Tuple[str, str]] = []
+
+        started_at = time.time()
+        for item in selected:
+            doc_id = str(item["doc_id"])
+            action = str(item["action"])
+            file_path = Path(str(item["path"]))
+            stats["processed"] += 1
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "build_batch_prepare",
+                        "processed": stats["processed"],
+                        "total": len(selected),
+                        "elapsed_seconds": round(time.time() - started_at, 2),
+                        "eta_seconds": 0,
+                        "stats": {
+                            **dict(stats),
+                            "doc_id": doc_id,
+                            "action": action,
+                            "parse_elapsed_seconds": round(parse_elapsed, 2),
+                        },
+                    }
+                )
+
+            try:
+                if action == "fix_path":
+                    existing = self.index.documents.get(doc_id)
+                    if not existing:
+                        raise RuntimeError(f"索引中不存在文档: {doc_id}")
+                    existing.path = str(file_path)
+                    try:
+                        stat = file_path.stat()
+                        existing.file_size = int(stat.st_size)
+                        existing.file_mtime = float(stat.st_mtime)
+                    except OSError:
+                        pass
+                    fix_path_docs.append(existing.model_copy())
+                    processed_doc_ids.append(doc_id)
+                    stats["fixed_path"] += 1
+                    continue
+
+                doc_entry, parse_error = parsed_results.get(doc_id, (None, "解析结果缺失"))
+                if parse_error:
+                    raise RuntimeError(parse_error)
+                if not doc_entry:
+                    raise RuntimeError(f"构建索引项失败: {doc_id}")
+                self.index.documents[doc_id] = doc_entry.model_copy(update={"features": None})
+                sqlite_updates.append(doc_entry)
+                processed_doc_ids.append(doc_id)
+                stats["indexed"] += 1
+            except Exception as e:
+                stats["failed"] += 1
+                failed_docs.append((doc_id, str(e)))
+                failed_item = manifest.get(doc_id)
+                if isinstance(failed_item, dict):
+                    failed_item["action"] = "failed"
+                    failed_item["last_error"] = str(e)
+                    failed_item["failed_at"] = time.time()
+                print(f"[Corpus] build_batch 失败 {doc_id}: {e}")
+
+        sqlite_started_at = time.time()
+        conn = self._connect_sqlite()
+        try:
+            conn.execute("BEGIN")
+            if fix_path_docs:
+                self._bulk_upsert_sqlite_doc_metadata(conn, fix_path_docs)
+            if sqlite_updates:
+                self._apply_sqlite_doc_feature_batch_updates(conn, sqlite_updates)
+            conn.commit()
+            for doc_id in processed_doc_ids:
+                manifest.pop(doc_id, None)
+        except Exception as e:
+            conn.rollback()
+            print(f"[Corpus] build_batch SQLite 批量写入失败: {e}")
+            raise
+        finally:
+            conn.close()
+
+        sqlite_elapsed = time.time() - sqlite_started_at
+        save_started_at = time.time()
+        try:
+            self.save_index()
+            self._save_manifest(manifest)
+        finally:
+            save_elapsed = time.time() - save_started_at
+
+        total_elapsed = time.time() - batch_started_at
+        print(
+            "[Corpus] build_batch 完成: "
+            f"selected={len(selected)}, indexed={stats['indexed']}, fixed_path={stats['fixed_path']}, "
+            f"failed={stats['failed']}, parse={parse_elapsed:.2f}s, sqlite={sqlite_elapsed:.2f}s, "
+            f"save={save_elapsed:.2f}s, total={total_elapsed:.2f}s"
+        )
+
+        remaining = len(
+            [
+                item for item in manifest.values()
+                if item.get("action") in {"new", "update", "fix_path"}
+            ]
+        )
+        return {
+            **stats,
+            "remaining": remaining,
+            "has_more": remaining > 0,
+            "next_doc_id": min(manifest.keys()) if manifest else None,
+            "timings": {
+                "parse_seconds": round(parse_elapsed, 2),
+                "sqlite_seconds": round(sqlite_elapsed, 2),
+                "save_seconds": round(save_elapsed, 2),
+                "total_seconds": round(total_elapsed, 2),
+            },
+            "failed_docs": failed_docs,
+        }
+
+    def clear_coarse_index(self) -> None:
+        """清空粗召回索引，保留 docs 与 doc_features。"""
+        conn = self._connect_sqlite()
+        try:
+            conn.execute("BEGIN")
+            conn.execute("DELETE FROM postings_char4")
+            conn.execute("DELETE FROM gram_stats_char4")
+            conn.execute("UPDATE doc_features SET coarse_char4_json = '[]'")
+            conn.commit()
+            self._sqlite_ready = False
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def rebuild_coarse_index(
+        self,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+        batch_size: int = 50,
+    ) -> Dict[str, object]:
+        """基于现有 doc_features 全量重建粗召回倒排。"""
+        batch_size = max(1, int(batch_size))
+        conn = self._connect_sqlite()
+        started_at = time.time()
+        processed_docs = 0
+        total_postings = 0
+
+        try:
+            total_docs = int(conn.execute("SELECT COUNT(*) FROM doc_features").fetchone()[0])
+            if total_docs == 0:
+                return {
+                    "documents": 0,
+                    "postings": 0,
+                    "elapsed_seconds": 0.0,
+                }
+
+            conn.execute("BEGIN")
+            conn.execute("DROP TABLE IF EXISTS temp.coarse_postings_stage")
+            conn.execute("CREATE TEMP TABLE coarse_postings_stage (gram TEXT NOT NULL, doc_id TEXT NOT NULL)")
+
+            cursor = conn.execute(
+                """
+                SELECT doc_id, char4_json
+                FROM doc_features
+                ORDER BY doc_id ASC
+                """
+            )
+            while True:
+                rows = cursor.fetchmany(batch_size)
+                if not rows:
+                    break
+
+                feature_updates = []
+                posting_rows = []
+                for row in rows:
+                    doc_id = str(row["doc_id"])
+                    grams = json.loads(row["char4_json"])
+                    coarse_grams = self._select_representative_char4_grams(conn, grams)
+                    feature_updates.append((self._feature_json(coarse_grams), doc_id))
+                    posting_rows.extend((gram, doc_id) for gram in coarse_grams)
+
+                if feature_updates:
+                    conn.executemany(
+                        "UPDATE doc_features SET coarse_char4_json = ? WHERE doc_id = ?",
+                        feature_updates,
+                    )
+                if posting_rows:
+                    conn.executemany(
+                        "INSERT INTO temp.coarse_postings_stage (gram, doc_id) VALUES (?, ?)",
+                        posting_rows,
+                    )
+
+                processed_docs += len(rows)
+                total_postings += len(posting_rows)
+                if progress_callback and (
+                    processed_docs <= 1
+                    or processed_docs % 100 == 0
+                    or processed_docs >= total_docs
+                ):
+                    elapsed = time.time() - started_at
+                    avg_per_doc = elapsed / processed_docs if processed_docs else 0.0
+                    remaining_docs = max(total_docs - processed_docs, 0)
+                    progress_callback(
+                        {
+                            "stage": "rebuild_coarse_index",
+                            "processed": processed_docs,
+                            "total": total_docs,
+                            "elapsed_seconds": round(elapsed, 2),
+                            "eta_seconds": int(avg_per_doc * remaining_docs) if avg_per_doc > 0 else 0,
+                            "stats": {
+                                "documents": total_docs,
+                                "processed_docs": processed_docs,
+                                "postings": total_postings,
+                            },
+                        }
+                    )
+
+            conn.execute("DROP INDEX IF EXISTS idx_postings_char4_doc_id")
+            conn.execute("DELETE FROM postings_char4")
+            conn.execute("DELETE FROM gram_stats_char4")
+            conn.execute(
+                """
+                INSERT INTO postings_char4 (gram, doc_id)
+                SELECT gram, doc_id
+                FROM temp.coarse_postings_stage
+                GROUP BY gram, doc_id
+                ORDER BY gram, doc_id
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO gram_stats_char4 (gram, df)
+                SELECT gram, COUNT(*)
+                FROM temp.coarse_postings_stage
+                GROUP BY gram
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_postings_char4_doc_id
+                ON postings_char4 (doc_id)
+                """
+            )
+            conn.execute("DROP TABLE IF EXISTS temp.coarse_postings_stage")
+            conn.commit()
+            self._sqlite_ready = True
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+        elapsed_total = time.time() - started_at
+        print(
+            f"[Corpus] coarse index 重建完成: docs={processed_docs}, "
+            f"postings={total_postings}, elapsed={elapsed_total:.2f}s"
+        )
+        return {
+            "documents": processed_docs,
+            "postings": total_postings,
+            "elapsed_seconds": round(elapsed_total, 2),
+        }
+
     async def scan_and_update_with_options(
         self,
         limit: Optional[int] = None,
         batch_size: int = 100,
         max_concurrency: int = 2,
         save_every_batches: int = 5,
+        cursor_doc_id: Optional[str] = None,
+        max_scan: Optional[int] = None,
         progress_callback: Optional[Callable[[dict], None]] = None,
-    ) -> Dict[str, int]:
+    ) -> Dict[str, object]:
         """扫描挂载目录并增量更新索引。"""
         import asyncio
 
@@ -150,6 +634,7 @@ class CorpusManager:
         batch_size = max(1, int(batch_size))
         max_concurrency = max(1, int(max_concurrency))
         save_every_batches = max(1, int(save_every_batches))
+        max_scan = int(max_scan) if max_scan else None
 
         if self.index.documents and not self._sqlite_ready:
             print("[Corpus] SQLite 检索索引缺失，开始基于现有 JSON 分片重建...")
@@ -162,6 +647,9 @@ class CorpusManager:
         to_process: List[Tuple[str, Path, int, float]] = []
         metadata_updates: List[CorpusDocument] = []
         scan_started_at = time.time()
+        last_seen_doc_id: Optional[str] = cursor_doc_id
+        scan_truncated = False
+        limit_reached = False
 
         if progress_callback:
             progress_callback(
@@ -176,7 +664,12 @@ class CorpusManager:
             )
 
         for file_path in self._iter_docx_files(self.corpus_path):
+            doc_id = self._doc_id_for_path(file_path)
+            if cursor_doc_id and doc_id <= cursor_doc_id:
+                continue
+
             stats["scanned"] += 1
+            last_seen_doc_id = doc_id
             if progress_callback and (
                 stats["scanned"] <= 1
                 or stats["scanned"] % 200 == 0
@@ -192,11 +685,10 @@ class CorpusManager:
                         "stats": {
                             **dict(stats),
                             "current_path": str(file_path),
+                            "cursor_doc_id": cursor_doc_id,
                         },
                     }
                 )
-
-            doc_id = self._doc_id_for_path(file_path)
             seen_doc_ids.add(doc_id)
 
             try:
@@ -204,6 +696,9 @@ class CorpusManager:
             except OSError as e:
                 print(f"[Corpus] 读取文件状态失败 {file_path.name}: {e}")
                 stats["failed"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
                 continue
 
             file_size = int(stat.st_size)
@@ -222,18 +717,31 @@ class CorpusManager:
                     metadata_updates.append(existing.model_copy())
                     stats["updated"] += 1
                     print(f"[Corpus] 修正路径映射: {doc_id} -> {stored_path}")
+                    if max_scan and stats["scanned"] >= max_scan:
+                        scan_truncated = True
+                        break
                     continue
                 stats["unchanged"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
                 continue
 
             to_process.append((doc_id, file_path, file_size, file_mtime))
             if limit and len(to_process) >= limit:
+                limit_reached = True
+                scan_truncated = True
+                break
+            if max_scan and stats["scanned"] >= max_scan:
+                scan_truncated = True
                 break
 
         print(
             f"[Corpus] 扫描完成: scanned={stats['scanned']}, "
             f"to_process={len(to_process)}, metadata_updates={len(metadata_updates)}, "
-            f"elapsed={time.time() - scan_started_at:.2f}s"
+            f"elapsed={time.time() - scan_started_at:.2f}s, "
+            f"cursor={cursor_doc_id or '-'}, next_cursor={last_seen_doc_id or '-'}, "
+            f"truncated={scan_truncated}"
         )
         if progress_callback:
             progress_callback(
@@ -247,6 +755,9 @@ class CorpusManager:
                         **dict(stats),
                         "to_process": len(to_process),
                         "metadata_updates": len(metadata_updates),
+                        "cursor_doc_id": cursor_doc_id,
+                        "next_cursor": last_seen_doc_id,
+                        "scan_truncated": scan_truncated,
                     },
                 }
             )
@@ -283,16 +794,26 @@ class CorpusManager:
                     }
                 )
 
-        # 删除已经不在磁盘上的文档
-        removed_doc_ids = [doc_id for doc_id in self.index.documents.keys() if doc_id not in seen_doc_ids]
-        if removed_doc_ids:
-            for doc_id in removed_doc_ids:
-                self._remove_document(doc_id)
-            stats["deleted"] = len(removed_doc_ids)
+        # 只有完整全量扫描时才允许删除缺失文档，避免短任务误删
+        full_scan_completed = not scan_truncated and not cursor_doc_id
+        removed_doc_ids: List[str] = []
+        if full_scan_completed:
+            removed_doc_ids = [doc_id for doc_id in self.index.documents.keys() if doc_id not in seen_doc_ids]
+            if removed_doc_ids:
+                for doc_id in removed_doc_ids:
+                    self._remove_document(doc_id)
+                stats["deleted"] = len(removed_doc_ids)
 
         if not to_process and not removed_doc_ids:
             print(f"[Corpus] {self.corpus_path} 下没有需要更新的 docx 文件")
-            return stats
+            return {
+                **stats,
+                "cursor_doc_id": cursor_doc_id,
+                "next_cursor": last_seen_doc_id,
+                "has_more": scan_truncated,
+                "full_scan_completed": full_scan_completed,
+                "limit_reached": limit_reached,
+            }
 
         if to_process:
             total_to_process = len(to_process)
@@ -451,7 +972,14 @@ class CorpusManager:
             self.index.last_updated = time.time()
             self.save_index()
 
-        return stats
+        return {
+            **stats,
+            "cursor_doc_id": cursor_doc_id,
+            "next_cursor": last_seen_doc_id,
+            "has_more": scan_truncated,
+            "full_scan_completed": full_scan_completed,
+            "limit_reached": limit_reached,
+        }
 
     async def get_document_text(self, doc_id: str) -> Optional[str]:
         """延迟加载库文档原文。"""
@@ -750,15 +1278,22 @@ class CorpusManager:
             )
 
     def _connect_sqlite(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.sqlite_path, timeout=30)
+        conn = sqlite3.connect(self.sqlite_path, timeout=60)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=60000")
         conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
     def _ensure_sqlite_schema(self) -> None:
         conn = self._connect_sqlite()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError as e:
+            print(f"[Corpus] 跳过 journal_mode=WAL: {e}")
+        try:
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.OperationalError as e:
+            print(f"[Corpus] 跳过 synchronous=NORMAL: {e}")
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS docs (
@@ -789,6 +1324,14 @@ class CorpusManager:
             ON postings_char4 (doc_id);
             """
         )
+        doc_features_columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(doc_features)").fetchall()
+        }
+        if "coarse_char4_json" not in doc_features_columns:
+            conn.execute(
+                "ALTER TABLE doc_features ADD COLUMN coarse_char4_json TEXT NOT NULL DEFAULT '[]'"
+            )
         conn.commit()
         conn.close()
 
@@ -853,6 +1396,10 @@ class CorpusManager:
     ) -> None:
         self._remove_doc_from_sqlite(conn, doc_entry.doc_id, old_features=old_features)
         features = doc_entry.features or {}
+        coarse_grams = self._select_representative_char4_grams(
+            conn,
+            features.get("char4", []) or [],
+        )
         conn.execute(
             """
             INSERT OR REPLACE INTO docs (doc_id, path, file_hash, char_count, file_size, file_mtime, shard_id)
@@ -870,29 +1417,185 @@ class CorpusManager:
         )
         conn.execute(
             """
-            INSERT OR REPLACE INTO doc_features (doc_id, char2_json, char4_json, char8_json)
-            VALUES (?, ?, ?, ?)
+            INSERT OR REPLACE INTO doc_features (doc_id, char2_json, char4_json, char8_json, coarse_char4_json)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 doc_entry.doc_id,
                 self._feature_json(features.get("char2", [])),
                 self._feature_json(features.get("char4", [])),
                 self._feature_json(features.get("char8", [])),
+                self._feature_json(coarse_grams),
             ),
         )
-        grams = sorted(set(features.get("char4", []) or []))
-        if grams:
+        if coarse_grams:
             conn.executemany(
                 "INSERT OR IGNORE INTO postings_char4 (gram, doc_id) VALUES (?, ?)",
-                [(gram, doc_entry.doc_id) for gram in grams],
+                [(gram, doc_entry.doc_id) for gram in coarse_grams],
             )
             conn.executemany(
                 """
                 INSERT INTO gram_stats_char4 (gram, df) VALUES (?, 1)
                 ON CONFLICT(gram) DO UPDATE SET df = df + 1
                 """,
-                [(gram,) for gram in grams],
+                [(gram,) for gram in coarse_grams],
             )
+        self._sqlite_ready = True
+
+    def _apply_sqlite_doc_feature_batch_updates(
+        self,
+        conn: sqlite3.Connection,
+        updates: List[CorpusDocument],
+    ) -> None:
+        """仅写 docs 与 doc_features，不增量维护粗召回倒排。"""
+        if not updates:
+            return
+
+        doc_rows = []
+        feature_rows = []
+        for doc_entry in updates:
+            features = doc_entry.features or {}
+            doc_rows.append(
+                (
+                    doc_entry.doc_id,
+                    doc_entry.path,
+                    doc_entry.file_hash,
+                    doc_entry.char_count,
+                    doc_entry.file_size,
+                    doc_entry.file_mtime,
+                    doc_entry.shard_id,
+                )
+            )
+            feature_rows.append(
+                (
+                    doc_entry.doc_id,
+                    self._feature_json(features.get("char2", [])),
+                    self._feature_json(features.get("char4", [])),
+                    self._feature_json(features.get("char8", [])),
+                    "[]",
+                )
+            )
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO docs (doc_id, path, file_hash, char_count, file_size, file_mtime, shard_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            doc_rows,
+        )
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO doc_features (doc_id, char2_json, char4_json, char8_json, coarse_char4_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            feature_rows,
+        )
+
+    def _apply_sqlite_batch_updates(
+        self,
+        conn: sqlite3.Connection,
+        updates: List[Tuple[CorpusDocument, Dict[str, List[str]]]],
+    ) -> None:
+        if not updates:
+            return
+
+        doc_rows = []
+        feature_rows = []
+        posting_deletes = []
+        posting_inserts = []
+        gram_deltas: Dict[str, int] = defaultdict(int)
+        representative_cache: Dict[str, List[str]] = {}
+
+        for doc_entry, old_features in updates:
+            old_grams = set(old_features.get("coarse_char4", []) or [])
+            features = doc_entry.features or {}
+            representative_grams = self._select_representative_char4_grams(
+                conn,
+                features.get("char4", []) or [],
+            )
+            representative_cache[doc_entry.doc_id] = representative_grams
+            new_grams = set(representative_grams)
+
+            removed_grams = old_grams - new_grams
+            added_grams = new_grams - old_grams
+
+            if removed_grams:
+                posting_deletes.extend((gram, doc_entry.doc_id) for gram in removed_grams)
+                for gram in removed_grams:
+                    gram_deltas[gram] -= 1
+            if added_grams:
+                posting_inserts.extend((gram, doc_entry.doc_id) for gram in added_grams)
+                for gram in added_grams:
+                    gram_deltas[gram] += 1
+
+            doc_rows.append(
+                (
+                    doc_entry.doc_id,
+                    doc_entry.path,
+                    doc_entry.file_hash,
+                    doc_entry.char_count,
+                    doc_entry.file_size,
+                    doc_entry.file_mtime,
+                    doc_entry.shard_id,
+                )
+            )
+            feature_rows.append(
+                (
+                    doc_entry.doc_id,
+                    self._feature_json(features.get("char2", [])),
+                    self._feature_json(features.get("char4", [])),
+                    self._feature_json(features.get("char8", [])),
+                    self._feature_json(representative_cache[doc_entry.doc_id]),
+                )
+            )
+
+        if posting_deletes:
+            conn.executemany(
+                "DELETE FROM postings_char4 WHERE gram = ? AND doc_id = ?",
+                posting_deletes,
+            )
+        if posting_inserts:
+            conn.executemany(
+                "INSERT OR IGNORE INTO postings_char4 (gram, doc_id) VALUES (?, ?)",
+                posting_inserts,
+            )
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO docs (doc_id, path, file_hash, char_count, file_size, file_mtime, shard_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            doc_rows,
+        )
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO doc_features (doc_id, char2_json, char4_json, char8_json, coarse_char4_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            feature_rows,
+        )
+
+        positive_deltas = [(gram, delta) for gram, delta in gram_deltas.items() if delta > 0]
+        negative_deltas = [(gram, -delta) for gram, delta in gram_deltas.items() if delta < 0]
+
+        if positive_deltas:
+            conn.executemany(
+                """
+                INSERT INTO gram_stats_char4 (gram, df) VALUES (?, ?)
+                ON CONFLICT(gram) DO UPDATE SET df = df + excluded.df
+                """,
+                positive_deltas,
+            )
+        if negative_deltas:
+            conn.executemany(
+                "UPDATE gram_stats_char4 SET df = df - ? WHERE gram = ?",
+                [(delta, gram) for gram, delta in negative_deltas],
+            )
+            conn.executemany(
+                "DELETE FROM gram_stats_char4 WHERE gram = ? AND df <= 0",
+                [(gram,) for gram, _ in negative_deltas],
+            )
+
         self._sqlite_ready = True
 
     def _remove_doc_from_sqlite(
@@ -904,11 +1607,17 @@ class CorpusManager:
         features = old_features
         if features is None:
             row = conn.execute(
-                "SELECT char4_json FROM doc_features WHERE doc_id = ?",
+                "SELECT char4_json, coarse_char4_json FROM doc_features WHERE doc_id = ?",
                 (doc_id,),
             ).fetchone()
-            features = {"char4": json.loads(row["char4_json"])} if row else {}
-        for gram in set(features.get("char4", []) or []):
+            features = (
+                {
+                    "char4": json.loads(row["char4_json"]),
+                    "coarse_char4": json.loads(row["coarse_char4_json"]),
+                }
+                if row else {}
+            )
+        for gram in features.get("coarse_char4", []) or []:
             cursor = conn.execute(
                 "DELETE FROM postings_char4 WHERE gram = ? AND doc_id = ?",
                 (gram, doc_id),
@@ -922,13 +1631,81 @@ class CorpusManager:
     def _feature_json(self, values: List[str]) -> str:
         return json.dumps(values, ensure_ascii=False, separators=(",", ":"))
 
+    def _select_representative_char4_grams(
+        self,
+        conn: sqlite3.Connection,
+        grams: List[str],
+    ) -> List[str]:
+        """选择代表性粗召回 gram：优先参考已有 df，并保证全文覆盖。"""
+        ordered_unique = list(dict.fromkeys(grams))
+        if len(ordered_unique) <= self.max_postings_grams_per_doc:
+            return ordered_unique
+
+        df_map = self._load_gram_df_map(conn, ordered_unique)
+        segment_count = min(8, max(4, len(ordered_unique) // 512))
+        segment_size = max(1, len(ordered_unique) // segment_count)
+        per_segment_budget = max(1, self.max_postings_grams_per_doc // segment_count)
+        selected: List[str] = []
+        selected_set: Set[str] = set()
+
+        for segment_start in range(0, len(ordered_unique), segment_size):
+            segment = ordered_unique[segment_start : segment_start + segment_size]
+            ranked_segment = sorted(
+                segment,
+                key=lambda gram: (
+                    df_map.get(gram, 0),
+                    hashlib.blake2b(gram.encode("utf-8"), digest_size=8).digest(),
+                ),
+            )
+            for gram in ranked_segment[:per_segment_budget]:
+                if gram in selected_set:
+                    continue
+                selected.append(gram)
+                selected_set.add(gram)
+                if len(selected) >= self.max_postings_grams_per_doc:
+                    return selected
+
+        if len(selected) < self.max_postings_grams_per_doc:
+            remaining = [gram for gram in ordered_unique if gram not in selected_set]
+            ranked_remaining = sorted(
+                remaining,
+                key=lambda gram: (
+                    df_map.get(gram, 0),
+                    hashlib.blake2b(gram.encode("utf-8"), digest_size=8).digest(),
+                ),
+            )
+            for gram in ranked_remaining:
+                selected.append(gram)
+                if len(selected) >= self.max_postings_grams_per_doc:
+                    break
+
+        return selected
+
+    def _load_gram_df_map(
+        self,
+        conn: sqlite3.Connection,
+        grams: List[str],
+    ) -> Dict[str, int]:
+        if not grams:
+            return {}
+        df_map: Dict[str, int] = {}
+        for chunk in self._iter_string_chunks(grams, 500):
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"SELECT gram, df FROM gram_stats_char4 WHERE gram IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                df_map[str(row["gram"])] = int(row["df"])
+        return df_map
+
     def _get_doc_features_from_sqlite(self, doc_id: str) -> Dict[str, List[str]]:
         if not self.sqlite_path.exists():
             return {}
         conn = self._connect_sqlite()
         row = conn.execute(
             """
-            SELECT char2_json, char4_json, char8_json
+            SELECT char2_json, char4_json, char8_json, coarse_char4_json
             FROM doc_features
             WHERE doc_id = ?
             """,
@@ -941,6 +1718,7 @@ class CorpusManager:
             "char2": json.loads(row["char2_json"]),
             "char4": json.loads(row["char4_json"]),
             "char8": json.loads(row["char8_json"]),
+            "coarse_char4": json.loads(row["coarse_char4_json"]),
         }
 
     def _retrieve_candidate_doc_ids_from_sqlite(
@@ -950,72 +1728,76 @@ class CorpusManager:
         min_hits: int,
         max_postings_per_gram: int,
     ) -> List[str]:
+        started_at = time.time()
         conn = self._connect_sqlite()
-        conn.execute("DROP TABLE IF EXISTS temp.tmp_query_grams")
-        conn.execute("CREATE TEMP TABLE tmp_query_grams (gram TEXT PRIMARY KEY)")
-        conn.executemany(
-            "INSERT OR IGNORE INTO temp.tmp_query_grams (gram) VALUES (?)",
-            [(gram,) for gram in unique_query_grams],
-        )
-        skipped_high_df = int(
-            conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM temp.tmp_query_grams q
-                JOIN gram_stats_char4 s ON s.gram = q.gram
-                WHERE s.df > ?
-                """,
-                (max_postings_per_gram,),
-            ).fetchone()[0]
-        )
-        scored_docs = int(
-            conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM (
-                    SELECT p.doc_id
-                    FROM temp.tmp_query_grams q
-                    JOIN gram_stats_char4 s ON s.gram = q.gram
-                    JOIN postings_char4 p ON p.gram = q.gram
-                    WHERE s.df <= ?
-                    GROUP BY p.doc_id
-                    HAVING COUNT(*) >= ?
-                ) ranked
-                """,
-                (max_postings_per_gram, min_hits),
-            ).fetchone()[0]
-        )
-        rows = conn.execute(
-            """
-            SELECT ranked.doc_id, ranked.score, ranked.gram_hits
-            FROM (
-                SELECT
-                    p.doc_id AS doc_id,
-                    SUM(1.0 / s.df) AS score,
-                    COUNT(*) AS gram_hits
-                FROM temp.tmp_query_grams q
-                JOIN gram_stats_char4 s ON s.gram = q.gram
-                JOIN postings_char4 p ON p.gram = q.gram
-                WHERE s.df <= ?
-                GROUP BY p.doc_id
-                HAVING COUNT(*) >= ?
-            ) ranked
-            ORDER BY ranked.score DESC, ranked.gram_hits DESC, ranked.doc_id ASC
-            LIMIT ?
-            """,
-            (max_postings_per_gram, min_hits, top_k),
-        ).fetchall()
-        conn.execute("DROP TABLE IF EXISTS temp.tmp_query_grams")
+        temp_stage_elapsed = 0.0
+
+        high_df_started_at = time.time()
+        gram_df_rows = []
+        for chunk in self._iter_string_chunks(unique_query_grams, 500):
+            placeholders = ",".join("?" for _ in chunk)
+            gram_df_rows.extend(
+                conn.execute(
+                    f"""
+                    SELECT gram, df
+                    FROM gram_stats_char4
+                    WHERE gram IN ({placeholders})
+                    """,
+                    chunk,
+                ).fetchall()
+            )
+        high_df_elapsed = time.time() - high_df_started_at
+
+        eligible_grams: List[Tuple[str, int]] = []
+        skipped_high_df = 0
+        for row in gram_df_rows:
+            gram = str(row["gram"])
+            df = int(row["df"])
+            if df > max_postings_per_gram:
+                skipped_high_df += 1
+                continue
+            eligible_grams.append((gram, df))
+
+        eligible_grams.sort(key=lambda item: (item[1], item[0]))
+
+        topk_started_at = time.time()
+        doc_scores: Dict[str, float] = defaultdict(float)
+        doc_hits: Dict[str, int] = defaultdict(int)
+        postings_rows = 0
+
+        for gram, df in eligible_grams:
+            rows = conn.execute(
+                "SELECT doc_id FROM postings_char4 WHERE gram = ?",
+                (gram,),
+            ).fetchall()
+            postings_rows += len(rows)
+            idf = 1.0 / max(df, 1)
+            for row in rows:
+                doc_id = str(row["doc_id"])
+                doc_scores[doc_id] += idf
+                doc_hits[doc_id] += 1
+
+        ranked = [
+            (doc_id, score, doc_hits[doc_id])
+            for doc_id, score in doc_scores.items()
+            if doc_hits[doc_id] >= min_hits
+        ]
+        ranked.sort(key=lambda item: (-item[1], -item[2], item[0]))
+        selected = [doc_id for doc_id, _, _ in ranked[:top_k]]
+        topk_elapsed = time.time() - topk_started_at
         conn.close()
-        selected = [str(row["doc_id"]) for row in rows]
         print(
             f"[Corpus] 粗召回结束: candidates={len(selected)}, query_grams={len(unique_query_grams)}, "
-            f"scored_docs={scored_docs}, skipped_high_df={skipped_high_df}, rss={self._rss_mb():.1f}MB"
+            f"scored_docs=-1, skipped_high_df={skipped_high_df}, "
+            f"temp={temp_stage_elapsed:.2f}s, high_df={high_df_elapsed:.2f}s, "
+            f"scored=0.00s, topk={topk_elapsed:.2f}s, postings_rows={postings_rows}, "
+            f"total={time.time() - started_at:.2f}s, rss={self._rss_mb():.1f}MB"
         )
         return selected
 
     def _get_retrieval_documents_from_sqlite(self, doc_ids: List[str]) -> Dict[str, CorpusDocument]:
         docs_with_features: Dict[str, CorpusDocument] = {}
+        started_at = time.time()
         conn = self._connect_sqlite()
         for chunk in self._iter_doc_id_chunks(doc_ids, 200):
             placeholders = ",".join("?" for _ in chunk)
@@ -1054,6 +1836,10 @@ class CorpusManager:
                     },
                 )
         conn.close()
+        print(
+            f"[Corpus] retrieval docs 读取完成: doc_ids={len(doc_ids)}, "
+            f"loaded={len(docs_with_features)}, elapsed={time.time() - started_at:.2f}s"
+        )
         return docs_with_features
 
     def _calculate_hash(self, file_path: Path) -> str:
@@ -1076,10 +1862,22 @@ class CorpusManager:
             parser = get_parser(suffix)
             with open(file_path, "rb") as f:
                 content = f.read()
-            parse_result = await parser.parse(content)
-            full_text = repair_extracted_text_artifacts(parse_result.content.to_text())
-            features_raw = self.retriever._build_doc_features(full_text, [])
-            features_json = {key: sorted(value) for key, value in features_raw.items()}
+            try:
+                parse_result = await parser.parse(content)
+                full_text = repair_extracted_text_artifacts(parse_result.content.to_text())
+            except Exception as e:
+                if suffix != "docx":
+                    raise
+                print(f"[Corpus] DOCX 解析失败，改用 XML fallback {doc_id}: {e}")
+                full_text = self._extract_docx_text_fallback(content)
+                if not full_text.strip():
+                    raise
+            normalized = self.retriever._normalize(full_text)
+            features_json = {
+                "char2": self._ordered_unique_ngrams(normalized, 2),
+                "char4": self._ordered_unique_ngrams(normalized, 4),
+                "char8": self._ordered_unique_ngrams(normalized, 8),
+            }
             rel_path = self._storage_path_for_file(file_path)
             shard_id = self._shard_id_for_doc(doc_id)
             return CorpusDocument(
@@ -1193,6 +1991,28 @@ class CorpusManager:
                 break
             yield chunk
 
+    def _iter_string_chunks(self, items: List[str], chunk_size: int):
+        iterator = iter(items)
+        while True:
+            chunk = list(islice(iterator, chunk_size))
+            if not chunk:
+                break
+            yield chunk
+
+    def _load_manifest(self) -> Dict[str, dict]:
+        if not self.manifest_path.exists():
+            return {}
+        try:
+            with open(self.manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"[Corpus] 加载 manifest 失败: {e}")
+            return {}
+
+    def _save_manifest(self, manifest: Dict[str, dict]) -> None:
+        self._write_json_atomic(self.manifest_path, manifest)
+
     def _write_json_atomic(self, target_path: Path, data: object) -> None:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = target_path.with_name(f"{target_path.name}.tmp")
@@ -1260,6 +2080,51 @@ class CorpusManager:
         shard_id = self._inverted_shard_id_for_gram(gram)
         shard = self._load_inverted_shard(shard_id)
         return shard.get(gram, [])
+
+    def _ordered_unique_ngrams(self, text: str, n: int) -> List[str]:
+        if len(text) < n:
+            return [text] if text else []
+        seen: Set[str] = set()
+        ordered: List[str] = []
+        for idx in range(len(text) - n + 1):
+            gram = text[idx : idx + n]
+            if gram in seen:
+                continue
+            seen.add(gram)
+            ordered.append(gram)
+        return ordered
+
+    def _extract_docx_text_fallback(self, file_data: bytes) -> str:
+        """直接读取 DOCX XML 文本，绕过 python-docx 的表格结构限制。"""
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        xml_members = [
+            "word/document.xml",
+            "word/header1.xml",
+            "word/header2.xml",
+            "word/header3.xml",
+            "word/footer1.xml",
+            "word/footer2.xml",
+            "word/footer3.xml",
+        ]
+        parts: List[str] = []
+        with zipfile.ZipFile(io.BytesIO(file_data)) as zf:
+            for member in xml_members:
+                if member not in zf.namelist():
+                    continue
+                try:
+                    root = ET.fromstring(zf.read(member))
+                except Exception:
+                    continue
+                for paragraph in root.findall(".//w:p", ns):
+                    texts = [
+                        node.text or ""
+                        for node in paragraph.findall(".//w:t", ns)
+                        if node.text
+                    ]
+                    line = "".join(texts).strip()
+                    if line:
+                        parts.append(line)
+        return "\n".join(parts)
 
     def _add_doc_to_inverted(
         self,

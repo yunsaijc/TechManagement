@@ -12,6 +12,8 @@ class MultiSourceAggregator:
 
     MERGE_GAP = 20
     MIN_OVERLAP_RATIO = 0.55
+    SOURCE_MERGE_GAP = 80
+    SOURCE_BACKTRACK_TOL = 8
 
     def build_summary(
         self,
@@ -143,6 +145,9 @@ class MultiSourceAggregator:
             if group["primary_section"] != segment["primary_section"]:
                 return False
 
+        if not self._has_compatible_source_progression(group, segment):
+            return False
+
         overlap = min(group_end, seg_end) - max(group_start, seg_start)
         if overlap > 0:
             shorter = max(min(group_end - group_start, seg_end - seg_start), 1)
@@ -150,6 +155,50 @@ class MultiSourceAggregator:
 
         gap = seg_start - group_end
         return 0 <= gap <= self.MERGE_GAP
+
+    def _has_compatible_source_progression(self, group: Dict, segment: Dict) -> bool:
+        group_sources = list(group.get("sources", []) or [])
+        seg_sources = self._extract_sources(segment)
+        if not group_sources or not seg_sources:
+            return False
+
+        group_docs = {str(item.get("doc", "")) for item in group_sources if item.get("doc")}
+        seg_docs = {str(item.get("doc", "")) for item in seg_sources if item.get("doc")}
+        common_docs = group_docs & seg_docs
+        if not common_docs:
+            # 核心约束：无共同来源文档时禁止并组，避免跨来源误合并。
+            return False
+
+        for doc in common_docs:
+            group_doc_spans = [
+                (
+                    int(item.get("start", 0) or 0),
+                    int(item.get("end", 0) or 0),
+                )
+                for item in group_sources
+                if str(item.get("doc", "")) == doc
+            ]
+            seg_doc_spans = [
+                (
+                    int(item.get("start", 0) or 0),
+                    int(item.get("end", 0) or 0),
+                )
+                for item in seg_sources
+                if str(item.get("doc", "")) == doc
+            ]
+            if not group_doc_spans or not seg_doc_spans:
+                continue
+
+            group_last_end = max(end for _, end in group_doc_spans)
+            for seg_src_start, seg_src_end in seg_doc_spans:
+                if seg_src_end <= seg_src_start:
+                    continue
+                if seg_src_start < group_last_end - self.SOURCE_BACKTRACK_TOL:
+                    continue
+                source_gap = seg_src_start - group_last_end
+                if source_gap <= self.SOURCE_MERGE_GAP:
+                    return True
+        return False
 
     def _build_source_rankings(self, groups: List[Dict], primary_scope_chars: int) -> List[Dict]:
         source_ranges: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
