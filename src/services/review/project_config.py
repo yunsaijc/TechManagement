@@ -3,6 +3,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from src.services.review.notice_rules import get_merged_policy_review_points
+
 
 PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
     "regional_innovation": {
@@ -378,6 +380,12 @@ def get_project_config(project_type: str) -> Optional[Dict[str, Any]]:
 def get_policy_review_points(project_type: str) -> List[Dict[str, Any]]:
     """获取项目类型对应的形式审查要点矩阵"""
     return list(PROJECT_CONFIG.get(project_type, {}).get("policy_review_points", []))
+
+
+def get_effective_policy_review_points(project_type: str, notice_context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """获取项目类型生效的形式审查要点（基础规则 + 通知规则）"""
+    base_points = get_policy_review_points(project_type)
+    return get_merged_policy_review_points(project_type, base_points, notice_context or {})
 
 
 def get_project_label(project_type: str) -> str:

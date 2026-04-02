@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 # 加载 .env 配置（从项目根目录）
@@ -19,6 +20,14 @@ app = FastAPI(
     title="科技管理系统 API",
     description="形式审查、项目评审、奖励评审、正文评审等服务",
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 注册路由

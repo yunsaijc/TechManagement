@@ -21,7 +21,7 @@ from src.common.review_runtime import ReviewRuntime
 from src.services.review.agent import ReviewAgent
 from src.services.review.project_config import (
     get_attachment_review_doc_kinds,
-    get_policy_review_points,
+    get_effective_policy_review_points,
     get_project_config,
     resolve_document_type,
 )
@@ -230,7 +230,10 @@ class ProjectReviewAgent:
         manual_review_items: List[ManualReviewItem],
     ) -> List[PolicyRuleCheck]:
         """组装 docx 逐条规则对照结果"""
-        policy_points = get_policy_review_points(context.project_info.project_type)
+        policy_points = get_effective_policy_review_points(
+            context.project_info.project_type,
+            context.notice_context,
+        )
         if not policy_points:
             return []
 
@@ -398,6 +401,7 @@ class ProjectReviewAgent:
             "registered_date_limit": {"source_rule": "registered_date_limit"},
             "funding_ratio_check": {"source_rule": ""},
             "external_status_check": {"source_rule": "external_status_check"},
+            "integrity_and_credit_check": {"source_rule": "external_status_check"},
             "duplicate_submission_check": {"source_rule": "external_status_check"},
             "execution_period_limit": {"source_rule": "execution_period_limit"},
             "applicant_unit_type_check": {"source_rule": "applicant_unit_type_check"},
@@ -440,6 +444,20 @@ class ProjectReviewAgent:
             },
             "platform_scope_check": {"source_rule": ""},
             "joint_application_check": {"source_rule": ""},
+            "unfinished_guidance_project_check": {"source_rule": ""},
+            "joint_updownstream_application_check": {"source_rule": ""},
+            "shared_mechanism_check": {"source_rule": ""},
+            "provincial_nsf_conflict_check": {"source_rule": ""},
+            "unfinished_basic_project_check": {"source_rule": ""},
+            "applicant_qualification_check": {"source_rule": ""},
+            "project_leader_age_check": {"source_rule": ""},
+            "active_guidance_project_leader_check": {"source_rule": ""},
+            "project_count_limit_check": {"source_rule": ""},
+            "enterprise_batch_limit_check": {"source_rule": ""},
+            "enterprise_active_guidance_project_check": {"source_rule": ""},
+            "performance_metric_count_check": {"source_rule": ""},
+            "budget_forbidden_expense_check": {"source_rule": ""},
+            "leader_achievement_attachment_check": {"source_rule": ""},
             "beijing_tianjin_partner_check": {"source_rule": ""},
             "cluster_region_check": {"source_rule": ""},
             "other_policy_compliance": {"source_rule": ""},

@@ -252,3 +252,55 @@ def test_chat_indexer_build_splits_page_into_paragraph_chunks(indexer: ChatIndex
     assert len(chunks) >= 3
     assert any(chunk["chunk_type"] == "paragraph" and "开发 AI 智能问答平台" in chunk["text"] for chunk in chunks)
     assert any(chunk["chunk_type"] == "table" for chunk in chunks)
+
+
+def test_chat_indexer_build_merges_wrapped_ocr_lines(indexer: ChatIndexer):
+    """构建索引时应合并同一段落的断行，避免证据从半句中间开始"""
+    payload = indexer.build(
+        evaluation_id="EVAL_TEST",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 7,
+                "section": "项目实施内容、技术路线及创新点",
+                "text": (
+                    "方向三：3D打印及导板制作研发应用研究\n"
+                    "本团队探索了多种3D打印材料的应用，包括生物相\n"
+                    "容性材料和高强度合成材料，以满足不同骨科手术的需求。\n"
+                    "此外，本研究团队进一步深入研究导板的设计与优化。"
+                ),
+            }
+        ],
+    )
+
+    chunks = [chunk for chunk in payload["chunks"] if chunk["chunk_type"] == "paragraph"]
+
+    assert chunks
+    assert any("生物相容性材料" in chunk["text"] for chunk in chunks)
+    assert all(not chunk["text"].startswith("容性材料") for chunk in chunks)
+
+
+def test_chat_indexer_build_does_not_merge_section_title_into_body(indexer: ChatIndexer):
+    """章节标题行不应与后续正文误拼接成同一断句"""
+    payload = indexer.build(
+        evaluation_id="EVAL_TEST",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 7,
+                "section": "项目实施的预期经济社会效益目标",
+                "text": (
+                    "三、项目实施的预期经济社会效益目标\n"
+                    "本项目拟申报1-2项科研项目，发表5-10篇高水平论文。"
+                ),
+            }
+        ],
+    )
+
+    chunks = [chunk for chunk in payload["chunks"] if chunk["chunk_type"] == "paragraph"]
+
+    assert chunks
+    assert all("项目实施的预期经济社会效益目标本项目" not in chunk["text"] for chunk in chunks)
+    assert any("本项目拟申报1-2项科研项目" in chunk["text"] for chunk in chunks)

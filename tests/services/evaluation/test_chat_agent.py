@@ -402,3 +402,50 @@ def test_qa_agent_extract_goal_points_handles_kpi_goal_fragment():
 
     assert points
     assert "研发一套高集成智能化检监测装备" in points[0]
+
+
+def test_qa_agent_extract_outcome_points_skips_heading_only_matches():
+    """成果抽取应优先返回具体成果/效益，而不是章节标题"""
+    agent = EvaluationQAAgent(llm=None)
+
+    chunks = [
+        {
+            "page": 7,
+            "section": "项目实施的预期经济社会效益目标",
+            "text": (
+                "三、项目实施的预期经济社会效益目标\n"
+                "技术应用突破研究：拟申报1-2 项省级科研项目，5-10 篇高水平科研论文。\n"
+                "数据驱动决策：拟建立数据库建设达到50,000 例。\n"
+                "科研转化与应用：拟申请3-5 项技术专利。"
+            ),
+        }
+    ]
+
+    points = agent._extract_outcome_points(chunks)
+
+    assert points
+    assert "项目实施的预期经济社会效益目标" not in points[0]
+    assert any(keyword in points[0] for keyword in ("科研项目", "论文", "数据库", "专利"))
+
+
+def test_qa_agent_extract_outcome_points_avoids_goal_like_benefit_sentence():
+    """成果抽取不应把总体目标或愿景型描述误当成具体成果"""
+    agent = EvaluationQAAgent(llm=None)
+
+    chunks = [
+        {
+            "page": 7,
+            "section": "项目实施的预期经济社会效益目标",
+            "text": (
+                "本项目的总体目标是提升诊疗水平和患者满意度，成为重要科研和人才培养基地。\n"
+                "拟建立数据库建设达到50,000 例。\n"
+                "拟申请3-5 项技术专利。"
+            ),
+        }
+    ]
+
+    points = agent._extract_outcome_points(chunks)
+
+    assert points
+    assert all("人才培养基地" not in point for point in points)
+    assert any("50,000" in point or "技术专利" in point for point in points)
