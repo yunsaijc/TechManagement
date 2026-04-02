@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import re
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -31,6 +33,7 @@ class ProjectFactResolver:
                 },
                 "cooperation_info": {
                     "cooperation_units": [],
+                    "cooperation_unit_types": [],
                     "cooperation_regions": [],
                     "has_formal_cooperation_agreement": False,
                     "has_management_recommendation_letter": False,
@@ -47,13 +50,16 @@ class ProjectFactResolver:
         project_info_updates = {
             "applicant_unit_type": applicant_unit_type,
             "registered_date": self._extract_registered_date(text, form_fields),
+            "project_leader_birth_date": self._extract_project_leader_birth_date(text, form_fields),
             "fiscal_funding": self._extract_budget_amount(text, form_fields, ["申请财政资金", "申请省财政资金", "财政资金", "拟申请财政资金"]),
             "self_funding": self._extract_budget_amount(text, form_fields, ["自筹资金", "单位自筹", "配套资金"]),
+            "budget_line_items": self._extract_budget_line_items(text),
             "has_clinical_research": self._extract_boolean_fact(text, form_fields, ["临床研究", "临床试验"], negative_hints=["无", "否"]),
             "has_special_industry_requirement": self._extract_boolean_fact(text, form_fields, ["安全生产", "特种行业", "行业准入", "生产许可", "经营许可"], negative_hints=["无", "否"]),
             "has_biosafety_activity": self._extract_boolean_fact(text, form_fields, ["生物安全", "人类遗传资源", "病原微生物", "实验动物"], negative_hints=["无", "否"]),
             "has_cooperation_unit": self._extract_has_cooperation_unit(text, form_fields, cooperation_units),
         }
+        project_info_updates.update(self._extract_performance_metrics(main_file))
 
         return {
             "proposal_main_file": str(main_file),
@@ -61,6 +67,7 @@ class ProjectFactResolver:
             "project_info_updates": project_info_updates,
             "cooperation_info": {
                 "cooperation_units": cooperation_units,
+                "cooperation_unit_types": [self._infer_applicant_unit_type(unit) for unit in cooperation_units],
                 "cooperation_regions": self._extract_regions(cooperation_units),
                 "has_formal_cooperation_agreement": self._contains_any(text, ["合作协议", "合作合同", "联合申报协议"]),
                 "has_management_recommendation_letter": self._contains_any(text, ["推荐函", "推荐意见", "科技管理部门推荐"]),
@@ -156,6 +163,143 @@ class ProjectFactResolver:
             if match:
                 return self._parse_amount(match.group(1))
         return 0.0
+
+    def _extract_project_leader_birth_date(self, text: str, form_fields: Dict[str, str]) -> str:
+        """提取项目负责人出生日期"""
+        for key, value in form_fields.items():
+            if any(token in key for token in ["出生日期", "出生年月", "负责人出生日期", "负责人出生年月"]):
+                normalized = self._normalize_date(value)
+                if normalized:
+                    return normalized
+
+        patterns = [
+            r"(?:项目负责人|负责人)[^\n]{0,80}?(?:出生日期|出生年月)(?:\||：|:|\s)*([12]\d{3}[年./-]\d{1,2}(?:[月./-]\d{1,2}日?)?)",
+            r"(?:出生日期|出生年月)(?:\||：|:|\s)*([12]\d{3}[年./-]\d{1,2}(?:[月./-]\d{1,2}日?)?)",
+            r"(?:身份证号|身份证号码)(?:\||：|:|\s)*([1-9]\d{5}(19|20)\d{2}\d{2}\d{2}\d{3}[\dXx])",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+            value = match.group(1)
+            if len(value) == 18 and value[:6].isdigit():
+                return f"{value[6:10]}-{value[10:12]}-{value[12:14]}"
+            normalized = self._normalize_date(value)
+            if normalized:
+                return normalized
+        return ""
+
+    def _extract_budget_line_items(self, text: str) -> List[str]:
+        """抽取预算相关明细行，供预算禁列项检查使用"""
+        keywords = [
+            "预算", "经费", "支出", "费用", "科目", "直接费用", "间接经费", "绩效支出",
+            "设备费", "材料费", "测试化验加工费", "燃料动力费", "差旅费", "会议费",
+            "国际合作与交流费", "出版", "文献", "信息传播", "知识产权事务费",
+            "劳务费", "专家咨询费", "其他支出", "罚款", "捐款", "赞助", "投资", "偿还债务",
+        ]
+        lines: List[str] = []
+        seen: set[str] = set()
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            normalized = re.sub(r"\s+", "", line)
+            if any(keyword in normalized for keyword in keywords):
+                clean = line[:240]
+                if clean not in seen:
+                    seen.add(clean)
+                    lines.append(clean)
+        return lines[:80]
+
+    def _extract_performance_metrics(self, path: Path) -> Dict[str, Any]:
+        """抽取绩效指标信息"""
+        if path.suffix.lower() != ".docx" or not path.exists():
+            return {
+                "performance_metric_count": 0,
+                "performance_first_year_ratio": None,
+                "performance_metric_rows": [],
+            }
+        try:
+            rows = self._extract_performance_rows_from_docx(path)
+        except Exception:
+            rows = []
+        if not rows:
+            return {
+                "performance_metric_count": 0,
+                "performance_first_year_ratio": None,
+                "performance_metric_rows": [],
+            }
+
+        comparable = [row for row in rows if row.get("total_value") is not None and row.get("first_year_value") is not None]
+        total_sum = round(sum(float(row["total_value"]) for row in comparable), 4) if comparable else 0.0
+        first_year_sum = round(sum(float(row["first_year_value"]) for row in comparable), 4) if comparable else 0.0
+        ratio = round(first_year_sum / total_sum, 4) if total_sum > 0 else None
+        return {
+            "performance_metric_count": len(rows),
+            "performance_first_year_ratio": ratio,
+            "performance_metric_rows": rows[:20],
+        }
+
+    def _extract_performance_rows_from_docx(self, path: Path) -> List[Dict[str, Any]]:
+        """从 docx 中抽取预期绩效目标表的指标行"""
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        with zipfile.ZipFile(path) as archive:
+            xml_bytes = archive.read("word/document.xml")
+        root = ET.fromstring(xml_bytes)
+        body = root.find("w:body", ns)
+        if body is None:
+            return []
+        children = list(body)
+        table = None
+        for index, child in enumerate(children):
+            if not child.tag.endswith("}p"):
+                continue
+            text = "".join(node.text or "" for node in child.findall(".//w:t", ns)).strip()
+            if "预期绩效目标" in text:
+                if index + 1 < len(children) and children[index + 1].tag.endswith("}tbl"):
+                    table = children[index + 1]
+                    break
+        if table is None:
+            return []
+
+        raw_rows: List[List[str]] = []
+        for tr in table.findall("w:tr", ns):
+            row = []
+            for tc in tr.findall("w:tc", ns):
+                cell = "".join(node.text or "" for node in tc.findall(".//w:t", ns)).strip()
+                row.append(re.sub(r"\s+", "", cell))
+            raw_rows.append(row)
+
+        header_index = -1
+        for index, row in enumerate(raw_rows):
+            if "绩效指标" in "".join(row) and "指标值" in "".join(row):
+                header_index = index
+                break
+        if header_index < 0:
+            return []
+
+        performance_rows: List[Dict[str, Any]] = []
+        for row in raw_rows[header_index + 1:]:
+            if len(row) < 6:
+                continue
+            total_value = self._parse_optional_number(row[4])
+            first_year_value = self._parse_optional_number(row[5]) if len(row) > 5 else None
+            metric_name = ""
+            for candidate in [row[3], row[2], row[1], row[0]]:
+                if candidate and candidate not in {"绩效指标", "一级指标", "二级指标", "三级指标", "指标值"}:
+                    metric_name = candidate
+                    break
+            if not metric_name or total_value is None:
+                continue
+            performance_rows.append(
+                {
+                    "metric_name": metric_name,
+                    "total_value": total_value,
+                    "first_year_value": first_year_value,
+                    "raw_row": row,
+                }
+            )
+        return performance_rows
 
     def _extract_cooperation_units(self, text: str, form_fields: Dict[str, str]) -> List[str]:
         """提取合作单位列表"""
@@ -385,3 +529,11 @@ class ProjectFactResolver:
         if "元" in text and "万元" not in text and "万" not in text:
             value = value / 10000.0
         return round(value, 2)
+
+    def _parse_optional_number(self, raw: str) -> float | None:
+        """解析可选数字"""
+        text = str(raw or "").replace(",", "").replace("，", "").strip()
+        match = re.search(r"(-?[0-9]+(?:\.[0-9]+)?)", text)
+        if not match:
+            return None
+        return float(match.group(1))

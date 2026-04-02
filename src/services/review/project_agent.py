@@ -323,6 +323,17 @@ class ProjectReviewAgent:
                 reason=reason or "当前阶段保留人工复核",
             )
 
+        if automation == "system_managed":
+            return PolicyRuleCheck(
+                code=code,
+                requirement=requirement,
+                status="system_managed",
+                source_rule=source_rule,
+                matched_result_item=source_rule or None,
+                evidence={},
+                reason=reason or "该限制由上游申报系统前置控制，不纳入本服务重复审查",
+            )
+
         if automation == "requires_data":
             return PolicyRuleCheck(
                 code=code,
@@ -399,7 +410,7 @@ class ProjectReviewAgent:
         """推导政策规则与项目级规则的映射关系"""
         mapping: Dict[str, Dict[str, str]] = {
             "registered_date_limit": {"source_rule": "registered_date_limit"},
-            "funding_ratio_check": {"source_rule": ""},
+            "funding_ratio_check": {"source_rule": "funding_ratio_check"},
             "external_status_check": {"source_rule": "external_status_check"},
             "integrity_and_credit_check": {"source_rule": "external_status_check"},
             "duplicate_submission_check": {"source_rule": "external_status_check"},
@@ -450,13 +461,13 @@ class ProjectReviewAgent:
             "provincial_nsf_conflict_check": {"source_rule": ""},
             "unfinished_basic_project_check": {"source_rule": ""},
             "applicant_qualification_check": {"source_rule": ""},
-            "project_leader_age_check": {"source_rule": ""},
+            "project_leader_age_check": {"source_rule": "project_leader_age_check"},
             "active_guidance_project_leader_check": {"source_rule": ""},
             "project_count_limit_check": {"source_rule": ""},
             "enterprise_batch_limit_check": {"source_rule": ""},
             "enterprise_active_guidance_project_check": {"source_rule": ""},
-            "performance_metric_count_check": {"source_rule": ""},
-            "budget_forbidden_expense_check": {"source_rule": ""},
+            "performance_metric_count_check": {"source_rule": "performance_metric_count_check"},
+            "budget_forbidden_expense_check": {"source_rule": "budget_forbidden_expense_check"},
             "leader_achievement_attachment_check": {"source_rule": ""},
             "beijing_tianjin_partner_check": {"source_rule": ""},
             "cluster_region_check": {"source_rule": ""},

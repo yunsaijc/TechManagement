@@ -20,6 +20,8 @@ from src.common.models.evaluation import (
     DimensionsResponse,
     EvaluationChatAskRequest,
     EvaluationChatAskResponse,
+    GuideEvaluationRequest,
+    GuideEvaluationResult,
     EvaluationRequest,
     EvaluationResult,
     WeightValidateRequest,
@@ -106,6 +108,21 @@ async def evaluate_file(
         raise HTTPException(status_code=400, detail=detail)
     finally:
         os.unlink(tmp_path)
+
+
+@router.post("/by-guide", response_model=GuideEvaluationResult)
+async def evaluate_by_guide(request: GuideEvaluationRequest):
+    """按 zndm 查询真实项目并批量评审"""
+    agent = get_agent()
+    try:
+        return await agent.evaluate_by_guide(request)
+    except ValueError as e:
+        detail = str(e)
+        if detail.startswith("未找到已提交项目"):
+            raise HTTPException(status_code=404, detail=detail)
+        if detail.startswith("未找到项目申报文档"):
+            raise HTTPException(status_code=422, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
 
 
 @router.post("/chat/ask", response_model=EvaluationChatAskResponse)

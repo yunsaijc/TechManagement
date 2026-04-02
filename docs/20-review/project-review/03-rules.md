@@ -170,7 +170,15 @@
 | `commitment_letter_required` | 未按要求提交承诺书 | `auto` |
 | `cooperation_agreement_required` | 涉及合作单位，合作协议不完整不规范 | `requires_data` |
 | `execution_period_limit` | 执行期超过 3 年 | `auto` |
+| `project_leader_age_check` | 项目负责人应为 1967 年 1 月 1 日（含）以后出生 | `auto` |
+| `provincial_nsf_conflict_check` | 本年度申报省自然基金项目的负责人，不得再申报本批次基础研究项目 | `system_managed` |
+| `unfinished_basic_project_check` | 未完成验收的省自然基金和中央引导地方科技发展资金基础研究项目负责人，不得申报本批次基础研究项目 | `requires_data` |
 | `other_policy_compliance` | 其他不符合计划项目管理办法、申报指南和其他有关规定要求的情况问题 | `manual` |
+
+说明：
+
+- `system_managed` 表示该约束已由申报系统前置限制，本服务仅保留展示，不再作为缺失数据项或待补核验项输出。
+- 已确认属于 `system_managed` 的典型约束包括：`provincial_nsf_conflict_check`、`active_guidance_project_leader_check`、`project_count_limit_check`、`enterprise_batch_limit_check`、`enterprise_active_guidance_project_check`。
 
 ## 配置落点
 

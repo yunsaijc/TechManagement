@@ -18,9 +18,14 @@ class ProjectInfo(BaseModel):
     applicant_unit: str = Field(default="", description="申报单位")
     applicant_unit_type: str = Field(default="", description="申报单位类型")
     registered_date: str = Field(default="", description="注册时间")
+    project_leader_birth_date: str = Field(default="", description="项目负责人出生日期")
     execution_period_years: float = Field(0, description="执行期")
     fiscal_funding: float = Field(0, description="财政资金")
     self_funding: float = Field(0, description="自筹资金")
+    budget_line_items: List[str] = Field(default_factory=list, description="预算相关明细行")
+    performance_metric_count: int = Field(0, description="绩效指标数量")
+    performance_first_year_ratio: Optional[float] = Field(default=None, description="第一年度目标占总体目标比例")
+    performance_metric_rows: List[Dict[str, Any]] = Field(default_factory=list, description="绩效指标明细")
     has_clinical_research: bool = Field(False, description="是否涉及临床研究")
     has_special_industry_requirement: bool = Field(False, description="是否涉及特种行业")
     has_biosafety_activity: bool = Field(False, description="是否涉及生物安全活动")
@@ -31,6 +36,7 @@ class CooperationInfo(BaseModel):
     """合作单位信息"""
 
     cooperation_units: List[str] = Field(default_factory=list, description="合作单位列表")
+    cooperation_unit_types: List[str] = Field(default_factory=list, description="合作单位类型列表")
     cooperation_regions: List[str] = Field(default_factory=list, description="合作单位地区列表")
     has_formal_cooperation_agreement: bool = Field(False, description="是否有正式合作协议")
     has_management_recommendation_letter: bool = Field(False, description="是否有推荐函")

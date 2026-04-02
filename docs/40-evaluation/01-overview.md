@@ -60,12 +60,18 @@
 
 ### 输入关键字段
 
-- `project_id` 或上传文件
+- `project_id`、`zndm` 或上传文件
 - `dimensions`、`weights`、`include_sections`
 - `enable_highlight`
 - `enable_industry_fit`
 - `enable_benchmark`
 - `enable_chat_index`
+
+### 真实数据入口
+
+- 支持按 `zndm` 查询真实已提交项目后批量评审
+- 项目列表来源：`Sb_Jbxx + Sb_Sbzt + sys_guide`
+- 正文路径固定为：`/mnt/remote_corpus/{year}/sbs/{id}/{id}.docx`
 
 ### 输出关键字段
 
