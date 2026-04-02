@@ -103,8 +103,8 @@ _NOTICE_2026_RULES: Dict[str, List[Dict[str, Any]]] = {
         {
             "code": "funding_ratio_check",
             "requirement": "申请财政资金与自筹资金比例不得低于1:1；申报单位与合作单位均为事业单位的，对自筹资金不做要求。",
-            "automation": "requires_data",
-            "reason": "当前缺少申报单位/合作单位主体类型与完整经费结构",
+            "automation": "auto",
+            "reason": "",
         },
         {
             "code": "recommendation_letter_required",
@@ -141,8 +141,8 @@ _NOTICE_2026_RULES: Dict[str, List[Dict[str, Any]]] = {
         {
             "code": "funding_ratio_check",
             "requirement": "企业申请财政资金与自筹资金比例不得低于1:2，事业单位不得低于1:1。",
-            "automation": "requires_data",
-            "reason": "当前缺少主体类型分支与完整经费结构",
+            "automation": "auto",
+            "reason": "",
         },
         {
             "code": "unfinished_guidance_project_check",
@@ -173,8 +173,8 @@ _NOTICE_2026_RULES: Dict[str, List[Dict[str, Any]]] = {
         {
             "code": "funding_ratio_check",
             "requirement": "申请财政资金与自筹资金比例不得低于1:3。",
-            "automation": "requires_data",
-            "reason": "当前未接入完整经费结构",
+            "automation": "auto",
+            "reason": "",
         },
         {
             "code": "joint_updownstream_application_check",
@@ -211,8 +211,8 @@ _NOTICE_2026_RULES: Dict[str, List[Dict[str, Any]]] = {
         {
             "code": "provincial_nsf_conflict_check",
             "requirement": "申报本年度省自然基金项目的负责人，不得申报本批次基础研究项目。",
-            "automation": "requires_data",
-            "reason": "当前未接入省自然基金本年度申报数据",
+            "automation": "system_managed",
+            "reason": "该限制由申报系统前置控制，不纳入本服务重复审查",
         },
         {
             "code": "unfinished_basic_project_check",
@@ -234,14 +234,14 @@ _NOTICE_2026_COMMON_RULES: List[Dict[str, Any]] = [
     {
         "code": "project_leader_age_check",
         "requirement": "项目负责人应为1967年1月1日（含）以后出生。",
-        "automation": "requires_data",
-        "reason": "当前未接入项目负责人出生日期",
+        "automation": "auto",
+        "reason": "",
     },
     {
         "code": "active_guidance_project_leader_check",
         "requirement": "有在研中央引导地方科技发展资金项目负责人（基础研究项目除外），不得申报本批次区域科技创新体系建设、科技创新基地建设、科技成果转移转化项目。",
-        "automation": "requires_data",
-        "reason": "当前未接入负责人在研中央引导地方项目数据",
+        "automation": "system_managed",
+        "reason": "该限制由申报系统前置控制，不纳入本服务重复审查",
     },
     {
         "code": "integrity_and_credit_check",
@@ -252,32 +252,32 @@ _NOTICE_2026_COMMON_RULES: List[Dict[str, Any]] = [
     {
         "code": "project_count_limit_check",
         "requirement": "申报本批次区域科技创新体系、科技创新基地、科技成果转化与技术攻关项目的申报人，在研与本年度申报总数不超过2项，其中作为负责人最多1项。",
-        "automation": "requires_data",
-        "reason": "当前未接入负责人在研及本年度申报统计",
+        "automation": "system_managed",
+        "reason": "该限制由申报系统前置控制，不纳入本服务重复审查",
     },
     {
         "code": "enterprise_batch_limit_check",
         "requirement": "本批次中央引导地方科技发展资金项目（不含基础研究项目），每个企业最多申报1项。",
-        "automation": "requires_data",
-        "reason": "当前未接入企业本批次申报计数",
+        "automation": "system_managed",
+        "reason": "该限制由申报系统前置控制，不纳入本服务重复审查",
     },
     {
         "code": "enterprise_active_guidance_project_check",
         "requirement": "截至2026年1月1日，有在研中央引导地方科技发展资金项目（不含基础研究方向）的企业，不得申报本批次相关项目。",
-        "automation": "requires_data",
-        "reason": "当前未接入企业在研中央引导地方项目数据",
+        "automation": "system_managed",
+        "reason": "该限制由申报系统前置控制，不纳入本服务重复审查",
     },
     {
         "code": "performance_metric_count_check",
         "requirement": "项目应分年度确定绩效指标，第一年度绩效目标应达到总绩效目标50%以上，绩效指标总数不得低于5项。",
-        "automation": "requires_data",
-        "reason": "当前未接入绩效指标结构化数据",
+        "automation": "auto",
+        "reason": "",
     },
     {
         "code": "budget_forbidden_expense_check",
         "requirement": "中央引导地方科技发展资金项目不得列支间接经费和绩效支出，不得用于罚款、捐款、赞助、投资、偿还债务等支出。",
-        "automation": "requires_data",
-        "reason": "当前未接入预算科目结构化数据",
+        "automation": "auto",
+        "reason": "",
     },
     {
         "code": "biosafety_commitment_required",

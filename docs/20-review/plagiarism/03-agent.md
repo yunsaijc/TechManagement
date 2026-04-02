@@ -36,6 +36,12 @@
 - **归并**：如果一段话在 A 库文档和 B 库文档中都有发现，则合并为一个 Match Group。
 - **统计**：计算主文档去重后的 `effective_duplicate_rate`。
 
+### 5. 报告生成 (Reporting)
+- Mammoth 报告必须对齐 `match_groups` 的多来源结构。
+- 左侧展示 Primary 全文并高亮命中区间。
+- 右侧展示“按命中组聚合的来源片段列表”，每组可包含多个 `sources`。
+- 禁止再假设“一个报告只对应一个 Source 全文”。
+
 ## 流程编排 (Workflow)
 
 ```python

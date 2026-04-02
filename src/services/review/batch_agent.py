@@ -82,6 +82,11 @@ class BatchReviewAgent:
         "applicant_unit": "申报单位",
         "execution_period_years": "执行期（年）",
         "year": "年度",
+        "budget_line_count": "预算明细行数",
+        "project_leader_birth_date": "项目负责人出生日期",
+        "limit_birth_date": "年龄限制日期",
+        "performance_metric_count": "绩效指标数量",
+        "performance_first_year_ratio": "第一年度目标占比",
     }
 
     def __init__(
@@ -244,6 +249,7 @@ class BatchReviewAgent:
       --manual: #6941c6;
       --requires: #175cd3;
       --na: #344054;
+      --system: #2b6cb0;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -336,20 +342,21 @@ class BatchReviewAgent:
     }}
     .badge {{
       border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 12px;
-      font-weight: 700;
-      border: 1px solid currentColor;
-      background: #fff;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 0;
+      background: #f3f4f6;
       white-space: nowrap;
     }}
-    .status-passed {{ color: var(--passed); }}
-    .status-failed {{ color: var(--failed); }}
-    .status-warning {{ color: var(--warning); }}
-    .status-manual {{ color: var(--manual); }}
-    .status-requires_data {{ color: var(--requires); }}
-    .status-not_applicable {{ color: var(--na); }}
-    .status-skipped {{ color: var(--na); }}
+    .status-passed {{ color: var(--passed); background: #ecfdf3; }}
+    .status-failed {{ color: var(--failed); background: #fef3f2; }}
+    .status-warning {{ color: var(--manual); background: #f5f3ff; }}
+    .status-manual {{ color: var(--manual); background: #f5f3ff; }}
+    .status-requires_data {{ color: var(--manual); background: #f5f3ff; }}
+    .status-not_applicable {{ color: var(--na); background: #f2f4f7; }}
+    .status-system_managed {{ color: var(--system); background: #eff6ff; }}
+    .status-skipped {{ color: var(--na); background: #f2f4f7; }}
     .section-grid {{
       display: grid;
       grid-template-columns: 1.2fr 1fr;
@@ -365,6 +372,25 @@ class BatchReviewAgent:
     .panel h3 {{
       margin: 0 0 10px;
       font-size: 16px;
+    }}
+    .inline-toggle {{
+      margin-top: 12px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      background: #fafcff;
+    }}
+    .inline-toggle summary {{
+      cursor: pointer;
+      padding: 12px 14px;
+      color: var(--muted);
+      font-weight: 700;
+      list-style: none;
+    }}
+    .inline-toggle summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .inline-toggle-body {{
+      padding: 0 14px 14px;
     }}
     .kv {{
       display: grid;
@@ -523,8 +549,14 @@ class BatchReviewAgent:
         rule_evidence_table = self._render_rule_evidence_table(result, context_payload)
         summary_badges = self._render_status_badges([
             ("失败", str(sum(1 for item in result.results if item.status == "failed")), "failed"),
-            ("警告", str(sum(1 for item in result.results if item.status == "warning")), "warning"),
-            ("人工", str(len(result.manual_review_items)), "manual"),
+            (
+                "需人工处理",
+                str(
+                    sum(1 for item in result.results if item.status in {"warning", "requires_data"})
+                    + len(result.manual_review_items)
+                ),
+                "manual",
+            ),
         ])
         project_rules_table = self._render_project_results_table(result)
         policy_rules_table = self._render_policy_rule_checks_table(result)
@@ -655,9 +687,10 @@ class BatchReviewAgent:
 
     def _render_policy_rule_checks_table(self, result: ProjectReviewResult) -> str:
         """渲染 docx 逐条规则对照表"""
-        rows = []
+        primary_rows = []
+        folded_rows = []
         for item in result.policy_rule_checks:
-            rows.append(
+            row_html = (
                 "<tr>"
                 "<td class='left-block'>"
                 f"<div class='policy-point'>{escape(self._rule_label(item.code))}</div>"
@@ -667,20 +700,41 @@ class BatchReviewAgent:
                 "<div class='policy-result'>"
                 f"<div class='label'>状态</div><div>{self._render_status_badge(item.status)}</div>"
                 f"<div class='label'>核验来源</div><div>{escape(self._rule_label(item.source_rule or '-'))}</div>"
-                f"<div class='label'>说明</div><div>{escape(item.reason)}</div>"
+                f"<div class='label'>说明</div><div>{escape(self._render_reason_text(item.status, item.reason))}</div>"
                 "</div>"
                 "</td>"
                 "</tr>"
             )
-        if not rows:
+            if item.status in {"system_managed", "not_applicable"}:
+                folded_rows.append(row_html)
+            else:
+                primary_rows.append(row_html)
+        if not primary_rows and not folded_rows:
             return "<div class='empty'>无 docx 逐条规则结果</div>"
-        return (
-            "<table class='policy-table'><thead>"
-            "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
-            "</thead><tbody>"
-            + "".join(rows)
-            + "</tbody></table>"
-        )
+        sections = []
+        if primary_rows:
+            sections.append(
+                "<table class='policy-table'><thead>"
+                "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
+                "</thead><tbody>"
+                + "".join(primary_rows)
+                + "</tbody></table>"
+            )
+        else:
+            sections.append("<div class='empty'>主要审查结果中无需要展示的项目</div>")
+        if folded_rows:
+            sections.append(
+                "<details class='inline-toggle'>"
+                f"<summary>系统前置限制 / 不适用（{len(folded_rows)} 项）</summary>"
+                "<div class='inline-toggle-body'>"
+                "<table class='policy-table'><thead>"
+                "<tr><th class='group-left'>限制项</th><th class='group-right'>说明</th></tr>"
+                "</thead><tbody>"
+                + "".join(folded_rows)
+                + "</tbody></table>"
+                "</div></details>"
+            )
+        return "".join(sections)
 
     def _render_rule_evidence_table(self, result: ProjectReviewResult, context_payload: Dict[str, Any]) -> str:
         """渲染异常规则的来源定位信息"""
@@ -820,6 +874,52 @@ class BatchReviewAgent:
                         lines.append(f"{self._doc_kind_with_code(kind)}: {item.get('reason', '-')}")
                 if lines:
                     return "缺失条件性附件：\n" + "\n".join(lines)
+            if isinstance(evidence.get("forbidden_hits"), list):
+                lines = []
+                for item in evidence["forbidden_hits"][:8]:
+                    if isinstance(item, dict):
+                        term = str(item.get("term", "-")).strip()
+                        line = str(item.get("line", "-")).strip()
+                        lines.append(f"- 命中词: {term}")
+                        lines.append(f"  预算行: {line}")
+                if lines:
+                    return "预算禁列项命中：\n" + "\n".join(lines)
+            if isinstance(evidence.get("sample_budget_lines"), list):
+                lines = [str(item).strip() for item in evidence["sample_budget_lines"][:6] if str(item).strip()]
+                if lines:
+                    return "已检查预算行示例：\n" + "\n".join(f"- {line}" for line in lines)
+            if isinstance(evidence.get("performance_metric_rows"), list):
+                metric_lines = []
+                for item in evidence["performance_metric_rows"][:8]:
+                    if not isinstance(item, dict):
+                        continue
+                    name = str(item.get("metric_name", "-")).strip()
+                    total_value = item.get("total_value", "-")
+                    first_year_value = item.get("first_year_value", "-")
+                    metric_lines.append(f"- {name}: 总体={total_value}，第一年={first_year_value}")
+                prefix = []
+                if isinstance(evidence.get("performance_metric_count"), (int, float)):
+                    prefix.append(f"绩效指标数量: {evidence['performance_metric_count']}")
+                ratio = evidence.get("performance_first_year_ratio")
+                if isinstance(ratio, (int, float)):
+                    prefix.append(f"第一年度目标占比: {ratio:.2%}")
+                if metric_lines:
+                    return "\n".join(prefix + ["已识别绩效指标："] + metric_lines)
+            if isinstance(evidence.get("required_ratio"), (int, float)):
+                ratio_lines = [
+                    f"财政资金: {evidence.get('fiscal_funding', '-')}",
+                    f"自筹资金: {evidence.get('self_funding', '-')}",
+                    f"要求比例: {float(evidence['required_ratio']):.2f}",
+                ]
+                if isinstance(evidence.get("actual_ratio"), (int, float)):
+                    ratio_lines.append(f"实际比例: {float(evidence['actual_ratio']):.2f}")
+                applicant_unit_type = evidence.get("applicant_unit_type")
+                if applicant_unit_type:
+                    ratio_lines.append(f"申报单位类型: {applicant_unit_type}")
+                cooperation_types = evidence.get("cooperation_unit_types")
+                if isinstance(cooperation_types, list) and cooperation_types:
+                    ratio_lines.append("合作单位类型: " + "、".join(str(item) for item in cooperation_types))
+                return "\n".join(ratio_lines)
             lines = []
             for key, value in evidence.items():
                 if isinstance(value, (str, int, float, bool)):
@@ -990,11 +1090,36 @@ class BatchReviewAgent:
 
     def _render_status_badges(self, values: List[tuple[str, str, str]]) -> str:
         """渲染一组状态标签"""
-        return "".join(
-            f"<span class='badge status-{escape(status)}'>{escape(label)} {escape(value)}</span>"
-            for label, value, status in values
-        )
+        badges = []
+        for label, value, status in values:
+            text = str(value).strip()
+            if text in {"0", "0.0", ""}:
+                continue
+            _, css_class = self._display_status_meta(status)
+            badges.append(f"<span class='badge status-{escape(css_class)}'>{escape(label)} {escape(text)}</span>")
+        return "".join(badges)
 
     def _render_status_badge(self, status: str) -> str:
         """渲染状态标签"""
-        return f"<span class='badge status-{escape(status)}'>{escape(status)}</span>"
+        label, css_class = self._display_status_meta(status)
+        return f"<span class='badge status-{escape(css_class)}'>{escape(label)}</span>"
+
+    def _display_status_meta(self, status: str) -> tuple[str, str]:
+        """对外展示状态与样式类"""
+        if status in {"warning", "manual", "requires_data"}:
+            return "需人工处理", "manual"
+        labels = {
+            "passed": "通过",
+            "failed": "不通过",
+            "not_applicable": "不适用",
+            "system_managed": "系统已限制",
+            "skipped": "跳过",
+        }
+        return labels.get(status, status), status
+
+    def _render_reason_text(self, status: str, reason: str) -> str:
+        """统一说明文案前缀，避免同类状态出现多套口径"""
+        text = (reason or "").strip()
+        if status in {"warning", "manual", "requires_data"} and text:
+            return f"需人工处理：{text}"
+        return text

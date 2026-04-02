@@ -7,6 +7,8 @@ from typing import Dict, List, Any
 
 
 PLAGIARISM_DEFAULT_CORPUS_PATH = Path("/home/tdkx/workspace/tech/data/corpus_local/sbs_5000")
+PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT = Path("/home/tdkx/workspace/tech/data/corpus_local")
+PLAGIARISM_DEFAULT_REMOTE_CORPUS_ROOT = Path("/mnt/remote_corpus")
 PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR = Path("/home/tdkx/workspace/tech/data/plagiarism/local_ingest")
 PLAGIARISM_DEFAULT_INDEX_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_index.json"
 PLAGIARISM_DEFAULT_SQLITE_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_index.db"

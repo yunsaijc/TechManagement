@@ -139,6 +139,62 @@ class ProjectRepository:
                 )
             )
         return projects
+
+    @staticmethod
+    def get_submitted_projects_by_guide_codes(
+        guide_codes: List[str],
+        limit: Optional[int] = None,
+    ) -> List[dict]:
+        """按指南代码获取已提交项目，供批量查重使用。"""
+        cleaned_codes = [code.strip() for code in guide_codes if code and code.strip()]
+        if not cleaned_codes:
+            return []
+
+        placeholders = ",".join(["?"] * len(cleaned_codes))
+        params: List[object] = cleaned_codes + [ProjectRepository.SUBMIT_STATUS]
+        sql = f"""
+            SELECT
+                b.id,
+                b.xmmc,
+                b.year,
+                b.zndm,
+                zn.name AS guide_name
+            FROM Sb_Jbxx b
+            LEFT JOIN sys_guide zn ON zn.id = b.zndm
+            LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
+            WHERE b.zndm IN ({placeholders})
+              AND s.isSubmit = ?
+            ORDER BY b.year DESC, b.id
+        """
+        if limit is not None and limit > 0:
+            sql = f"""
+                SELECT TOP {int(limit)}
+                    b.id,
+                    b.xmmc,
+                    b.year,
+                    b.zndm,
+                    zn.name AS guide_name
+                FROM Sb_Jbxx b
+                LEFT JOIN sys_guide zn ON zn.id = b.zndm
+                LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
+                WHERE b.zndm IN ({placeholders})
+                  AND s.isSubmit = ?
+                ORDER BY b.year DESC, b.id
+            """
+
+        rows = project_execute(sql, tuple(params))
+        projects: List[dict] = []
+        for row in rows:
+            projects.append(
+                {
+                    "id": row.id,
+                    "xmmc": row.xmmc or "",
+                    "year": str(row.year) if row.year is not None else "",
+                    "zndm": row.zndm,
+                    "guide_name": getattr(row, "guide_name", None),
+                }
+            )
+        return projects
     
     @staticmethod
     def get_project_by_id(project_id: str) -> Optional[Project]:

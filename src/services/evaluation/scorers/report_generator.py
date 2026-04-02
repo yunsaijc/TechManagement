@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List
@@ -86,20 +87,36 @@ class ReportGenerator:
         report_summary_title = "评审结论" if not debug_mode else "综合意见"
         left_tail = ""
         right_tail = ""
+        source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
 
         if debug_mode:
             left_tail = f"""
         <section class="panel">
-          <h2>解析章节预览</h2>
-          <div class="section-preview">
-            {self._render_sections(sections)}
+          <div class="panel-inner">
+            <h2>解析章节预览</h2>
+            <div class="section-preview">
+              {self._render_sections(sections)}
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>调试元信息</h2>
+            <table class="kv-table">
+              <tr><th>项目ID</th><td>{html.escape(str(result.get("project_id") or "-"))}</td></tr>
+              <tr><th>评审ID</th><td>{html.escape(str(result.get("evaluation_id") or "-"))}</td></tr>
+              <tr><th>源文件</th><td>{html.escape(str(source_name))}</td></tr>
+              <tr><th>生成时间</th><td>{html.escape(str(result.get("created_at") or "-"))}</td></tr>
+            </table>
           </div>
         </section>
             """
             right_tail = f"""
-        <section class="panel">
-          <h2>错误与调试信息</h2>
-          {self._render_errors(errors, data.get("meta") or {})}
+        <section class="panel" id="report-debug">
+          <div class="panel-inner">
+            <h2>错误与调试信息</h2>
+            {self._render_errors(errors, data.get("meta") or {})}
+          </div>
         </section>
             """
 
@@ -111,238 +128,379 @@ class ReportGenerator:
   <title>正文评审报告 - {html.escape(str(title))}</title>
   <style>
     :root {{
-      --bg: #f3efe7;
-      --panel: #fffdf8;
-      --ink: #1f2937;
-      --muted: #6b7280;
-      --line: #e7dccb;
-      --brand: #8f3d2e;
-      --brand-soft: #f7e4db;
-      --shadow: 0 18px 40px rgba(75, 50, 27, 0.08);
+      --bg: #f3f5f7;
+      --panel: #ffffff;
+      --panel-soft: #f7f9fb;
+      --panel-deep: #eef3f8;
+      --ink: #1b2430;
+      --muted: #66758a;
+      --line: #d7dfe8;
+      --brand: #1d3c61;
+      --brand-soft: #e8eff6;
+      --ok: #1f7a4d;
+      --warn: #a56a1f;
+      --risk: #b42318;
+      --shadow: 0 8px 24px rgba(18, 31, 53, 0.05);
     }}
-    * {{ box-sizing: border-box; }}
+    * {{
+      box-sizing: border-box;
+      min-width: 0;
+    }}
+    html {{
+      scroll-behavior: smooth;
+      height: 100%;
+    }}
     body {{
       margin: 0;
-      font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       color: var(--ink);
-      background:
-        radial-gradient(circle at top left, rgba(143, 61, 46, 0.10), transparent 30%),
-        linear-gradient(180deg, #f8f4ed 0%, var(--bg) 100%);
+      background: var(--bg);
+    }}
+    a {{
+      color: inherit;
     }}
     .page {{
-      max-width: 1400px;
+      max-width: 1480px;
       margin: 0 auto;
-      padding: 28px;
-    }}
-    .hero {{
-      background: linear-gradient(135deg, #fff8ef 0%, #f6ece0 52%, #efe4d6 100%);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 28px;
-      box-shadow: var(--shadow);
-    }}
-    .hero-top {{
+      padding: 20px;
+      height: 100vh;
       display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      align-items: flex-start;
-      flex-wrap: wrap;
+      flex-direction: column;
     }}
-    .eyebrow {{
-      color: var(--brand);
-      font-size: 13px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 10px;
-      font-weight: 700;
-    }}
-    h1 {{
-      margin: 0 0 10px;
-      font-size: 32px;
-      line-height: 1.2;
-    }}
-    .meta {{
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.8;
-    }}
-    .score-chip {{
-      min-width: 180px;
-      padding: 18px 20px;
-      border-radius: 20px;
-      background: white;
-      border: 1px solid var(--line);
-      text-align: center;
-    }}
-    .score-good {{ border-color: rgba(31, 122, 77, 0.35); }}
-    .score-mid {{ border-color: rgba(161, 98, 7, 0.35); }}
-    .score-bad {{ border-color: rgba(180, 35, 24, 0.35); }}
-    .score-value {{
-      font-size: 40px;
-      font-weight: 800;
-      line-height: 1;
-      margin-bottom: 8px;
-    }}
-    .score-label {{
-      color: var(--muted);
-      font-size: 13px;
-    }}
-    .flags {{
-      margin-top: 18px;
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }}
-    .flag {{
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 12px;
-      border-radius: 999px;
-      background: white;
-      border: 1px solid var(--line);
-      font-size: 13px;
-    }}
-    .section-nav {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 18px;
-    }}
-    .nav-link {{
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.82);
-      border: 1px solid var(--line);
-      color: var(--ink);
-      font-size: 13px;
-      text-decoration: none;
-    }}
-    .layout {{
-      display: grid;
-      grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
-      gap: 20px;
-      margin-top: 20px;
-      align-items: start;
-    }}
-    .stack {{
+    .page-stack {{
       display: grid;
       gap: 20px;
-    }}
-    .stack.side {{
-      position: sticky;
-      top: 24px;
+      height: 100%;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
     }}
     .panel {{
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 22px;
-      padding: 22px;
+      border-radius: 18px;
       box-shadow: var(--shadow);
     }}
-    .panel-primary {{
-      background: linear-gradient(180deg, #fffdf8 0%, #fff9f1 100%);
+    .hero {{
+      padding: 24px 26px;
+      background: linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
     }}
-    .panel h2 {{
-      margin: 0 0 14px;
+    .hero-top {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      flex-wrap: wrap;
+    }}
+    .eyebrow {{
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }}
+    .report-title {{
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.35;
+      font-weight: 700;
+    }}
+    .report-subtitle {{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }}
+    .score-card {{
+      min-width: 220px;
+      padding: 18px 20px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }}
+    .score-good {{
+      border-color: rgba(31, 122, 77, 0.28);
+    }}
+    .score-mid {{
+      border-color: rgba(165, 106, 31, 0.28);
+    }}
+    .score-bad {{
+      border-color: rgba(180, 35, 24, 0.28);
+    }}
+    .score-label {{
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }}
+    .score-main {{
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .score-value {{
+      font-size: 44px;
+      line-height: 1;
+      font-weight: 800;
+    }}
+    .score-grade {{
       font-size: 20px;
+      font-weight: 700;
+      color: var(--brand);
+    }}
+    .hero-lead {{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }}
+    .hero-nav {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }}
+    .nav-link {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 14px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+    }}
+    .nav-link:hover {{
+      border-color: #bfd0e3;
+      background: var(--brand-soft);
+      color: var(--brand);
+    }}
+    .content-grid {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 20px;
+      align-items: stretch;
+      min-height: 0;
+      height: 100%;
+    }}
+    .main-stack,
+    .side-stack {{
+      display: grid;
+      gap: 18px;
+      min-height: 0;
+      align-content: start;
+      overflow: auto;
+      padding-right: 6px;
+      max-height: 100%;
+    }}
+    .panel-inner {{
+      padding: 22px;
     }}
     .panel-head {{
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: flex-start;
       gap: 12px;
       margin-bottom: 14px;
       flex-wrap: wrap;
     }}
+    .panel h2 {{
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.4;
+    }}
     .panel-note {{
       color: var(--muted);
       font-size: 13px;
+      line-height: 1.7;
     }}
     .summary {{
-      font-size: 15px;
-      line-height: 1.8;
       margin: 0;
+      font-size: 15px;
+      line-height: 1.9;
     }}
-    .summary-grid {{
+    .highlight-grid {{
       display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 18px;
-      align-items: start;
-    }}
-    .grid-3 {{
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
+      margin-top: 18px;
     }}
-    .mini-card {{
-      background: #fff;
+    .highlight-card {{
+      padding: 16px;
+      background: var(--panel-soft);
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 14px;
+      border-radius: 14px;
     }}
-    .mini-card .label {{
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 6px;
-    }}
-    .mini-card .value {{
-      font-size: 18px;
+    .highlight-label {{
+      margin-bottom: 8px;
+      color: var(--brand);
+      font-size: 13px;
       font-weight: 700;
+      letter-spacing: 0.02em;
     }}
     .list {{
       margin: 0;
       padding-left: 20px;
-      line-height: 1.8;
+      line-height: 1.9;
     }}
     .list li + li {{
-      margin-top: 6px;
+      margin-top: 8px;
     }}
     .score-list {{
       display: grid;
       gap: 14px;
     }}
-    .score-card {{
+    .score-accordion {{
       border: 1px solid var(--line);
-      border-radius: 18px;
-      background: #fff;
-      padding: 18px;
+      border-radius: 16px;
+      background: var(--panel);
+      overflow: hidden;
+    }}
+    .score-item + .score-item {{
+      border-top: 1px solid var(--line);
+    }}
+    .score-trigger {{
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      padding: 16px 18px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+    }}
+    .score-trigger:hover {{
+      background: var(--panel-soft);
+    }}
+    .score-trigger-main {{
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }}
+    .score-trigger-sub {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }}
+    .score-trigger-meta {{
+      display: grid;
+      justify-items: end;
+      gap: 8px;
+      flex-shrink: 0;
+    }}
+    .score-pill {{
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .score-chevron {{
+      color: var(--muted);
+      font-size: 12px;
+      transition: transform 0.2s ease;
+    }}
+    .score-item.is-open .score-chevron {{
+      transform: rotate(180deg);
+    }}
+    .score-body {{
+      display: none;
+      padding: 0 18px 18px;
+    }}
+    .score-item.is-open .score-body {{
+      display: block;
+    }}
+    .score-detail-card {{
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
     }}
     .score-card-head {{
       display: flex;
       justify-content: space-between;
       gap: 16px;
       align-items: baseline;
+      flex-wrap: wrap;
       margin-bottom: 10px;
     }}
     .score-card-title {{
       font-size: 17px;
       font-weight: 700;
+      line-height: 1.5;
     }}
     .score-card-meta {{
       color: var(--muted);
       font-size: 13px;
-      white-space: nowrap;
+      line-height: 1.6;
     }}
     .tag-row {{
       display: flex;
-      flex-wrap: wrap;
       gap: 8px;
-      margin-top: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
     }}
     .tag {{
       padding: 5px 10px;
       border-radius: 999px;
-      font-size: 12px;
       background: var(--brand-soft);
       color: var(--brand);
+      font-size: 12px;
+      line-height: 1.6;
     }}
     .subtle {{
       color: var(--muted);
       font-size: 14px;
       line-height: 1.8;
+    }}
+    .qa-list,
+    .support-list,
+    .report-block,
+    .section-preview,
+    .citation-list {{
+      display: grid;
+      gap: 12px;
+    }}
+    .qa-card,
+    .support-item,
+    .support-box {{
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
+    }}
+    .qa-question {{
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }}
+    .qa-answer {{
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }}
+    .support-label {{
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+    .citation {{
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f5f8fb;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
     }}
     .kv-table {{
       width: 100%;
@@ -351,33 +509,40 @@ class ReportGenerator:
     }}
     .kv-table th,
     .kv-table td {{
-      border-top: 1px solid var(--line);
       padding: 12px 10px;
+      border-top: 1px solid var(--line);
       text-align: left;
       vertical-align: top;
-      line-height: 1.7;
+      line-height: 1.8;
     }}
     .kv-table th {{
       width: 110px;
       color: var(--muted);
       font-weight: 600;
     }}
-    .section-preview {{
-      display: grid;
-      gap: 12px;
-    }}
     details {{
       border: 1px solid var(--line);
-      border-radius: 16px;
-      background: #fff;
-      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--panel);
+      overflow: hidden;
     }}
     summary {{
       cursor: pointer;
       font-weight: 700;
+      padding: 14px 16px;
+      list-style: none;
+      background: var(--panel-soft);
+    }}
+    summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .fold-body {{
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 10px;
     }}
     pre {{
-      margin: 12px 0 0;
+      margin: 0;
       white-space: pre-wrap;
       word-break: break-word;
       font-family: "SFMono-Regular", Consolas, monospace;
@@ -388,92 +553,38 @@ class ReportGenerator:
     .empty {{
       color: var(--muted);
       font-size: 14px;
+      line-height: 1.8;
     }}
-    .report-block {{
+    .facts-grid {{
       display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
+      margin-top: 18px;
     }}
-    .support-list {{
-      display: grid;
-      gap: 10px;
-    }}
-    .support-item {{
+    .mini-card {{
+      padding: 14px;
+      background: var(--panel-soft);
       border: 1px solid var(--line);
-      border-radius: 16px;
-      background: #fff;
-      padding: 14px 15px;
+      border-radius: 14px;
     }}
-    .support-label {{
+    .mini-card .label {{
       color: var(--muted);
       font-size: 12px;
       margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
     }}
-    .qa-list {{
-      display: grid;
-      gap: 14px;
-    }}
-    .qa-card {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: #fff;
-      padding: 16px;
-    }}
-    .qa-question {{
-      font-size: 16px;
+    .mini-card .value {{
+      font-size: 18px;
       font-weight: 700;
-      margin-bottom: 10px;
-    }}
-    .qa-answer {{
-      font-size: 14px;
-      line-height: 1.8;
-      margin-bottom: 12px;
-    }}
-    .citation-list {{
-      display: grid;
-      gap: 8px;
-    }}
-    .citation {{
-      padding: 10px 12px;
-      border-radius: 14px;
-      background: #fff8ef;
-      border: 1px solid var(--line);
-      font-size: 13px;
-      line-height: 1.7;
-    }}
-    .fold {{
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: #fff;
-      padding: 0;
-      overflow: hidden;
-    }}
-    .fold > summary {{
-      list-style: none;
-      padding: 14px 16px;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      background: #fcf7ef;
-    }}
-    .fold > summary::-webkit-details-marker {{
-      display: none;
-    }}
-    .fold-body {{
-      padding: 14px 16px 16px;
-      display: grid;
-      gap: 10px;
+      line-height: 1.5;
+      word-break: break-word;
     }}
     .chat-shell {{
       display: grid;
       gap: 14px;
     }}
     .chat-toolbar {{
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
+      display: grid;
+      gap: 8px;
     }}
     .chat-toolbar label {{
       color: var(--muted);
@@ -491,36 +602,30 @@ class ReportGenerator:
       font-size: 14px;
       outline: none;
     }}
-    .chat-input {{
-      max-width: 320px;
-    }}
     .chat-thread {{
       display: grid;
       gap: 12px;
-      max-height: 760px;
+      max-height: 420px;
       overflow: auto;
       padding-right: 4px;
     }}
     .chat-msg {{
       border: 1px solid var(--line);
-      border-radius: 18px;
+      border-radius: 14px;
       padding: 14px;
-      background: #fff;
+      background: var(--panel);
     }}
     .chat-msg-user {{
-      background: #f7efe7;
-      border-color: #e9d8c8;
-    }}
-    .chat-msg-assistant {{
-      background: #fff;
+      background: var(--brand-soft);
+      border-color: #c9d9ea;
     }}
     .chat-role {{
       color: var(--brand);
       font-size: 12px;
       font-weight: 700;
-      margin-bottom: 8px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
+      margin-bottom: 8px;
     }}
     .chat-body {{
       font-size: 14px;
@@ -535,8 +640,8 @@ class ReportGenerator:
     }}
     .chat-citation {{
       padding: 10px 12px;
-      border-radius: 14px;
-      background: #fff8ef;
+      border-radius: 12px;
+      background: #f5f8fb;
       border: 1px solid var(--line);
       font-size: 13px;
       line-height: 1.7;
@@ -546,7 +651,7 @@ class ReportGenerator:
       gap: 10px;
     }}
     .chat-textarea {{
-      min-height: 92px;
+      min-height: 96px;
       resize: vertical;
     }}
     .chat-actions {{
@@ -564,8 +669,8 @@ class ReportGenerator:
     .chat-suggestion,
     .chat-submit {{
       border: 1px solid var(--line);
-      border-radius: 999px;
-      background: #fff;
+      border-radius: 10px;
+      background: var(--panel);
       color: var(--ink);
       padding: 9px 14px;
       font-size: 13px;
@@ -587,172 +692,207 @@ class ReportGenerator:
       font-size: 13px;
       line-height: 1.7;
     }}
-    @media (max-width: 980px) {{
-      .layout,
-      .summary-grid,
-      .grid-3 {{
-        grid-template-columns: 1fr;
+    @media (max-width: 1320px) {{
+      body {{
+        overflow: auto;
       }}
-      .stack.side {{
-        position: static;
+      .content-grid {{
+        grid-template-columns: 1fr;
+        height: auto;
       }}
       .page {{
-        padding: 16px;
+        height: auto;
+        min-height: 100vh;
       }}
-      .hero {{
-        padding: 20px;
+      .page-stack {{
+        height: auto;
+        grid-template-rows: auto auto;
       }}
-      h1 {{
-        font-size: 26px;
+      .main-stack,
+      .side-stack {{
+        overflow: visible;
+        padding-right: 0;
+      }}
+    }}
+    @media (max-width: 1120px) {{
+      .facts-grid {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
+    }}
+    @media (max-width: 760px) {{
+      .page {{
+        padding: 12px;
+        height: auto;
+      }}
+      .hero,
+      .panel-inner {{
+        padding: 18px;
+      }}
+      .facts-grid {{
+        grid-template-columns: 1fr;
+      }}
+      .report-title {{
+        font-size: 22px;
+      }}
+      .score-trigger,
+      .score-card-head {{
+        display: grid;
+      }}
+      .score-trigger-meta {{
+        justify-items: start;
       }}
     }}
   </style>
 </head>
 <body>
   <div class="page">
-    <section class="hero">
-      <div class="hero-top">
-        <div>
-          <div class="eyebrow">{report_eyebrow}</div>
-          <h1>{report_title} | {html.escape(str(title))}</h1>
-          <div class="meta">
-            <div>项目ID：{html.escape(str(result.get("project_id") or "-"))}</div>
-            <div>评审ID：{html.escape(str(result.get("evaluation_id") or "-"))}</div>
-            <div>源文件：{html.escape(str(data.get("source_name") or data.get("meta", {}).get("file_name") or "-"))}</div>
-            <div>生成时间：{html.escape(str(result.get("created_at") or "-"))}</div>
+    <div class="page-stack">
+      <header class="panel hero">
+        <div class="hero-top">
+          <div>
+            <div class="eyebrow">{report_eyebrow}</div>
+            <h1 class="report-title">{html.escape(str(title))}</h1>
+            <div class="report-subtitle">{report_title}</div>
+          </div>
+          <div class="score-card {score_class}">
+            <div class="score-label">综合评分 / 等级</div>
+            <div class="score-main">
+              <div class="score-value">{html.escape(str(score))}</div>
+              <div class="score-grade">{html.escape(str(grade))}</div>
+            </div>
           </div>
         </div>
-        <div class="score-chip {score_class}">
-          <div class="score-value">{html.escape(str(score))}</div>
-          <div style="font-size: 20px; font-weight: 800; margin-bottom: 6px;">{html.escape(str(grade))}</div>
-          <div class="score-label">综合评分 / 等级</div>
-        </div>
-      </div>
-      <div class="flags">
-        <span class="flag">综合等级：{html.escape(str(grade))}</span>
-        <span class="flag">结构化摘要：{"已生成" if highlights else "未生成"}</span>
-        <span class="flag">专家问答：{"已生成" if expert_qna else "未生成"}</span>
-        <span class="flag">聊天索引：{"已构建" if result.get("chat_ready") else "未构建"}</span>
-        <span class="flag">章节数：{len(sections)} / 证据数：{len(evidence)}</span>
-        {f'<span class="flag">降级结果：{"是" if result.get("partial") else "否"}</span>' if debug_mode else ''}
-      </div>
-      <div class="section-nav">
-        <a class="nav-link" href="#report-overview">评审结论</a>
-        <a class="nav-link" href="#report-dimensions">维度评分</a>
-        <a class="nav-link" href="#report-chat">专家聊天</a>
-        <a class="nav-link" href="#report-fit">指南贴合</a>
-        <a class="nav-link" href="#report-benchmark">技术摸底</a>
-      </div>
-    </section>
+        <div class="hero-lead">面向专家快速阅览的正文评审报告，重点展示结论、问题、证据与可追问能力。</div>
+        <nav class="hero-nav">
+          <a class="nav-link" href="#report-overview">评审结论</a>
+          <a class="nav-link" href="#report-dimensions">维度评分</a>
+          <a class="nav-link" href="#report-chat">专家聊天</a>
+          <a class="nav-link" href="#report-qna">典型问答</a>
+          <a class="nav-link" href="#report-fit">指南贴合</a>
+          <a class="nav-link" href="#report-benchmark">技术摸底</a>
+          <a class="nav-link" href="#report-evidence">证据链</a>
+          {f'<a class="nav-link" href="#report-debug">调试信息</a>' if debug_mode else ''}
+        </nav>
+      </header>
 
-    <div class="layout">
-      <div class="stack">
-        <section class="panel panel-primary" id="report-overview">
-          <div class="panel-head">
-            <h2>{report_summary_title}</h2>
-            <div class="panel-note">先看这一屏，能快速判断项目值不值得继续深读。</div>
-          </div>
-          <div class="summary-grid">
-            <div class="report-block">
+      <div class="content-grid">
+        <main class="main-stack">
+          <section class="panel" id="report-overview">
+            <div class="panel-inner">
+              <div class="panel-head">
+                <h2>{report_summary_title}</h2>
+                <div class="panel-note">先给专家连续阅读的结论，再进入逐项核对。</div>
+              </div>
               <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-              <div class="support-list">
-                <div class="support-item">
-                  <div class="support-label">研究目标</div>
+              <div class="facts-grid">
+                <div class="mini-card">
+                  <div class="label">结构化摘要</div>
+                  <div class="value">{"已生成" if highlights else "未生成"}</div>
+                </div>
+                <div class="mini-card">
+                  <div class="label">专家问答</div>
+                  <div class="value">{"已生成" if expert_qna else "未生成"}</div>
+                </div>
+                <div class="mini-card">
+                  <div class="label">聊天索引</div>
+                  <div class="value">{"已构建" if result.get("chat_ready") else "未构建"}</div>
+                </div>
+                <div class="mini-card">
+                  <div class="label">建议条数</div>
+                  <div class="value">{len(recommendations)}</div>
+                </div>
+                <div class="mini-card">
+                  <div class="label">证据总数</div>
+                  <div class="value">{len(evidence)}</div>
+                </div>
+                <div class="mini-card">
+                  <div class="label">模型版本</div>
+                  <div class="value">{html.escape(str(result.get("model_version") or "-"))}</div>
+                </div>
+              </div>
+              <div class="highlight-grid">
+                <div class="highlight-card">
+                  <div class="highlight-label">研究目标</div>
                   {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
                 </div>
-                <div class="support-item">
-                  <div class="support-label">创新点</div>
+                <div class="highlight-card">
+                  <div class="highlight-label">创新点</div>
                   {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
                 </div>
-                <div class="support-item">
-                  <div class="support-label">技术路线</div>
+                <div class="highlight-card">
+                  <div class="highlight-label">技术路线</div>
                   {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
                 </div>
               </div>
             </div>
-            <div class="grid-3">
-              <div class="mini-card">
-                <div class="label">建议条数</div>
-                <div class="value">{len(recommendations)}</div>
+          </section>
+
+          <section class="panel" id="report-dimensions">
+            <div class="panel-inner">
+              <div class="panel-head">
+                <h2>维度评分</h2>
+                <div class="panel-note">默认展开最需要关注的一项，其余按需展开。</div>
               </div>
-              <div class="mini-card">
-                <div class="label">问答条数</div>
-                <div class="value">{len(expert_qna)}</div>
-              </div>
-              <div class="mini-card">
-                <div class="label">模型版本</div>
-                <div class="value" style="font-size: 14px;">{html.escape(str(result.get("model_version") or "-"))}</div>
-              </div>
-              <div class="mini-card">
-                <div class="label">结构化摘要</div>
-                <div class="value" style="font-size: 14px;">{"已生成" if highlights else "未生成"}</div>
-              </div>
-              <div class="mini-card">
-                <div class="label">聊天索引</div>
-                <div class="value" style="font-size: 14px;">{"已构建" if result.get("chat_ready") else "未构建"}</div>
-              </div>
-              <div class="mini-card">
-                <div class="label">证据总数</div>
-                <div class="value">{len(evidence)}</div>
+              <div class="score-list">
+                {self._render_dimension_scores(dimension_scores)}
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="panel" id="report-dimensions">
-          <div class="panel-head">
-            <h2>维度评分</h2>
-            <div class="panel-note">逐项查看评分、亮点和主要问题。</div>
-          </div>
-          <div class="score-list">
-            {self._render_dimension_scores(dimension_scores)}
-          </div>
-        </section>
+          {left_tail}
+        </main>
 
-        {left_tail}
-      </div>
+        <aside class="side-stack">
+          {self._render_chat_panel(
+              evaluation_id=evaluation_id,
+              chat_ready=bool(result.get("chat_ready")),
+              expert_qna=expert_qna,
+              debug_mode=debug_mode,
+          )}
 
-      <div class="stack side">
+          <section class="panel" id="report-qna">
+            <div class="panel-inner">
+              <div class="panel-head">
+                <h2>专家关注问答</h2>
+                <div class="panel-note">展示典型问题，证据默认折叠。</div>
+              </div>
+              {self._render_expert_qna(expert_qna)}
+            </div>
+          </section>
 
-        {self._render_chat_panel(
-            evaluation_id=evaluation_id,
-            chat_ready=bool(result.get("chat_ready")),
-            expert_qna=expert_qna,
-            debug_mode=debug_mode,
-        )}
+          <section class="panel">
+            <div class="panel-inner">
+              <h2>修改建议</h2>
+              {self._render_list(recommendations, "暂无建议")}
+            </div>
+          </section>
 
-        <section class="panel">
-          <div class="panel-head">
-            <h2>专家关注问答</h2>
-            <div class="panel-note">保留典型问题，证据默认折叠。</div>
-          </div>
-          {self._render_expert_qna(expert_qna)}
-        </section>
+          <section class="panel" id="report-fit">
+            <div class="panel-inner">
+              <h2>指南贴合</h2>
+              {self._render_industry_fit(industry_fit)}
+            </div>
+          </section>
 
-        <section class="panel">
-          <h2>修改建议</h2>
-          {self._render_list(recommendations, "暂无建议")}
-        </section>
+          <section class="panel" id="report-benchmark">
+            <div class="panel-inner">
+              <h2>技术摸底</h2>
+              {self._render_benchmark(benchmark)}
+            </div>
+          </section>
 
-        <section class="panel" id="report-fit">
-          <h2>指南贴合</h2>
-          {self._render_industry_fit(industry_fit)}
-        </section>
+          <section class="panel" id="report-evidence">
+            <div class="panel-inner">
+              <div class="panel-head">
+                <h2>证据链</h2>
+                <div class="panel-note">需要核对原文时再展开。</div>
+              </div>
+              {self._render_evidence(evidence)}
+            </div>
+          </section>
 
-        <section class="panel" id="report-benchmark">
-          <h2>技术摸底</h2>
-          {self._render_benchmark(benchmark)}
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">
-            <h2>证据链</h2>
-            <div class="panel-note">需要核对原文时再展开。</div>
-          </div>
-          {self._render_evidence(evidence)}
-        </section>
-
-        {right_tail}
+          {right_tail}
+        </aside>
       </div>
     </div>
   </div>
@@ -849,26 +989,82 @@ class ReportGenerator:
 </html>"""
 
     def _render_dimension_scores(self, dimension_scores: List[Dict[str, Any]]) -> str:
+        if not dimension_scores:
+            return '<div class="empty">暂无维度评分</div>'
+
+        default_open_index = self._pick_default_dimension_index(dimension_scores)
         cards: List[str] = []
-        for score in dimension_scores:
+        for index, score in enumerate(dimension_scores):
             issues = score.get("issues") or []
             highlights = score.get("highlights") or []
+            is_open = index == default_open_index
+            open_class = " is-open" if is_open else ""
+            summary = str(score.get("opinion") or "暂无意见")
             cards.append(
                 f"""
-                <div class="score-card">
-                  <div class="score-card-head">
-                    <div class="score-card-title">{html.escape(str(score.get("dimension_name") or score.get("dimension") or "-"))}</div>
-                    <div class="score-card-meta">得分 {html.escape(str(score.get("score", "-")))} / 权重 {html.escape(str(score.get("weight", "-")))}</div>
-                  </div>
-                  <div class="subtle">{html.escape(str(score.get("opinion") or "暂无意见"))}</div>
-                  <div class="tag-row">
-                    {''.join(f'<span class="tag">亮点：{html.escape(str(item))}</span>' for item in highlights[:3])}
-                    {''.join(f'<span class="tag">问题：{html.escape(str(item))}</span>' for item in issues[:3])}
+                <div class="score-item{open_class}">
+                  <button class="score-trigger" type="button">
+                    <div class="score-trigger-main">
+                      <div class="score-card-title">{html.escape(str(score.get("dimension_name") or score.get("dimension") or "-"))}</div>
+                      <div class="score-trigger-sub">{html.escape(summary[:72] + ("..." if len(summary) > 72 else ""))}</div>
+                    </div>
+                    <div class="score-trigger-meta">
+                      <div class="score-pill">得分 {html.escape(str(score.get("score", "-")))}</div>
+                      <div class="score-chevron">展开详情</div>
+                    </div>
+                  </button>
+                  <div class="score-body">
+                    <div class="score-detail-card">
+                      <div class="score-card-head">
+                        <div class="score-card-title">{html.escape(str(score.get("dimension_name") or score.get("dimension") or "-"))}</div>
+                        <div class="score-card-meta">得分 {html.escape(str(score.get("score", "-")))} / 权重 {html.escape(str(score.get("weight", "-")))}</div>
+                      </div>
+                      <div class="subtle">{html.escape(summary)}</div>
+                      <div class="tag-row">
+                        {''.join(f'<span class="tag">亮点：{html.escape(str(item))}</span>' for item in highlights[:3])}
+                        {''.join(f'<span class="tag">问题：{html.escape(str(item))}</span>' for item in issues[:3])}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 """
             )
-        return "".join(cards) or '<div class="empty">暂无维度评分</div>'
+        script = """
+        <script>
+          (() => {
+            const root = document.getElementById("dimension-accordion");
+            if (!root) return;
+            const items = Array.from(root.querySelectorAll(".score-item"));
+            items.forEach((item) => {
+              const trigger = item.querySelector(".score-trigger");
+              if (!trigger) return;
+              trigger.addEventListener("click", () => {
+                items.forEach((current) => {
+                  current.classList.toggle("is-open", current === item ? !current.classList.contains("is-open") : false);
+                });
+              });
+            });
+          })();
+        </script>
+        """
+        return f'<div class="score-accordion" id="dimension-accordion">{"".join(cards)}</div>{script}'
+
+    def _pick_default_dimension_index(self, dimension_scores: List[Dict[str, Any]]) -> int:
+        """默认展开最低分维度；同分时优先有问题项的维度"""
+        best_index = 0
+        best_key = None
+        for index, score in enumerate(dimension_scores):
+            raw_score = score.get("score", 0)
+            try:
+                score_value = float(raw_score)
+            except (TypeError, ValueError):
+                score_value = 0.0
+            issues = score.get("issues") or []
+            key = (score_value, -len(issues), index)
+            if best_key is None or key < best_key:
+                best_key = key
+                best_index = index
+        return best_index
 
     def _render_evidence(self, evidence: List[Dict[str, Any]]) -> str:
         if not evidence:
@@ -955,6 +1151,8 @@ class ReportGenerator:
         if debug_mode:
             return ""
 
+        default_port = os.getenv("APP_PORT", "8888")
+        default_api_base = f"http://127.0.0.1:{default_port}"
         suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
         suggestion_html = "".join(
             f'<button type="button" class="chat-suggestion" data-question="{html.escape(question)}">{html.escape(question)}</button>'
@@ -965,46 +1163,49 @@ class ReportGenerator:
         status_text = "等待提问" if chat_ready else "未构建聊天索引"
         submit_disabled = "" if chat_ready and evaluation_id else "disabled"
         textarea_disabled = "" if chat_ready and evaluation_id else "disabled"
-        toolbar_note = "默认直连本机 8000 端口；如果服务不在当前地址，可直接改这里。"
+        toolbar_note = f"默认使用项目当前 API 端口 {default_api_base}；如果服务不在当前地址，可直接改这里。"
         escaped_eval_id = html.escape(evaluation_id)
         suggestions_block = suggestion_html or '<div class="chat-status">暂无可复用的典型问题。</div>'
+        escaped_default_api_base = html.escape(default_api_base)
 
         return f"""
         <section class="panel">
-          <h2>专家即时问答</h2>
-          <div
-            class="chat-shell"
-            id="report-chat"
-            data-evaluation-id="{escaped_eval_id}"
-            data-chat-ready="{str(chat_ready).lower()}"
-          >
-            <div class="chat-toolbar">
-              <label for="chat-api-base">API 地址</label>
-              <input id="chat-api-base" class="chat-input" type="text" value="" placeholder="http://127.0.0.1:8000" />
-              <div class="chat-status">{html.escape(toolbar_note)}</div>
-            </div>
-            <div class="chat-status">{html.escape(ready_text)}</div>
-            <div class="chat-suggestions" id="chat-suggestions">
-              {suggestions_block}
-            </div>
-            <div class="chat-thread" id="chat-thread">
-              <div class="chat-msg chat-msg-assistant">
-                <div class="chat-role">assistant</div>
-                <div class="chat-body">你可以直接问：验证数据有吗？这项技术能落地吗？进展到什么程度？我会按当前评审记录返回页码证据。</div>
+          <div class="panel-inner">
+            <h2>专家即时问答</h2>
+            <div
+              class="chat-shell"
+              id="report-chat"
+              data-evaluation-id="{escaped_eval_id}"
+              data-chat-ready="{str(chat_ready).lower()}"
+            >
+              <div class="chat-toolbar">
+                <label for="chat-api-base">API 地址</label>
+                <input id="chat-api-base" class="chat-input" type="text" value="{escaped_default_api_base}" placeholder="{escaped_default_api_base}" />
+                <div class="chat-status">{html.escape(toolbar_note)}</div>
               </div>
-            </div>
-            <form class="chat-form" id="chat-form">
-              <textarea
-                id="chat-question"
-                class="chat-textarea"
-                placeholder="输入专家问题，例如：这项技术有可能量产吗？"
-                {textarea_disabled}
-              ></textarea>
-              <div class="chat-actions">
-                <div class="chat-status" id="chat-status">{html.escape(status_text)}</div>
-                <button id="chat-submit" class="chat-submit" type="submit" {submit_disabled}>发送问题</button>
+              <div class="chat-status">{html.escape(ready_text)}</div>
+              <div class="chat-suggestions" id="chat-suggestions">
+                {suggestions_block}
               </div>
-            </form>
+              <div class="chat-thread" id="chat-thread">
+                <div class="chat-msg chat-msg-assistant">
+                  <div class="chat-role">assistant</div>
+                  <div class="chat-body">直接问具体问题，例如：这个项目的研究目标是什么？这项工作目前进展到什么程度了？这项技术有可能落地或量产吗？我会返回页码证据。</div>
+                </div>
+              </div>
+              <form class="chat-form" id="chat-form">
+                <textarea
+                  id="chat-question"
+                  class="chat-textarea"
+                  placeholder="输入专家问题，例如：这项技术有可能量产吗？"
+                  {textarea_disabled}
+                ></textarea>
+                <div class="chat-actions">
+                  <div class="chat-status" id="chat-status">{html.escape(status_text)}</div>
+                  <button id="chat-submit" class="chat-submit" type="submit" {submit_disabled}>发送问题</button>
+                </div>
+              </form>
+            </div>
           </div>
         </section>
         <script>
@@ -1022,11 +1223,16 @@ class ReportGenerator:
             const statusNode = document.getElementById("chat-status");
             const suggestionButtons = Array.from(shell.querySelectorAll(".chat-suggestion"));
 
+            const configuredBase = "{escaped_default_api_base}";
+
             const detectDefaultBase = () => {{
               if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
-                return window.location.origin;
+                if (window.location.port === "{html.escape(default_port)}") {{
+                  return window.location.origin;
+                }}
+                return configuredBase;
               }}
-              return "http://127.0.0.1:8000";
+              return configuredBase;
             }};
 
             apiBaseInput.value = detectDefaultBase();
@@ -1101,7 +1307,7 @@ class ReportGenerator:
                   }}),
                 }});
 
-                const payload = await response.json().catch(() => ({{ detail: "服务返回了不可解析响应" }}));
+                const payload = await response.json().catch(() => ({{ detail: "服务返回了不可解析响应，请检查 API 地址是否指向正文评审服务" }}));
                 if (!response.ok) {{
                   throw new Error(payload.detail || `请求失败：${{response.status}}`);
                 }}

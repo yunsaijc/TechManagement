@@ -35,6 +35,7 @@ usage() {
   scripts/corpus_safe.sh loop [rounds] [max_scan] [limit] [max_concurrency]
   scripts/corpus_safe.sh run-all [max_scan] [limit] [max_concurrency]
   scripts/corpus_safe.sh mirror5000 [count]
+  scripts/corpus_safe.sh mirror-zndm <guide_code...>
   scripts/corpus_safe.sh status
   scripts/corpus_safe.sh reset
 
@@ -47,6 +48,7 @@ usage() {
   loop   : 执行多轮 step，默认 rounds=10、max_scan=2000、limit=5、并发=4
   run-all: 先 ingest-docs，再 rebuild-coarse
   mirror5000: 从远端目录复制前 N 个 docx 到本地目录（默认 5000）
+  mirror-zndm: 按指南代码查询真实项目，并复制对应 docx 到本地 data/corpus_local/{year}/sbs/
   status : 查看 checkpoint / manifest / corpus 状态
   reset  : 清空 checkpoint 和 manifest
 USAGE
@@ -176,6 +178,14 @@ cmd_mirror5000() {
   echo "[mirror5000] done"
 }
 
+cmd_mirror_zndm() {
+  if [[ "$#" -lt 1 ]]; then
+    echo "usage: scripts/corpus_safe.sh mirror-zndm <guide_code...>" >&2
+    return 1
+  fi
+  uv run python scripts/mirror_projects_by_guide_codes.py "$@"
+}
+
 pending_count() {
   uv run python - <<'PY'
 import json
@@ -246,6 +256,10 @@ main() {
     mirror5000)
       shift
       cmd_mirror5000 "${1:-5000}"
+      ;;
+    mirror-zndm)
+      shift
+      cmd_mirror_zndm "$@"
       ;;
     status)
       cmd_status

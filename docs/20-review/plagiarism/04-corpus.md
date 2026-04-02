@@ -227,7 +227,8 @@ SQLite 是当前在线召回的主路径。
 5. 每批必须天然可恢复，不依赖长时间存活的后台进程
 6. 短任务模式下，未完成全量扫描时禁止执行“缺失文档删除”
 7. 本地离线 ingest 必须写入独立目录 `data/plagiarism/local_ingest/`
-8. 独立目录内至少包括：
+8. 真实项目批量查库时，在线接口只允许读取本地镜像 docx，不允许在线直接扫描远端挂载目录
+9. 独立目录内至少包括：
 
 - `corpus_index.json`
 - `corpus_index.db`
@@ -261,6 +262,7 @@ scripts/corpus_safe.sh rebuild-coarse
 ```bash
 scripts/corpus_safe.sh step 2000 20 4
 scripts/corpus_safe.sh loop 10 2000 20 4
+scripts/corpus_safe.sh mirror-zndm <guide_code...>
 scripts/corpus_safe.sh status
 scripts/corpus_safe.sh reset
 ```
@@ -277,6 +279,7 @@ scripts/corpus_safe.sh run-all 2000 20 4
 - 默认读取本地镜像目录，而不是远端挂载目录
 - 允许解析阶段并发，但不允许多进程同时写同一个 SQLite
 - `run-all` 应先完成 docs/doc_features ingest，再单独 rebuild coarse index
+- `by-guide-codes` 这类真实数据批量查库接口，必须走“数据库查元数据 + 本地镜像读文件 + 复用现有库查重”链路
 
 ### 3. 最终目标
 

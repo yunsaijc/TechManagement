@@ -61,6 +61,83 @@
 }
 ```
 
+### 1.1 按指南代码批量查库
+
+**POST** `/api/v1/plagiarism/by-guide-codes`
+
+用于真实项目批量查重。接口只接收 `guide_codes`，服务端先查项目库拿到 `id/year`，再定位正文 `docx`，最后按“单项目 vs 本地库”的方式逐个执行库查重。
+
+#### 请求参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `guide_codes` | String / String[] | 是 | 指南代码。推荐直接传 JSON 数组字符串，如 `["a","b"]` |
+| `doc_type` | String | 否 | 文档类型，默认 `default` |
+| `threshold` | Float | 否 | 相似度阈值，默认 `0.5` |
+| `threshold_high` | Float | 否 | 高相似度阈值，默认 `0.8` |
+| `threshold_medium` | Float | 否 | 中相似度阈值，默认 `0.5` |
+| `debug` | Boolean | 否 | 是否生成调试文件，默认 `false` |
+| `limit` | Integer | 否 | 只处理前 N 个项目，默认不限制 |
+
+#### 数据来源
+
+- 项目元数据查询条件：`zndm IN (...) AND isSubmit='1'`
+- 远端正文标准路径：`/mnt/remote_corpus/{year}/sbs/{id}.docx`
+- 在线接口默认只读取本地镜像文件，不直接扫描远端挂载目录
+
+最简请求示例：
+
+```bash
+curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
+  -F 'guide_codes=["c2f3b7b1f9534463ad726e6936c91859","959c8e453dd942ddb72f0ef52c07342f","7581bc8d6d564153848fcb5d14b1942e"]'
+```
+
+说明：
+
+- `threshold` / `threshold_high` / `threshold_medium` / `doc_type` 都有默认值
+- 只有需要覆盖默认行为时才传
+
+#### 响应示例
+
+```json
+{
+  "status": "success",
+  "data": {
+    "guide_codes": [
+      "c2f3b7b1f9534463ad726e6936c91859"
+    ],
+    "selected_projects": 12,
+    "available_docs": 10,
+    "missing_docs": [
+      {
+        "id": "abc123",
+        "year": "2025",
+        "xmmc": "某项目",
+        "expected_local_paths": [
+          "/home/tdkx/workspace/tech/data/corpus_local/sbs_5000/abc123.docx",
+          "/home/tdkx/workspace/tech/data/corpus_local/2025/sbs/abc123.docx"
+        ]
+      }
+    ],
+    "results": [
+      {
+        "project": {
+          "id": "def456",
+          "year": "2025",
+          "xmmc": "某项目",
+          "guide_name": "某指南"
+        },
+        "result": {
+          "id": "plagiarism_123456",
+          "effective_duplicate_rate": 0.245,
+          "processing_time": 1.45
+        }
+      }
+    ]
+  }
+}
+```
+
 ### 2. 获取库索引状态
 
 **GET** `/api/v1/plagiarism/corpus/status`

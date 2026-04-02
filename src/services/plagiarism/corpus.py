@@ -1728,72 +1728,76 @@ class CorpusManager:
         min_hits: int,
         max_postings_per_gram: int,
     ) -> List[str]:
+        started_at = time.time()
         conn = self._connect_sqlite()
-        conn.execute("DROP TABLE IF EXISTS temp.tmp_query_grams")
-        conn.execute("CREATE TEMP TABLE tmp_query_grams (gram TEXT PRIMARY KEY)")
-        conn.executemany(
-            "INSERT OR IGNORE INTO temp.tmp_query_grams (gram) VALUES (?)",
-            [(gram,) for gram in unique_query_grams],
-        )
-        skipped_high_df = int(
-            conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM temp.tmp_query_grams q
-                JOIN gram_stats_char4 s ON s.gram = q.gram
-                WHERE s.df > ?
-                """,
-                (max_postings_per_gram,),
-            ).fetchone()[0]
-        )
-        scored_docs = int(
-            conn.execute(
-                """
-                SELECT COUNT(*)
-                FROM (
-                    SELECT p.doc_id
-                    FROM temp.tmp_query_grams q
-                    JOIN gram_stats_char4 s ON s.gram = q.gram
-                    JOIN postings_char4 p ON p.gram = q.gram
-                    WHERE s.df <= ?
-                    GROUP BY p.doc_id
-                    HAVING COUNT(*) >= ?
-                ) ranked
-                """,
-                (max_postings_per_gram, min_hits),
-            ).fetchone()[0]
-        )
-        rows = conn.execute(
-            """
-            SELECT ranked.doc_id, ranked.score, ranked.gram_hits
-            FROM (
-                SELECT
-                    p.doc_id AS doc_id,
-                    SUM(1.0 / s.df) AS score,
-                    COUNT(*) AS gram_hits
-                FROM temp.tmp_query_grams q
-                JOIN gram_stats_char4 s ON s.gram = q.gram
-                JOIN postings_char4 p ON p.gram = q.gram
-                WHERE s.df <= ?
-                GROUP BY p.doc_id
-                HAVING COUNT(*) >= ?
-            ) ranked
-            ORDER BY ranked.score DESC, ranked.gram_hits DESC, ranked.doc_id ASC
-            LIMIT ?
-            """,
-            (max_postings_per_gram, min_hits, top_k),
-        ).fetchall()
-        conn.execute("DROP TABLE IF EXISTS temp.tmp_query_grams")
+        temp_stage_elapsed = 0.0
+
+        high_df_started_at = time.time()
+        gram_df_rows = []
+        for chunk in self._iter_string_chunks(unique_query_grams, 500):
+            placeholders = ",".join("?" for _ in chunk)
+            gram_df_rows.extend(
+                conn.execute(
+                    f"""
+                    SELECT gram, df
+                    FROM gram_stats_char4
+                    WHERE gram IN ({placeholders})
+                    """,
+                    chunk,
+                ).fetchall()
+            )
+        high_df_elapsed = time.time() - high_df_started_at
+
+        eligible_grams: List[Tuple[str, int]] = []
+        skipped_high_df = 0
+        for row in gram_df_rows:
+            gram = str(row["gram"])
+            df = int(row["df"])
+            if df > max_postings_per_gram:
+                skipped_high_df += 1
+                continue
+            eligible_grams.append((gram, df))
+
+        eligible_grams.sort(key=lambda item: (item[1], item[0]))
+
+        topk_started_at = time.time()
+        doc_scores: Dict[str, float] = defaultdict(float)
+        doc_hits: Dict[str, int] = defaultdict(int)
+        postings_rows = 0
+
+        for gram, df in eligible_grams:
+            rows = conn.execute(
+                "SELECT doc_id FROM postings_char4 WHERE gram = ?",
+                (gram,),
+            ).fetchall()
+            postings_rows += len(rows)
+            idf = 1.0 / max(df, 1)
+            for row in rows:
+                doc_id = str(row["doc_id"])
+                doc_scores[doc_id] += idf
+                doc_hits[doc_id] += 1
+
+        ranked = [
+            (doc_id, score, doc_hits[doc_id])
+            for doc_id, score in doc_scores.items()
+            if doc_hits[doc_id] >= min_hits
+        ]
+        ranked.sort(key=lambda item: (-item[1], -item[2], item[0]))
+        selected = [doc_id for doc_id, _, _ in ranked[:top_k]]
+        topk_elapsed = time.time() - topk_started_at
         conn.close()
-        selected = [str(row["doc_id"]) for row in rows]
         print(
             f"[Corpus] 粗召回结束: candidates={len(selected)}, query_grams={len(unique_query_grams)}, "
-            f"scored_docs={scored_docs}, skipped_high_df={skipped_high_df}, rss={self._rss_mb():.1f}MB"
+            f"scored_docs=-1, skipped_high_df={skipped_high_df}, "
+            f"temp={temp_stage_elapsed:.2f}s, high_df={high_df_elapsed:.2f}s, "
+            f"scored=0.00s, topk={topk_elapsed:.2f}s, postings_rows={postings_rows}, "
+            f"total={time.time() - started_at:.2f}s, rss={self._rss_mb():.1f}MB"
         )
         return selected
 
     def _get_retrieval_documents_from_sqlite(self, doc_ids: List[str]) -> Dict[str, CorpusDocument]:
         docs_with_features: Dict[str, CorpusDocument] = {}
+        started_at = time.time()
         conn = self._connect_sqlite()
         for chunk in self._iter_doc_id_chunks(doc_ids, 200):
             placeholders = ",".join("?" for _ in chunk)
@@ -1832,6 +1836,10 @@ class CorpusManager:
                     },
                 )
         conn.close()
+        print(
+            f"[Corpus] retrieval docs 读取完成: doc_ids={len(doc_ids)}, "
+            f"loaded={len(docs_with_features)}, elapsed={time.time() - started_at:.2f}s"
+        )
         return docs_with_features
 
     def _calculate_hash(self, file_path: Path) -> str:

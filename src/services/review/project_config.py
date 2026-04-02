@@ -29,6 +29,10 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "funding_ratio_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -43,6 +47,7 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
                 "新疆生产建设兵团第二师铁门关市",
                 "西藏自治区阿里地区",
             ],
+            "min_self_funding_ratio": 1.0,
         },
         "policy_review_points": [
             {"code": "registered_date_limit", "requirement": "单位注册时间在2025年1月1日后。", "automation": "requires_data", "reason": "当前项目上下文未接入注册时间字段"},
@@ -81,6 +86,10 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "funding_ratio_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -90,6 +99,14 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "constraints": {
             "registered_after": "2025-01-01",
             "max_execution_period_years": 2,
+            "funding_ratio_by_applicant_type": {
+                "enterprise": 2.0,
+                "institution": 1.0,
+                "university": 1.0,
+                "research_institute": 1.0,
+                "hospital": 1.0,
+                "default": 1.0,
+            },
         },
         "policy_review_points": [
             {"code": "registered_date_limit", "requirement": "单位注册时间在2025年1月1日后。", "automation": "requires_data", "reason": "当前项目上下文未接入注册时间字段"},
@@ -129,6 +146,10 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "funding_ratio_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",
@@ -142,6 +163,7 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
             "allowed_applicant_unit_types": ["enterprise"],
             "requires_beijing_tianjin_partner": True,
             "requires_cluster_region_match": True,
+            "min_self_funding_ratio": 3.0,
         },
         "policy_review_points": [
             {"code": "registered_date_limit", "requirement": "单位注册时间在2025年1月1日后。", "automation": "requires_data", "reason": "当前项目上下文未接入注册时间字段"},
@@ -181,6 +203,9 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
         "project_rules": [
             "required_project_fields",
             "registered_date_limit",
+            "project_leader_age_check",
+            "budget_forbidden_expense_check",
+            "performance_metric_count_check",
             "required_attachments",
             "conditional_attachments",
             "execution_period_limit",

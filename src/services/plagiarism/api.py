@@ -13,8 +13,13 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.common.models import ApiResponse
+from src.services.grouping.storage.project_repo import ProjectRepository
 from src.services.plagiarism.agent import PlagiarismAgent
-from src.services.plagiarism.config import get_section_config, get_all_doc_types
+from src.services.plagiarism.config import (
+    PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT,
+    get_all_doc_types,
+    get_section_config,
+)
 from src.services.plagiarism.section_extractor import SectionExtractor
 
 router = APIRouter()
@@ -101,6 +106,80 @@ class PlagiarismRequest(BaseModel):
     threshold: float = 0.8
     threshold_high: float = 0.9
     threshold_medium: float = 0.7
+
+
+def _normalize_guide_codes(
+    guide_codes_raw: Optional[str],
+    guide_codes_list: Optional[List[str]],
+) -> List[str]:
+    codes: List[str] = []
+    if guide_codes_raw:
+        raw = guide_codes_raw.strip()
+        if raw:
+            if raw.startswith("["):
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=400, detail=f"guide_codes JSON 解析失败: {exc}") from exc
+                if not isinstance(parsed, list):
+                    raise HTTPException(status_code=400, detail="guide_codes 必须是字符串数组")
+                codes.extend(str(item).strip() for item in parsed if str(item).strip())
+            else:
+                codes.extend(part.strip() for part in raw.split(",") if part.strip())
+    if guide_codes_list:
+        codes.extend(code.strip() for code in guide_codes_list if code and code.strip())
+
+    deduped: List[str] = []
+    seen = set()
+    for code in codes:
+        if code in seen:
+            continue
+        seen.add(code)
+        deduped.append(code)
+    return deduped
+
+
+def _serialize_plagiarism_result(result) -> dict:
+    return {
+        "id": result.id,
+        "total_pairs": result.total_pairs,
+        "effective_duplicate_rate": result.effective_duplicate_rate,
+        "effective_duplicate_chars": result.effective_duplicate_chars,
+        "primary_scope_chars": result.primary_scope_chars,
+        "source_rankings": result.source_rankings,
+        "match_groups": result.match_groups,
+        "processing_time": round(result.processing_time, 2),
+    }
+
+
+def _resolve_local_project_doc_candidates(project_id: str, year: str) -> List[Path]:
+    filename = f"{project_id}.docx"
+    local_root = PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT
+    candidates = [
+        local_root / "sbs_5000" / filename,
+        local_root / "sbs_10000" / filename,
+        local_root / year / "sbs" / filename if year else None,
+        local_root / filename,
+    ]
+    ordered: List[Path] = []
+    seen = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        normalized = str(candidate)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(candidate)
+    return ordered
+
+
+def _find_local_project_doc(project_id: str, year: str) -> tuple[Optional[Path], List[str]]:
+    candidates = _resolve_local_project_doc_candidates(project_id, year)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate, [str(path) for path in candidates]
+    return None, [str(path) for path in candidates]
 
 
 @router.post("")
@@ -220,15 +299,138 @@ async def check_plagiarism(
     
     return ApiResponse(
         status="success",
+        data=_serialize_plagiarism_result(result),
+    )
+
+
+@router.post("/by-guide-codes")
+async def check_plagiarism_by_guide_codes(
+    guide_codes_raw: Optional[str] = Form(None, alias="guide_codes"),
+    guide_codes_list: Optional[List[str]] = Form(None, alias="guide_codes_list"),
+    threshold: float = Form(0.5),
+    threshold_high: float = Form(0.8),
+    threshold_medium: float = Form(0.5),
+    doc_type: str = Form("default"),
+    section_config: Optional[str] = Form(None),
+    debug: bool = Form(False),
+    limit: Optional[int] = Form(None),
+) -> ApiResponse[dict]:
+    """按指南代码批量执行“单项目 vs 库”查重。"""
+    cleaned_codes = _normalize_guide_codes(guide_codes_raw, guide_codes_list)
+    if not cleaned_codes:
+        raise HTTPException(status_code=400, detail="guide_codes 不能为空")
+
+    config = None
+    if section_config:
+        try:
+            config = json.loads(section_config)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="section_config 必须是有效的 JSON 字符串")
+    else:
+        config = get_section_config(doc_type)
+
+    if not SectionExtractor.validate_config(config):
+        raise HTTPException(
+            status_code=400,
+            detail="section_config 无效：primary 必须配置 start_pattern（可选 end_pattern）",
+        )
+
+    projects = ProjectRepository.get_submitted_projects_by_guide_codes(cleaned_codes, limit=limit)
+    if not projects:
+        return ApiResponse(
+            status="success",
+            data={
+                "guide_codes": cleaned_codes,
+                "selected_projects": 0,
+                "available_docs": 0,
+                "missing_docs": [],
+                "results": [],
+            },
+        )
+
+    available_projects = []
+    missing_docs = []
+    for project in projects:
+        doc_path, expected_paths = _find_local_project_doc(project["id"], project["year"])
+        remote_path = f"/mnt/remote_corpus/{project['year']}/sbs/{project['id']}.docx"
+        project_info = {
+            "id": project["id"],
+            "xmmc": project["xmmc"],
+            "year": project["year"],
+            "zndm": project["zndm"],
+            "guide_name": project["guide_name"],
+        }
+        if doc_path is None:
+            missing_docs.append(
+                {
+                    **project_info,
+                    "expected_local_paths": expected_paths,
+                    "remote_path": remote_path,
+                }
+            )
+            continue
+        available_projects.append(
+            {
+                **project_info,
+                "local_path": str(doc_path),
+                "remote_path": remote_path,
+            }
+        )
+
+    results = []
+    agent = PlagiarismAgent(
+        threshold=threshold,
+        threshold_high=threshold_high,
+        threshold_medium=threshold_medium,
+        section_config=config,
+        debug=debug,
+    )
+    for project in available_projects:
+        file_path = Path(project["local_path"])
+        try:
+            file_data = file_path.read_bytes()
+        except Exception as exc:
+            missing_docs.append(
+                {
+                    "id": project["id"],
+                    "xmmc": project["xmmc"],
+                    "year": project["year"],
+                    "zndm": project["zndm"],
+                    "guide_name": project["guide_name"],
+                    "expected_local_paths": [project["local_path"]],
+                    "remote_path": project["remote_path"],
+                    "error": f"读取本地文件失败: {exc}",
+                }
+            )
+            continue
+
+        result = await agent.check(
+            [(f"{project['id']}.docx", file_data)],
+            file_paths={f"{project['id']}.docx": str(file_path)},
+            use_corpus=True,
+        )
+        results.append(
+            {
+                "project": {
+                    "id": project["id"],
+                    "xmmc": project["xmmc"],
+                    "year": project["year"],
+                    "zndm": project["zndm"],
+                    "guide_name": project["guide_name"],
+                    "local_path": project["local_path"],
+                },
+                "result": _serialize_plagiarism_result(result),
+            }
+        )
+
+    return ApiResponse(
+        status="success",
         data={
-            "id": result.id,
-            "total_pairs": result.total_pairs,
-            "effective_duplicate_rate": result.effective_duplicate_rate,
-            "effective_duplicate_chars": result.effective_duplicate_chars,
-            "primary_scope_chars": result.primary_scope_chars,
-            "source_rankings": result.source_rankings,
-            "match_groups": result.match_groups,
-            "processing_time": round(result.processing_time, 2),
+            "guide_codes": cleaned_codes,
+            "selected_projects": len(projects),
+            "available_docs": len(results),
+            "missing_docs": missing_docs,
+            "results": results,
         },
     )
 
