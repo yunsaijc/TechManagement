@@ -949,7 +949,7 @@ class MammothPlagiarismReportBuilder:
             for source in sources[:8]:
                 source_doc = html.escape(str(source.get("doc") or "-"))
                 source_line = source.get("line")
-                source_text = self._clean_nav_text(str(source.get("text", "")))[:220]
+                source_text = self._clean_nav_text(str(source.get("text", "")))
                 source_similarity = float(source.get("similarity_score", segment.get("similarity_score", 0.0)) or 0.0)
                 line_info = f" L{int(source_line)}" if isinstance(source_line, int) or (isinstance(source_line, str) and source_line.isdigit()) else ""
                 source_items.append(
