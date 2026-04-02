@@ -344,6 +344,8 @@ class ChatIndexer:
             return False
         if self._classify_line(current, section) != "paragraph":
             return False
+        if previous == section or self._looks_like_section_title_line(previous, section) or self._looks_like_structural_anchor(previous):
+            return False
         if previous.endswith(("。", "！", "？", "；", ":", "：")):
             return False
         if self._looks_like_structural_anchor(current):
@@ -360,6 +362,16 @@ class ChatIndexer:
                 line,
             )
         )
+
+    def _looks_like_section_title_line(self, line: str, section: str) -> bool:
+        """轻量识别章节标题行，避免标题与正文误拼接"""
+        normalized = re.sub(r"^[一二三四五六七八九十\d]+[、\.．\s]*", "", line).strip()
+        normalized = re.sub(r"[：:\s]+$", "", normalized)
+        if not normalized:
+            return False
+        if normalized == section:
+            return True
+        return len(normalized) <= 24 and normalized.endswith(("目标", "意义", "创新点", "前景", "内容", "方案", "效益", "安排", "计划"))
 
     def _join_wrapped_lines(self, previous: str, current: str) -> str:
         """拼接断行内容，英文单词边界保留空格，中文默认直接相连"""

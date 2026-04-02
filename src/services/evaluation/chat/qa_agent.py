@@ -134,10 +134,7 @@ class EvaluationQAAgent:
                 return f"文档披露的创新点主要包括：{'；'.join(points[:3])}。建议结合引用页码核验创新表述是否完整。"
 
         if any(token in question for token in ("预期成果", "成果产出", "成果和效益")):
-            points = self._extract_key_points(
-                chunks,
-                ("预期成果", "主要指标", "项目效益", "社会效益", "经济效益", "原创", "覆盖", "出版", "合作点"),
-            )
+            points = self._extract_outcome_points(chunks)
             if points:
                 return f"文档披露的预期成果与效益主要包括：{'；'.join(points[:3])}。建议结合引用页码核验量化指标与原文细节。"
 
@@ -182,19 +179,18 @@ class EvaluationQAAgent:
         points: List[str] = []
         for chunk in chunks:
             text = str(chunk.get("text", ""))
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
-            for line in lines:
-                normalized = re.sub(r"\s+", " ", line)
-                normalized = re.sub(r"^[-•●①②③④⑤⑥⑦⑧⑨⑩\d、.（）()]+", "", normalized).strip()
+            section = str(chunk.get("section", ""))
+            for candidate in self._iter_text_segments(text):
+                normalized = self._clean_candidate_text(candidate)
                 if len(normalized) < 8:
                     continue
                 if "[表格行" in normalized:
                     continue
+                if self._looks_like_heading_only(normalized, section):
+                    continue
                 if not any(keyword in normalized for keyword in keywords):
                     continue
-                if normalized in points:
-                    continue
-                points.append(normalized[:60])
+                self._append_unique_point(points, normalized[:60])
                 if len(points) >= 5:
                     return points
         return points
@@ -305,7 +301,7 @@ class EvaluationQAAgent:
         candidates: List[str] = []
 
         direct_patterns = (
-            r"(?:研究目标|项目目标|总体目标(?:是)?|建设目标|研究目的|目的：?)(.+?)(?:实施内容|创新亮点|预期效益|意义：|指标名称|指标值|绩效指标|$)",
+            r"(?:研究目标|项目目标|总体目标(?:是)?|建设目标|研究目的|目的：?)(.+?)(?:实施内容|创新亮点|预期效益|意义：|指标名称|指标值|绩效指标|技术应用突破研究|数据驱动决策|人才培养与团队建设|科研转化与应用|各年度主要工作任务|$)",
             r"(形成[^。]{20,320}(?:示范应用|示范研究报告|数字航图|智能算法|数据库)[^。]{0,80})",
         )
         for pattern in direct_patterns:
@@ -333,6 +329,104 @@ class EvaluationQAAgent:
         if len(cleaned) < 10:
             return ""
         return cleaned
+
+    def _extract_outcome_points(self, chunks: List[Dict[str, Any]]) -> List[str]:
+        """抽取预期成果/效益条目，避免只返回章节标题"""
+        strong_keywords = (
+            "申报",
+            "论文",
+            "专利",
+            "数据库",
+            "引进",
+            "培养",
+            "转化",
+            "临床实践",
+            "交易额",
+            "投融资金",
+        )
+        action_markers = ("拟", "完成", "发表", "申请", "建立", "引进", "转化")
+        generic_keywords = (
+            "预期成果",
+            "主要指标",
+            "项目效益",
+            "社会效益",
+            "经济效益",
+            "原创",
+            "覆盖",
+            "出版",
+            "合作点",
+        )
+
+        points: List[str] = []
+        for chunk in chunks:
+            text = str(chunk.get("text", ""))
+            section = str(chunk.get("section", ""))
+            for candidate in self._iter_text_segments(text):
+                normalized = self._clean_candidate_text(candidate)
+                if len(normalized) < 10:
+                    continue
+                if "[表格行" in normalized:
+                    continue
+                if self._looks_like_heading_only(normalized, section):
+                    continue
+                if not any(keyword in normalized for keyword in strong_keywords):
+                    continue
+                if not (re.search(r"\d", normalized) or any(marker in normalized for marker in action_markers)):
+                    continue
+                self._append_unique_point(points, normalized[:80])
+                if len(points) >= 5:
+                    return points
+
+        if points:
+            return points
+
+        return self._extract_key_points(chunks, generic_keywords)
+
+    def _iter_text_segments(self, text: str) -> List[str]:
+        """将正文拆成候选语义片段，兼容长段落与行内标题"""
+        segments: List[str] = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = [line] if "|" not in line else [part.strip() for part in line.split("|") if part.strip()]
+            for part in parts:
+                segments.extend([segment.strip() for segment in re.split(r"[。；;]", part) if segment.strip()])
+        return segments
+
+    def _clean_candidate_text(self, text: str) -> str:
+        """清洗候选片段，压掉编号前缀和行内标题标签"""
+        normalized = re.sub(r"\s+", " ", text).strip()
+        normalized = re.sub(r"^[-•●①②③④⑤⑥⑦⑧⑨⑩\d、.（）()]+", "", normalized).strip()
+        normalized = re.sub(
+            r"^(预期成果|项目效益|社会效益|经济效益|技术应用突破研究|数据驱动决策|人才培养与团队建设|科研转化与应用)[：:]",
+            "",
+            normalized,
+        ).strip()
+        return normalized
+
+    def _looks_like_heading_only(self, text: str, section: str) -> bool:
+        """判断候选是否只是章节标题或小标题"""
+        normalized = re.sub(r"\s+", "", text)
+        normalized_section = re.sub(r"\s+", "", section)
+        if normalized and normalized == normalized_section:
+            return True
+        if len(normalized) <= 24 and not re.search(r"[，,。；;：:]", text):
+            heading_tokens = (
+                "预期成果",
+                "项目效益",
+                "社会效益",
+                "经济效益",
+                "项目实施的预期经济社会效益目标",
+                "项目实施的预期绩效目标",
+                "技术应用突破研究",
+                "数据驱动决策",
+                "人才培养与团队建设",
+                "科研转化与应用",
+            )
+            if any(token in normalized for token in heading_tokens):
+                return True
+        return False
 
     def _extract_progress_points(self, chunks: List[Dict[str, Any]]) -> List[str]:
         """优先抽取进展/阶段性安排，避免表头噪声"""

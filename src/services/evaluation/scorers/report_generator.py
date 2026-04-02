@@ -75,6 +75,7 @@ class ReportGenerator:
         sections = data.get("sections") or {}
         expert_qna = data.get("expert_qna") or []
         evidence_map = self._build_evidence_map(evidence)
+        evaluation_id = str(result.get("evaluation_id") or "")
 
         score = result.get("overall_score", 0)
         grade = result.get("grade", "-")
@@ -202,15 +203,37 @@ class ReportGenerator:
       border: 1px solid var(--line);
       font-size: 13px;
     }}
+    .section-nav {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }}
+    .nav-link {{
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 13px;
+      text-decoration: none;
+    }}
     .layout {{
       display: grid;
-      grid-template-columns: 1.35fr 0.95fr;
+      grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
       gap: 20px;
       margin-top: 20px;
+      align-items: start;
     }}
     .stack {{
       display: grid;
       gap: 20px;
+    }}
+    .stack.side {{
+      position: sticky;
+      top: 24px;
     }}
     .panel {{
       background: var(--panel);
@@ -219,14 +242,35 @@ class ReportGenerator:
       padding: 22px;
       box-shadow: var(--shadow);
     }}
+    .panel-primary {{
+      background: linear-gradient(180deg, #fffdf8 0%, #fff9f1 100%);
+    }}
     .panel h2 {{
       margin: 0 0 14px;
       font-size: 20px;
+    }}
+    .panel-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }}
+    .panel-note {{
+      color: var(--muted);
+      font-size: 13px;
     }}
     .summary {{
       font-size: 15px;
       line-height: 1.8;
       margin: 0;
+    }}
+    .summary-grid {{
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      align-items: start;
     }}
     .grid-3 {{
       display: grid;
@@ -264,7 +308,7 @@ class ReportGenerator:
       border: 1px solid var(--line);
       border-radius: 18px;
       background: #fff;
-      padding: 16px;
+      padding: 18px;
     }}
     .score-card-head {{
       display: flex;
@@ -345,6 +389,27 @@ class ReportGenerator:
       color: var(--muted);
       font-size: 14px;
     }}
+    .report-block {{
+      display: grid;
+      gap: 12px;
+    }}
+    .support-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .support-item {{
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      padding: 14px 15px;
+    }}
+    .support-label {{
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
     .qa-list {{
       display: grid;
       gap: 14px;
@@ -377,10 +442,159 @@ class ReportGenerator:
       font-size: 13px;
       line-height: 1.7;
     }}
+    .fold {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      padding: 0;
+      overflow: hidden;
+    }}
+    .fold > summary {{
+      list-style: none;
+      padding: 14px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: #fcf7ef;
+    }}
+    .fold > summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .fold-body {{
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 10px;
+    }}
+    .chat-shell {{
+      display: grid;
+      gap: 14px;
+    }}
+    .chat-toolbar {{
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }}
+    .chat-toolbar label {{
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }}
+    .chat-input,
+    .chat-textarea {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      color: var(--ink);
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }}
+    .chat-input {{
+      max-width: 320px;
+    }}
+    .chat-thread {{
+      display: grid;
+      gap: 12px;
+      max-height: 760px;
+      overflow: auto;
+      padding-right: 4px;
+    }}
+    .chat-msg {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px;
+      background: #fff;
+    }}
+    .chat-msg-user {{
+      background: #f7efe7;
+      border-color: #e9d8c8;
+    }}
+    .chat-msg-assistant {{
+      background: #fff;
+    }}
+    .chat-role {{
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }}
+    .chat-body {{
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }}
+    .chat-citations {{
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }}
+    .chat-citation {{
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: #fff8ef;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
+    }}
+    .chat-form {{
+      display: grid;
+      gap: 10px;
+    }}
+    .chat-textarea {{
+      min-height: 92px;
+      resize: vertical;
+    }}
+    .chat-actions {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }}
+    .chat-suggestions {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .chat-suggestion,
+    .chat-submit {{
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      padding: 9px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }}
+    .chat-submit {{
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+      font-weight: 700;
+    }}
+    .chat-submit[disabled],
+    .chat-suggestion[disabled] {{
+      opacity: 0.55;
+      cursor: not-allowed;
+    }}
+    .chat-status {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }}
     @media (max-width: 980px) {{
       .layout,
+      .summary-grid,
       .grid-3 {{
         grid-template-columns: 1fr;
+      }}
+      .stack.side {{
+        position: static;
       }}
       .page {{
         padding: 16px;
@@ -419,60 +633,99 @@ class ReportGenerator:
         <span class="flag">结构化摘要：{"已生成" if highlights else "未生成"}</span>
         <span class="flag">专家问答：{"已生成" if expert_qna else "未生成"}</span>
         <span class="flag">聊天索引：{"已构建" if result.get("chat_ready") else "未构建"}</span>
-        <span class="flag">章节数：{len(sections)}</span>
-        <span class="flag">证据数：{len(evidence)}</span>
+        <span class="flag">章节数：{len(sections)} / 证据数：{len(evidence)}</span>
         {f'<span class="flag">降级结果：{"是" if result.get("partial") else "否"}</span>' if debug_mode else ''}
+      </div>
+      <div class="section-nav">
+        <a class="nav-link" href="#report-overview">评审结论</a>
+        <a class="nav-link" href="#report-dimensions">维度评分</a>
+        <a class="nav-link" href="#report-chat">专家聊天</a>
+        <a class="nav-link" href="#report-fit">指南贴合</a>
+        <a class="nav-link" href="#report-benchmark">技术摸底</a>
       </div>
     </section>
 
     <div class="layout">
       <div class="stack">
-        <section class="panel">
-          <h2>{report_summary_title}</h2>
-          <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-          <div class="grid-3" style="margin-top: 16px;">
-            <div class="mini-card">
-              <div class="label">建议条数</div>
-              <div class="value">{len(recommendations)}</div>
+        <section class="panel panel-primary" id="report-overview">
+          <div class="panel-head">
+            <h2>{report_summary_title}</h2>
+            <div class="panel-note">先看这一屏，能快速判断项目值不值得继续深读。</div>
+          </div>
+          <div class="summary-grid">
+            <div class="report-block">
+              <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
+              <div class="support-list">
+                <div class="support-item">
+                  <div class="support-label">研究目标</div>
+                  {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
+                </div>
+                <div class="support-item">
+                  <div class="support-label">创新点</div>
+                  {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
+                </div>
+                <div class="support-item">
+                  <div class="support-label">技术路线</div>
+                  {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
+                </div>
+              </div>
             </div>
-            <div class="mini-card">
-              <div class="label">问答条数</div>
-              <div class="value">{len(expert_qna)}</div>
-            </div>
-            <div class="mini-card">
-              <div class="label">模型版本</div>
-              <div class="value" style="font-size: 14px;">{html.escape(str(result.get("model_version") or "-"))}</div>
+            <div class="grid-3">
+              <div class="mini-card">
+                <div class="label">建议条数</div>
+                <div class="value">{len(recommendations)}</div>
+              </div>
+              <div class="mini-card">
+                <div class="label">问答条数</div>
+                <div class="value">{len(expert_qna)}</div>
+              </div>
+              <div class="mini-card">
+                <div class="label">模型版本</div>
+                <div class="value" style="font-size: 14px;">{html.escape(str(result.get("model_version") or "-"))}</div>
+              </div>
+              <div class="mini-card">
+                <div class="label">结构化摘要</div>
+                <div class="value" style="font-size: 14px;">{"已生成" if highlights else "未生成"}</div>
+              </div>
+              <div class="mini-card">
+                <div class="label">聊天索引</div>
+                <div class="value" style="font-size: 14px;">{"已构建" if result.get("chat_ready") else "未构建"}</div>
+              </div>
+              <div class="mini-card">
+                <div class="label">证据总数</div>
+                <div class="value">{len(evidence)}</div>
+              </div>
             </div>
           </div>
         </section>
 
-        <section class="panel">
-          <h2>维度评分</h2>
+        <section class="panel" id="report-dimensions">
+          <div class="panel-head">
+            <h2>维度评分</h2>
+            <div class="panel-note">逐项查看评分、亮点和主要问题。</div>
+          </div>
           <div class="score-list">
             {self._render_dimension_scores(dimension_scores)}
           </div>
         </section>
 
-        <section class="panel">
-          <h2>证据链</h2>
-          {self._render_evidence(evidence)}
-        </section>
-
         {left_tail}
       </div>
 
-      <div class="stack">
-        <section class="panel">
-          <h2>划重点</h2>
-          <table class="kv-table">
-            <tr><th>研究目标</th><td>{self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}</td></tr>
-            <tr><th>创新点</th><td>{self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}</td></tr>
-            <tr><th>技术路线</th><td>{self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}</td></tr>
-          </table>
-        </section>
+      <div class="stack side">
+
+        {self._render_chat_panel(
+            evaluation_id=evaluation_id,
+            chat_ready=bool(result.get("chat_ready")),
+            expert_qna=expert_qna,
+            debug_mode=debug_mode,
+        )}
 
         <section class="panel">
-          <h2>专家关注问答</h2>
+          <div class="panel-head">
+            <h2>专家关注问答</h2>
+            <div class="panel-note">保留典型问题，证据默认折叠。</div>
+          </div>
           {self._render_expert_qna(expert_qna)}
         </section>
 
@@ -481,14 +734,22 @@ class ReportGenerator:
           {self._render_list(recommendations, "暂无建议")}
         </section>
 
-        <section class="panel">
+        <section class="panel" id="report-fit">
           <h2>指南贴合</h2>
           {self._render_industry_fit(industry_fit)}
         </section>
 
-        <section class="panel">
+        <section class="panel" id="report-benchmark">
           <h2>技术摸底</h2>
           {self._render_benchmark(benchmark)}
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>证据链</h2>
+            <div class="panel-note">需要核对原文时再展开。</div>
+          </div>
+          {self._render_evidence(evidence)}
         </section>
 
         {right_tail}
@@ -616,16 +877,15 @@ class ReportGenerator:
         rows = []
         for item in evidence:
             rows.append(
-                "<tr>"
-                f"<th>{html.escape(str(item.get('source') or '-'))}</th>"
-                "<td>"
-                f"<div>文件：{html.escape(str(item.get('file') or '-'))}</div>"
-                f"<div>页码：{html.escape(str(item.get('page') or '-'))}</div>"
-                f"<div>片段：{html.escape(str(item.get('snippet') or '-'))}</div>"
-                "</td>"
-                "</tr>"
+                "<details class=\"fold\">"
+                f"<summary>{html.escape(str(item.get('source') or '证据'))} · 第 {html.escape(str(item.get('page') or '-'))} 页</summary>"
+                "<div class=\"fold-body\">"
+                f"<div><strong>文件：</strong>{html.escape(str(item.get('file') or '-'))}</div>"
+                f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}</div>"
+                "</div>"
+                "</details>"
             )
-        return f'<table class="kv-table">{"".join(rows)}</table>'
+        return f'<div class="report-block">{"".join(rows)}</div>'
 
     def _render_sections(self, sections: Dict[str, str]) -> str:
         if not sections:
@@ -668,6 +928,7 @@ class ReportGenerator:
                 (
                     "<div class=\"citation\">"
                     f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
+                    f"<div>文件：{html.escape(str(citation.get('file') or '-'))}</div>"
                     f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
                     "</div>"
                 )
@@ -678,10 +939,196 @@ class ReportGenerator:
                 "<div class=\"qa-card\">"
                 f"<div class=\"qa-question\">{html.escape(str(item.get('question') or '-'))}</div>"
                 f"<div class=\"qa-answer\">{html.escape(str(item.get('answer') or '暂无回答'))}</div>"
-                f"<div class=\"citation-list\">{citation_html}</div>"
+                f"<details class=\"fold\"><summary>查看页码证据</summary><div class=\"fold-body\"><div class=\"citation-list\">{citation_html}</div></div></details>"
                 "</div>"
             )
         return f"<div class=\"qa-list\">{''.join(cards)}</div>"
+
+    def _render_chat_panel(
+        self,
+        evaluation_id: str,
+        chat_ready: bool,
+        expert_qna: List[Dict[str, Any]],
+        debug_mode: bool,
+    ) -> str:
+        """渲染报告内嵌聊天面板"""
+        if debug_mode:
+            return ""
+
+        suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
+        suggestion_html = "".join(
+            f'<button type="button" class="chat-suggestion" data-question="{html.escape(question)}">{html.escape(question)}</button>'
+            for question in suggestions[:6]
+        )
+
+        ready_text = "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。" if chat_ready else "当前评审未构建聊天索引，无法发起实时问答。请重新评审并启用 enable_chat_index。"
+        status_text = "等待提问" if chat_ready else "未构建聊天索引"
+        submit_disabled = "" if chat_ready and evaluation_id else "disabled"
+        textarea_disabled = "" if chat_ready and evaluation_id else "disabled"
+        toolbar_note = "默认直连本机 8000 端口；如果服务不在当前地址，可直接改这里。"
+        escaped_eval_id = html.escape(evaluation_id)
+        suggestions_block = suggestion_html or '<div class="chat-status">暂无可复用的典型问题。</div>'
+
+        return f"""
+        <section class="panel">
+          <h2>专家即时问答</h2>
+          <div
+            class="chat-shell"
+            id="report-chat"
+            data-evaluation-id="{escaped_eval_id}"
+            data-chat-ready="{str(chat_ready).lower()}"
+          >
+            <div class="chat-toolbar">
+              <label for="chat-api-base">API 地址</label>
+              <input id="chat-api-base" class="chat-input" type="text" value="" placeholder="http://127.0.0.1:8000" />
+              <div class="chat-status">{html.escape(toolbar_note)}</div>
+            </div>
+            <div class="chat-status">{html.escape(ready_text)}</div>
+            <div class="chat-suggestions" id="chat-suggestions">
+              {suggestions_block}
+            </div>
+            <div class="chat-thread" id="chat-thread">
+              <div class="chat-msg chat-msg-assistant">
+                <div class="chat-role">assistant</div>
+                <div class="chat-body">你可以直接问：验证数据有吗？这项技术能落地吗？进展到什么程度？我会按当前评审记录返回页码证据。</div>
+              </div>
+            </div>
+            <form class="chat-form" id="chat-form">
+              <textarea
+                id="chat-question"
+                class="chat-textarea"
+                placeholder="输入专家问题，例如：这项技术有可能量产吗？"
+                {textarea_disabled}
+              ></textarea>
+              <div class="chat-actions">
+                <div class="chat-status" id="chat-status">{html.escape(status_text)}</div>
+                <button id="chat-submit" class="chat-submit" type="submit" {submit_disabled}>发送问题</button>
+              </div>
+            </form>
+          </div>
+        </section>
+        <script>
+          (() => {{
+            const shell = document.getElementById("report-chat");
+            if (!shell) return;
+
+            const evaluationId = shell.dataset.evaluationId || "";
+            const chatReady = shell.dataset.chatReady === "true";
+            const apiBaseInput = document.getElementById("chat-api-base");
+            const thread = document.getElementById("chat-thread");
+            const form = document.getElementById("chat-form");
+            const questionInput = document.getElementById("chat-question");
+            const submitButton = document.getElementById("chat-submit");
+            const statusNode = document.getElementById("chat-status");
+            const suggestionButtons = Array.from(shell.querySelectorAll(".chat-suggestion"));
+
+            const detectDefaultBase = () => {{
+              if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
+                return window.location.origin;
+              }}
+              return "http://127.0.0.1:8000";
+            }};
+
+            apiBaseInput.value = detectDefaultBase();
+
+            const escapeHtml = (value) => String(value || "")
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#39;");
+
+            const setBusy = (busy, text) => {{
+              if (submitButton) submitButton.disabled = busy || !chatReady || !evaluationId;
+              if (questionInput) questionInput.disabled = busy || !chatReady || !evaluationId;
+              suggestionButtons.forEach((button) => {{
+                button.disabled = busy || !chatReady || !evaluationId;
+              }});
+              if (statusNode) {{
+                statusNode.textContent = text || (busy ? "正在生成回答..." : "等待提问");
+              }}
+            }};
+
+            const appendMessage = (role, text, citations = []) => {{
+              const wrapper = document.createElement("div");
+              wrapper.className = `chat-msg ${{role === "user" ? "chat-msg-user" : "chat-msg-assistant"}}`;
+
+              const citationHtml = citations.length
+                ? `<div class="chat-citations">${{citations.map((citation) => `
+                    <div class="chat-citation">
+                      <div>页码：第 ${{escapeHtml(citation.page || "-")}} 页</div>
+                      <div>文件：${{escapeHtml(citation.file || "-")}}</div>
+                      <div>片段：${{escapeHtml(citation.snippet || "-")}}</div>
+                    </div>
+                  `).join("")}}</div>`
+                : "";
+
+              wrapper.innerHTML = `
+                <div class="chat-role">${{escapeHtml(role)}}</div>
+                <div class="chat-body">${{escapeHtml(text)}}</div>
+                ${{citationHtml}}
+              `;
+              thread.appendChild(wrapper);
+              thread.scrollTop = thread.scrollHeight;
+            }};
+
+            const normalizeBase = (value) => String(value || "").trim().replace(/\/+$/, "");
+
+            const askQuestion = async (question) => {{
+              const text = String(question || "").trim();
+              if (!text) {{
+                setBusy(false, "请输入问题");
+                return;
+              }}
+              if (!chatReady || !evaluationId) {{
+                setBusy(false, "当前评审未构建聊天索引");
+                return;
+              }}
+
+              appendMessage("user", text);
+              questionInput.value = "";
+              setBusy(true, "正在生成回答...");
+
+              try {{
+                const response = await fetch(`${{normalizeBase(apiBaseInput.value)}}/api/v1/evaluation/chat/ask`, {{
+                  method: "POST",
+                  headers: {{
+                    "Content-Type": "application/json",
+                  }},
+                  body: JSON.stringify({{
+                    evaluation_id: evaluationId,
+                    question: text,
+                  }}),
+                }});
+
+                const payload = await response.json().catch(() => ({{ detail: "服务返回了不可解析响应" }}));
+                if (!response.ok) {{
+                  throw new Error(payload.detail || `请求失败：${{response.status}}`);
+                }}
+
+                appendMessage("assistant", payload.answer || "未返回回答", Array.isArray(payload.citations) ? payload.citations : []);
+                setBusy(false, "回答已生成");
+              }} catch (error) {{
+                appendMessage("assistant", `调用失败：${{error.message || "未知错误"}}`);
+                setBusy(false, "调用失败");
+              }}
+            }};
+
+            form.addEventListener("submit", async (event) => {{
+              event.preventDefault();
+              await askQuestion(questionInput.value);
+            }});
+
+            suggestionButtons.forEach((button) => {{
+              button.addEventListener("click", async () => {{
+                await askQuestion(button.dataset.question || "");
+              }});
+            }});
+
+            setBusy(false, chatReady ? "等待提问" : "未构建聊天索引");
+          }})();
+        </script>
+        """
 
     def _build_evidence_map(self, evidence: List[Dict[str, Any]]) -> Dict[tuple[str, str], Dict[str, Any]]:
         """按摘要分类和条目构建证据映射"""

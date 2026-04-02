@@ -10,10 +10,12 @@ import os
 import resource
 import sqlite3
 import time
+import zipfile
 from collections import defaultdict
 from itertools import islice
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
+from xml.etree import ElementTree as ET
 
 from pydantic import BaseModel, Field
 
@@ -165,6 +167,10 @@ class CorpusManager:
         last_seen_doc_id: Optional[str] = cursor_doc_id
         scan_truncated = False
         manifest = self._load_manifest()
+        all_docx_files = sorted(
+            self._iter_docx_files(self.corpus_path),
+            key=lambda path: self._doc_id_for_path(path),
+        )
 
         if progress_callback:
             progress_callback(
@@ -178,7 +184,7 @@ class CorpusManager:
                 }
             )
 
-        for file_path in self._iter_docx_files(self.corpus_path):
+        for file_path in all_docx_files:
             doc_id = self._doc_id_for_path(file_path)
             if cursor_doc_id and doc_id <= cursor_doc_id:
                 continue
@@ -215,6 +221,7 @@ class CorpusManager:
             file_mtime = float(stat.st_mtime)
             stored_path = self._storage_path_for_file(file_path)
             existing = self.index.documents.get(doc_id)
+            manifest_existing = manifest.get(doc_id) if isinstance(manifest.get(doc_id), dict) else None
             action = "unchanged"
             if existing:
                 if existing.path != stored_path:
@@ -228,6 +235,19 @@ class CorpusManager:
             else:
                 action = "new"
                 stats["new"] += 1
+
+            if (
+                manifest_existing
+                and manifest_existing.get("action") == "failed"
+                and float(manifest_existing.get("file_mtime") or 0.0) == file_mtime
+                and int(manifest_existing.get("file_size") or 0) == file_size
+            ):
+                action = "failed"
+                stats["unchanged"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
+                continue
 
             if action != "unchanged":
                 manifest[doc_id] = {
@@ -388,6 +408,11 @@ class CorpusManager:
             except Exception as e:
                 stats["failed"] += 1
                 failed_docs.append((doc_id, str(e)))
+                failed_item = manifest.get(doc_id)
+                if isinstance(failed_item, dict):
+                    failed_item["action"] = "failed"
+                    failed_item["last_error"] = str(e)
+                    failed_item["failed_at"] = time.time()
                 print(f"[Corpus] build_batch 失败 {doc_id}: {e}")
 
         sqlite_started_at = time.time()
@@ -1829,8 +1854,16 @@ class CorpusManager:
             parser = get_parser(suffix)
             with open(file_path, "rb") as f:
                 content = f.read()
-            parse_result = await parser.parse(content)
-            full_text = repair_extracted_text_artifacts(parse_result.content.to_text())
+            try:
+                parse_result = await parser.parse(content)
+                full_text = repair_extracted_text_artifacts(parse_result.content.to_text())
+            except Exception as e:
+                if suffix != "docx":
+                    raise
+                print(f"[Corpus] DOCX 解析失败，改用 XML fallback {doc_id}: {e}")
+                full_text = self._extract_docx_text_fallback(content)
+                if not full_text.strip():
+                    raise
             normalized = self.retriever._normalize(full_text)
             features_json = {
                 "char2": self._ordered_unique_ngrams(normalized, 2),
@@ -2052,6 +2085,38 @@ class CorpusManager:
             seen.add(gram)
             ordered.append(gram)
         return ordered
+
+    def _extract_docx_text_fallback(self, file_data: bytes) -> str:
+        """直接读取 DOCX XML 文本，绕过 python-docx 的表格结构限制。"""
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        xml_members = [
+            "word/document.xml",
+            "word/header1.xml",
+            "word/header2.xml",
+            "word/header3.xml",
+            "word/footer1.xml",
+            "word/footer2.xml",
+            "word/footer3.xml",
+        ]
+        parts: List[str] = []
+        with zipfile.ZipFile(io.BytesIO(file_data)) as zf:
+            for member in xml_members:
+                if member not in zf.namelist():
+                    continue
+                try:
+                    root = ET.fromstring(zf.read(member))
+                except Exception:
+                    continue
+                for paragraph in root.findall(".//w:p", ns):
+                    texts = [
+                        node.text or ""
+                        for node in paragraph.findall(".//w:t", ns)
+                        if node.text
+                    ]
+                    line = "".join(texts).strip()
+                    if line:
+                        parts.append(line)
+        return "\n".join(parts)
 
     def _add_doc_to_inverted(
         self,

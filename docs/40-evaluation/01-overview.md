@@ -9,6 +9,8 @@
 - 产业指南贴合度评估：判断项目与省级产业指南匹配程度
 - 技术水平摸底：结合文献/专利检索生成对比结论
 - 专家问答：专家可直接就申报书提问，答案附页码证据
+- 报告可视化：评审完成后生成专家阅览版 HTML，并单独保留 debug HTML
+- 交互式问答前端：正式报告页内嵌聊天面板，直接调用 `/api/v1/evaluation/chat/ask`
 
 ## 与其他服务关系
 
@@ -30,6 +32,7 @@
 - 指南贴合度：`matched / gaps / suggestions / fit_score`
 - 技术摸底：`literature/patent` 对比分析与水平定位
 - 对话问答：按 `evaluation_id` 查询，回答中返回 `file + page + snippet`
+- HTML 报告：正式报告展示摘要、维度结论、专家关注问答；调试信息单独输出到 debug 页面
 
 ### 3. 并行执行
 

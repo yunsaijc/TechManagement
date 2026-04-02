@@ -1,6 +1,6 @@
 """政策审查要点覆盖提示"""
 from src.common.models import CheckResult, CheckStatus
-from src.services.review.project_config import get_policy_review_points
+from src.services.review.project_config import get_effective_policy_review_points
 from src.services.review.project_rules.checkers._attachment_kinds import collect_specific_doc_kinds
 from src.services.review.project_rules.base import BaseProjectRule
 from src.services.review.project_rules.registry import ProjectRuleRegistry
@@ -15,7 +15,10 @@ class PolicyReviewPointsCheckRule(BaseProjectRule):
     priority = 10
 
     async def check(self, context):
-        review_points = get_policy_review_points(context.project_info.project_type)
+        review_points = get_effective_policy_review_points(
+            context.project_info.project_type,
+            context.notice_context,
+        )
         pending = []
         for point in review_points:
             automation = point.get("automation")

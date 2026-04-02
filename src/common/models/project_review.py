@@ -76,6 +76,8 @@ class BatchReviewRequest(BaseModel):
     zxmc: str = Field(..., description="专项/批次标识")
     limit: Optional[int] = Field(default=None, ge=1, description="最多处理的项目数")
     project_ids: List[str] = Field(default_factory=list, description="指定处理的项目ID列表")
+    notice_url: str = Field(default="", description="申报通知 URL")
+    notice_html: str = Field(default="", description="申报通知 HTML 正文")
 
 
 class ProjectIndexRow(BaseModel):
@@ -169,3 +171,4 @@ class ProjectReviewContext(BaseModel):
     external_checks: Optional[ExternalChecks] = None
     attachment_classification_reliable: bool = Field(False, description="附件类型识别是否可靠")
     scan_info: Dict[str, Any] = Field(default_factory=dict, description="目录扫描信息")
+    notice_context: Dict[str, Any] = Field(default_factory=dict, description="申报通知上下文")

@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from src.common.review_runtime import ReviewRuntime
 from src.common.models import BatchReviewRequest, BatchReviewResult, ProjectReviewResult
 from src.services.review.debug_writer import ReviewDebugWriter
+from src.services.review.notice_rules import build_notice_context
 from src.services.review.project_agent import ProjectReviewAgent
 from src.services.review.project_context_builder import ProjectContextBuilder
 from src.services.review.project_index_repo import ProjectIndexRepository
@@ -58,6 +59,21 @@ class BatchReviewAgent:
         "joint_application_check": "联合申报要求",
         "beijing_tianjin_partner_check": "京津合作单位要求",
         "cluster_region_check": "集群地区匹配",
+        "unfinished_guidance_project_check": "基地未结题项目限制",
+        "joint_updownstream_application_check": "产业链上下游联合申报",
+        "shared_mechanism_check": "共投共研共享机制",
+        "provincial_nsf_conflict_check": "省自然基金冲突限制",
+        "unfinished_basic_project_check": "基础研究项目未验收限制",
+        "applicant_qualification_check": "申报单位资格",
+        "project_leader_age_check": "项目负责人年龄限制",
+        "active_guidance_project_leader_check": "负责人在研项目限制",
+        "integrity_and_credit_check": "科研诚信与信用记录",
+        "project_count_limit_check": "负责人项目数量限制",
+        "enterprise_batch_limit_check": "企业申报数量限制",
+        "enterprise_active_guidance_project_check": "企业在研项目限制",
+        "performance_metric_count_check": "绩效指标设置要求",
+        "budget_forbidden_expense_check": "经费禁列项检查",
+        "leader_achievement_attachment_check": "负责人及骨干成果证明材料",
     }
     FIELD_LABELS = {
         "project_id": "项目ID",
@@ -84,8 +100,13 @@ class BatchReviewAgent:
         start_time = time.time()
         normalized_zxmc = re.sub(r"[^0-9A-Za-z_-]", "_", request.zxmc.strip()) or "unknown"
         batch_id = f"batch_review_{normalized_zxmc}"
+        notice_context = build_notice_context(
+            notice_url=request.notice_url,
+            notice_html=request.notice_html,
+        )
         debug_writer = ReviewDebugWriter(batch_id)
         debug_writer.write_json("request.json", request.model_dump())
+        debug_writer.write_json("notice_context.json", notice_context)
         project_rows = self.project_repo.get_projects_by_zxmc(
             request.zxmc,
             limit=request.limit,
@@ -100,6 +121,7 @@ class BatchReviewAgent:
         async def _process_project(row) -> tuple[ProjectReviewResult, Dict[str, Any]]:
             async with semaphore:
                 context = await self.context_builder.build(row)
+                context.notice_context = notice_context
                 debug_writer.write_json(
                     f"projects/{row.project_id}.scan.json",
                     context.scan_info,
