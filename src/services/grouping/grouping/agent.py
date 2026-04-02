@@ -282,7 +282,8 @@ def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
 
 def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
     try:
-        filename = f"grouping_{dataset_tag}.json"
+        safe_tag = re.sub(r"[^0-9A-Za-z_.-]+", "_", dataset_tag or "fixed")
+        filename = f"grouping_{safe_tag}.json"
         filepath = os.path.join(DEBUG_DIR, filename)
         created_at = result.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(result.created_at, "strftime") else str(result.created_at)
 
@@ -1913,7 +1914,10 @@ class GroupingAgent:
         )
 
         save_start = time.time()
-        filename = _save_grouping_result("fixed", result, meta={
+        dataset_tag = "fixed"
+        if guide_codes:
+            dataset_tag = f"fixed_{'_'.join(guide_codes)}"
+        filename = _save_grouping_result(dataset_tag, result, meta={
             "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
             "dataset_filter": dataset_filter,
             "input": {

@@ -24,3 +24,9 @@ class ReviewRuntime:
     # 发送给 LLM 的图像压缩参数
     ATTACHMENT_LLM_MAX_DIM = 1200
     ATTACHMENT_LLM_JPEG_QUALITY = 70
+
+    # 附件分类缓存目录（相对项目根目录）
+    ATTACHMENT_CLASSIFY_CACHE_DIR = "debug_review/cache/attachment_classify"
+
+    # 附件分类缓存版本（分类逻辑变更时递增）
+    ATTACHMENT_CLASSIFY_CACHE_VERSION = "v2"

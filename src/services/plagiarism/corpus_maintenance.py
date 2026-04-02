@@ -10,6 +10,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.services.plagiarism.config import (
+    PLAGIARISM_DEFAULT_CHECKPOINT_PATH,
+    PLAGIARISM_DEFAULT_MANIFEST_PATH,
+)
 from src.services.plagiarism.corpus import CorpusManager
 
 
@@ -18,7 +22,7 @@ def _checkpoint_path() -> Path:
     env_path = os.getenv("PLAGIARISM_CORPUS_CHECKPOINT_PATH")
     if env_path:
         return Path(env_path)
-    return Path("data/plagiarism/corpus_refresh_checkpoint.json")
+    return Path(PLAGIARISM_DEFAULT_CHECKPOINT_PATH)
 
 
 def _manifest_path() -> Path:
@@ -26,7 +30,7 @@ def _manifest_path() -> Path:
     env_path = os.getenv("PLAGIARISM_CORPUS_MANIFEST_PATH")
     if env_path:
         return Path(env_path)
-    return Path("data/plagiarism/corpus_manifest.json")
+    return Path(PLAGIARISM_DEFAULT_MANIFEST_PATH)
 
 
 def _print_json(data: Dict[str, Any]) -> None:
@@ -115,7 +119,17 @@ async def _run_build_batch(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _run_ingest(args: argparse.Namespace) -> int:
+async def _run_rebuild_coarse(args: argparse.Namespace) -> int:
+    manager = CorpusManager()
+    result = manager.rebuild_coarse_index(
+        batch_size=args.batch_size,
+        progress_callback=_on_progress if args.verbose else None,
+    )
+    _print_json(result)
+    return 0
+
+
+async def _run_ingest_docs(args: argparse.Namespace) -> int:
     manager = CorpusManager()
     round_index = 1
 
@@ -171,6 +185,29 @@ async def _run_ingest(args: argparse.Namespace) -> int:
         round_index += 1
 
 
+async def _run_ingest(args: argparse.Namespace) -> int:
+    docs_exit = await _run_ingest_docs(args)
+    if docs_exit != 0:
+        return docs_exit
+
+    coarse_args = argparse.Namespace(
+        batch_size=args.coarse_batch_size,
+        verbose=args.verbose,
+    )
+    rebuild_exit = await _run_rebuild_coarse(coarse_args)
+    if rebuild_exit != 0:
+        return rebuild_exit
+
+    _print_json(
+        {
+            "completed": True,
+            "phase": "all_done",
+            "checkpoint": _read_checkpoint(),
+        }
+    )
+    return 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -185,10 +222,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     build_parser.add_argument("--max-concurrency", type=int, default=4)
     build_parser.add_argument("--verbose", action="store_true")
 
+    rebuild_parser = subparsers.add_parser("rebuild-coarse")
+    rebuild_parser.add_argument("--batch-size", type=int, default=50)
+    rebuild_parser.add_argument("--verbose", action="store_true")
+
+    ingest_docs_parser = subparsers.add_parser("ingest-docs")
+    ingest_docs_parser.add_argument("--max-scan", type=int, default=2000)
+    ingest_docs_parser.add_argument("--limit", type=int, default=5)
+    ingest_docs_parser.add_argument("--max-concurrency", type=int, default=4)
+    ingest_docs_parser.add_argument("--verbose", action="store_true")
+
     ingest_parser = subparsers.add_parser("ingest")
     ingest_parser.add_argument("--max-scan", type=int, default=2000)
     ingest_parser.add_argument("--limit", type=int, default=5)
     ingest_parser.add_argument("--max-concurrency", type=int, default=4)
+    ingest_parser.add_argument("--coarse-batch-size", type=int, default=50)
     ingest_parser.add_argument("--verbose", action="store_true")
 
     args = parser.parse_args(argv)
@@ -196,6 +244,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         return asyncio.run(_run_scan_manifest(args))
     if args.command == "build-batch":
         return asyncio.run(_run_build_batch(args))
+    if args.command == "rebuild-coarse":
+        return asyncio.run(_run_rebuild_coarse(args))
+    if args.command == "ingest-docs":
+        return asyncio.run(_run_ingest_docs(args))
     if args.command == "ingest":
         return asyncio.run(_run_ingest(args))
     raise SystemExit(f"unknown command: {args.command}")

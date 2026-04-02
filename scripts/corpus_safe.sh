@@ -29,6 +29,8 @@ usage() {
 用法:
   scripts/corpus_safe.sh scan [max_scan]
   scripts/corpus_safe.sh build [limit] [max_concurrency]
+  scripts/corpus_safe.sh ingest-docs [max_scan] [limit] [max_concurrency]
+  scripts/corpus_safe.sh rebuild-coarse [batch_size]
   scripts/corpus_safe.sh step [max_scan] [limit] [max_concurrency]
   scripts/corpus_safe.sh loop [rounds] [max_scan] [limit] [max_concurrency]
   scripts/corpus_safe.sh run-all [max_scan] [limit] [max_concurrency]
@@ -38,10 +40,12 @@ usage() {
 
 说明:
   scan   : 只扫描目录并更新 manifest，不解析文档
-  build  : 从 manifest 取一小批文档建索引，默认并发=4
+  build  : 从 manifest 取一小批文档写 docs/doc_features，默认并发=4
+  ingest-docs: 自动循环 scan + build，直到 docs/doc_features 补齐
+  rebuild-coarse: 基于 doc_features 全量重建 coarse postings/df
   step   : 执行一次 scan + build
   loop   : 执行多轮 step，默认 rounds=10、max_scan=2000、limit=5、并发=4
-  run-all: 单进程 ingest，自动循环直到 manifest 没有 pending
+  run-all: 先 ingest-docs，再 rebuild-coarse
   mirror5000: 从远端目录复制前 N 个 docx 到本地目录（默认 5000）
   status : 查看 checkpoint / manifest / corpus 状态
   reset  : 清空 checkpoint 和 manifest
@@ -71,6 +75,24 @@ cmd_ingest() {
     --max-scan "${max_scan}" \
     --limit "${limit}" \
     --max-concurrency "${max_concurrency}" \
+    --verbose
+}
+
+cmd_ingest_docs() {
+  local max_scan="${1:-2000}"
+  local limit="${2:-5}"
+  local max_concurrency="${3:-4}"
+  uv run python -m src.services.plagiarism.corpus_maintenance ingest-docs \
+    --max-scan "${max_scan}" \
+    --limit "${limit}" \
+    --max-concurrency "${max_concurrency}" \
+    --verbose
+}
+
+cmd_rebuild_coarse() {
+  local batch_size="${1:-50}"
+  uv run python -m src.services.plagiarism.corpus_maintenance rebuild-coarse \
+    --batch-size "${batch_size}" \
     --verbose
 }
 
@@ -186,6 +208,14 @@ main() {
     build)
       shift
       cmd_build "${1:-5}" "${2:-4}"
+      ;;
+    ingest-docs)
+      shift
+      cmd_ingest_docs "${1:-2000}" "${2:-5}" "${3:-4}"
+      ;;
+    rebuild-coarse)
+      shift
+      cmd_rebuild_coarse "${1:-50}"
       ;;
     step)
       shift

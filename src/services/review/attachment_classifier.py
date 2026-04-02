@@ -1,6 +1,7 @@
 """LLM 辅助的项目附件分类器"""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -32,9 +33,20 @@ class AttachmentClassifier:
         self.pdf_text_pages = max(1, int(ReviewRuntime.ATTACHMENT_PDF_TEXT_PAGES))
         self.preview_text_limit = max(500, int(ReviewRuntime.ATTACHMENT_PREVIEW_TEXT_LIMIT))
         self.secondary_pdf_sample_pages = 3
+        self.cache_dir = Path(ReviewRuntime.ATTACHMENT_CLASSIFY_CACHE_DIR)
+        self.cache_version = str(ReviewRuntime.ATTACHMENT_CLASSIFY_CACHE_VERSION)
 
     async def classify(self, file_path: Path) -> Dict[str, Any]:
         """对单个附件分类"""
+        cache_key = self._build_cache_key(file_path)
+        cached_result = self._load_cached_result(cache_key)
+        if cached_result:
+            details = cached_result.get("details", {})
+            if isinstance(details, dict):
+                details["cache_hit"] = True
+            cached_result["details"] = details
+            return cached_result
+
         file_name = file_path.name
         hint_kind, hint_confidence = self._classify_by_filename(file_name)
         preview = self._build_preview(file_path)
@@ -89,7 +101,7 @@ class AttachmentClassifier:
             final_source = "filename_rule_fallback"
             final_reason = "文件不可预览，按文件名规则回退分类"
 
-        # 若首轮被归为“其他支撑材料”，强制再做一轮细分类复核
+        # 若首轮被归为“其他支撑材料”，执行二次细分类复核
         if (
             final_doc_kind == self.OTHER_DOC_KIND
             and preview.get("image_data")
@@ -97,29 +109,7 @@ class AttachmentClassifier:
         ):
             secondary_refine["applied"] = True
             try:
-                refine_prompt = self._build_refine_prompt(
-                    file_name=file_name,
-                    extracted_text=preview.get("text_excerpt", ""),
-                )
-                refine_raw = await self.multi_llm.analyze_image(preview["image_data"], refine_prompt)
-                refine_result = self._parse_llm_response(refine_raw)
-                secondary_refine.update(
-                    {
-                        "doc_kind": refine_result["doc_kind"],
-                        "confidence": refine_result["confidence"],
-                        "reason": refine_result["reason"],
-                        "raw_response": refine_raw,
-                    }
-                )
-                if (
-                    refine_result["doc_kind"] not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND}
-                    and refine_result["confidence"] >= self.confidence_threshold
-                ):
-                    final_doc_kind = refine_result["doc_kind"]
-                    final_confidence = refine_result["confidence"]
-                    final_source = "llm_secondary_refine"
-                    final_reason = f"二次复核改判：{refine_result['reason']}"
-                elif file_path.suffix.lower() == ".pdf":
+                if file_path.suffix.lower() == ".pdf":
                     sampled_pages = self._build_pdf_secondary_samples(file_path, self.secondary_pdf_sample_pages)
                     secondary_refine["sampled_pages"] = [
                         {"page": item["page"], "error": item.get("error", "")}
@@ -157,11 +147,38 @@ class AttachmentClassifier:
                             best_reason = page_result["reason"]
                     if page_candidates:
                         secondary_refine["page_candidates"] = page_candidates
+                        top_page = max(page_candidates, key=lambda item: float(item.get("confidence", 0.0) or 0.0))
+                        secondary_refine["doc_kind"] = str(top_page.get("doc_kind", "")).strip() or self.UNKNOWN_DOC_KIND
+                        secondary_refine["confidence"] = float(top_page.get("confidence", 0.0) or 0.0)
+                        secondary_refine["reason"] = str(top_page.get("reason", "")).strip()
                     if best_doc_kind != final_doc_kind:
                         final_doc_kind = best_doc_kind
                         final_confidence = best_confidence
                         final_source = "llm_secondary_refine_multi_page"
                         final_reason = f"二次多页复核改判：{best_reason}"
+                else:
+                    refine_prompt = self._build_refine_prompt(
+                        file_name=file_name,
+                        extracted_text=preview.get("text_excerpt", ""),
+                    )
+                    refine_raw = await self.multi_llm.analyze_image(preview["image_data"], refine_prompt)
+                    refine_result = self._parse_llm_response(refine_raw)
+                    secondary_refine.update(
+                        {
+                            "doc_kind": refine_result["doc_kind"],
+                            "confidence": refine_result["confidence"],
+                            "reason": refine_result["reason"],
+                            "raw_response": refine_raw,
+                        }
+                    )
+                    if (
+                        refine_result["doc_kind"] not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND}
+                        and refine_result["confidence"] >= self.confidence_threshold
+                    ):
+                        final_doc_kind = refine_result["doc_kind"]
+                        final_confidence = refine_result["confidence"]
+                        final_source = "llm_secondary_refine"
+                        final_reason = f"二次复核改判：{refine_result['reason']}"
             except Exception as exc:
                 secondary_refine["error"] = str(exc)
 
@@ -170,7 +187,7 @@ class AttachmentClassifier:
             secondary_refine=secondary_refine,
         )
 
-        return {
+        result = {
             "doc_kind": final_doc_kind,
             "confidence": final_confidence,
             "source": final_source,
@@ -198,8 +215,50 @@ class AttachmentClassifier:
                 "final_source": final_source,
                 "final_confidence": final_confidence,
                 "confidence_threshold": self.confidence_threshold,
+                "cache_hit": False,
             },
         }
+        self._save_cached_result(cache_key, result)
+        return result
+
+    def _build_cache_key(self, file_path: Path) -> str:
+        """构建附件分类缓存键"""
+        try:
+            stat = file_path.stat()
+            raw = (
+                f"{file_path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|"
+                f"{self.cache_version}|{self.confidence_threshold}|{self.secondary_pdf_sample_pages}"
+            )
+        except Exception:
+            raw = f"{file_path}|{self.cache_version}|{self.confidence_threshold}|{self.secondary_pdf_sample_pages}"
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _cache_file_path(self, cache_key: str) -> Path:
+        """缓存文件路径"""
+        return self.cache_dir / f"{cache_key}.json"
+
+    def _load_cached_result(self, cache_key: str) -> Dict[str, Any] | None:
+        """读取附件分类缓存"""
+        try:
+            cache_file = self._cache_file_path(cache_key)
+            if not cache_file.exists():
+                return None
+            return json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def _save_cached_result(self, cache_key: str, result: Dict[str, Any]) -> None:
+        """写入附件分类缓存"""
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_file = self._cache_file_path(cache_key)
+            cache_file.write_text(
+                json.dumps(result, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            # 缓存失败不影响主流程
+            return
 
     def _classify_by_filename(self, file_name: str) -> tuple[str, float]:
         """按文件名给出弱提示"""
