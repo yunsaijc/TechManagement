@@ -73,6 +73,12 @@
 
 SQLite 是当前在线召回的主路径。
 
+其中：
+
+- `doc_features` 保存完整特征
+- `postings_char4` 只保存代表性粗召回特征
+- `gram_stats_char4` 只统计代表性粗召回特征的 df
+
 ### 3. JSON 分片
 
 目录：
@@ -163,7 +169,8 @@ SQLite 是当前在线召回的主路径。
 
 输出：
 
-- 更新后的 SQLite 索引
+- 更新后的 `docs`
+- 更新后的 `doc_features`
 - 更新后的 `checkpoint`
 
 约束：
@@ -173,9 +180,32 @@ SQLite 是当前在线召回的主路径。
 - 下次从 `checkpoint` 自动续跑
 - 不允许单进程长时间跑完全库
 - 解析可以小并发，但 SQLite 写入必须保持单写者
+- `build batch` 不负责增量维护全局粗召回倒排
 - 离线构建产物必须写入独立工作目录，不能与在线服务共享同一组索引文件
 
-### 4. 自动断点续跑
+### 4. Rebuild Coarse Index
+
+新增独立的粗召回索引重建阶段。
+
+输入：
+
+- `doc_features`
+- 当前 corpus 文档元数据
+
+输出：
+
+- `postings_char4`
+- `gram_stats_char4`
+- 更新后的 `doc_features.coarse_char4_json`
+
+约束：
+
+- 这是独立离线阶段，不与 `build batch` 混跑
+- 允许全量批量构建，不做逐文档增量 upsert
+- 优先使用 bulk build，而不是 row-by-row 更新
+- rebuild 失败时不得污染在线稳定索引
+
+### 5. 自动断点续跑
 
 系统需要维护独立 checkpoint，例如：
 
@@ -192,11 +222,12 @@ SQLite 是当前在线召回的主路径。
 
 1. 禁止恢复原来的危险全量 refresh 设计
 2. `refresh` API 默认只能触发轻量短任务，或直接退化为 `scan-only`
-3. 真正的解析建库必须按小批次离线执行
-4. 每批必须天然可恢复，不依赖长时间存活的后台进程
-5. 短任务模式下，未完成全量扫描时禁止执行“缺失文档删除”
-6. 本地离线 ingest 必须写入独立目录 `data/plagiarism/local_ingest/`
-7. 独立目录内至少包括：
+3. 文档 ingest 与 coarse index rebuild 必须解耦
+4. 真正的解析建库必须按小批次离线执行
+5. 每批必须天然可恢复，不依赖长时间存活的后台进程
+6. 短任务模式下，未完成全量扫描时禁止执行“缺失文档删除”
+7. 本地离线 ingest 必须写入独立目录 `data/plagiarism/local_ingest/`
+8. 独立目录内至少包括：
 
 - `corpus_index.json`
 - `corpus_index.db`
@@ -221,14 +252,15 @@ curl 'http://127.0.0.1:8888/api/v1/plagiarism/corpus/status'
 
 ```bash
 scripts/corpus_safe.sh scan 2000
-scripts/corpus_safe.sh build 5
+scripts/corpus_safe.sh ingest-docs 20 4
+scripts/corpus_safe.sh rebuild-coarse
 ```
 
 常用组合：
 
 ```bash
-scripts/corpus_safe.sh step 2000 5
-scripts/corpus_safe.sh loop 10 2000 5
+scripts/corpus_safe.sh step 2000 20 4
+scripts/corpus_safe.sh loop 10 2000 20 4
 scripts/corpus_safe.sh status
 scripts/corpus_safe.sh reset
 ```
@@ -236,7 +268,7 @@ scripts/corpus_safe.sh reset
 推荐直接使用单入口：
 
 ```bash
-scripts/corpus_safe.sh run-all 2000 10 4
+scripts/corpus_safe.sh run-all 2000 20 4
 ```
 
 约束：
@@ -244,6 +276,7 @@ scripts/corpus_safe.sh run-all 2000 10 4
 - 该命令只操作 `data/plagiarism/local_ingest/` 下的离线产物
 - 默认读取本地镜像目录，而不是远端挂载目录
 - 允许解析阶段并发，但不允许多进程同时写同一个 SQLite
+- `run-all` 应先完成 docs/doc_features ingest，再单独 rebuild coarse index
 
 ### 3. 最终目标
 
@@ -263,6 +296,27 @@ scripts/corpus_safe.sh run-all 2000 10 4
 3. 继续压缩 SQLite 批写入放大
 4. 把多对多任务调度与在线单篇查重彻底解耦
 5. 在召回层加入更稳的高频 gram 控制与查询预算
+
+当前推荐的粗召回写入策略：
+
+- `build batch` 只写完整特征到 `doc_features`
+- `rebuild coarse index` 再统一生成 `postings_char4`
+- `postings_char4` 只写“代表性粗召回特征”
+- 代表性特征必须是确定性选择，而不是每次随机抽样
+
+代表性特征选择规则：
+
+- 优先保留已有统计中低 `df` 的 gram
+- 保证全文分段覆盖，避免全部集中在局部
+- 对高频模板 gram 做自然抑制
+- 首次全量构建时，允许先按覆盖稳定选取，再由后续 rebuild 持续校正
+- 最终仍受每篇文档的粗召回预算约束
+
+原因：
+
+- 在每个 ingest batch 内增量维护全局倒排，会导致 SQLite 写放大严重且随库规模恶化
+- 粗召回本来就不需要保存每篇文档的全部 gram
+- 业界通常会把“倒排召回特征”和“重排特征”分层存储
 
 ## 参考
 

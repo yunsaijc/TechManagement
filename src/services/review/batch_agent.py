@@ -1,5 +1,6 @@
 """批次级形式审查 Agent"""
 import asyncio
+import ast
 import re
 import time
 from html import escape
@@ -29,8 +30,42 @@ class BatchReviewAgent:
         "award_certificate": "获奖证书",
         "retrieval_report": "检索报告",
         "technical_route_diagram": "技术路线图",
+        "research_paper": "科研论文（发表论文）",
         "other_supporting_material": "其他支撑材料",
         "unknown_attachment": "未识别附件",
+    }
+    RULE_LABELS = {
+        "required_project_fields": "必填字段完整性",
+        "registered_date_limit": "注册时间限制",
+        "required_attachments": "必需附件",
+        "conditional_attachments": "条件性附件",
+        "execution_period_limit": "执行期限制",
+        "external_status_check": "外部状态校验",
+        "policy_review_points_check": "形式审查要点对照",
+        "applicant_unit_type_check": "申报单位类型校验",
+        "funding_ratio_check": "财政资金与自筹资金比例",
+        "cooperation_region_check": "合作单位注册地区",
+        "recommendation_letter_required": "推荐函要求",
+        "ethics_approval_required": "伦理审查意见要求",
+        "industry_permit_required": "行业准入材料要求",
+        "biosafety_commitment_required": "生物安全承诺书要求",
+        "commitment_letter_required": "承诺书要求",
+        "cooperation_agreement_required": "合作协议要求",
+        "duplicate_submission_check": "重复申报/多头申报",
+        "other_policy_compliance": "其他政策符合性",
+        "base_staff_proof_required": "基地固定人员证明要求",
+        "platform_scope_check": "依托平台范围",
+        "joint_application_check": "联合申报要求",
+        "beijing_tianjin_partner_check": "京津合作单位要求",
+        "cluster_region_check": "集群地区匹配",
+    }
+    FIELD_LABELS = {
+        "project_id": "项目ID",
+        "project_type": "项目类型",
+        "project_name": "项目名称",
+        "applicant_unit": "申报单位",
+        "execution_period_years": "执行期（年）",
+        "year": "年度",
     }
 
     def __init__(
@@ -335,6 +370,81 @@ class BatchReviewAgent:
       font-weight: 700;
       background: #f8fafc;
     }}
+    .policy-table th.group-left {{
+      background: #eef4ff;
+      color: #1d4ed8;
+      border-right: 2px solid var(--line);
+      text-align: center;
+    }}
+    .policy-table th.group-right {{
+      background: #fff4e8;
+      color: #b54708;
+      text-align: center;
+    }}
+    .policy-table td.left-block {{
+      width: 44%;
+      border-right: 2px solid var(--line);
+      background: #fbfdff;
+    }}
+    .policy-table td.right-block {{
+      width: 56%;
+      background: #fffdf9;
+    }}
+    .policy-point {{
+      font-weight: 700;
+      margin-bottom: 6px;
+    }}
+    .policy-req {{
+      color: var(--text);
+      line-height: 1.6;
+    }}
+    .policy-result {{
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+    }}
+    .policy-result .label {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .extra-table th.group-left {{
+      background: #eefaf3;
+      color: #067647;
+      border-right: 2px solid var(--line);
+      text-align: center;
+    }}
+    .extra-table th.group-right {{
+      background: #fff7ed;
+      color: #c2410c;
+      text-align: center;
+    }}
+    .extra-table td.left-block {{
+      width: 38%;
+      border-right: 2px solid var(--line);
+      background: #fbfefc;
+    }}
+    .extra-table td.right-block {{
+      width: 62%;
+      background: #fffdfa;
+    }}
+    .extra-title {{
+      font-weight: 700;
+      margin-bottom: 6px;
+    }}
+    .extra-message {{
+      line-height: 1.6;
+    }}
+    .extra-result {{
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 8px 12px;
+      align-items: start;
+    }}
+    .extra-result .label {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
     ul {{
       margin: 8px 0 0;
       padding-left: 18px;
@@ -343,6 +453,11 @@ class BatchReviewAgent:
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       word-break: break-all;
+    }}
+    pre.mono {{
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }}
     .empty {{
       color: var(--muted);
@@ -414,13 +529,15 @@ class BatchReviewAgent:
   </summary>
   <div class="project-body">
     <div class="section-grid">
-      <section class="panel">
-        <h3>项目级规则结果</h3>
-        {project_rules_table}
-      </section>
-      <section class="panel">
-        <h3>Docx 逐条对照</h3>
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h3>形式审查要点对照结果</h3>
         {policy_rules_table}
+      </section>
+    </div>
+    <div class="section-grid">
+      <section class="panel" style="grid-column: 1 / -1;">
+        <h3>额外检查项</h3>
+        {project_rules_table}
       </section>
     </div>
     <div class="section-grid">
@@ -458,24 +575,61 @@ class BatchReviewAgent:
 </details>"""
 
     def _render_project_results_table(self, result: ProjectReviewResult) -> str:
-        """渲染项目级规则结果表"""
+        """渲染额外检查项结果表"""
+        covered_rules = {
+            item.code for item in result.policy_rule_checks if getattr(item, "code", None)
+        } | {
+            item.source_rule for item in result.policy_rule_checks if getattr(item, "source_rule", None)
+        }
         rows = []
         for item in result.results:
+            if item.item in covered_rules:
+                continue
             rows.append(
                 "<tr>"
-                f"<td>{escape(item.item)}</td>"
-                f"<td>{self._render_status_badge(item.status)}</td>"
-                f"<td>{escape(item.message)}</td>"
-                f"<td><pre class='mono'>{escape(str(item.evidence))}</pre></td>"
+                "<td class='left-block'>"
+                f"<div class='extra-title'>{escape(self._rule_label(item.item))}</div>"
+                f"<div class='extra-message'>{escape(item.message)}</div>"
+                "</td>"
+                "<td class='right-block'>"
+                "<div class='extra-result'>"
+                f"<div class='label'>状态</div><div>{self._render_status_badge(item.status)}</div>"
+                f"<div class='label'>证据</div><div><pre class='mono'>{escape(self._format_evidence_for_table(item.evidence))}</pre></div>"
+                "</div>"
+                "</td>"
                 "</tr>"
             )
         if not rows:
-            return "<div class='empty'>无项目级规则结果</div>"
+            return "<div class='empty'>无额外检查项</div>"
         return (
-            "<table><thead><tr><th>item</th><th>status</th><th>message</th><th>evidence</th></tr></thead><tbody>"
+            "<table class='extra-table'><thead>"
+            "<tr><th class='group-left'>额外检查项</th><th class='group-right'>检查结果</th></tr>"
+            "</thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
         )
+
+    def _format_evidence_for_table(self, evidence: Any) -> str:
+        """项目级规则 evidence 可读化（多行）"""
+        if evidence is None:
+            return "-"
+        if isinstance(evidence, (dict, list)):
+            return self._format_evidence_clip(evidence)
+        if isinstance(evidence, str):
+            text = evidence.strip()
+            if text.startswith("{") or text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                    return self._format_evidence_clip(parsed)
+                except Exception:
+                    try:
+                        parsed = ast.literal_eval(text)
+                        if isinstance(parsed, (dict, list)):
+                            return self._format_evidence_clip(parsed)
+                    except Exception:
+                        pass
+            return text
+        return str(evidence)
 
     def _render_policy_rule_checks_table(self, result: ProjectReviewResult) -> str:
         """渲染 docx 逐条规则对照表"""
@@ -483,17 +637,25 @@ class BatchReviewAgent:
         for item in result.policy_rule_checks:
             rows.append(
                 "<tr>"
-                f"<td>{escape(item.code)}</td>"
-                f"<td>{self._render_status_badge(item.status)}</td>"
-                f"<td>{escape(item.requirement)}</td>"
-                f"<td>{escape(item.source_rule or '-')}</td>"
-                f"<td>{escape(item.reason)}</td>"
+                "<td class='left-block'>"
+                f"<div class='policy-point'>{escape(self._rule_label(item.code))}</div>"
+                f"<div class='policy-req'>{escape(item.requirement)}</div>"
+                "</td>"
+                "<td class='right-block'>"
+                "<div class='policy-result'>"
+                f"<div class='label'>状态</div><div>{self._render_status_badge(item.status)}</div>"
+                f"<div class='label'>核验来源</div><div>{escape(self._rule_label(item.source_rule or '-'))}</div>"
+                f"<div class='label'>说明</div><div>{escape(item.reason)}</div>"
+                "</div>"
+                "</td>"
                 "</tr>"
             )
         if not rows:
             return "<div class='empty'>无 docx 逐条规则结果</div>"
         return (
-            "<table><thead><tr><th>code</th><th>status</th><th>requirement</th><th>source_rule</th><th>reason</th></tr></thead><tbody>"
+            "<table class='policy-table'><thead>"
+            "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
+            "</thead><tbody>"
             + "".join(rows)
             + "</tbody></table>"
         )
@@ -573,7 +735,7 @@ class BatchReviewAgent:
                         clip = self._build_attachment_overview_clip(attachments)
                     items.append(
                         {
-                            "rule": f"{rule_item.item}:{self._doc_kind_with_code(doc_kind)}",
+                            "rule": f"{self._rule_label(rule_item.item)}:{self._doc_kind_with_code(doc_kind)}",
                             "status": rule_item.status,
                             "source_file": source_file,
                             "clip": clip,
@@ -583,7 +745,7 @@ class BatchReviewAgent:
             if rule_item.item == "external_status_check":
                 items.append(
                     {
-                        "rule": rule_item.item,
+                        "rule": self._rule_label(rule_item.item),
                         "status": rule_item.status,
                         "source_file": "外部校验数据源（当前未接入）",
                         "clip": self._format_evidence_clip(rule_item.evidence, rule_item.message),
@@ -592,7 +754,7 @@ class BatchReviewAgent:
                 continue
             items.append(
                 {
-                    "rule": rule_item.item,
+                    "rule": self._rule_label(rule_item.item),
                     "status": rule_item.status,
                     "source_file": str(proposal_file),
                     "clip": self._format_evidence_clip(rule_item.evidence, rule_item.message),
@@ -611,14 +773,19 @@ class BatchReviewAgent:
                 for index, point in enumerate(pending_points[:6], start=1):
                     if not isinstance(point, dict):
                         continue
-                    code = str(point.get("code", "")).strip() or "-"
+                    code = self._rule_label(str(point.get("code", "")).strip() or "-")
                     requirement = str(point.get("requirement", "")).strip() or "-"
                     reason = str(point.get("reason", "")).strip() or "-"
-                    lines.append(f"{index}. [{code}] {requirement}")
+                    lines.append(f"{index}. {code}")
+                    lines.append(f"   要求: {requirement}")
                     lines.append(f"   原因: {reason}")
                 if not lines:
                     return fallback_message or "待补核验点为空"
                 return "待补核验点：\n" + "\n".join(lines)
+            if isinstance(evidence.get("required_fields"), list):
+                fields = [self.FIELD_LABELS.get(str(item), str(item)) for item in evidence["required_fields"] if item]
+                if fields:
+                    return "已核验字段：\n" + "\n".join(f"- {field}" for field in fields)
             if isinstance(evidence.get("missing_doc_kinds"), list):
                 kinds = [str(item) for item in evidence["missing_doc_kinds"] if item]
                 if kinds:
@@ -634,7 +801,8 @@ class BatchReviewAgent:
             lines = []
             for key, value in evidence.items():
                 if isinstance(value, (str, int, float, bool)):
-                    lines.append(f"{key}: {value}")
+                    label = self.FIELD_LABELS.get(key, self._rule_label(key))
+                    lines.append(f"{label}: {value}")
             if lines:
                 return "\n".join(lines[:8])
             return fallback_message or "证据字段较复杂，详见 result.json"
@@ -672,14 +840,14 @@ class BatchReviewAgent:
         clues = "；".join(str(item) for item in visible_clues[:4])
         if not clues:
             clues = str(attachment.get("classification_reason", ""))
-        secondary_hits = self._format_secondary_refine_hits(details)
+        doc_kind = str(attachment.get("doc_kind", ""))
+        secondary_hits = self._format_secondary_refine_hits(details) if doc_kind == "other_supporting_material" else ""
         return (
             f"file_name={attachment.get('file_name', '')}\n"
-            f"doc_kind={self._doc_kind_with_code(str(attachment.get('doc_kind', '')))}\n"
-            f"contains={self._format_contains_doc_kinds(attachment)}\n"
+            f"doc_kind={self._doc_kind_with_code(doc_kind)}\n"
             f"classification_source={attachment.get('classification_source', '')}\n"
-            f"clues={clues}\n"
-            f"{secondary_hits}"
+            f"clues={clues}"
+            + (f"\n{secondary_hits}" if secondary_hits else "")
         )
 
     def _build_attachment_overview_clip(self, attachments: List[Any]) -> str:
@@ -691,16 +859,21 @@ class BatchReviewAgent:
             if not isinstance(item, dict):
                 continue
             kind = str(item.get("doc_kind", ""))
-            contains = self._format_contains_doc_kinds(item)
             details = item.get("classification_details", {})
-            secondary_hits = self._format_secondary_refine_hits_inline(details)
+            secondary_hits = (
+                self._format_secondary_refine_hits_inline(details)
+                if kind == "other_supporting_material"
+                else ""
+            )
             file_name = str(item.get("file_name", ""))
-            lines.extend([
+            chunk = [
                 f"[{index}] 文件: {file_name}",
                 f"    主分类: {self._doc_kind_with_code(kind)}",
-                f"    复合命中: {contains}",
-                f"    {secondary_hits}",
-            ])
+            ]
+            if secondary_hits:
+                chunk.append(f"    {secondary_hits}")
+            chunk.append("")
+            lines.extend(chunk)
         if not lines:
             return "附件列表为空"
         return "已识别附件（前5）：\n" + "\n".join(lines)
@@ -721,13 +894,9 @@ class BatchReviewAgent:
         return self.DOC_KIND_LABELS.get(doc_kind, doc_kind or "-")
 
     def _doc_kind_with_code(self, doc_kind: str) -> str:
-        """附件类别中文 + code"""
+        """附件类别中文标签"""
         label = self._doc_kind_label(doc_kind)
-        if not doc_kind:
-            return label
-        if label == doc_kind:
-            return doc_kind
-        return f"{label} ({doc_kind})"
+        return label
 
     def _format_contains_doc_kinds(self, attachment: Dict[str, Any]) -> str:
         """格式化单文件包含的多类别"""
@@ -738,6 +907,13 @@ class BatchReviewAgent:
         if not isinstance(values, list) or not values:
             return "-"
         return "、".join(self._doc_kind_with_code(str(item)) for item in values if str(item).strip())
+
+    def _rule_label(self, rule_code: str) -> str:
+        """规则编码转中文标签"""
+        text = str(rule_code or "").strip()
+        if not text or text == "-":
+            return "-"
+        return self.RULE_LABELS.get(text, text)
 
     def _format_secondary_refine_hits(self, details: Any) -> str:
         """格式化二次复核页命中详情"""
@@ -763,26 +939,26 @@ class BatchReviewAgent:
         return "二次复核页命中=\n" + "\n".join(lines)
 
     def _format_secondary_refine_hits_inline(self, details: Any) -> str:
-        """格式化二次复核页命中详情（单行简版）"""
+        """格式化二次复核页命中详情（多行简版）"""
         if not isinstance(details, dict):
-            return "二次复核页命中=-"
+            return "二次复核页命中: 无"
         refine = details.get("llm_secondary_refine", {})
         if not isinstance(refine, dict):
-            return "二次复核页命中=-"
+            return "二次复核页命中: 无"
         page_candidates = refine.get("page_candidates", [])
         if not isinstance(page_candidates, list) or not page_candidates:
-            return "二次复核页命中=-"
-        tokens: List[str] = []
+            return "二次复核页命中: 无"
+        lines: List[str] = []
         for item in page_candidates[:3]:
             if not isinstance(item, dict):
                 continue
             page = item.get("page", "-")
-            doc_kind = self._doc_kind_with_code(str(item.get("doc_kind", "")))
+            doc_kind = self._doc_kind_label(str(item.get("doc_kind", "")))
             confidence = item.get("confidence", "-")
-            tokens.append(f"第{page}页 -> {doc_kind} @ {confidence}")
-        if not tokens:
-            return "二次复核页命中=-"
-        return "二次复核页命中: " + "；".join(tokens)
+            lines.append(f"      - 第{page}页 -> {doc_kind} @ {confidence}")
+        if not lines:
+            return "二次复核页命中: 无"
+        return "二次复核页命中:\n" + "\n".join(lines)
 
     def _render_simple_list(self, values: List[str]) -> str:
         """渲染简单列表"""

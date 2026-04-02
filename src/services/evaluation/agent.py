@@ -3,6 +3,7 @@
 正文评审服务的统一编排器，融合九维评审、划重点、产业贴合、技术摸底与聊天索引。
 """
 import asyncio
+import inspect
 import json
 import os
 from datetime import datetime
@@ -168,13 +169,15 @@ class EvaluationAgent:
         result.chat_ready = bool(module_outputs.get("chat_ready", False))
 
         await self.storage.save(result)
-        await self._save_debug_artifacts(
+        debug_task = self._save_debug_artifacts(
             result=result,
             sections=sections,
             meta=meta,
             source_name=source_name,
             page_chunks=page_chunks,
         )
+        if inspect.isawaitable(debug_task):
+            await debug_task
         return result
 
     async def evaluate_by_project(self, request: EvaluationRequest) -> EvaluationResult:
