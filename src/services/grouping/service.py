@@ -90,7 +90,9 @@ class GroupingService:
         """
         # 1. 分组
         grouping_request = GroupingRequest(
+            guide_codes=request.guide_codes,
             category=request.category,
+            min_per_group=request.min_per_group,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC,
             merge_min_total_score=request.merge_min_total_score,

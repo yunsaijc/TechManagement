@@ -27,12 +27,9 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `min_per_group` | Integer | 否 | 每组最小项目数（默认5） |
+| `guide_codes` | String[] | 否 | 按 `zndm` 过滤项目，仅分组这些代码对应且 `isSubmit='1'` 的项目 |
+| `min_per_group` | Integer | 否 | 每组最小项目数（默认3） |
 | `max_per_group` | Integer | 否 | 每组最大项目数（默认15） |
-| `top_k_candidates` | Integer | 否 | 兼容旧参数；建议逐步替换为面向小组合并阶段的候选数配置 |
-| `enable_embedding` | Boolean | 否 | 是否启用 embedding 召回（默认true） |
-| `enable_llm` | Boolean | 否 | 是否启用 LLM 复核/标题生成（默认true） |
-| `needs_review_threshold` | Number | 否 | 低于该置信度标记复核（默认0.65） |
 | `merge_min_total_score` | Number | 否 | 跨代码小组合并总分阈值；仅作为兜底配置 |
 | `merge_min_text_score` | Number | 否 | 跨代码小组合并语义分阈值；仅作为兜底配置 |
 | `merge_reserve_ratio` | Number | 否 | 兼容保留参数；当前主流程不再使用软上限 |
@@ -40,6 +37,8 @@
 | `merge_candidate_limit` | Integer | 否 | 每个过小组保留的候选目标组数；用于同代码优先回收和跨代码召回 |
 
 > 说明：小组合并当前采用“同代码优先回收、跨代码阈值兜底 + LLM校验”的策略。`merge_min_total_score`、`merge_min_text_score` 仅用于跨代码候选；只要 `code_a != code_b` 即强制LLM校验。
+>
+> 说明：当传入 `guide_codes` 时，服务将执行 `zndm IN (...) AND isSubmit='1'` 查询，仅对这批项目分组；未传 `guide_codes` 时，沿用固定测试集逻辑。
 
 #### 请求示例
 
@@ -48,9 +47,12 @@ curl -X POST "http://localhost:8000/api/v1/grouping/projects" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "enable_embedding": true,
-    "enable_llm": true,
-    "min_per_group": 5,
+    "guide_codes": [
+      "c2f3b7b1f9534463ad726e6936c91859",
+      "959c8e453dd942ddb72f0ef52c07342f",
+      "7581bc8d6d564153848fcb5d14b1942e"
+    ],
+    "min_per_group": 3,
     "max_per_group": 15
   }'
 ```

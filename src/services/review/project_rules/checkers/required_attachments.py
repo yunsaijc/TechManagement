@@ -1,6 +1,7 @@
 """必需附件检查"""
 from src.common.models import CheckResult, CheckStatus
 from src.services.review.project_config import get_project_config
+from src.services.review.project_rules.checkers._attachment_kinds import collect_specific_doc_kinds
 from src.services.review.project_rules.base import BaseProjectRule
 from src.services.review.project_rules.registry import ProjectRuleRegistry
 
@@ -16,7 +17,7 @@ class RequiredAttachmentsRule(BaseProjectRule):
     async def check(self, context):
         config = get_project_config(context.project_info.project_type) or {}
         required_doc_kinds = config.get("required_doc_kinds", [])
-        existing_doc_kinds = {attachment.doc_kind for attachment in context.attachments}
+        existing_doc_kinds = collect_specific_doc_kinds(context.attachments)
         missing = [doc_kind for doc_kind in required_doc_kinds if doc_kind not in existing_doc_kinds]
 
         if missing:
