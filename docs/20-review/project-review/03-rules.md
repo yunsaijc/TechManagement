@@ -15,6 +15,7 @@
 - 把 `docx` 中四类项目的形式审查要点完整补齐到项目级配置
 - 能自动判定的继续自动判定
 - 缺数据源或当前不适合自动化的，明确输出待人工复核项
+- 最终结果必须能逐条对照 `docx`，而不是只给聚合后的规则结果
 
 ## 分层原则
 
@@ -44,6 +45,49 @@
   说明：规则可自动化，但当前项目上下文或数据源还没补齐
 - `manual`
   说明：当前阶段保留人工复核
+
+## 输出要求
+
+项目结果不能只保留当前的：
+
+- `results`
+- `policy_review_points_check`
+- `manual_review_items`
+
+还必须补一层 `docx` 逐条对照视图。原因是：
+
+- `results` 只反映当前已编码实现的规则
+- `policy_review_points_check` 只反映尚未自动核验的规则
+- 两者叠加后，仍然不能直接回答“`docx` 第 N 条到底是否通过”
+
+因此项目结果的目标表达应为：
+
+- 每一条 `docx` 规则都有且仅有一条对应输出
+- 每条输出都明确状态，而不是靠调用方自行拼接推断
+- 已自动化规则与未自动化规则共用同一份对照清单
+
+推荐状态集合：
+
+- `passed`
+  说明：规则已核验且通过
+- `failed`
+  说明：规则已核验且不通过
+- `warning`
+  说明：规则部分命中，但当前证据不足或自动判断不稳定
+- `manual`
+  说明：当前阶段明确保留人工复核
+- `requires_data`
+  说明：规则理论可自动化，但当前缺少字段或外部数据源
+- `not_applicable`
+  说明：该项目当前不触发该条规则
+
+推荐映射原则：
+
+- `docx` 每条规则先以 `code` 进入 `policy_review_points`
+- 若已有项目级规则实现，则由对应规则结果回填最终状态
+- 若当前项目不触发该条规则，则输出 `not_applicable`
+- 若没有实现或缺数据源，则输出 `requires_data` 或 `manual`
+- `policy_review_points_check` 继续保留，但角色调整为“未自动闭环项汇总”，不再代替逐条对照结果
 
 ## docx 规则矩阵
 
@@ -151,6 +195,12 @@ PROJECT_CONFIG = {
 
 - `policy_review_points`
   说明：完整承接 `docx` 的逐项规则矩阵
+- `policy_review_points[*].rule_name`
+  说明：当前条目映射到的项目级规则名，例如 `registered_date_limit`、`required_attachments`、`conditional_attachments`
+- `policy_review_points[*].doc_kind`
+  说明：附件类规则对应的附件类型，例如 `commitment_letter`、`ethics_approval`
+- `policy_review_points[*].condition_field`
+  说明：条件性规则对应的触发字段，例如 `has_clinical_research`
 - `constraints.registered_after`
   说明：注册时间红线
 - `constraints.allowed_cooperation_regions`
@@ -193,6 +243,21 @@ PROJECT_CONFIG = {
 - 当前未自动核验
 - 需要补充字段或外部数据源
 - 现阶段建议人工复核
+
+## 当前差距
+
+当前代码虽然已经把 `docx` 规则矩阵补进 `PROJECT_CONFIG`，但结果层仍然存在一个缺口：
+
+- 能看到部分项目级规则执行结果
+- 能看到未闭环的政策审查要点汇总
+- 但还不能直接看到“`docx` 全量逐条对照状态”
+
+因此后续代码实现的直接目标不是重写规则链，而是补齐一层兼容输出：
+
+- 保留现有 `results`
+- 保留现有 `manual_review_items`
+- 新增 `docx_rule_checks` 或同义字段
+- 让调用方可以直接按 `docx` 条目查看是否通过
 
 ## 兼容原则
 

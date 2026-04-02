@@ -55,16 +55,22 @@ class CorpusManager:
         corpus_path: Optional[str] = None,
         index_save_path: str = "data/plagiarism/corpus_index.json",
         shard_count: int = 16,
+        scan_only: bool = False,
     ):
         env_path = os.getenv("PLAGIARISM_CORPUS_PATH")
+        env_index_path = os.getenv("PLAGIARISM_CORPUS_INDEX_PATH")
+        env_sqlite_path = os.getenv("PLAGIARISM_CORPUS_SQLITE_PATH")
+        env_manifest_path = os.getenv("PLAGIARISM_CORPUS_MANIFEST_PATH")
         self.corpus_path = Path(corpus_path or env_path or "/mnt/remote_corpus/2025/sbs")
-        self.index_save_path = Path(index_save_path)
+        self.index_save_path = Path(env_index_path or index_save_path)
         self.shard_dir = self.index_save_path.with_suffix("")
         self.shard_dir = self.shard_dir.parent / f"{self.shard_dir.name}_shards"
         self.inverted_dir = self.index_save_path.parent / "corpus_char4_inverted"
-        self.sqlite_path = self.index_save_path.parent / "corpus_index.db"
+        self.sqlite_path = Path(env_sqlite_path) if env_sqlite_path else self.index_save_path.parent / "corpus_index.db"
+        self.manifest_path = Path(env_manifest_path) if env_manifest_path else self.index_save_path.parent / "corpus_manifest.json"
         self.shard_count = max(1, shard_count)
         self.write_json_debug = os.getenv("PLAGIARISM_CORPUS_WRITE_JSON", "0") == "1"
+        self.scan_only = scan_only
         self.index: CorpusIndex = CorpusIndex(shard_count=self.shard_count)
         self.retriever = SourceRetriever()
         self._feature_cache: Dict[str, Dict[str, Dict[str, List[str]]]] = {}
@@ -77,8 +83,9 @@ class CorpusManager:
             self.shard_dir.mkdir(parents=True, exist_ok=True)
             self.inverted_dir.mkdir(parents=True, exist_ok=True)
         self.load_index()
-        self._ensure_sqlite_schema()
-        self._sqlite_ready = self._has_sqlite_retrieval_index()
+        if not self.scan_only:
+            self._ensure_sqlite_schema()
+            self._sqlite_ready = self._has_sqlite_retrieval_index()
 
     def load_index(self):
         """从磁盘加载索引清单。兼容旧版单文件结构。"""
@@ -131,14 +138,274 @@ class CorpusManager:
         
         return await self.scan_and_update_with_options(limit=limit)
 
+    def scan_manifest(
+        self,
+        cursor_doc_id: Optional[str] = None,
+        max_scan: Optional[int] = None,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> Dict[str, object]:
+        """仅扫描目录并生成待处理 manifest，不执行解析建库。"""
+        stats = {"scanned": 0, "new": 0, "updated": 0, "deleted": 0, "failed": 0, "unchanged": 0}
+        if not self.corpus_path.exists():
+            print(f"[Corpus] 错误: 挂载路径不存在 {self.corpus_path}")
+            return stats
+
+        max_scan = int(max_scan) if max_scan else None
+        scan_started_at = time.time()
+        last_seen_doc_id: Optional[str] = cursor_doc_id
+        scan_truncated = False
+        manifest = self._load_manifest()
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "scan_manifest",
+                    "processed": 0,
+                    "total": 0,
+                    "elapsed_seconds": 0,
+                    "eta_seconds": 0,
+                    "stats": dict(stats),
+                }
+            )
+
+        for file_path in self._iter_docx_files(self.corpus_path):
+            doc_id = self._doc_id_for_path(file_path)
+            if cursor_doc_id and doc_id <= cursor_doc_id:
+                continue
+
+            stats["scanned"] += 1
+            last_seen_doc_id = doc_id
+            if progress_callback and (stats["scanned"] <= 1 or stats["scanned"] % 200 == 0):
+                progress_callback(
+                    {
+                        "stage": "scan_manifest",
+                        "processed": stats["scanned"],
+                        "total": 0,
+                        "elapsed_seconds": round(time.time() - scan_started_at, 2),
+                        "eta_seconds": 0,
+                        "stats": {
+                            **dict(stats),
+                            "current_path": str(file_path),
+                            "cursor_doc_id": cursor_doc_id,
+                        },
+                    }
+                )
+
+            try:
+                stat = file_path.stat()
+            except OSError as e:
+                print(f"[Corpus] 读取文件状态失败 {file_path.name}: {e}")
+                stats["failed"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
+                continue
+
+            file_size = int(stat.st_size)
+            file_mtime = float(stat.st_mtime)
+            stored_path = self._storage_path_for_file(file_path)
+            existing = self.index.documents.get(doc_id)
+            action = "unchanged"
+            if existing:
+                if existing.path != stored_path:
+                    action = "fix_path"
+                    stats["updated"] += 1
+                elif existing.file_size != file_size or abs(existing.file_mtime - file_mtime) >= 1e-6:
+                    action = "update"
+                    stats["updated"] += 1
+                else:
+                    stats["unchanged"] += 1
+            else:
+                action = "new"
+                stats["new"] += 1
+
+            if action != "unchanged":
+                manifest[doc_id] = {
+                    "doc_id": doc_id,
+                    "path": stored_path,
+                    "file_size": file_size,
+                    "file_mtime": file_mtime,
+                    "action": action,
+                    "updated_at": time.time(),
+                }
+
+            if max_scan and stats["scanned"] >= max_scan:
+                scan_truncated = True
+                break
+
+        self._save_manifest(manifest)
+        elapsed = time.time() - scan_started_at
+        print(
+            f"[Corpus] manifest 扫描完成: scanned={stats['scanned']}, "
+            f"pending={len(manifest)}, elapsed={elapsed:.2f}s, "
+            f"cursor={cursor_doc_id or '-'}, next_cursor={last_seen_doc_id or '-'}, truncated={scan_truncated}"
+        )
+        return {
+            **stats,
+            "pending": len(manifest),
+            "cursor_doc_id": cursor_doc_id,
+            "next_cursor": last_seen_doc_id,
+            "has_more": scan_truncated,
+        }
+
+    async def build_batch_from_manifest(
+        self,
+        limit: int = 5,
+        max_concurrency: int = 1,
+        progress_callback: Optional[Callable[[dict], None]] = None,
+    ) -> Dict[str, object]:
+        """从 manifest 中取一小批文档构建 SQLite 索引。"""
+        import asyncio
+
+        manifest = self._load_manifest()
+        pending_items = [
+            item for _, item in sorted(manifest.items(), key=lambda pair: pair[0])
+            if item.get("action") in {"new", "update", "fix_path"}
+        ]
+        selected = pending_items[: max(1, int(limit))]
+        max_concurrency = max(1, int(max_concurrency))
+        stats = {
+            "selected": len(selected),
+            "processed": 0,
+            "indexed": 0,
+            "fixed_path": 0,
+            "failed": 0,
+            "remaining": max(len(pending_items) - len(selected), 0),
+            "max_concurrency": max_concurrency,
+        }
+        if not selected:
+            return {
+                **stats,
+                "has_more": False,
+                "next_doc_id": None,
+            }
+
+        parse_jobs: List[Tuple[dict, Dict[str, List[str]]]] = []
+        for item in selected:
+            action = str(item["action"])
+            if action == "fix_path":
+                continue
+            doc_id = str(item["doc_id"])
+            parse_jobs.append((item, self._get_doc_features(doc_id)))
+
+        async def parse_job(item: dict, old_features: Dict[str, List[str]], semaphore: asyncio.Semaphore):
+            async with semaphore:
+                doc_id = str(item["doc_id"])
+                file_path = Path(str(item["path"]))
+                try:
+                    stat = file_path.stat()
+                    file_hash = self._calculate_hash(file_path)
+                    doc_entry = await self._build_doc_entry(
+                        doc_id=doc_id,
+                        file_path=file_path,
+                        file_hash=file_hash,
+                        file_size=int(stat.st_size),
+                        file_mtime=float(stat.st_mtime),
+                    )
+                    if not doc_entry:
+                        raise RuntimeError(f"构建索引项失败: {doc_id}")
+                    return doc_id, doc_entry, old_features, None
+                except Exception as e:
+                    return doc_id, None, old_features, str(e)
+
+        parsed_results: Dict[str, Tuple[Optional[CorpusDocument], Dict[str, List[str]], Optional[str]]] = {}
+        if parse_jobs:
+            semaphore = asyncio.Semaphore(max_concurrency)
+            tasks = [
+                asyncio.create_task(parse_job(item, old_features, semaphore))
+                for item, old_features in parse_jobs
+            ]
+            for completed in asyncio.as_completed(tasks):
+                doc_id, doc_entry, old_features, error = await completed
+                parsed_results[doc_id] = (doc_entry, old_features, error)
+
+        conn = self._connect_sqlite()
+        started_at = time.time()
+        try:
+            for item in selected:
+                doc_id = str(item["doc_id"])
+                action = str(item["action"])
+                file_path = Path(str(item["path"]))
+                stats["processed"] += 1
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "stage": "build_batch",
+                            "processed": stats["processed"],
+                            "total": len(selected),
+                            "elapsed_seconds": round(time.time() - started_at, 2),
+                            "eta_seconds": 0,
+                            "stats": {
+                                **dict(stats),
+                                "doc_id": doc_id,
+                                "action": action,
+                            },
+                        }
+                    )
+
+                try:
+                    if action == "fix_path":
+                        existing = self.index.documents.get(doc_id)
+                        if not existing:
+                            raise RuntimeError(f"索引中不存在文档: {doc_id}")
+                        existing.path = str(file_path)
+                        try:
+                            stat = file_path.stat()
+                            existing.file_size = int(stat.st_size)
+                            existing.file_mtime = float(stat.st_mtime)
+                        except OSError:
+                            pass
+                        self._bulk_upsert_sqlite_doc_metadata(conn, [existing])
+                        conn.commit()
+                        stats["fixed_path"] += 1
+                    else:
+                        doc_entry, old_features, parse_error = parsed_results.get(doc_id, (None, {}, "解析结果缺失"))
+                        if parse_error:
+                            raise RuntimeError(parse_error)
+                        if not doc_entry:
+                            raise RuntimeError(f"构建索引项失败: {doc_id}")
+                        self.index.documents[doc_id] = doc_entry.model_copy(update={"features": None})
+                        self._apply_sqlite_batch_updates(conn, [(doc_entry, old_features)])
+                        conn.commit()
+                        stats["indexed"] += 1
+
+                    manifest.pop(doc_id, None)
+                except Exception as e:
+                    stats["failed"] += 1
+                    print(f"[Corpus] build_batch 失败 {doc_id}: {e}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+
+            self.save_index()
+            self._save_manifest(manifest)
+        finally:
+            conn.close()
+
+        remaining = len(
+            [
+                item for item in manifest.values()
+                if item.get("action") in {"new", "update", "fix_path"}
+            ]
+        )
+        return {
+            **stats,
+            "remaining": remaining,
+            "has_more": remaining > 0,
+            "next_doc_id": min(manifest.keys()) if manifest else None,
+        }
+
     async def scan_and_update_with_options(
         self,
         limit: Optional[int] = None,
         batch_size: int = 100,
         max_concurrency: int = 2,
         save_every_batches: int = 5,
+        cursor_doc_id: Optional[str] = None,
+        max_scan: Optional[int] = None,
         progress_callback: Optional[Callable[[dict], None]] = None,
-    ) -> Dict[str, int]:
+    ) -> Dict[str, object]:
         """扫描挂载目录并增量更新索引。"""
         import asyncio
 
@@ -150,6 +417,7 @@ class CorpusManager:
         batch_size = max(1, int(batch_size))
         max_concurrency = max(1, int(max_concurrency))
         save_every_batches = max(1, int(save_every_batches))
+        max_scan = int(max_scan) if max_scan else None
 
         if self.index.documents and not self._sqlite_ready:
             print("[Corpus] SQLite 检索索引缺失，开始基于现有 JSON 分片重建...")
@@ -162,6 +430,9 @@ class CorpusManager:
         to_process: List[Tuple[str, Path, int, float]] = []
         metadata_updates: List[CorpusDocument] = []
         scan_started_at = time.time()
+        last_seen_doc_id: Optional[str] = cursor_doc_id
+        scan_truncated = False
+        limit_reached = False
 
         if progress_callback:
             progress_callback(
@@ -176,7 +447,12 @@ class CorpusManager:
             )
 
         for file_path in self._iter_docx_files(self.corpus_path):
+            doc_id = self._doc_id_for_path(file_path)
+            if cursor_doc_id and doc_id <= cursor_doc_id:
+                continue
+
             stats["scanned"] += 1
+            last_seen_doc_id = doc_id
             if progress_callback and (
                 stats["scanned"] <= 1
                 or stats["scanned"] % 200 == 0
@@ -192,11 +468,10 @@ class CorpusManager:
                         "stats": {
                             **dict(stats),
                             "current_path": str(file_path),
+                            "cursor_doc_id": cursor_doc_id,
                         },
                     }
                 )
-
-            doc_id = self._doc_id_for_path(file_path)
             seen_doc_ids.add(doc_id)
 
             try:
@@ -204,6 +479,9 @@ class CorpusManager:
             except OSError as e:
                 print(f"[Corpus] 读取文件状态失败 {file_path.name}: {e}")
                 stats["failed"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
                 continue
 
             file_size = int(stat.st_size)
@@ -222,18 +500,31 @@ class CorpusManager:
                     metadata_updates.append(existing.model_copy())
                     stats["updated"] += 1
                     print(f"[Corpus] 修正路径映射: {doc_id} -> {stored_path}")
+                    if max_scan and stats["scanned"] >= max_scan:
+                        scan_truncated = True
+                        break
                     continue
                 stats["unchanged"] += 1
+                if max_scan and stats["scanned"] >= max_scan:
+                    scan_truncated = True
+                    break
                 continue
 
             to_process.append((doc_id, file_path, file_size, file_mtime))
             if limit and len(to_process) >= limit:
+                limit_reached = True
+                scan_truncated = True
+                break
+            if max_scan and stats["scanned"] >= max_scan:
+                scan_truncated = True
                 break
 
         print(
             f"[Corpus] 扫描完成: scanned={stats['scanned']}, "
             f"to_process={len(to_process)}, metadata_updates={len(metadata_updates)}, "
-            f"elapsed={time.time() - scan_started_at:.2f}s"
+            f"elapsed={time.time() - scan_started_at:.2f}s, "
+            f"cursor={cursor_doc_id or '-'}, next_cursor={last_seen_doc_id or '-'}, "
+            f"truncated={scan_truncated}"
         )
         if progress_callback:
             progress_callback(
@@ -247,6 +538,9 @@ class CorpusManager:
                         **dict(stats),
                         "to_process": len(to_process),
                         "metadata_updates": len(metadata_updates),
+                        "cursor_doc_id": cursor_doc_id,
+                        "next_cursor": last_seen_doc_id,
+                        "scan_truncated": scan_truncated,
                     },
                 }
             )
@@ -283,16 +577,26 @@ class CorpusManager:
                     }
                 )
 
-        # 删除已经不在磁盘上的文档
-        removed_doc_ids = [doc_id for doc_id in self.index.documents.keys() if doc_id not in seen_doc_ids]
-        if removed_doc_ids:
-            for doc_id in removed_doc_ids:
-                self._remove_document(doc_id)
-            stats["deleted"] = len(removed_doc_ids)
+        # 只有完整全量扫描时才允许删除缺失文档，避免短任务误删
+        full_scan_completed = not scan_truncated and not cursor_doc_id
+        removed_doc_ids: List[str] = []
+        if full_scan_completed:
+            removed_doc_ids = [doc_id for doc_id in self.index.documents.keys() if doc_id not in seen_doc_ids]
+            if removed_doc_ids:
+                for doc_id in removed_doc_ids:
+                    self._remove_document(doc_id)
+                stats["deleted"] = len(removed_doc_ids)
 
         if not to_process and not removed_doc_ids:
             print(f"[Corpus] {self.corpus_path} 下没有需要更新的 docx 文件")
-            return stats
+            return {
+                **stats,
+                "cursor_doc_id": cursor_doc_id,
+                "next_cursor": last_seen_doc_id,
+                "has_more": scan_truncated,
+                "full_scan_completed": full_scan_completed,
+                "limit_reached": limit_reached,
+            }
 
         if to_process:
             total_to_process = len(to_process)
@@ -451,7 +755,14 @@ class CorpusManager:
             self.index.last_updated = time.time()
             self.save_index()
 
-        return stats
+        return {
+            **stats,
+            "cursor_doc_id": cursor_doc_id,
+            "next_cursor": last_seen_doc_id,
+            "has_more": scan_truncated,
+            "full_scan_completed": full_scan_completed,
+            "limit_reached": limit_reached,
+        }
 
     async def get_document_text(self, doc_id: str) -> Optional[str]:
         """延迟加载库文档原文。"""
@@ -750,15 +1061,22 @@ class CorpusManager:
             )
 
     def _connect_sqlite(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.sqlite_path, timeout=30)
+        conn = sqlite3.connect(self.sqlite_path, timeout=60)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=60000")
         conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
     def _ensure_sqlite_schema(self) -> None:
         conn = self._connect_sqlite()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError as e:
+            print(f"[Corpus] 跳过 journal_mode=WAL: {e}")
+        try:
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.OperationalError as e:
+            print(f"[Corpus] 跳过 synchronous=NORMAL: {e}")
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS docs (
@@ -893,6 +1211,106 @@ class CorpusManager:
                 """,
                 [(gram,) for gram in grams],
             )
+        self._sqlite_ready = True
+
+    def _apply_sqlite_batch_updates(
+        self,
+        conn: sqlite3.Connection,
+        updates: List[Tuple[CorpusDocument, Dict[str, List[str]]]],
+    ) -> None:
+        if not updates:
+            return
+
+        doc_rows = []
+        feature_rows = []
+        posting_deletes = []
+        posting_inserts = []
+        gram_deltas: Dict[str, int] = defaultdict(int)
+
+        for doc_entry, old_features in updates:
+            old_grams = set(old_features.get("char4", []) or [])
+            features = doc_entry.features or {}
+            new_grams = set(features.get("char4", []) or [])
+
+            removed_grams = old_grams - new_grams
+            added_grams = new_grams - old_grams
+
+            if removed_grams:
+                posting_deletes.extend((gram, doc_entry.doc_id) for gram in removed_grams)
+                for gram in removed_grams:
+                    gram_deltas[gram] -= 1
+            if added_grams:
+                posting_inserts.extend((gram, doc_entry.doc_id) for gram in added_grams)
+                for gram in added_grams:
+                    gram_deltas[gram] += 1
+
+            doc_rows.append(
+                (
+                    doc_entry.doc_id,
+                    doc_entry.path,
+                    doc_entry.file_hash,
+                    doc_entry.char_count,
+                    doc_entry.file_size,
+                    doc_entry.file_mtime,
+                    doc_entry.shard_id,
+                )
+            )
+            feature_rows.append(
+                (
+                    doc_entry.doc_id,
+                    self._feature_json(features.get("char2", [])),
+                    self._feature_json(features.get("char4", [])),
+                    self._feature_json(features.get("char8", [])),
+                )
+            )
+
+        if posting_deletes:
+            conn.executemany(
+                "DELETE FROM postings_char4 WHERE gram = ? AND doc_id = ?",
+                posting_deletes,
+            )
+        if posting_inserts:
+            conn.executemany(
+                "INSERT OR IGNORE INTO postings_char4 (gram, doc_id) VALUES (?, ?)",
+                posting_inserts,
+            )
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO docs (doc_id, path, file_hash, char_count, file_size, file_mtime, shard_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            doc_rows,
+        )
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO doc_features (doc_id, char2_json, char4_json, char8_json)
+            VALUES (?, ?, ?, ?)
+            """,
+            feature_rows,
+        )
+
+        positive_deltas = [(gram, delta) for gram, delta in gram_deltas.items() if delta > 0]
+        negative_deltas = [(gram, -delta) for gram, delta in gram_deltas.items() if delta < 0]
+
+        if positive_deltas:
+            conn.executemany(
+                """
+                INSERT INTO gram_stats_char4 (gram, df) VALUES (?, ?)
+                ON CONFLICT(gram) DO UPDATE SET df = df + excluded.df
+                """,
+                positive_deltas,
+            )
+        if negative_deltas:
+            conn.executemany(
+                "UPDATE gram_stats_char4 SET df = df - ? WHERE gram = ?",
+                [(delta, gram) for gram, delta in negative_deltas],
+            )
+            conn.executemany(
+                "DELETE FROM gram_stats_char4 WHERE gram = ? AND df <= 0",
+                [(gram,) for gram, _ in negative_deltas],
+            )
+
         self._sqlite_ready = True
 
     def _remove_doc_from_sqlite(
@@ -1192,6 +1610,20 @@ class CorpusManager:
             if not chunk:
                 break
             yield chunk
+
+    def _load_manifest(self) -> Dict[str, dict]:
+        if not self.manifest_path.exists():
+            return {}
+        try:
+            with open(self.manifest_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            print(f"[Corpus] 加载 manifest 失败: {e}")
+            return {}
+
+    def _save_manifest(self, manifest: Dict[str, dict]) -> None:
+        self._write_json_atomic(self.manifest_path, manifest)
 
     def _write_json_atomic(self, target_path: Path, data: object) -> None:
         target_path.parent.mkdir(parents=True, exist_ok=True)

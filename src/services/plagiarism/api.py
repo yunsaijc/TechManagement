@@ -20,6 +20,7 @@ from src.services.plagiarism.section_extractor import SectionExtractor
 router = APIRouter()
 _CORPUS_REFRESH_STATUS_PATH = Path("data/plagiarism/corpus_refresh_status.json")
 _CORPUS_REFRESH_LOG_PATH = Path("data/plagiarism/corpus_refresh.log")
+_CORPUS_REFRESH_CHECKPOINT_PATH = Path("data/plagiarism/corpus_refresh_checkpoint.json")
 
 
 def _read_corpus_refresh_status() -> dict:
@@ -62,6 +63,37 @@ def _write_corpus_refresh_status(data: dict) -> None:
         f.flush()
         os.fsync(f.fileno())
     os.replace(temp_path, _CORPUS_REFRESH_STATUS_PATH)
+
+
+def _read_corpus_refresh_checkpoint() -> dict:
+    if not _CORPUS_REFRESH_CHECKPOINT_PATH.exists():
+        return {
+            "next_cursor": None,
+            "has_more": False,
+            "updated_at": None,
+            "last_task_id": None,
+        }
+    try:
+        with open(_CORPUS_REFRESH_CHECKPOINT_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {
+            "next_cursor": None,
+            "has_more": False,
+            "updated_at": None,
+            "last_task_id": None,
+        }
+
+
+def _write_corpus_refresh_checkpoint(data: dict) -> None:
+    _CORPUS_REFRESH_CHECKPOINT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = _CORPUS_REFRESH_CHECKPOINT_PATH.with_name(f"{_CORPUS_REFRESH_CHECKPOINT_PATH.name}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, _CORPUS_REFRESH_CHECKPOINT_PATH)
 
 
 class PlagiarismRequest(BaseModel):
@@ -219,9 +251,11 @@ async def get_corpus_status() -> ApiResponse[dict]:
 
 @router.get("/corpus/refresh/status")
 async def get_corpus_refresh_status() -> ApiResponse[dict]:
+    data = _read_corpus_refresh_status()
+    data["checkpoint"] = _read_corpus_refresh_checkpoint()
     return ApiResponse(
         status="success",
-        data=_read_corpus_refresh_status(),
+        data=data,
     )
 
 
@@ -231,149 +265,18 @@ async def refresh_corpus(
     batch_size: int = Form(100),
     max_concurrency: int = Form(2),
     save_every_batches: int = Form(5),
+    cursor_doc_id: Optional[str] = Form(None),
+    max_scan: Optional[int] = Form(None),
+    reset_cursor: bool = Form(False),
     wait: bool = Form(False),
 ) -> ApiResponse[dict]:
-    """刷新库索引（触发远程挂载目录扫描）"""
-    from src.services.plagiarism.corpus import CorpusManager
-
-    current_status = _read_corpus_refresh_status()
-    if current_status.get("running"):
-        return ApiResponse(
-            status="success",
-            data={
-                "accepted": False,
-                "message": "refresh 任务已在运行",
-                "task": current_status,
-            },
-        )
-
-    params = {
-        "limit": limit,
-        "batch_size": batch_size,
-        "max_concurrency": max_concurrency,
-        "save_every_batches": save_every_batches,
-        "wait": wait,
-    }
-
-    task_id = uuid.uuid4().hex
-
-    if wait:
-        manager = CorpusManager()
-        stats = await manager.scan_and_update_with_options(
-            limit=limit,
-            batch_size=batch_size,
-            max_concurrency=max_concurrency,
-            save_every_batches=save_every_batches,
-        )
-        return ApiResponse(
-            status="success",
-            data={
-                "accepted": True,
-                "task": {
-                    "running": False,
-                    "task_id": task_id,
-                    "params": params,
-                },
-                "result": stats,
-            },
-        )
-
-    initial_status = {
-        "running": True,
-        "task_id": task_id,
-        "started_at": time.time(),
-        "finished_at": None,
-        "error": None,
-        "params": params,
-        "progress": {
-            "stage": "spawn_pending",
-            "processed": 0,
-            "total": 0,
-            "elapsed_seconds": 0,
-            "eta_seconds": 0,
-            "stats": {},
-        },
-        "result": None,
-        "pid": None,
-        "log_path": str(_CORPUS_REFRESH_LOG_PATH),
-    }
-    _write_corpus_refresh_status(initial_status)
-
-    cmd = []
-    if shutil.which("ionice"):
-        cmd.extend(["ionice", "-c3"])
-    if shutil.which("nice"):
-        cmd.extend(["nice", "-n", "19"])
-    cmd.extend(
-        [
-            sys.executable,
-            "-m",
-            "src.services.plagiarism.corpus_refresh_runner",
-            "--status-path",
-            str(_CORPUS_REFRESH_STATUS_PATH),
-            "--task-id",
-            task_id,
-            "--batch-size",
-            str(batch_size),
-            "--max-concurrency",
-            str(max_concurrency),
-            "--save-every-batches",
-            str(save_every_batches),
-        ]
-    )
-    if limit is not None:
-        cmd.extend(["--limit", str(limit)])
-
-    _CORPUS_REFRESH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    log_file = open(_CORPUS_REFRESH_LOG_PATH, "ab")
-    process = subprocess.Popen(
-        cmd,
-        cwd=str(Path.cwd()),
-        stdout=log_file,
-        stderr=log_file,
-        start_new_session=True,
-    )
-    log_file.close()
-
-    initial_status["pid"] = process.pid
-    initial_status["progress"] = {
-        "stage": "spawned",
-        "processed": 0,
-        "total": 0,
-        "elapsed_seconds": 0,
-        "eta_seconds": 0,
-        "stats": {},
-    }
-    _write_corpus_refresh_status(initial_status)
-
-    time.sleep(0.2)
-    return_code = process.poll()
-    if return_code is not None:
-        failed_status = _read_corpus_refresh_status()
-        failed_status.update(
-            {
-                "running": False,
-                "finished_at": time.time(),
-                "error": f"refresh 子进程启动失败，exit_code={return_code}",
-                "pid": process.pid,
-            }
-        )
-        progress = failed_status.get("progress") or {}
-        progress["stage"] = "spawn_failed"
-        failed_status["progress"] = progress
-        _write_corpus_refresh_status(failed_status)
-
-    return ApiResponse(
-        status="success",
-        data={
-            "accepted": True,
-            "message": "refresh 已在后台启动",
-            "task": {
-                "task_id": task_id,
-                "running": True,
-                "params": params,
-            },
-        },
+    """危险 refresh API 已禁用，只保留状态查询。"""
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "危险 refresh API 已禁用。"
+            "请改用离线命令执行 scan_manifest / build_batch。"
+        ),
     )
 
 

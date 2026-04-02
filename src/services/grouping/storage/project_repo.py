@@ -20,6 +20,7 @@ class ProjectRepository:
 
     FIXED_TEST_GUIDE_CODE = os.getenv("GROUPING_TEST_GUIDE_CODE", "c2f3b7b1f9534463ad726e6936c91859")
     APPROVED_AUDIT_STATUS = os.getenv("GROUPING_TEST_AUDIT_STATUS", "1")
+    SUBMIT_STATUS = os.getenv("GROUPING_SUBMIT_STATUS", "1")
 
     @classmethod
     def _base_from_clause(cls) -> str:
@@ -40,6 +41,13 @@ class ProjectRepository:
         return {
             "guide_code": cls.FIXED_TEST_GUIDE_CODE,
             "audit_status": cls.APPROVED_AUDIT_STATUS,
+        }
+
+    @classmethod
+    def get_grouping_dataset_filter_by_guide_codes(cls, guide_codes: List[str]) -> dict:
+        return {
+            "guide_codes": guide_codes,
+            "is_submit": cls.SUBMIT_STATUS,
         }
     
     @staticmethod
@@ -85,6 +93,51 @@ class ProjectRepository:
             )
             projects.append(project)
         
+        return projects
+
+    @staticmethod
+    def get_grouping_projects_by_guide_codes(
+        guide_codes: List[str],
+        category: Optional[str] = None,
+    ) -> List[Project]:
+        """按 zndm 代码列表获取已提交项目。"""
+        cleaned_codes = [code.strip() for code in guide_codes if code and code.strip()]
+        if not cleaned_codes:
+            return []
+
+        placeholders = ",".join(["?"] * len(cleaned_codes))
+        params: List[str] = cleaned_codes + [ProjectRepository.SUBMIT_STATUS]
+        sql = f"""
+            SELECT
+                b.id, b.xmmc, b.gjc, b.ssxk1, b.ssxk2,
+                j.xmjj, j.lxbj, b.cddwMc, b.year
+            FROM Sb_Jbxx b
+            LEFT JOIN Sb_Jj j ON b.id = j.onlysign
+            LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
+            WHERE b.zndm IN ({placeholders})
+              AND s.isSubmit = ?
+        """
+        if category:
+            sql += " AND b.jhlb = ?"
+            params.append(category)
+        sql += " ORDER BY b.id"
+
+        rows = project_execute(sql, tuple(params))
+        projects: List[Project] = []
+        for row in rows:
+            projects.append(
+                Project(
+                    id=row.id,
+                    xmmc=row.xmmc or "",
+                    gjc=row.gjc,
+                    ssxk1=row.ssxk1,
+                    ssxk2=row.ssxk2,
+                    xmjj=row.xmjj,
+                    lxbj=row.lxbj,
+                    cddw_mc=row.cddwMc,
+                    year=row.year,
+                )
+            )
         return projects
     
     @staticmethod

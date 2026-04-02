@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict
@@ -10,6 +9,7 @@ from typing import Any, Dict
 import fitz
 
 from src.common.llm import get_default_llm_client
+from src.common.review_runtime import ReviewRuntime
 from src.common.vision.multimodal import MultimodalLLM
 from src.services.review.project_config import (
     ATTACHMENT_FILENAME_HINTS,
@@ -22,11 +22,16 @@ class AttachmentClassifier:
     """对项目附件进行预定义类别分类"""
 
     UNKNOWN_DOC_KIND = "unknown_attachment"
+    OTHER_DOC_KIND = "other_supporting_material"
 
     def __init__(self, llm: Any = None):
         self.llm = llm or get_default_llm_client()
         self.multi_llm = MultimodalLLM(self.llm) if self.llm else None
-        self.confidence_threshold = float(os.getenv("REVIEW_ATTACHMENT_CLASSIFY_CONFIDENCE", "0.70"))
+        self.confidence_threshold = float(ReviewRuntime.ATTACHMENT_CLASSIFY_CONFIDENCE)
+        self.pdf_render_zoom = max(1.0, float(ReviewRuntime.ATTACHMENT_PDF_RENDER_ZOOM))
+        self.pdf_text_pages = max(1, int(ReviewRuntime.ATTACHMENT_PDF_TEXT_PAGES))
+        self.preview_text_limit = max(500, int(ReviewRuntime.ATTACHMENT_PREVIEW_TEXT_LIMIT))
+        self.secondary_pdf_sample_pages = 3
 
     async def classify(self, file_path: Path) -> Dict[str, Any]:
         """对单个附件分类"""
@@ -42,6 +47,15 @@ class AttachmentClassifier:
             "raw_response": "",
         }
         llm_error = ""
+        secondary_refine = {
+            "enabled": bool(preview.get("image_data") and self.multi_llm),
+            "applied": False,
+            "doc_kind": self.UNKNOWN_DOC_KIND,
+            "confidence": 0.0,
+            "reason": "",
+            "raw_response": "",
+            "error": "",
+        }
 
         if preview.get("image_data") and self.multi_llm:
             try:
@@ -75,6 +89,87 @@ class AttachmentClassifier:
             final_source = "filename_rule_fallback"
             final_reason = "文件不可预览，按文件名规则回退分类"
 
+        # 若首轮被归为“其他支撑材料”，强制再做一轮细分类复核
+        if (
+            final_doc_kind == self.OTHER_DOC_KIND
+            and preview.get("image_data")
+            and self.multi_llm
+        ):
+            secondary_refine["applied"] = True
+            try:
+                refine_prompt = self._build_refine_prompt(
+                    file_name=file_name,
+                    extracted_text=preview.get("text_excerpt", ""),
+                )
+                refine_raw = await self.multi_llm.analyze_image(preview["image_data"], refine_prompt)
+                refine_result = self._parse_llm_response(refine_raw)
+                secondary_refine.update(
+                    {
+                        "doc_kind": refine_result["doc_kind"],
+                        "confidence": refine_result["confidence"],
+                        "reason": refine_result["reason"],
+                        "raw_response": refine_raw,
+                    }
+                )
+                if (
+                    refine_result["doc_kind"] not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND}
+                    and refine_result["confidence"] >= self.confidence_threshold
+                ):
+                    final_doc_kind = refine_result["doc_kind"]
+                    final_confidence = refine_result["confidence"]
+                    final_source = "llm_secondary_refine"
+                    final_reason = f"二次复核改判：{refine_result['reason']}"
+                elif file_path.suffix.lower() == ".pdf":
+                    sampled_pages = self._build_pdf_secondary_samples(file_path, self.secondary_pdf_sample_pages)
+                    secondary_refine["sampled_pages"] = [
+                        {"page": item["page"], "error": item.get("error", "")}
+                        for item in sampled_pages
+                    ]
+                    best_doc_kind = final_doc_kind
+                    best_confidence = final_confidence
+                    best_reason = ""
+                    page_candidates = []
+                    for sample in sampled_pages:
+                        image_data = sample.get("image_data", b"")
+                        if not image_data:
+                            continue
+                        page_prompt = self._build_refine_prompt(
+                            file_name=f"{file_name} [page={sample['page']}]",
+                            extracted_text=sample.get("text_excerpt", ""),
+                        )
+                        page_raw = await self.multi_llm.analyze_image(image_data, page_prompt)
+                        page_result = self._parse_llm_response(page_raw)
+                        page_candidates.append(
+                            {
+                                "page": sample["page"],
+                                "doc_kind": page_result["doc_kind"],
+                                "confidence": page_result["confidence"],
+                                "reason": page_result["reason"],
+                            }
+                        )
+                        if (
+                            page_result["doc_kind"] not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND}
+                            and page_result["confidence"] > best_confidence
+                            and page_result["confidence"] >= self.confidence_threshold
+                        ):
+                            best_doc_kind = page_result["doc_kind"]
+                            best_confidence = page_result["confidence"]
+                            best_reason = page_result["reason"]
+                    if page_candidates:
+                        secondary_refine["page_candidates"] = page_candidates
+                    if best_doc_kind != final_doc_kind:
+                        final_doc_kind = best_doc_kind
+                        final_confidence = best_confidence
+                        final_source = "llm_secondary_refine_multi_page"
+                        final_reason = f"二次多页复核改判：{best_reason}"
+            except Exception as exc:
+                secondary_refine["error"] = str(exc)
+
+        contains_doc_kinds = self._collect_contains_doc_kinds(
+            llm_result=llm_result,
+            secondary_refine=secondary_refine,
+        )
+
         return {
             "doc_kind": final_doc_kind,
             "confidence": final_confidence,
@@ -97,6 +192,8 @@ class AttachmentClassifier:
                     "raw_response": llm_result["raw_response"],
                     "error": llm_error,
                 },
+                "llm_secondary_refine": secondary_refine,
+                "contains_doc_kinds": contains_doc_kinds,
                 "final_doc_kind": final_doc_kind,
                 "final_source": final_source,
                 "final_confidence": final_confidence,
@@ -133,10 +230,11 @@ class AttachmentClassifier:
                     doc.close()
                     return {"image_data": b"", "preview_type": "pdf", "page_count": 0, "text_excerpt": ""}
 
+                page_count = doc.page_count
                 page = doc.load_page(0)
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+                pix = page.get_pixmap(matrix=fitz.Matrix(self.pdf_render_zoom, self.pdf_render_zoom))
                 text_parts = []
-                for page_index in range(min(2, doc.page_count)):
+                for page_index in range(min(self.pdf_text_pages, page_count)):
                     text = doc.load_page(page_index).get_text("text").strip()
                     if text:
                         text_parts.append(text)
@@ -144,8 +242,8 @@ class AttachmentClassifier:
                 return {
                     "image_data": pix.tobytes("png"),
                     "preview_type": "pdf_first_page",
-                    "page_count": len(text_parts) or 1,
-                    "text_excerpt": "\n".join(text_parts)[:2500],
+                    "page_count": page_count,
+                    "text_excerpt": "\n".join(text_parts)[: self.preview_text_limit],
                 }
             except Exception:
                 return {"image_data": b"", "preview_type": "pdf_error", "page_count": 0, "text_excerpt": ""}
@@ -186,9 +284,101 @@ class AttachmentClassifier:
 
 文件名：{file_name}
 文件名规则提示：{filename_hint_text}
+        可提取文字：
+{text_excerpt}
+"""
+
+    def _build_refine_prompt(self, file_name: str, extracted_text: str) -> str:
+        """针对“其他支撑材料”的二次细分类提示词"""
+        specific_lines = []
+        for item in get_attachment_kind_definitions(include_unknown=False):
+            doc_kind = item["doc_kind"]
+            if doc_kind in {self.OTHER_DOC_KIND, self.UNKNOWN_DOC_KIND}:
+                continue
+            specific_lines.append(f"- {doc_kind}: {item['label']}。{item['description']}")
+        categories_text = "\n".join(specific_lines)
+        text_excerpt = extracted_text or "无可提取文字"
+        return f"""你正在做附件“其他支撑材料”的二次细分类复核。
+
+目标：判断该附件是否其实属于某个明确的专项材料类别；若都不满足，再返回 other_supporting_material。
+
+可选 doc_kind：
+{categories_text}
+- other_supporting_material: 其他支撑材料
+- unknown_attachment: 无法判断
+
+输出必须是 JSON：
+{{
+  "doc_kind": "从可选值中选择一个",
+  "confidence": 0.0,
+  "reason": "不超过60字，说明依据",
+  "visible_clues": ["关键线索"]
+}}
+
+要求：
+1. 若存在明确标题/章/正文结构可对应某个具体类别，优先返回具体类别。
+2. 只有确实无法归入具体类别，才返回 other_supporting_material。
+3. 不要基于想象推断。
+
+文件名：{file_name}
 可提取文字：
 {text_excerpt}
 """
+
+    def _build_pdf_secondary_samples(self, file_path: Path, max_samples: int) -> list[Dict[str, Any]]:
+        """针对 PDF 二次复核，抽样多页（首/中/尾）"""
+        samples: list[Dict[str, Any]] = []
+        try:
+            file_data = file_path.read_bytes()
+            doc = fitz.open(stream=file_data, filetype="pdf")
+            page_count = doc.page_count
+            if page_count <= 1:
+                doc.close()
+                return samples
+            candidate_indexes = {0, page_count - 1, page_count // 2}
+            ordered_indexes = sorted(candidate_indexes)[: max_samples]
+            for page_index in ordered_indexes:
+                try:
+                    page = doc.load_page(page_index)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(self.pdf_render_zoom, self.pdf_render_zoom))
+                    text_excerpt = page.get_text("text").strip()[: self.preview_text_limit]
+                    samples.append(
+                        {
+                            "page": page_index + 1,
+                            "image_data": pix.tobytes("png"),
+                            "text_excerpt": text_excerpt,
+                        }
+                    )
+                except Exception as exc:
+                    samples.append({"page": page_index + 1, "image_data": b"", "text_excerpt": "", "error": str(exc)})
+            doc.close()
+            return samples
+        except Exception as exc:
+            return [{"page": 0, "image_data": b"", "text_excerpt": "", "error": str(exc)}]
+
+    def _collect_contains_doc_kinds(self, llm_result: Dict[str, Any], secondary_refine: Dict[str, Any]) -> list[str]:
+        """聚合单文件内识别到的多类别（用于后续规则判定）"""
+        candidates: set[str] = set()
+        llm_kind = str(llm_result.get("doc_kind", "")).strip()
+        llm_conf = float(llm_result.get("confidence", 0.0) or 0.0)
+        if llm_kind and llm_kind not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND} and llm_conf >= self.confidence_threshold:
+            candidates.add(llm_kind)
+
+        refine_kind = str(secondary_refine.get("doc_kind", "")).strip()
+        refine_conf = float(secondary_refine.get("confidence", 0.0) or 0.0)
+        if refine_kind and refine_kind not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND} and refine_conf >= self.confidence_threshold:
+            candidates.add(refine_kind)
+
+        page_candidates = secondary_refine.get("page_candidates", [])
+        if isinstance(page_candidates, list):
+            for item in page_candidates:
+                if not isinstance(item, dict):
+                    continue
+                page_kind = str(item.get("doc_kind", "")).strip()
+                page_conf = float(item.get("confidence", 0.0) or 0.0)
+                if page_kind and page_kind not in {self.UNKNOWN_DOC_KIND, self.OTHER_DOC_KIND} and page_conf >= self.confidence_threshold:
+                    candidates.add(page_kind)
+        return sorted(candidates)
 
     def _parse_llm_response(self, raw_text: str) -> Dict[str, Any]:
         """解析 LLM 输出"""

@@ -107,6 +107,18 @@ class ManualReviewItem(BaseModel):
     evidence: Dict[str, Any] = Field(default_factory=dict, description="证据")
 
 
+class PolicyRuleCheck(BaseModel):
+    """与 docx 单条规则一一对应的对照结果"""
+
+    code: str = Field(..., description="规则编码")
+    requirement: str = Field(default="", description="规则要求")
+    status: str = Field(..., description="规则状态")
+    source_rule: str = Field(default="", description="映射到的项目级规则")
+    matched_result_item: Optional[str] = Field(default=None, description="实际命中的检查项")
+    evidence: Dict[str, Any] = Field(default_factory=dict, description="证据")
+    reason: str = Field(default="", description="状态说明")
+
+
 class ProjectReviewResult(BaseModel):
     """项目级审查结果"""
 
@@ -114,6 +126,7 @@ class ProjectReviewResult(BaseModel):
     project_id: str = Field(..., description="项目ID")
     project_type: str = Field(..., description="项目类型")
     results: List[CheckResult] = Field(default_factory=list, description="项目级规则结果")
+    policy_rule_checks: List[PolicyRuleCheck] = Field(default_factory=list, description="docx 逐条规则对照结果")
     missing_attachments: List[MissingAttachment] = Field(default_factory=list, description="缺失附件")
     attachment_results: List[ReviewResult] = Field(default_factory=list, description="附件级结果")
     manual_review_items: List[ManualReviewItem] = Field(default_factory=list, description="待人工复核项")

@@ -20,6 +20,12 @@
 - 再对候选集合运行 `SourceRetriever` 的窗口级重排，输出最终 Top-K。
 - 这一步不应退化为“全库逐文档扫描”，也不应在在线请求里把大量特征分片整批常驻内存。
 
+说明：
+
+- Agent 只消费当前已经构建好的索引
+- Agent 不负责触发危险的全量 refresh
+- 建库、扫描、断点续跑属于离线维护职责，而不是在线查重职责
+
 ### 3. 按需精比对 (Lazy Matching)
 - 对于召回出的 Top-K 文档，通过 `CorpusManager` 获取挂载目录下的原文。
 - 逐一运行 `ComparisonEngine.compare(primary, corpus_doc)`。
