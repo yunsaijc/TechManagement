@@ -54,6 +54,9 @@ class ResultAggregator:
     MAX_MERGE_BACKTRACK = 12  # 允许少量坐标回退（重叠），禁止跨段倒序拼接
     MIN_SOURCE_TEXT_SPAN_RATIO = 0.18  # source_text 与 source span 明显失配时判为低质量
     MIN_ALIGNED_SIMILARITY = 0.28
+    MIN_SHORT_SEGMENT_CHARS = 120
+    MIN_SHORT_SEGMENT_SIMILARITY = 0.75
+    MIN_SCHEDULE_SIMILARITY = 0.60
 
 
     def __init__(self, section_extractor=None, template_filter=None):
@@ -66,6 +69,43 @@ class ResultAggregator:
         """
         self.section_extractor = section_extractor
         self.template_filter = template_filter
+        # 固定模板问句前缀：用于展示分数计算前剥离，避免模板前缀抬高 similarity_score。
+        self._leading_template_prefix_patterns = [
+            re.compile(
+                r"^\s*(?:\d+\s*[、\.．:：)]\s*)?"
+                r"(?:本项目的研究意义|项目的研究意义)"
+                r"(?:（[^）]*?应用前景[^）]*）)?[:：]?\s*"
+            ),
+            re.compile(
+                r"^\s*(?:\d+\s*[、\.．:：)]\s*)?"
+                r"(?:项目的特色与创新之处|预期成果)"
+                r"(?:（[^）]*）)?[:：]?\s*"
+            ),
+            re.compile(
+                r"^\s*(?:\d+\s*[、\.．:：)]\s*)?"
+                r"(?:申请者和项目主要成员业务简历|申请者业务简历)"
+                r"(?:（[^）]*）)?[:：]?\s*"
+            ),
+        ]
+        self._reference_like_patterns = [
+            re.compile(r"\b(?:angew\.?\s*chem|chem\.?\s*soc\.?\s*rev|j\.?\s*am\.?\s*chem\.?\s*soc)\b", re.I),
+            re.compile(r"\b(?:ieee|transactions|journal|vol\.?|no\.?|pp\.?|doi)\b", re.I),
+            re.compile(r"(?:^|\s)\[\d+\]"),
+            re.compile(r"(?:^|\s)\d+\s*\|?\s*论文(?:\s|\|)"),
+            re.compile(r"\be20\d{6,}\b", re.I),
+        ]
+        self._instruction_like_patterns = [
+            re.compile(r"或结合国民经济和社会发展中迫切需要解决的关键科技问题"),
+            re.compile(r"(?:本项目|项目)的研究意义"),
+            re.compile(r"需结合科学研究发展趋势来论述科学意义"),
+            re.compile(r"请阅读后[，,、 ]*选择研究属性"),
+            re.compile(r"选择该研究属性的理由"),
+        ]
+        self._schedule_like_patterns = [
+            re.compile(r"20\d{2}\s*[.\-/年]\s*(?:0?[1-9]|1[0-2])"),
+            re.compile(r"(?:研究计划|年度计划|时间安排|进度安排|实施计划)"),
+            re.compile(r"(?:阶段目标|季度目标|年度目标)"),
+        ]
 
     def _merge_adjacent_matches(self, matches: List[Match], max_gap: int = 25) -> List[Match]:
         """合并同一来源下相邻或轻微间隔的匹配片段。"""
@@ -219,8 +259,8 @@ class ResultAggregator:
             effective_segments = []
 
             for m in r.duplicate_segments:
-                # 检测是否是模板内容
-                if filter_obj and filter_obj.is_template(m.text):
+                # 双边模板判定：主文或来源任一侧命中模板/文献型特征，都不进入有效重复。
+                if self._should_treat_as_template(m, filter_obj):
                     template_segments.append(m)
                 else:
                     effective_segments.append(m)
@@ -343,7 +383,21 @@ class ResultAggregator:
         rejected = []
         for seg in segments:
             source_text = (seg.source_text or "").strip()
+            text = (seg.text or "").strip()
+            if self._is_reference_like(text) or self._is_reference_like(source_text):
+                rejected.append(seg)
+                continue
+            if self._is_instruction_like(text) or self._is_instruction_like(source_text):
+                rejected.append(seg)
+                continue
             if not source_text:
+                rejected.append(seg)
+                continue
+            aligned_score = self._aligned_similarity(text, source_text)
+            if len(text) < self.MIN_SHORT_SEGMENT_CHARS and aligned_score < self.MIN_SHORT_SEGMENT_SIMILARITY:
+                rejected.append(seg)
+                continue
+            if (self._is_schedule_like(text) or self._is_schedule_like(source_text)) and aligned_score < self.MIN_SCHEDULE_SIMILARITY:
                 rejected.append(seg)
                 continue
             source_span_len = max(int(seg.source_end or 0) - int(seg.source_start or 0), 0)
@@ -352,24 +406,73 @@ class ResultAggregator:
                 if source_ratio < self.MIN_SOURCE_TEXT_SPAN_RATIO:
                     rejected.append(seg)
                     continue
-            score = self._lexical_ratio(seg.text, source_text)
+            score = self._lexical_ratio(text, source_text)
             if score < self.MIN_LEXICAL_SIMILARITY:
                 rejected.append(seg)
                 continue
-            aligned_score = self._aligned_similarity(seg.text, source_text)
             if aligned_score < self.MIN_ALIGNED_SIMILARITY:
                 rejected.append(seg)
                 continue
-            overlap_ratio = self._common_substring_ratio(seg.text, source_text)
+            overlap_ratio = self._common_substring_ratio(text, source_text)
             if overlap_ratio < self.MIN_COMMON_SUBSTRING_RATIO:
                 rejected.append(seg)
                 continue
-            matched_content_ratio = self._matched_content_ratio(seg.text, source_text)
+            matched_content_ratio = self._matched_content_ratio(text, source_text)
             if matched_content_ratio < self.MIN_MATCHED_CONTENT_RATIO:
                 rejected.append(seg)
                 continue
             kept.append(seg)
         return kept, rejected
+
+    def _should_treat_as_template(self, match: Match, template_filter) -> bool:
+        text = match.text or ""
+        source_text = match.source_text or ""
+        if self._is_reference_like(text) or self._is_reference_like(source_text):
+            return True
+        if self._is_instruction_like(text) or self._is_instruction_like(source_text):
+            return True
+        if self._is_schedule_like(text) or self._is_schedule_like(source_text):
+            return True
+        if not template_filter:
+            return False
+        if template_filter.is_template(text):
+            return True
+        if source_text and template_filter.is_template(source_text):
+            return True
+        return False
+
+    def _is_reference_like(self, text: str) -> bool:
+        if not text:
+            return False
+        stripped = re.sub(r"\s+", " ", text).strip()
+        if len(stripped) < 12:
+            return False
+        lowered = stripped.lower()
+        hit_count = 0
+        for pattern in self._reference_like_patterns:
+            if pattern.search(lowered):
+                hit_count += 1
+        if hit_count >= 2:
+            return True
+        if "|" in stripped and "论文" in stripped:
+            return True
+        return False
+
+    def _is_instruction_like(self, text: str) -> bool:
+        if not text:
+            return False
+        stripped = re.sub(r"\s+", " ", text).strip()
+        if len(stripped) < 10:
+            return False
+        return any(p.search(stripped) for p in self._instruction_like_patterns)
+
+    def _is_schedule_like(self, text: str) -> bool:
+        if not text:
+            return False
+        stripped = re.sub(r"\s+", " ", text).strip()
+        if len(stripped) < 10:
+            return False
+        return any(p.search(stripped) for p in self._schedule_like_patterns)
 
     def _rescue_high_similarity_segments(self, rejected: List[Match]) -> Tuple[List[Match], List[Match]]:
         """从被拒绝片段中挽救“长文本+高相似”的改写段。"""
@@ -444,6 +547,10 @@ class ResultAggregator:
     def _aligned_similarity(self, text_a: str, text_b: str) -> float:
         if not text_a or not text_b:
             return 0.0
+        text_a = self._strip_leading_template_prefix(text_a)
+        text_b = self._strip_leading_template_prefix(text_b)
+        if not text_a or not text_b:
+            return 0.0
 
         norm_a = re.sub(r"\s+", "", text_a)
         norm_b = re.sub(r"\s+", "", text_b)
@@ -456,6 +563,19 @@ class ResultAggregator:
         )
         length_balance = min(len(norm_a), len(norm_b)) / max(len(norm_a), len(norm_b), 1)
         return base_score * length_balance
+
+    def _strip_leading_template_prefix(self, text: str) -> str:
+        if not text:
+            return ""
+        current = text
+        while True:
+            updated = current
+            for pattern in self._leading_template_prefix_patterns:
+                updated = pattern.sub("", updated, count=1)
+            if updated == current:
+                break
+            current = updated.lstrip()
+        return current
 
     def _format_segments(
         self,
@@ -520,7 +640,16 @@ class ResultAggregator:
             # 检查是否是低质量片段（被拒绝的匹配）
             is_low_quality = getattr(match, 'is_low_quality', False)
             if is_low_quality and template_reason is None:
-                template_reason = "low_quality"
+                primary_or_match_text = primary_text or match.text or ""
+                source_or_match_text = source_text or match.source_text or ""
+                if self._is_instruction_like(primary_or_match_text) or self._is_instruction_like(source_or_match_text):
+                    template_reason = "instruction_template"
+                elif self._is_schedule_like(primary_or_match_text) or self._is_schedule_like(source_or_match_text):
+                    template_reason = "schedule_template"
+                elif self._is_reference_like(primary_or_match_text) or self._is_reference_like(source_or_match_text):
+                    template_reason = "reference_like"
+                else:
+                    template_reason = "low_quality"
 
             formatted.append({
                 "primary_line": primary_line,

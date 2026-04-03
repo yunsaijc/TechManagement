@@ -101,6 +101,30 @@ PLAGIARISM_SECTION_CONFIG: Dict[str, Dict[str, Any]] = {
             },
         ]
     },
+    "hebei_nsfc_2026": {
+        "name": "河北省自然科学基金申报书（2026）",
+        "description": "适用于河北省自然科学基金申报书正文查重",
+        "whitelist_patterns": WHITELIST_TEMPLATE_PATTERNS,
+        "heading_patterns": HEADING_PATTERNS,
+        "table_patterns": TABLE_PATTERNS,
+        "sections": [
+            {
+                "name": "一、立论依据",
+                "start_pattern": r"一\s*[、\.．]\s*立论依据",
+                "end_pattern": r"3\s*[、\.．]\s*主要参考文献目录",
+            },
+            {
+                "name": "二、研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果",
+                "start_pattern": r"二\s*[、\.．]\s*研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果",
+                "end_pattern": r"三\s*[、\.．]\s*研究方案及可行性分析",
+            },
+            {
+                "name": "三、研究方案及可行性分析",
+                "start_pattern": r"三\s*[、\.．]\s*研究方案及可行性分析",
+                "end_pattern": r"四\s*[、\.．]\s*研究基础与工作条件",
+            },
+        ],
+    },
 }
 
 
