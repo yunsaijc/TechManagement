@@ -113,6 +113,24 @@ class ComparisonEngine:
             r"[（(]\d+[）)])[^\n]*\n?",
             re.MULTILINE,
         )
+        # 固定模板问句前缀：仅用于相似度归一化前剥离，避免模板前缀抬高分数。
+        self._leading_template_prefix_patterns = [
+            re.compile(
+                r"^\s*(?:\d+\s*[、\.．:：)]\s*)?"
+                r"(?:本项目的研究意义|项目的研究意义)"
+                r"(?:（[^）]*?应用前景[^）]*）)?[:：]?\s*"
+            ),
+            re.compile(
+                r"^\s*(?:\d+\s*[、\.．:：)]\s*)?"
+                r"(?:项目的特色与创新之处|预期成果)"
+                r"(?:（[^）]*）)?[:：]?\s*"
+            ),
+            re.compile(
+                r"^\s*(?:\d+\s*[、\.．:：)]\s*)?"
+                r"(?:申请者和项目主要成员业务简历|申请者业务简历)"
+                r"(?:（[^）]*）)?[:：]?\s*"
+            ),
+        ]
 
     def compare(
         self,
@@ -2512,6 +2530,7 @@ class ComparisonEngine:
     def _normalize_sentence(self, text: str) -> str:
         if not text:
             return ""
+        text = self._strip_leading_template_prefix(text)
         # 极速归一化：只保留中文字符、数字和英文字母，统一转小写
         # 避免复杂的正则运算
         cleaned = []
@@ -2519,6 +2538,19 @@ class ComparisonEngine:
             if '\u4e00' <= char <= '\u9fa5' or char.isalnum():
                 cleaned.append(char.lower())
         return "".join(cleaned)
+
+    def _strip_leading_template_prefix(self, text: str) -> str:
+        if not text:
+            return ""
+        current = text
+        while True:
+            updated = current
+            for pattern in self._leading_template_prefix_patterns:
+                updated = pattern.sub("", updated, count=1)
+            if updated == current:
+                break
+            current = updated.lstrip()
+        return current
 
     def _sequence_ratio(self, a: str, b: str) -> float:
         from difflib import SequenceMatcher
