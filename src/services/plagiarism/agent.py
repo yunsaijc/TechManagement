@@ -12,10 +12,13 @@
 6. 结果聚合 (位置追溯、片段合并)
 """
 import asyncio
+import atexit
 import json
+import os
 import re
 import resource
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -32,6 +35,28 @@ from src.services.plagiarism.text_repairs import repair_extracted_text_artifacts
 from src.services.plagiarism.template_filter import TemplateFilter
 from src.services.plagiarism.template_prefilter import TemplatePreFilter
 from src.services.plagiarism.tokenizer import SentenceTokenizer
+
+
+def _compare_chunk_worker(payload: Dict[str, Any]):
+    """进程池 worker：对一个 primary + 多个 source 分块执行精比对。"""
+    engine_cfg = payload["engine_config"]
+    engine = ComparisonEngine(
+        min_continuous_match=engine_cfg["min_continuous_match"],
+        ngram_size=engine_cfg["ngram_size"],
+        winnowing_window=engine_cfg["winnowing_window"],
+        min_match_length=engine_cfg["min_match_length"],
+        max_fingerprint_frequency=engine_cfg["max_fingerprint_frequency"],
+    )
+    return engine.compare(
+        docs=payload["docs"],
+        excluded_ranges=payload["excluded_ranges"],
+        threshold_high=payload["threshold_high"],
+        threshold_medium=payload["threshold_medium"],
+        raw_texts=payload["raw_texts"],
+        search_windows=payload["search_windows"],
+        primary_doc_only=payload["primary_doc_id"],
+        light_mode_docs=payload.get("light_mode_docs"),
+    )
 
 
 class PlagiarismAgent:
@@ -59,7 +84,8 @@ class PlagiarismAgent:
         self.threshold_high = threshold_high
         self.threshold_medium = threshold_medium
         self.debug = debug
-        self.primary_scope_info = None
+        self.debug_save_parse_artifacts = False
+        self.debug_dir = Path("debug_plagiarism")
 
         # 初始化 Section 提取器
         if section_config and SectionExtractor.validate_config(section_config):
@@ -84,12 +110,17 @@ class PlagiarismAgent:
         self.result_aggregator = ResultAggregator(section_extractor=self.section_extractor)
         self.multi_source_aggregator = MultiSourceAggregator()
         self.corpus_manager = CorpusManager()
+        self.light_mode_doc_score_threshold = 0.35
+        self._compare_pool_max_workers = max(1, min(max((os.cpu_count() or 2) - 1, 1), 4))
+        self._compare_pool = ProcessPoolExecutor(max_workers=self._compare_pool_max_workers)
+        atexit.register(self._shutdown_compare_pool)
 
     async def check(
         self,
         files: List[Tuple[str, bytes]],  # [(doc_id, file_data)]
         file_paths: Optional[Dict[str, str]] = None,  # {doc_id: file_path} 用于mammoth报告
         use_corpus: bool = True,
+        debug_output_dir: Optional[Path] = None,
     ) -> PlagiarismResult:
         """
         执行查重
@@ -103,12 +134,14 @@ class PlagiarismAgent:
             查重结果
         """
         start_time = time.time()
-        self._file_paths = file_paths or {}
+        file_paths_map = file_paths or {}
+        request_debug_dir = debug_output_dir or self.debug_dir
 
         # 1. 提取所有上传文件的文本
         texts = {}  # {doc_id: full_text}
         uploaded_doc_ids = [doc_id for doc_id, _ in files]
         primary_doc_id = uploaded_doc_ids[0] if uploaded_doc_ids else None
+        primary_scope_info = None
 
         for idx, (doc_id, file_data) in enumerate(files):
             try:
@@ -124,8 +157,8 @@ class PlagiarismAgent:
                 print(f"[Plagiarism] 提取上传文本 {doc_id}: {len(full_text)} chars")
 
                 # Debug: 保存解析结果
-                if self.debug:
-                    self._save_debug(doc_id, result, full_text)
+                if self.debug and self.debug_save_parse_artifacts:
+                    self._save_debug(doc_id, result, full_text, debug_dir=request_debug_dir)
 
             except Exception as e:
                 print(f"[Plagiarism] 提取文本失败 {doc_id}: {e}")
@@ -152,7 +185,7 @@ class PlagiarismAgent:
                 raise ValueError(
                     "primary 文档未命中配置的检测区域：请检查 section_config 的 start_pattern/end_pattern"
                 )
-            self.primary_scope_info = {
+            primary_scope_info = {
                 "doc_id": primary_doc_id,
                 "mode": scope_details.get("mode"),
                 "start": start_pos,
@@ -307,53 +340,112 @@ class PlagiarismAgent:
         t_compare_start = time.time()
         similarities = []
         doc_windows = doc_windows if use_corpus else {}
+        candidate_score_map = {
+            cand.doc_id: float(cand.document_suspiciousness or 0.0)
+            for cand in (retrieval_result.candidates or [])
+        }
+        if candidate_doc_ids and primary_doc_id:
+            try:
+                # 进程池分块：每个块一次 compare(primary + 多个 source)。
+                # 好处：
+                # 1) CPU 密集任务绕开 GIL
+                # 2) 同一块内 primary 只做一次分句/ngram/指纹准备
+                max_workers = max(1, min(len(candidate_doc_ids), self._compare_pool_max_workers))
+                chunk_size = max(1, (len(candidate_doc_ids) + max_workers - 1) // max_workers)
+                source_chunks = [
+                    candidate_doc_ids[i:i + chunk_size]
+                    for i in range(0, len(candidate_doc_ids), chunk_size)
+                ]
+                print(
+                    f"[Plagiarism] 精比对执行计划: candidates={len(candidate_doc_ids)}, "
+                    f"workers={max_workers}, chunks={len(source_chunks)}, chunk_size={chunk_size}"
+                )
 
-        async def compare_pair(idx: int, source_doc_id: str) -> List[Any]:
-            t_pair_start = time.time()
-            source_sentences = sentences_map.get(source_doc_id, [])
-            primary_sentences = sentences_map.get(primary_doc_id, [])
-            
-            source_len = len(processed_texts.get(source_doc_id, ""))
-            primary_len = len(processed_texts.get(primary_doc_id, ""))
-            print(f"[Plagiarism] 开始比对 [{idx+1}/{len(candidate_doc_ids)}]: {primary_doc_id} vs {source_doc_id} ({source_len:,} chars)")
+                engine_cfg = {
+                    "min_continuous_match": self.comparison_engine.min_continuous_match,
+                    "ngram_size": self.comparison_engine.ngram_size,
+                    "winnowing_window": self.comparison_engine.winnowing_window,
+                    "min_match_length": self.comparison_engine.min_match_length,
+                    "max_fingerprint_frequency": self.comparison_engine.max_fingerprint_frequency,
+                }
+                loop = asyncio.get_event_loop()
+                process_tasks = []
+                pool = self._ensure_compare_pool()
+                for idx, chunk_doc_ids in enumerate(source_chunks, 1):
+                    chunk_docs = {primary_doc_id: sentences_map.get(primary_doc_id, [])}
+                    chunk_excluded = {primary_doc_id: excluded_ranges.get(primary_doc_id, [])}
+                    chunk_texts = {primary_doc_id: processed_texts.get(primary_doc_id, "")}
+                    chunk_windows = {}
+                    chunk_light_mode = {}
+                    for sid in chunk_doc_ids:
+                        chunk_docs[sid] = sentences_map.get(sid, [])
+                        chunk_excluded[sid] = excluded_ranges.get(sid, [])
+                        chunk_texts[sid] = processed_texts.get(sid, "")
+                        if use_corpus:
+                            chunk_windows[sid] = doc_windows.get(sid, [])
+                        score = candidate_score_map.get(sid, 1.0)
+                        chunk_light_mode[sid] = score < self.light_mode_doc_score_threshold
+                    light_count = sum(1 for v in chunk_light_mode.values() if v)
+                    print(
+                        f"[Plagiarism] 提交比对分块 [{idx}/{len(source_chunks)}]: "
+                        f"sources={len(chunk_doc_ids)}, light_mode={light_count}"
+                    )
 
-            pair_sentences = {
-                primary_doc_id: primary_sentences,
-                source_doc_id: source_sentences,
-            }
-            pair_excluded_ranges = {
-                primary_doc_id: excluded_ranges.get(primary_doc_id, []),
-                source_doc_id: excluded_ranges.get(source_doc_id, []),
-            }
-            pair_texts = {
-                primary_doc_id: processed_texts.get(primary_doc_id, ""),
-                source_doc_id: processed_texts.get(source_doc_id, ""),
-            }
-            
-            # 使用 run_in_executor 将 CPU 密集型的 compare 放到线程池执行，避免阻塞事件循环
-            loop = asyncio.get_event_loop()
-            pair_similarities = await loop.run_in_executor(
-                None, 
-                self.comparison_engine.compare,
-                pair_sentences,
-                pair_excluded_ranges,
-                self.threshold_high,
-                self.threshold_medium,
-                pair_texts,
-                {source_doc_id: doc_windows.get(source_doc_id, [])} if use_corpus else None
-            )
-            
-            elapsed = time.time() - t_pair_start
-            print(f"[Plagiarism] 完成比对 [{idx+1}/{len(candidate_doc_ids)}]: {source_doc_id}, 耗时: {elapsed:.2f}s")
-            return pair_similarities
+                    payload = {
+                        "engine_config": engine_cfg,
+                        "docs": chunk_docs,
+                        "excluded_ranges": chunk_excluded,
+                        "threshold_high": self.threshold_high,
+                        "threshold_medium": self.threshold_medium,
+                        "raw_texts": chunk_texts,
+                        "search_windows": chunk_windows if use_corpus else None,
+                        "primary_doc_id": primary_doc_id,
+                        "light_mode_docs": chunk_light_mode,
+                    }
+                    process_tasks.append(
+                        loop.run_in_executor(pool, _compare_chunk_worker, payload)
+                    )
 
-        # 并行执行所有比对任务
-        compare_tasks = [compare_pair(idx, sid) for idx, sid in enumerate(candidate_doc_ids)]
-        compare_results = await asyncio.gather(*compare_tasks)
-        
-        # 合并结果
-        for pair_res in compare_results:
-            similarities.extend(pair_res)
+                compare_results = await asyncio.gather(*process_tasks)
+                for chunk_result in compare_results:
+                    similarities.extend(chunk_result)
+            except Exception as exc:
+                print(f"[Plagiarism] 进程池比对失败，回退到线程模式: {exc}")
+                self._recreate_compare_pool()
+                loop = asyncio.get_event_loop()
+                compare_tasks = []
+                for sid in candidate_doc_ids:
+                    pair_sentences = {
+                        primary_doc_id: sentences_map.get(primary_doc_id, []),
+                        sid: sentences_map.get(sid, []),
+                    }
+                    pair_excluded = {
+                        primary_doc_id: excluded_ranges.get(primary_doc_id, []),
+                        sid: excluded_ranges.get(sid, []),
+                    }
+                    pair_texts = {
+                        primary_doc_id: processed_texts.get(primary_doc_id, ""),
+                        sid: processed_texts.get(sid, ""),
+                    }
+                    pair_windows = {sid: doc_windows.get(sid, [])} if use_corpus else None
+                    pair_light_mode = {sid: candidate_score_map.get(sid, 1.0) < self.light_mode_doc_score_threshold}
+                    compare_tasks.append(
+                        loop.run_in_executor(
+                            None,
+                            self.comparison_engine.compare,
+                            pair_sentences,
+                            pair_excluded,
+                            self.threshold_high,
+                            self.threshold_medium,
+                            pair_texts,
+                            pair_windows,
+                            primary_doc_id,
+                            pair_light_mode,
+                        )
+                    )
+                compare_results = await asyncio.gather(*compare_tasks)
+                for pair_result in compare_results:
+                    similarities.extend(pair_result)
 
         print(f"[Plagiarism] 全部比对完成: {len(similarities)} 对, 总耗时: {time.time() - t_compare_start:.2f}s")
 
@@ -380,10 +472,11 @@ class PlagiarismAgent:
             )
             
             # 使用 MultiSourceAggregator 进行归并
-            primary_chars = self.primary_scope_info.get("char_count", 0) if self.primary_scope_info else len(processed_texts.get(primary_doc_id, ""))
+            primary_chars = primary_scope_info.get("char_count", 0) if primary_scope_info else len(processed_texts.get(primary_doc_id, ""))
             multi_summary = self.multi_source_aggregator.build_summary(
                 pairwise_debug,
-                primary_chars
+                primary_chars,
+                primary_text,
             )
             
             # 更新结果
@@ -411,9 +504,11 @@ class PlagiarismAgent:
                 primary_doc_id,
                 similarities,
                 excluded_ranges,  # 传入排除区间
-                primary_scope_info=self.primary_scope_info,
+                primary_scope_info=primary_scope_info,
                 retrieval_result=retrieval_result,
                 multi_summary=multi_summary if primary_doc_id else None,
+                file_paths=file_paths_map,
+                debug_dir=request_debug_dir,
             )
 
         return result
@@ -422,6 +517,7 @@ class PlagiarismAgent:
         self,
         files: List[Tuple[str, bytes]],
         file_paths: Dict[str, str],
+        debug_output_dir: Optional[Path] = None,
     ) -> PlagiarismResult:
         """执行查重并传入文件路径（用于生成mammoth格式报告）
         
@@ -432,7 +528,7 @@ class PlagiarismAgent:
         Returns:
             查重结果
         """
-        return await self.check(files, file_paths)
+        return await self.check(files, file_paths, debug_output_dir=debug_output_dir)
 
     def _merge_retrieval_results(self, uploaded_result, corpus_result):
         """合并多个召回结果并重新排序去重。"""
@@ -472,6 +568,26 @@ class PlagiarismAgent:
         )
         return uploaded_result
 
+    def _ensure_compare_pool(self) -> ProcessPoolExecutor:
+        if getattr(self, "_compare_pool", None) is None:
+            self._compare_pool = ProcessPoolExecutor(max_workers=self._compare_pool_max_workers)
+        return self._compare_pool
+
+    def _shutdown_compare_pool(self):
+        pool = getattr(self, "_compare_pool", None)
+        if pool is None:
+            return
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        finally:
+            self._compare_pool = None
+
+    def _recreate_compare_pool(self):
+        self._shutdown_compare_pool()
+        self._compare_pool = ProcessPoolExecutor(max_workers=self._compare_pool_max_workers)
+
     def _rss_mb(self) -> float:
         try:
             with open("/proc/self/status", "r", encoding="utf-8") as f:
@@ -494,7 +610,7 @@ class PlagiarismAgent:
         else:
             return 'unknown'
 
-    def _save_debug(self, doc_id: str, result, full_text: str = ""):
+    def _save_debug(self, doc_id: str, result, full_text: str = "", debug_dir: Optional[Path] = None):
         """
         保存 debug 结果
 
@@ -503,8 +619,8 @@ class PlagiarismAgent:
             result: 解析结果
             full_text: 完整文本
         """
-        debug_dir = Path("debug_plagiarism")
-        debug_dir.mkdir(exist_ok=True)
+        debug_dir = debug_dir or self.debug_dir
+        debug_dir.mkdir(parents=True, exist_ok=True)
 
         output = {
             "doc_id": doc_id,
@@ -532,10 +648,13 @@ class PlagiarismAgent:
         primary_scope_info: Optional[Dict] = None,
         retrieval_result=None,
         multi_summary: Optional[Dict] = None,
+        file_paths: Optional[Dict[str, str]] = None,
+        debug_dir: Optional[Path] = None,
     ):
-        """保存查重详细debug信息"""
-        debug_dir = Path("debug_plagiarism")
-        debug_dir.mkdir(exist_ok=True)
+        """生成调试 HTML（仅保留报告文件，不落盘其它 debug 附件）。"""
+        debug_dir = debug_dir or self.debug_dir
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        file_paths = file_paths or {}
 
         # 格式化 debug 输出（应用后置过滤）
         output = self.result_aggregator.format_debug_output(
@@ -545,17 +664,8 @@ class PlagiarismAgent:
             template_filter=self.template_filter,
         )
         output["documents"] = processed_texts
-        for doc_id, text in processed_texts.items():
-            safe_name = doc_id.replace("/", "_")
-            (debug_dir / f"{safe_name}.processed.txt").write_text(text, encoding="utf-8")
         if primary_scope_info:
             output["primary_scope"] = primary_scope_info
-            extracted_text = processed_texts.get(primary_doc_id, "")
-            (debug_dir / "primary_scope_extracted.txt").write_text(extracted_text, encoding="utf-8")
-            (debug_dir / "primary_scope_debug.json").write_text(
-                json.dumps(primary_scope_info, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
         
         # 添加排除区间信息
         if excluded_ranges:
@@ -611,23 +721,16 @@ class PlagiarismAgent:
             output["retrieval"] = retrieval_output
             if top_source_doc_id:
                 output["report_source_doc"] = top_source_doc_id
-            (debug_dir / "retrieval_candidates.json").write_text(
-                json.dumps(retrieval_output, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-
-        filename = debug_dir / "plagiarism_debug.json"
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
 
         # 生成 mammoth 版报告（保留Word格式，包括表格）
         mammoth_html_filename = debug_dir / "plagiarism_report_mammoth.html"
+        temp_debug_filename = debug_dir / f".plagiarism_debug.{int(time.time() * 1000)}.{os.getpid()}.tmp.json"
         def _is_docx(doc_id: str) -> bool:
             return doc_id.lower().endswith(".docx")
 
         primary_path = None
-        if hasattr(self, "_file_paths") and _is_docx(primary_doc_id):
-            primary_path = self._file_paths.get(primary_doc_id)
+        if _is_docx(primary_doc_id):
+            primary_path = file_paths.get(primary_doc_id)
         selected_source_docs = list(getattr(retrieval_result, "selected_source_docs", []) or [])
         top_source_doc_id = selected_source_docs[0] if selected_source_docs else None
         if not top_source_doc_id:
@@ -637,11 +740,13 @@ class PlagiarismAgent:
                     break
         source_path = None
         if top_source_doc_id and _is_docx(top_source_doc_id):
-            source_path = (self._file_paths or {}).get(top_source_doc_id)
+            source_path = file_paths.get(top_source_doc_id)
         
         try:
+            with open(temp_debug_filename, "w", encoding="utf-8") as f:
+                json.dump(output, f, ensure_ascii=False, indent=2)
             self.mammoth_report_builder.build_from_debug_file(
-                filename,
+                temp_debug_filename,
                 mammoth_html_filename,
                 primary_docx_path=primary_path,
                 source_docx_path=source_path,
@@ -649,5 +754,9 @@ class PlagiarismAgent:
             print(f"[Plagiarism] Debug: 保存Mammoth格式报告到 {mammoth_html_filename}")
         except Exception as e:
             print(f"[Plagiarism] Debug: Mammoth报告生成失败: {e}")
-
-        print(f"[Plagiarism] Debug: 保存查重详情到 {filename}")
+        finally:
+            try:
+                if temp_debug_filename.exists():
+                    temp_debug_filename.unlink()
+            except OSError:
+                pass

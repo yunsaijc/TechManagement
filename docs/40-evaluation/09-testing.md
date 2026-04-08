@@ -122,6 +122,7 @@ tests/services/evaluation/
   - 开启 `enable_chat_index` 后，`ask()` 可返回 citations
   - LLM 异常时，`ask()` 走降级回答
   - 未构建聊天索引时返回明确错误
+  - 未构建索引时可自动重建并完成回答
   - `验证数据` 问答保持谨慎
   - `预期效益` 问答能抽取效益信息
 - `tests/services/evaluation/test_benchmark.py`
@@ -149,6 +150,7 @@ tests/services/evaluation/
 - `tests/services/evaluation/test_report_generator.py`
   - 正式报告 HTML 内包含交互式聊天面板与 `/chat/ask` 调用脚本
   - debug 报告不包含交互式聊天面板
+  - `chat_ready=false` 时仍允许首问（由后端自动建索引）
 - `tests/app/test_main.py`
   - 应用层为本地 HTML 报告开放 CORS，允许 `file://` 场景调用正文评审 API
 

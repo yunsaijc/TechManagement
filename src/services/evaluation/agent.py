@@ -270,10 +270,90 @@ class EvaluationAgent:
             raise ValueError(f"评审记录不存在: {evaluation_id}")
 
         index_payload = await self.storage.load_chat_index(evaluation_id)
-        if not index_payload:
-            raise ValueError("该评审记录未构建聊天索引，请重新评审并启用 enable_chat_index")
+        if not index_payload or not index_payload.get("chunk_count"):
+            rebuilt = await self._try_rebuild_chat_index(evaluation_id=evaluation_id, result=result)
+            if rebuilt:
+                index_payload = await self.storage.load_chat_index(evaluation_id)
+
+        if not index_payload or not index_payload.get("chunk_count"):
+            raise ValueError("该评审记录未构建聊天索引，且无法自动重建。请重新评审并启用 enable_chat_index")
 
         return await self.qa_agent.ask(question=question, index_payload=index_payload)
+
+    async def _try_rebuild_chat_index(self, evaluation_id: str, result: EvaluationResult) -> bool:
+        """尝试基于调试产物或原始文档重建聊天索引"""
+        debug_payload = self._load_debug_payload(result.project_id)
+        page_chunks = self._extract_debug_page_chunks(debug_payload, evaluation_id)
+        if not page_chunks:
+            source_path = self._resolve_source_document_path(result.project_id, debug_payload)
+            if source_path:
+                parsed = await self.parser.parse(source_path, source_name=os.path.basename(source_path))
+                page_chunks = parsed.get("page_chunks", [])
+
+        if not page_chunks:
+            return False
+
+        payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+        if not payload.get("chunk_count"):
+            return False
+
+        await self.storage.save_chat_index(evaluation_id=evaluation_id, payload=payload)
+        await self.storage.set_chat_ready(evaluation_id=evaluation_id, chat_ready=True)
+        return True
+
+    def _load_debug_payload(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """读取项目对应的 debug_eval JSON"""
+        debug_path = Path("debug_eval") / f"EVAL_{project_id}.json"
+        if not debug_path.exists():
+            return None
+        try:
+            payload = json.loads(debug_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def _extract_debug_page_chunks(
+        self,
+        debug_payload: Optional[Dict[str, Any]],
+        evaluation_id: str,
+    ) -> List[Dict[str, Any]]:
+        """从调试产物中提取可复用页切片"""
+        if not debug_payload:
+            return []
+        debug_eval_id = str(debug_payload.get("evaluation_id") or "")
+        if debug_eval_id and debug_eval_id != evaluation_id:
+            return []
+        page_chunks = debug_payload.get("page_chunks")
+        if not isinstance(page_chunks, list):
+            return []
+        return [chunk for chunk in page_chunks if isinstance(chunk, dict)]
+
+    def _resolve_source_document_path(
+        self,
+        project_id: str,
+        debug_payload: Optional[Dict[str, Any]],
+    ) -> Optional[str]:
+        """按优先级解析可用于重建索引的源文档路径"""
+        candidates: List[str] = []
+
+        if debug_payload:
+            meta = debug_payload.get("meta")
+            if isinstance(meta, dict):
+                debug_file_path = str(meta.get("file_path") or "").strip()
+                if debug_file_path:
+                    candidates.append(debug_file_path)
+
+        try:
+            project_doc = self.project_repo.get_primary_document_path(project_id)
+        except Exception:
+            project_doc = None
+        if project_doc:
+            candidates.append(project_doc)
+
+        for path in candidates:
+            if path and os.path.exists(path):
+                return path
+        return None
 
     async def _prepare_content(
         self,
@@ -575,6 +655,7 @@ class EvaluationAgent:
             "meta": meta,
             "section_names": list(sections.keys()),
             "sections": sections,
+            "page_chunks": page_chunks,
             "expert_qna": expert_qna,
             "result": result.model_dump(mode="json"),
         }

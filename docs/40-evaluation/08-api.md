@@ -200,6 +200,11 @@ Content-Type: application/json
 }
 ```
 
+### 说明
+
+- 若该 `evaluation_id` 尚未落盘聊天索引，服务会先自动尝试重建（优先使用 `debug_eval` 中的页切片，其次回源项目文档）
+- 仅当自动重建仍失败时，接口返回 `422`（错误信息包含“未构建聊天索引，且无法自动重建”）
+
 ## 6. 权重与维度接口
 
 - `GET /api/v1/evaluation/dimensions`

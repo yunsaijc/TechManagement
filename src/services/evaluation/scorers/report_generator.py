@@ -1159,10 +1159,14 @@ class ReportGenerator:
             for question in suggestions[:6]
         )
 
-        ready_text = "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。" if chat_ready else "当前评审未构建聊天索引，无法发起实时问答。请重新评审并启用 enable_chat_index。"
-        status_text = "等待提问" if chat_ready else "未构建聊天索引"
-        submit_disabled = "" if chat_ready and evaluation_id else "disabled"
-        textarea_disabled = "" if chat_ready and evaluation_id else "disabled"
+        ready_text = (
+            "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。"
+            if chat_ready
+            else "当前记录未预构建聊天索引。可直接提问，系统会在首问时自动尝试构建索引。"
+        )
+        status_text = "等待提问" if evaluation_id else "缺少评审ID"
+        submit_disabled = "" if evaluation_id else "disabled"
+        textarea_disabled = "" if evaluation_id else "disabled"
         toolbar_note = f"默认使用项目当前 API 端口 {default_api_base}；如果服务不在当前地址，可直接改这里。"
         escaped_eval_id = html.escape(evaluation_id)
         suggestions_block = suggestion_html or '<div class="chat-status">暂无可复用的典型问题。</div>'
@@ -1245,10 +1249,10 @@ class ReportGenerator:
               .replace(/'/g, "&#39;");
 
             const setBusy = (busy, text) => {{
-              if (submitButton) submitButton.disabled = busy || !chatReady || !evaluationId;
-              if (questionInput) questionInput.disabled = busy || !chatReady || !evaluationId;
+              if (submitButton) submitButton.disabled = busy || !evaluationId;
+              if (questionInput) questionInput.disabled = busy || !evaluationId;
               suggestionButtons.forEach((button) => {{
-                button.disabled = busy || !chatReady || !evaluationId;
+                button.disabled = busy || !evaluationId;
               }});
               if (statusNode) {{
                 statusNode.textContent = text || (busy ? "正在生成回答..." : "等待提问");
@@ -1286,8 +1290,8 @@ class ReportGenerator:
                 setBusy(false, "请输入问题");
                 return;
               }}
-              if (!chatReady || !evaluationId) {{
-                setBusy(false, "当前评审未构建聊天索引");
+              if (!evaluationId) {{
+                setBusy(false, "缺少评审ID，无法发起提问");
                 return;
               }}
 
@@ -1331,7 +1335,7 @@ class ReportGenerator:
               }});
             }});
 
-            setBusy(false, chatReady ? "等待提问" : "未构建聊天索引");
+            setBusy(false, chatReady ? "等待提问" : "可直接提问（首次会自动建索引）");
           }})();
         </script>
         """

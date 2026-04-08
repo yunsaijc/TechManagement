@@ -181,3 +181,57 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
 |------|------|
 | 400 | 参数错误（如未上传文件或库不可用） |
 | 500 | 服务器内部错误（如远程挂载丢失） |
+
+---
+
+## 图片查重接口（Image Plagiarism）
+
+### 基础路径
+
+- `/api/v1/plagiarism/image`
+
+### 1) 按指南代码批量图片查重（主入口）
+
+**POST** `/api/v1/plagiarism/image/by-guide-codes`
+
+说明：流程与正文库查重一致，先查项目，再抽取 primary 文档图片，最后在图片 corpus 中检索候选并验证；不做在线全量两两比。
+
+#### 请求参数
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `guide_codes` | String / String[] | 是 | - | 指南代码，推荐 JSON 数组字符串 |
+| `limit` | Integer | 否 | `20` | 仅处理前 N 个项目 |
+| `read_remote_if_missing` | Boolean | 否 | `true` | 本地缺失时是否回退读取远端 docx |
+| `threshold_high` | Float | 否 | `0.82` | high 阈值 |
+| `threshold_medium` | Float | 否 | `0.62` | medium 阈值 |
+| `hash_hamming_max` | Integer | 否 | `18` | pHash Hamming 粗召回阈值 |
+| `min_inliers_high` | Integer | 否 | `10` | high 的最小几何内点 |
+| `include_low` | Boolean | 否 | `false` | 是否返回 low 结果 |
+| `debug` | Boolean | 否 | `false` | 是否生成调试报告 |
+| `max_pair_checks` | Integer | 否 | `120000` | 安全预算，防止单次任务失控 |
+
+#### 响应字段（核心）
+
+- `selected_projects`：符合 guide_codes 的项目数
+- `resolved_projects`：成功定位并读取文档的项目数
+- `missing_docs`：缺文档项目
+- `failed_projects`：读取失败项目
+- `results.matches`：全量匹配明细
+- `per_project_results`：按 primary 项目聚合后的结果（推荐前端消费）
+
+### 2) 图片库状态
+
+**GET** `/api/v1/plagiarism/image/corpus/status`
+
+说明：返回图片索引是否存在、已索引文档数、已索引图片数、更新时间。
+
+### 3) 图片库批量构建
+
+**POST** `/api/v1/plagiarism/image/corpus/build-batch`
+
+说明：离线小批构建；每次只处理小批文档，写入 `data/plagiarism_image/index`，支持断点续跑。
+
+---
+
+图片查重的建库技术参考见：[图片查重库设计](06-image-corpus.md)。

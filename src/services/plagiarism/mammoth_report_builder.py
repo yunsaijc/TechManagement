@@ -8,6 +8,7 @@ import html
 import json
 import re
 import sys
+from difflib import SequenceMatcher
 from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
@@ -146,6 +147,7 @@ class MammothPlagiarismReportBuilder:
             if primary_end <= primary_start:
                 continue
 
+            mapped_primary = False
             if left_map:
                 left_fragments, _ = left_map.span_to_html_fragments(primary_start, primary_end)
                 if left_fragments:
@@ -154,6 +156,15 @@ class MammothPlagiarismReportBuilder:
                     for left_start, left_end in left_filtered:
                         left_occupied.append((left_start, left_end))
                         left_spans.append((left_start, left_end, match_id, is_template, match_type, tone))
+                    if left_filtered:
+                        mapped_primary = True
+            else:
+                # 无坐标映射时保留该分组，避免纯文本兜底模式下导航被清空
+                mapped_primary = True
+
+            # 仅保留能在 Primary 侧落点的分组，避免右侧有卡片但左侧无高亮
+            if not mapped_primary:
+                continue
 
             heading_mode = self._heading_alignment_mode(segment)
 
@@ -856,11 +867,6 @@ class MammothPlagiarismReportBuilder:
             for s in data.get("duplicate_segments", [])
         ]))
 
-        template_chars = int(summary.get("total_template_chars") or self._union_length([
-            (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in data.get("template_segments", [])
-        ]))
-        
         duplicate_chars = self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
             for s in (data.get("duplicate_segments", []) + data.get("template_segments", []))
@@ -868,8 +874,9 @@ class MammothPlagiarismReportBuilder:
         
         # 计算重复率
         effective_rate = (effective_chars / total_chars * 100) if total_chars > 0 else 0
-        template_rate = (template_chars / total_chars * 100) if total_chars > 0 else 0
-        total_rate = effective_rate + template_rate
+        # 总重复率按“有效段+模板段”的并集字符计算，避免重叠区间重复计数导致 >100%
+        total_rate = (duplicate_chars / total_chars * 100) if total_chars > 0 else 0
+        total_rate = min(total_rate, 100.0)
 
         return f"""<div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value" style="color: #dc2626;">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效/总字数</div><div class="stat-value" style="font-size: 16px;">{effective_chars:,} / {total_chars:,}</div></div>"""
 
@@ -909,11 +916,36 @@ class MammothPlagiarismReportBuilder:
             similarity = float(segment.get("similarity_score", segment.get("similarity", 1.0)) or 0.0)
 
             all_sources = segment.get("sources", [])
-            source_count = len(all_sources)
-            top_doc = all_sources[0].get("doc", "") if all_sources else ""
+            unique_docs = []
+            seen_docs = set()
+            doc_hit_count = {}
+            doc_score = {}
+            for source in all_sources:
+                doc = str(source.get("doc") or "")
+                if not doc:
+                    continue
+                if doc not in seen_docs:
+                    unique_docs.append(doc)
+                    seen_docs.add(doc)
+                doc_hit_count[doc] = int(doc_hit_count.get(doc, 0)) + 1
+                score_val = float(source.get("similarity_score", similarity) or 0.0)
+                doc_score[doc] = max(float(doc_score.get(doc, 0.0)), score_val)
+
+            source_doc_count = len(unique_docs)
+            source_piece_count = len(all_sources)
+            top_doc = ""
+            if unique_docs:
+                top_doc = sorted(
+                    unique_docs,
+                    key=lambda d: (-float(doc_score.get(d, 0.0)), -int(doc_hit_count.get(d, 0)), d),
+                )[0]
             source_info = f"主来源: {html.escape(top_doc)}" if top_doc else "主来源: -"
-            
-            source_badge = f'<span class="pill" style="padding: 2px 6px; font-size: 10px;">{source_count}个来源</span>' if source_count > 1 else ''
+
+            source_badge = ""
+            if source_doc_count > 1:
+                source_badge = f'<span class="pill" style="padding: 2px 6px; font-size: 10px;">{source_doc_count}个来源文档</span>'
+            elif source_piece_count > 1:
+                source_badge = f'<span class="pill" style="padding: 2px 6px; font-size: 10px;">{source_piece_count}个来源片段</span>'
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
@@ -940,17 +972,26 @@ class MammothPlagiarismReportBuilder:
             if visible_ids and match_id not in visible_ids:
                 continue
 
-            primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:90]
+            primary_full_text = self._clean_nav_text(segment.get("primary_text", ""))
+            primary_text = primary_full_text[:90]
             sources = segment.get("sources", []) or []
             if not sources:
                 continue
+            ordered_sources = sorted(
+                sources,
+                key=lambda source: (
+                    str(source.get("doc") or ""),
+                    int(source.get("start", 0) or 0),
+                    int(source.get("line", 0) or 0),
+                ),
+            )
 
             source_items: List[str] = []
-            for source in sources[:8]:
+            for source in ordered_sources[:8]:
                 source_doc = html.escape(str(source.get("doc") or "-"))
                 source_line = source.get("line")
-                source_text = self._clean_nav_text(str(source.get("text", "")))
-                source_similarity = float(source.get("similarity_score", segment.get("similarity_score", 0.0)) or 0.0)
+                source_text = self._resolve_source_display_text(data, source, primary_hint=primary_full_text)
+                source_similarity = self._display_similarity(primary_full_text, source_text)
                 line_info = f" L{int(source_line)}" if isinstance(source_line, int) or (isinstance(source_line, str) and source_line.isdigit()) else ""
                 source_items.append(
                     f'''<div class="source-item">
@@ -960,8 +1001,8 @@ class MammothPlagiarismReportBuilder:
                 )
 
             more = ""
-            if len(sources) > 8:
-                more = f'<div class="source-more">其余 {len(sources) - 8} 个来源已折叠</div>'
+            if len(ordered_sources) > 8:
+                more = f'<div class="source-more">其余 {len(ordered_sources) - 8} 个来源已折叠</div>'
 
             cards.append(
                 f'''<div class="source-card" data-match-id="{match_id}">
@@ -974,6 +1015,122 @@ class MammothPlagiarismReportBuilder:
             )
 
         return "".join(cards) if cards else '<p class="empty">无来源片段</p>'
+
+    def _resolve_source_display_text(
+        self,
+        data: Dict,
+        source: Dict[str, Any],
+        primary_hint: str = "",
+        max_chars: int = 480,
+    ) -> str:
+        documents = data.get("documents", {}) or {}
+        doc_id = str(source.get("doc") or "")
+        doc_text = documents.get(doc_id, "")
+
+        start = int(source.get("start", 0) or 0)
+        end = int(source.get("end", 0) or 0)
+        text = ""
+        if isinstance(doc_text, str) and doc_text and end > start:
+            text_len = len(doc_text)
+            if 0 <= start < text_len and 0 < end <= text_len + 1:
+                # 轻量上下文，避免把不相关句子带进右侧证据片段。
+                clip_start = max(0, start - 12)
+                clip_end = min(text_len, end + 20)
+                if clip_end > clip_start:
+                    text = doc_text[clip_start:clip_end]
+
+        if not text:
+            text = str(source.get("text", "") or "")
+
+        cleaned = self._clean_nav_text(text)
+        if primary_hint:
+            return self._extract_overlap_excerpt(primary_hint, cleaned, max_chars=max_chars)
+        if len(cleaned) > max_chars:
+            return cleaned[:max_chars] + "..."
+        return cleaned
+
+    def _display_similarity(self, primary_text: str, source_text: str) -> float:
+        primary_compact = re.sub(r"\s+", "", primary_text or "")
+        source_compact = re.sub(r"\s+", "", source_text or "")
+        if len(primary_compact) < 12 or len(source_compact) < 12:
+            return 0.0
+        ratio = SequenceMatcher(
+            None,
+            primary_compact[:4000],
+            source_compact[:4000],
+            autojunk=False,
+        ).ratio()
+        return round(float(ratio), 4)
+
+    def _extract_overlap_excerpt(self, primary_text: str, source_text: str, max_chars: int = 480) -> str:
+        source_clean = self._clean_nav_text(source_text or "")
+        primary_clean = self._clean_nav_text(primary_text or "")
+        if not source_clean:
+            return ""
+        if not primary_clean:
+            return source_clean[:max_chars] + ("..." if len(source_clean) > max_chars else "")
+
+        source_compact, source_map = self._compact_with_map(source_clean)
+        primary_compact, _ = self._compact_with_map(primary_clean)
+        if len(source_compact) < 12 or len(primary_compact) < 12:
+            return source_clean[:max_chars] + ("..." if len(source_clean) > max_chars else "")
+
+        matcher = SequenceMatcher(None, primary_compact[:6000], source_compact[:12000], autojunk=False)
+        match = matcher.find_longest_match(0, min(len(primary_compact), 6000), 0, min(len(source_compact), 12000))
+
+        if match.size < 20:
+            target_chars = min(max_chars, 220)
+            excerpt = source_clean[:target_chars]
+            return excerpt + ("..." if len(source_clean) > target_chars else "")
+
+        # 以最长重叠为核心，窗口大小跟随实际重叠长度，避免“证据段”过长。
+        overlap_chars = max(match.size, 60)
+        side_context = min(80, max(24, overlap_chars // 3))
+        target_chars = min(max_chars, max(160, overlap_chars + side_context * 2))
+
+        start_compact = max(0, match.b - side_context)
+        end_compact = min(len(source_compact), match.b + match.size + side_context)
+        current_len = end_compact - start_compact
+        if current_len > target_chars:
+            center = match.b + (match.size // 2)
+            half = target_chars // 2
+            start_compact = max(0, center - half)
+            end_compact = min(len(source_compact), start_compact + target_chars)
+            if end_compact - start_compact < target_chars:
+                start_compact = max(0, end_compact - target_chars)
+            current_len = end_compact - start_compact
+        if current_len < target_chars:
+            extra = target_chars - current_len
+            left_extra = extra // 2
+            right_extra = extra - left_extra
+            start_compact = max(0, start_compact - left_extra)
+            end_compact = min(len(source_compact), end_compact + right_extra)
+
+        start_orig = source_map[start_compact] if source_map and start_compact < len(source_map) else 0
+        if source_map and end_compact > 0:
+            end_orig = source_map[end_compact - 1] + 1
+        else:
+            end_orig = len(source_clean)
+        start_orig = max(0, min(start_orig, len(source_clean)))
+        end_orig = max(start_orig, min(end_orig, len(source_clean)))
+        excerpt = source_clean[start_orig:end_orig].strip()
+        if not excerpt:
+            excerpt = source_clean[:target_chars]
+        if start_orig > 0:
+            excerpt = "..." + excerpt
+        if end_orig < len(source_clean):
+            excerpt = excerpt + "..."
+        return excerpt
+
+    def _compact_with_map(self, text: str) -> Tuple[str, List[int]]:
+        compact_chars: List[str] = []
+        index_map: List[int] = []
+        for idx, ch in enumerate(text):
+            if ch.isspace():
+                continue
+            compact_chars.append(ch)
+            index_map.append(idx)
+        return "".join(compact_chars), index_map
 
     def _count_source_docs(self, data: Dict) -> int:
         segments = data.get("match_groups") or data.get("duplicate_segments", [])

@@ -94,3 +94,14 @@ def test_report_generator_dimension_accordion_opens_lowest_score_by_default():
     assert first_open_index != -1
     assert risk_index != -1 and innovation_index != -1
     assert abs(first_open_index - risk_index) < abs(first_open_index - innovation_index)
+
+
+def test_report_generator_chat_panel_allows_first_ask_when_chat_not_ready():
+    """未预构建索引时也应允许提问，由后端首问自动重建"""
+    generator = ReportGenerator()
+
+    html = generator.build_html(_build_debug_payload(chat_ready=False), debug_mode=False)
+
+    assert "可直接提问，系统会在首问时自动尝试构建索引" in html
+    assert "busy || !evaluationId" in html
+    assert "未构建聊天索引，无法发起实时问答" not in html

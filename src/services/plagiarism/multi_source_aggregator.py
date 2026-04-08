@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from statistics import median
+import re
 from typing import Dict, List, Tuple
 
 
@@ -12,16 +13,26 @@ class MultiSourceAggregator:
 
     MERGE_GAP = 20
     MIN_OVERLAP_RATIO = 0.55
-    SOURCE_MERGE_GAP = 80
+    SOURCE_MERGE_GAP = 24
     SOURCE_BACKTRACK_TOL = 8
+    MAX_GROUP_PRIMARY_SPAN = 1600
+    _HEADING_LABEL_PATTERN = re.compile(
+        r"^\s*(?:[一二三四五六七八九十]+[、\.．]|[1-9]\d*[、\.．]|第[一二三四五六七八九十百]+部分)\s*([^\n]{1,40})"
+    )
+    _PRIMARY_BOUNDARY_PATTERN = re.compile(
+        r"(?:^|\n)\s*(?:[一二三四五六七八九十]+[、\.．]|[1-9]\d*[、\.．]|第[一二三四五六七八九十百]+部分)\s*"
+        r"(?:研究内容|研究目标|拟解决|创新点|预期成果|技术路线|关键技术|可行性分析|研究基础|工作条件|年度计划)",
+        re.IGNORECASE,
+    )
 
     def build_summary(
         self,
         pairwise_debug_output: Dict,
         primary_scope_chars: int,
+        primary_scope_text: str = "",
     ) -> Dict:
         segments = list(pairwise_debug_output.get("duplicate_segments", []) or [])
-        grouped = self._group_segments(segments)
+        grouped = self._group_segments(segments, primary_scope_text=primary_scope_text or "")
         source_rankings = self._build_source_rankings(grouped, primary_scope_chars)
         effective_duplicate_chars = self._union_length([
             (int(group.get("primary_start", 0) or 0), int(group.get("primary_end", 0) or 0))
@@ -40,7 +51,7 @@ class MultiSourceAggregator:
             "match_groups": grouped,
         }
 
-    def _group_segments(self, segments: List[Dict]) -> List[Dict]:
+    def _group_segments(self, segments: List[Dict], primary_scope_text: str = "") -> List[Dict]:
         sorted_segments = sorted(
             segments,
             key=lambda seg: (
@@ -50,7 +61,7 @@ class MultiSourceAggregator:
         )
         groups: List[Dict] = []
         for segment in sorted_segments:
-            if not groups or not self._should_merge(groups[-1], segment):
+            if not groups or not self._should_merge(groups[-1], segment, primary_scope_text=primary_scope_text):
                 groups.append(self._new_group(segment, len(groups) + 1))
                 continue
             self._merge_into_group(groups[-1], segment)
@@ -79,6 +90,7 @@ class MultiSourceAggregator:
             "primary_start": primary_start,
             "primary_end": primary_end,
             "primary_text": segment.get("primary_text", ""),
+            "heading_label": self._extract_heading_label(segment.get("primary_text", "")),
             "primary_section": segment.get("primary_section", ""),
             "match_ids": [segment.get("match_id")] if segment.get("match_id") else [],
             "sources": self._extract_sources(segment),
@@ -133,17 +145,26 @@ class MultiSourceAggregator:
             )
         return result
 
-    def _should_merge(self, group: Dict, segment: Dict) -> bool:
+    def _should_merge(self, group: Dict, segment: Dict, primary_scope_text: str = "") -> bool:
         group_start = int(group.get("primary_start", 0) or 0)
         group_end = int(group.get("primary_end", 0) or 0)
         seg_start = int(segment.get("primary_start", 0) or 0)
         seg_end = int(segment.get("primary_end", 0) or 0)
         if seg_end <= seg_start:
             return False
+        if (max(group_end, seg_end) - min(group_start, seg_start)) > self.MAX_GROUP_PRIMARY_SPAN:
+            return False
 
         if group.get("primary_section") and segment.get("primary_section"):
             if group["primary_section"] != segment["primary_section"]:
                 return False
+
+        group_heading = str(group.get("heading_label") or "").strip()
+        seg_heading = self._extract_heading_label(segment.get("primary_text", ""))
+        if group_heading and seg_heading and group_heading != seg_heading:
+            return False
+        if self._has_hard_primary_boundary(primary_scope_text, group_end, seg_start):
+            return False
 
         if not self._has_compatible_source_progression(group, segment):
             return False
@@ -155,6 +176,29 @@ class MultiSourceAggregator:
 
         gap = seg_start - group_end
         return 0 <= gap <= self.MERGE_GAP
+
+    def _extract_heading_label(self, text: str) -> str:
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return ""
+        first_line = cleaned.splitlines()[0].strip()
+        match = self._HEADING_LABEL_PATTERN.match(first_line)
+        if not match:
+            return ""
+        label = re.sub(r"\s+", "", match.group(1))
+        return label[:40]
+
+    def _has_hard_primary_boundary(self, primary_text: str, start: int, end: int) -> bool:
+        if not primary_text or end <= start:
+            return False
+        s = max(0, min(int(start), len(primary_text)))
+        e = max(0, min(int(end), len(primary_text)))
+        if e <= s:
+            return False
+        gap_text = primary_text[s:e]
+        if not gap_text.strip():
+            return False
+        return bool(self._PRIMARY_BOUNDARY_PATTERN.search(gap_text))
 
     def _has_compatible_source_progression(self, group: Dict, segment: Dict) -> bool:
         group_sources = list(group.get("sources", []) or [])
