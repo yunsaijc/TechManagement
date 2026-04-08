@@ -72,3 +72,4 @@ src/services/plagiarism/
 - [Agent 设计](03-agent.md)
 - [比对库管理](04-corpus.md)
 - [API 接口文档](05-api.md)
+- [图片查重库设计](06-image-corpus.md)

@@ -26,6 +26,7 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
     -F 'guide_codes=["c2f3b7b1f9534463ad726e6936c91859","959c8e453dd942ddb72f0ef52c07342f","7581bc8d6d564153848fcb5d14b1942e"]' \
     -F 'doc_type=hebei_nsfc_2026' \
     -F 'limit=10' \
+    -F 'max_concurrency=3' \
     -F 'debug=true'
 
 
