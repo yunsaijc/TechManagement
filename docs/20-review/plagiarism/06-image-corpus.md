@@ -73,6 +73,10 @@
 - 成功后再 promote 到 active sqlite
 - 查询全程只读 active 库
 
+6. 资源隔离：
+- 优先通过 `systemd-run --user` 为 build worker 施加 `CPUQuota/MemoryMax/IOWeight`
+- 若运行环境不支持，再回退到 `nice + ionice + iowait throttle`
+
 ## 4. 数据模型（V2）
 
 ### 4.1 Manifest

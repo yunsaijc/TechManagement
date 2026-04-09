@@ -229,6 +229,44 @@
 | `passed_count` | `int` | 通过项数量 |
 | `rule_items` | `list[RuleReportItem]` | 可点击规则列表 |
 
+### `ProjectReviewPacket`
+
+表示单项目统一证据包。该模型用于支撑“一个项目只看一个合并文件”的查看方式。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `packet_file` | `str` | 合并后的 packet PDF 路径 |
+| `source_items` | `list[PacketSourceItem]` | 参与合并的原始文件顺序 |
+| `page_map` | `list[PacketPageMapItem]` | 原始文件到 packet 页码范围的映射 |
+
+### `PacketSourceItem`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `order` | `int` | 合并顺序 |
+| `source_file` | `str` | 原始文件路径 |
+| `source_name` | `str` | 原始文件名 |
+| `source_kind` | `str` | `proposal` / `attachment` |
+| `doc_kind` | `str \| None` | 附件类别 |
+| `merge_mode` | `str` | `pdf` / `image_to_pdf` / `fallback` |
+
+### `PacketPageMapItem`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `source_file` | `str` | 原始文件路径 |
+| `start_page` | `int` | 在 packet 中的起始页 |
+| `end_page` | `int` | 在 packet 中的结束页 |
+| `page_count` | `int` | 合并后的页数 |
+
+说明：
+
+- `packet` 只解决“统一查看”和“稳定跳页”
+- 第一阶段不要求精确到 bbox，高亮后续再补
+- `page_map` 必须保持与原始材料顺序一致，不能为了展示效果重排
+
 ### `BatchReportIndexItem`
 
 表示左侧项目栏中的单个项目条目。

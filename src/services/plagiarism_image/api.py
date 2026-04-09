@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,9 @@ from .config import (
     DEFAULT_HIGH_SCORE,
     DEFAULT_MEDIUM_SCORE,
     DEFAULT_MIN_INLIERS,
+    IMAGE_BUILD_CPU_QUOTA,
+    IMAGE_BUILD_IO_WEIGHT,
+    IMAGE_BUILD_MEMORY_MAX,
     IMAGE_PLAGIARISM_DEBUG_ROOT,
 )
 from .corpus import ImageCorpusManager, resolve_project_doc
@@ -66,8 +70,47 @@ def _normalize_guide_codes(
 
 
 def _spawn_build_job(job_id: str) -> None:
+    base_cmd = [sys.executable, "-m", "src.services.plagiarism_image.build_runner", "--job-id", str(job_id)]
+    systemd_run = shutil.which("systemd-run")
+    if systemd_run:
+        unit_name = f"plagiarism-image-build-{job_id}"
+        systemd_cmd = [
+            systemd_run,
+            "--user",
+            "--no-ask-password",
+            "--collect",
+            "--same-dir",
+            "--unit",
+            unit_name,
+            "--property",
+            f"CPUQuota={IMAGE_BUILD_CPU_QUOTA}",
+            "--property",
+            f"MemoryMax={IMAGE_BUILD_MEMORY_MAX}",
+            "--property",
+            f"IOWeight={IMAGE_BUILD_IO_WEIGHT}",
+            "--property",
+            "Nice=19",
+            "--property",
+            "IOSchedulingClass=idle",
+            "--property",
+            "IOSchedulingPriority=7",
+            "--quiet",
+            "--service-type=exec",
+        ] + base_cmd
+        try:
+            proc = subprocess.run(
+                systemd_cmd,
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if proc.returncode == 0:
+                return
+        except Exception:
+            pass
+
     subprocess.Popen(
-        [sys.executable, "-m", "src.services.plagiarism_image.build_runner", "--job-id", str(job_id)],
+        base_cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,

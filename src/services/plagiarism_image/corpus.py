@@ -6,6 +6,7 @@ import json
 import sqlite3
 import time
 import uuid
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -16,6 +17,7 @@ import numpy as np
 from .config import (
     DEFAULT_FEATURE_DESCRIPTOR_ROWS,
     DEFAULT_HASH_HAMMING_MAX,
+    IMAGE_BUILD_FEATURE_WORKERS,
     IMAGE_BUILD_IOWAIT_CHECK_EVERY_DOCS,
     IMAGE_BUILD_IOWAIT_RATIO_THRESHOLD,
     IMAGE_BUILD_IOWAIT_SAMPLE_SECONDS,
@@ -42,6 +44,64 @@ from .hashing import (
 )
 from .matcher import ImageMatcher
 from .schemas import ImageAsset, ImageFingerprint, ImageMatch
+
+
+def _build_doc_payload(path_str: str) -> Dict:
+    path = Path(path_str)
+    doc_id = path.stem
+    stat = path.stat()
+    file_data = path.read_bytes()
+    assets = extract_images_from_file(doc_id=doc_id, file_name=path.name, file_data=file_data)
+    hasher = ImageHasher()
+    image_rows: List[Dict] = []
+    feature_rows: List[Dict] = []
+    for asset in assets:
+        fp = hasher.build(asset)
+        if fp is None:
+            continue
+        now = time.time()
+        image_rows.append(
+            {
+                "image_id": asset.image_id,
+                "doc_id": doc_id,
+                "doc_path": str(path),
+                "page": int(asset.page),
+                "image_index": int(asset.image_index),
+                "width": int(asset.width),
+                "height": int(asset.height),
+                "sha256_raw": fp.meta.sha256_raw,
+                "sha256_norm": fp.meta.sha256_norm,
+                "phash_hex": fp.meta.phash_hex,
+                "file_mtime": float(stat.st_mtime),
+                "updated_at": now,
+            }
+        )
+        feature_rows.append(
+            {
+                "image_id": asset.image_id,
+                "doc_id": asset.doc_id,
+                "doc_path": str(path),
+                "file_mtime": float(stat.st_mtime),
+                "page": int(asset.page),
+                "image_index": int(asset.image_index),
+                "width": int(asset.width),
+                "height": int(asset.height),
+                "sha256_norm": fp.meta.sha256_norm,
+                "phash_hex": fp.meta.phash_hex,
+                "feature_blob": serialize_feature_blob(fp, max_descriptor_rows=DEFAULT_FEATURE_DESCRIPTOR_ROWS),
+                "updated_at": now,
+            }
+        )
+    return {
+        "doc_id": doc_id,
+        "doc_path": str(path),
+        "file_size": int(stat.st_size),
+        "file_mtime": float(stat.st_mtime),
+        "image_count": len(image_rows),
+        "updated_at": time.time(),
+        "image_rows": image_rows,
+        "feature_rows": feature_rows,
+    }
 
 
 def _read_json(path: Path, default: Dict) -> Dict:
@@ -411,6 +471,17 @@ class ImageCorpusManager:
             if path.exists():
                 path.unlink()
 
+    def clone_active_db_to_shadow(self, shadow_db_path: Path) -> None:
+        shadow_db_path = Path(shadow_db_path)
+        self.cleanup_shadow_db(shadow_db_path)
+        src = self._get_feature_conn()
+        dst = sqlite3.connect(str(shadow_db_path), timeout=30.0, check_same_thread=False)
+        try:
+            src.backup(dst)
+            dst.commit()
+        finally:
+            dst.close()
+
     def build_batch(
         self,
         corpus_path: Optional[Path] = None,
@@ -453,82 +524,28 @@ class ImageCorpusManager:
             processed = 0
             failed: List[Dict] = []
             indexed_images = 0
+            skipped_docs = 0
             throttle_events = 0
-
+            docs_to_process: List[Path] = []
             for path in selected:
                 processed += 1
-                if processed % IMAGE_BUILD_IOWAIT_CHECK_EVERY_DOCS == 0:
-                    if self._maybe_throttle_for_io_pressure():
-                        throttle_events += 1
-                doc_id = path.stem
-                try:
-                    file_stat = path.stat()
-                    file_mtime = file_stat.st_mtime
-                    file_size = file_stat.st_size
-                    file_data = path.read_bytes()
-                    assets = extract_images_from_file(doc_id=doc_id, file_name=path.name, file_data=file_data)
+                if processed % IMAGE_BUILD_IOWAIT_CHECK_EVERY_DOCS == 0 and self._maybe_throttle_for_io_pressure():
+                    throttle_events += 1
+                if self._is_doc_unchanged(conn, path):
+                    skipped_docs += 1
+                    continue
+                docs_to_process.append(path)
 
-                    stale_ids = self._get_image_ids_for_doc(conn, doc_id)
-                    if stale_ids:
-                        self._delete_feature_rows(conn, stale_ids)
-                    conn.execute("DELETE FROM images WHERE doc_id = ?", (doc_id,))
-
-                    image_count = 0
-                    for asset in assets:
-                        fp = self.hasher.build(asset)
-                        if fp is None:
+            if docs_to_process:
+                max_workers = max(1, min(int(IMAGE_BUILD_FEATURE_WORKERS), 4, len(docs_to_process)))
+                with ProcessPoolExecutor(max_workers=max_workers) as pool:
+                    for path, result, error in pool.map(self._process_doc_for_build, [str(p) for p in docs_to_process]):
+                        doc_id = Path(path).stem
+                        if error is not None:
+                            failed.append({"doc_id": doc_id, "path": path, "error": error})
                             continue
-                        image_count += 1
-                        now = time.time()
-                        conn.execute(
-                            (
-                                "INSERT INTO images("
-                                "image_id, doc_id, doc_path, page, image_index, width, height, "
-                                "sha256_raw, sha256_norm, phash_hex, file_mtime, updated_at"
-                                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                                "ON CONFLICT(image_id) DO UPDATE SET "
-                                "doc_id=excluded.doc_id, doc_path=excluded.doc_path, page=excluded.page, "
-                                "image_index=excluded.image_index, width=excluded.width, height=excluded.height, "
-                                "sha256_raw=excluded.sha256_raw, sha256_norm=excluded.sha256_norm, "
-                                "phash_hex=excluded.phash_hex, file_mtime=excluded.file_mtime, "
-                                "updated_at=excluded.updated_at"
-                            ),
-                            (
-                                asset.image_id,
-                                doc_id,
-                                str(path),
-                                int(asset.page),
-                                int(asset.image_index),
-                                int(asset.width),
-                                int(asset.height),
-                                fp.meta.sha256_raw,
-                                fp.meta.sha256_norm,
-                                fp.meta.phash_hex,
-                                float(file_mtime),
-                                now,
-                            ),
-                        )
-                        self._upsert_feature_row(
-                            conn=conn,
-                            asset=asset,
-                            fp=fp,
-                            doc_path=path,
-                            file_mtime=file_mtime,
-                        )
-                    conn.execute(
-                        (
-                            "INSERT INTO documents(doc_id, doc_path, file_size, file_mtime, image_count, updated_at) "
-                            "VALUES (?, ?, ?, ?, ?, ?) "
-                            "ON CONFLICT(doc_id) DO UPDATE SET "
-                            "doc_path=excluded.doc_path, file_size=excluded.file_size, "
-                            "file_mtime=excluded.file_mtime, image_count=excluded.image_count, "
-                            "updated_at=excluded.updated_at"
-                        ),
-                        (doc_id, str(path), int(file_size), float(file_mtime), int(image_count), time.time()),
-                    )
-                    indexed_images += image_count
-                except Exception as exc:
-                    failed.append({"doc_id": doc_id, "path": str(path), "error": str(exc)})
+                        self._apply_doc_payload(conn, result)
+                        indexed_images += int(result.get("image_count", 0) or 0)
 
             next_cursor = cursor + len(selected)
             has_more = next_cursor < len(all_docs)
@@ -578,6 +595,7 @@ class ImageCorpusManager:
                 "selected": len(selected),
                 "processed": processed,
                 "indexed_images": indexed_images,
+                "skipped_docs": skipped_docs,
                 "failed": len(failed),
                 "remaining": max(0, len(all_docs) - next_cursor),
                 "has_more": has_more,
@@ -813,6 +831,95 @@ class ImageCorpusManager:
         )
         conn.commit()
         return all_docs, False
+
+    @staticmethod
+    def _process_doc_for_build(path_str: str) -> Tuple[str, Optional[Dict], Optional[str]]:
+        try:
+            return path_str, _build_doc_payload(path_str), None
+        except Exception as exc:
+            return path_str, None, str(exc)
+
+    def _is_doc_unchanged(self, conn: sqlite3.Connection, path: Path) -> bool:
+        row = conn.execute(
+            "SELECT file_size, file_mtime FROM documents WHERE doc_id = ?",
+            (path.stem,),
+        ).fetchone()
+        if row is None:
+            return False
+        stat = path.stat()
+        return int(row[0] or 0) == int(stat.st_size) and abs(float(row[1] or 0.0) - float(stat.st_mtime)) < 1e-6
+
+    def _apply_doc_payload(self, conn: sqlite3.Connection, payload: Dict) -> None:
+        doc_id = str(payload["doc_id"])
+        stale_ids = self._get_image_ids_for_doc(conn, doc_id)
+        if stale_ids:
+            self._delete_feature_rows(conn, stale_ids)
+        conn.execute("DELETE FROM images WHERE doc_id = ?", (doc_id,))
+
+        for row in payload.get("image_rows", []):
+            conn.execute(
+                (
+                    "INSERT INTO images("
+                    "image_id, doc_id, doc_path, page, image_index, width, height, "
+                    "sha256_raw, sha256_norm, phash_hex, file_mtime, updated_at"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                ),
+                (
+                    row["image_id"],
+                    row["doc_id"],
+                    row["doc_path"],
+                    row["page"],
+                    row["image_index"],
+                    row["width"],
+                    row["height"],
+                    row["sha256_raw"],
+                    row["sha256_norm"],
+                    row["phash_hex"],
+                    row["file_mtime"],
+                    row["updated_at"],
+                ),
+            )
+        for row in payload.get("feature_rows", []):
+            conn.execute(
+                (
+                    "INSERT INTO image_features("
+                    "image_id, doc_id, doc_path, file_mtime, page, image_index, width, height, "
+                    "sha256_norm, phash_hex, feature_blob, updated_at"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                ),
+                (
+                    row["image_id"],
+                    row["doc_id"],
+                    row["doc_path"],
+                    row["file_mtime"],
+                    row["page"],
+                    row["image_index"],
+                    row["width"],
+                    row["height"],
+                    row["sha256_norm"],
+                    row["phash_hex"],
+                    sqlite3.Binary(row["feature_blob"]),
+                    row["updated_at"],
+                ),
+            )
+        conn.execute(
+            (
+                "INSERT INTO documents(doc_id, doc_path, file_size, file_mtime, image_count, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(doc_id) DO UPDATE SET "
+                "doc_path=excluded.doc_path, file_size=excluded.file_size, "
+                "file_mtime=excluded.file_mtime, image_count=excluded.image_count, "
+                "updated_at=excluded.updated_at"
+            ),
+            (
+                payload["doc_id"],
+                payload["doc_path"],
+                payload["file_size"],
+                payload["file_mtime"],
+                payload["image_count"],
+                payload["updated_at"],
+            ),
+        )
 
     def _assert_build_safety(
         self,
