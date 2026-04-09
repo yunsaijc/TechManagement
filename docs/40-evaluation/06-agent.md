@@ -75,6 +75,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - 聊天检索优先基于 `page_chunks`
 - 引用结果必须返回 `file/page/snippet`
 - 评审完成后会为正式 HTML 报告同步生成一组“专家关注问答”，用于直接展示典型问题与页码证据
+- “专家关注问答”默认使用 LLM 生成，若模型不可用则降级为规则式回答
 - 评审调试 JSON 会落 `page_chunks`，用于问答阶段自动重建索引
 - 正式 HTML 报告内嵌聊天前端，直接调用 `/api/v1/evaluation/chat/ask`
 - 即使 `chat_ready=false`，前端也允许直接提问，首问触发后端自动建索引

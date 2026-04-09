@@ -116,6 +116,19 @@ class ProjectReviewAgent:
         rules = ProjectRuleRegistry.create_chain(rule_names)
 
         results: List[CheckResult] = []
+        # 批次模式下如果主申报书未定位到，先给出显式失败，避免被一堆“需人工处理”淹没。
+        if context.project_index_row is not None and not (context.scan_info or {}).get("proposal_main_file"):
+            results.append(
+                CheckResult(
+                    item="proposal_file_presence",
+                    status=CheckStatus.FAILED,
+                    message="未找到主申报书文件，请检查 /mnt/remote_corpus 挂载与目录结构",
+                    evidence={
+                        "proposal_dir": (context.scan_info or {}).get("proposal_dir", ""),
+                        "proposal_files": (context.scan_info or {}).get("proposal_files", []),
+                    },
+                )
+            )
         for rule in rules:
             if await rule.should_run(context):
                 results.append(await rule.check(context))

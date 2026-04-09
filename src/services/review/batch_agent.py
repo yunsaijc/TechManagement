@@ -37,6 +37,7 @@ class BatchReviewAgent:
     }
     RULE_LABELS = {
         "required_project_fields": "必填字段完整性",
+        "proposal_file_presence": "主申报书文件存在性",
         "registered_date_limit": "注册时间限制",
         "required_attachments": "必需附件",
         "conditional_attachments": "条件性附件",
@@ -392,6 +393,24 @@ class BatchReviewAgent:
     .inline-toggle-body {{
       padding: 0 14px 14px;
     }}
+    .status-group {{
+      margin-top: 12px;
+    }}
+    .status-group:first-child {{
+      margin-top: 0;
+    }}
+    .status-group-head {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }}
+    .status-group-count {{
+      opacity: 0.85;
+    }}
     .kv {{
       display: grid;
       grid-template-columns: 160px 1fr;
@@ -687,9 +706,10 @@ class BatchReviewAgent:
 
     def _render_policy_rule_checks_table(self, result: ProjectReviewResult) -> str:
         """渲染 docx 逐条规则对照表"""
-        primary_rows = []
-        folded_rows = []
+        primary_groups: Dict[str, Dict[str, Any]] = {}
+        folded_groups: Dict[str, Dict[str, Any]] = {}
         for item in result.policy_rule_checks:
+            display_label, display_class = self._display_status_meta(item.status)
             row_html = (
                 "<tr>"
                 "<td class='left-block'>"
@@ -706,33 +726,76 @@ class BatchReviewAgent:
                 "</tr>"
             )
             if item.status in {"system_managed", "not_applicable"}:
-                folded_rows.append(row_html)
+                if item.status not in folded_groups:
+                    folded_groups[item.status] = {
+                        "label": display_label,
+                        "class": display_class,
+                        "rows": [],
+                    }
+                folded_groups[item.status]["rows"].append(row_html)
             else:
-                primary_rows.append(row_html)
-        if not primary_rows and not folded_rows:
+                group_key = display_class
+                if group_key not in primary_groups:
+                    primary_groups[group_key] = {
+                        "label": display_label,
+                        "class": display_class,
+                        "rows": [],
+                    }
+                primary_groups[group_key]["rows"].append(row_html)
+        if not primary_groups and not folded_groups:
             return "<div class='empty'>无 docx 逐条规则结果</div>"
+
+        def render_grouped_tables(groups: Dict[str, Dict[str, Any]], order: List[str]) -> str:
+            rendered = []
+            for key in order:
+                group = groups.get(key)
+                if not group:
+                    continue
+                rows = group["rows"]
+                rendered.append(
+                    "<section class='status-group'>"
+                    "<div class='status-group-head'>"
+                    f"{self._render_status_badge(key)}"
+                    f"<span class='status-group-count'>{len(rows)} 项</span>"
+                    "</div>"
+                    "<table class='policy-table'><thead>"
+                    "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
+                    "</thead><tbody>"
+                    + "".join(rows)
+                    + "</tbody></table>"
+                    "</section>"
+                )
+            for key, group in groups.items():
+                if key in order:
+                    continue
+                rows = group["rows"]
+                rendered.append(
+                    "<section class='status-group'>"
+                    "<div class='status-group-head'>"
+                    f"{self._render_status_badge(key)}"
+                    f"<span class='status-group-count'>{len(rows)} 项</span>"
+                    "</div>"
+                    "<table class='policy-table'><thead>"
+                    "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
+                    "</thead><tbody>"
+                    + "".join(rows)
+                    + "</tbody></table>"
+                    "</section>"
+                )
+            return "".join(rendered)
+
         sections = []
-        if primary_rows:
-            sections.append(
-                "<table class='policy-table'><thead>"
-                "<tr><th class='group-left'>审查点与要求</th><th class='group-right'>审查结果</th></tr>"
-                "</thead><tbody>"
-                + "".join(primary_rows)
-                + "</tbody></table>"
-            )
+        if primary_groups:
+            sections.append(render_grouped_tables(primary_groups, ["failed", "manual", "passed", "skipped"]))
         else:
             sections.append("<div class='empty'>主要审查结果中无需要展示的项目</div>")
-        if folded_rows:
+        if folded_groups:
             sections.append(
                 "<details class='inline-toggle'>"
-                f"<summary>系统前置限制 / 不适用（{len(folded_rows)} 项）</summary>"
+                f"<summary>系统前置限制 / 不适用（{sum(len(group['rows']) for group in folded_groups.values())} 项）</summary>"
                 "<div class='inline-toggle-body'>"
-                "<table class='policy-table'><thead>"
-                "<tr><th class='group-left'>限制项</th><th class='group-right'>说明</th></tr>"
-                "</thead><tbody>"
-                + "".join(folded_rows)
-                + "</tbody></table>"
-                "</div></details>"
+                + render_grouped_tables(folded_groups, ["system_managed", "not_applicable"])
+                + "</div></details>"
             )
         return "".join(sections)
 

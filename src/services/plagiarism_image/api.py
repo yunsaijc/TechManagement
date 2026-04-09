@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -22,6 +23,7 @@ from .config import (
 from .corpus import ImageCorpusManager, read_status, resolve_project_doc
 
 router = APIRouter()
+_BUILD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 
 def _normalize_guide_codes(
@@ -63,6 +65,23 @@ def _normalize_guide_codes(
     return dedup
 
 
+def _run_build_job(job_id: str) -> None:
+    manager = ImageCorpusManager()
+    job = manager.start_build_job(job_id)
+    if not job or str(job.get("status")) != "running":
+        return
+    try:
+        result = manager.build_batch(
+            corpus_path=Path(str(job["corpus_path"])),
+            limit=int(job["limit"]),
+            reset_cursor=bool(job["reset_cursor"]),
+        )
+    except Exception as exc:
+        manager.finish_build_job(job_id, status="failed", result=None, error=str(exc))
+        return
+    manager.finish_build_job(job_id, status="completed", result=result, error=None)
+
+
 @router.post("")
 async def check_image_plagiarism(
     files: Optional[List[UploadFile]] = File(None),
@@ -95,6 +114,8 @@ async def check_image_plagiarism_by_guide_codes(
     top_k_coarse: int = Form(80),
     top_k_final: int = Form(8),
     max_pair_checks: int = Form(120000),
+    verify_workers: int = Form(0),
+    verify_backend: str = Form("auto"),
 ) -> ApiResponse[dict]:
     codes = _normalize_guide_codes(guide_codes_raw, guide_codes_list)
     if not codes:
@@ -197,6 +218,8 @@ async def check_image_plagiarism_by_guide_codes(
             top_k_coarse=top_k_coarse,
             top_k_final=top_k_final,
             max_pair_checks=max_pair_checks,
+            verify_workers=verify_workers,
+            verify_backend=verify_backend,
         )
 
     enriched = []
@@ -266,7 +289,39 @@ async def build_image_corpus_batch(
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     return ApiResponse(status="success", data=result)
+
+
+@router.post("/corpus/build-jobs")
+async def submit_image_corpus_build_job(
+    corpus_path: Optional[str] = Form(None),
+    limit: int = Form(20),
+    reset_cursor: bool = Form(False),
+) -> ApiResponse[dict]:
+    manager = ImageCorpusManager()
+    try:
+        job = manager.create_build_job(
+            corpus_path=Path(corpus_path) if corpus_path else None,
+            limit=limit,
+            reset_cursor=reset_cursor,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _BUILD_EXECUTOR.submit(_run_build_job, str(job["job_id"]))
+    return ApiResponse(status="success", data=job)
+
+
+@router.get("/corpus/build-jobs/{job_id}")
+async def get_image_corpus_build_job(job_id: str) -> ApiResponse[dict]:
+    manager = ImageCorpusManager()
+    job = manager.get_build_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="build job 不存在")
+    return ApiResponse(status="success", data=job)
 
 
 @router.post("/corpus/reset")

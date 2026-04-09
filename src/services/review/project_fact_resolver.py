@@ -20,7 +20,13 @@ class ProjectFactResolver:
         self.pdf_parser = PDFParser()
         self.docx_parser = DOCXParser()
 
-    async def resolve(self, proposal_files: List[Path], applicant_unit: str = "", unit_name: str = "") -> Dict[str, Any]:
+    async def resolve(
+        self,
+        proposal_files: List[Path],
+        applicant_unit: str = "",
+        unit_name: str = "",
+        project_leader: str = "",
+    ) -> Dict[str, Any]:
         """解析申报书事实"""
         main_file = self._select_main_proposal_file(proposal_files)
         preferred_unit_name = unit_name or applicant_unit
@@ -50,7 +56,12 @@ class ProjectFactResolver:
         project_info_updates = {
             "applicant_unit_type": applicant_unit_type,
             "registered_date": self._extract_registered_date(text, form_fields),
-            "project_leader_birth_date": self._extract_project_leader_birth_date(text, form_fields),
+            "project_leader_birth_date": self._extract_project_leader_birth_date(
+                main_file,
+                text,
+                form_fields,
+                project_leader,
+            ),
             "fiscal_funding": self._extract_budget_amount(text, form_fields, ["申请财政资金", "申请省财政资金", "财政资金", "拟申请财政资金"]),
             "self_funding": self._extract_budget_amount(text, form_fields, ["自筹资金", "单位自筹", "配套资金"]),
             "budget_line_items": self._extract_budget_line_items(text),
@@ -164,8 +175,19 @@ class ProjectFactResolver:
                 return self._parse_amount(match.group(1))
         return 0.0
 
-    def _extract_project_leader_birth_date(self, text: str, form_fields: Dict[str, str]) -> str:
+    def _extract_project_leader_birth_date(
+        self,
+        path: Path,
+        text: str,
+        form_fields: Dict[str, str],
+        project_leader: str = "",
+    ) -> str:
         """提取项目负责人出生日期"""
+        if path.suffix.lower() == ".docx":
+            from_docx = self._extract_project_leader_birth_date_from_docx(path, project_leader)
+            if from_docx:
+                return from_docx
+
         for key, value in form_fields.items():
             if any(token in key for token in ["出生日期", "出生年月", "负责人出生日期", "负责人出生年月"]):
                 normalized = self._normalize_date(value)
@@ -188,6 +210,75 @@ class ProjectFactResolver:
             if normalized:
                 return normalized
         return ""
+
+    def _extract_project_leader_birth_date_from_docx(self, path: Path, project_leader: str = "") -> str:
+        """从 docx 成员表提取项目负责人出生日期（优先取身份证）"""
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        id_pattern = re.compile(
+            r"(?<!\d)([1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[0-9Xx])(?!\d)"
+        )
+        try:
+            with zipfile.ZipFile(path) as archive:
+                xml_bytes = archive.read("word/document.xml")
+            root = ET.fromstring(xml_bytes)
+        except Exception:
+            return ""
+        body = root.find("w:body", ns)
+        if body is None:
+            return ""
+
+        normalized_leader = re.sub(r"\s+", "", project_leader or "")
+
+        for table in body.findall("w:tbl", ns):
+            rows: List[List[str]] = []
+            for tr in table.findall("w:tr", ns):
+                row = []
+                for tc in tr.findall("w:tc", ns):
+                    cell = "".join(node.text or "" for node in tc.findall(".//w:t", ns)).strip()
+                    row.append(re.sub(r"\s+", "", cell))
+                if row:
+                    rows.append(row)
+            if len(rows) < 2:
+                continue
+
+            header = rows[0]
+            if "证件号码" not in "".join(header):
+                continue
+            name_idx = self._find_header_index(header, ["姓名"])
+            id_idx = self._find_header_index(header, ["证件号码", "身份证号", "身份证号码"])
+            role_idx = self._find_header_index(header, ["分工", "角色", "承担任务"])
+            if id_idx < 0:
+                continue
+
+            leader_first: str = ""
+            for row in rows[1:]:
+                if id_idx >= len(row):
+                    continue
+                id_match = id_pattern.search(row[id_idx] or "")
+                if not id_match:
+                    continue
+                candidate_birth = f"{id_match.group(1)[6:10]}-{id_match.group(1)[10:12]}-{id_match.group(1)[12:14]}"
+
+                role_text = row[role_idx] if role_idx >= 0 and role_idx < len(row) else ""
+                name_text = row[name_idx] if name_idx >= 0 and name_idx < len(row) else ""
+                normalized_name = re.sub(r"\s+", "", name_text)
+
+                if "项目负责人" in role_text:
+                    return candidate_birth
+                if normalized_leader and normalized_name and normalized_name == normalized_leader:
+                    return candidate_birth
+                if not leader_first:
+                    leader_first = candidate_birth
+            if leader_first:
+                return leader_first
+        return ""
+
+    def _find_header_index(self, headers: List[str], candidates: List[str]) -> int:
+        """查找表头索引"""
+        for idx, text in enumerate(headers):
+            if any(candidate in text for candidate in candidates):
+                return idx
+        return -1
 
     def _extract_budget_line_items(self, text: str) -> List[str]:
         """抽取预算相关明细行，供预算禁列项检查使用"""

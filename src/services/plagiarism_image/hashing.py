@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import struct
 import hashlib
+import zlib
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -85,3 +87,67 @@ def phash_hamming(phash_hex_a: str, phash_hex_b: str) -> int:
     if len(phash_hex_a) != len(phash_hex_b):
         return 64
     return (int(phash_hex_a, 16) ^ int(phash_hex_b, 16)).bit_count()
+
+
+def phash_hex_to_int(phash_hex: str) -> Optional[int]:
+    if not phash_hex:
+        return None
+    try:
+        return int(phash_hex, 16)
+    except ValueError:
+        return None
+
+
+def serialize_feature_blob(
+    fp: RuntimeImageFingerprint,
+    max_descriptor_rows: int,
+) -> bytes:
+    desc = fp.descriptors
+    pts = fp.keypoint_pts
+    if desc is None or desc.ndim != 2 or len(desc) == 0:
+        return b""
+    if pts.ndim != 2 or pts.shape[1] != 2 or len(pts) == 0:
+        return b""
+
+    rows = int(min(len(desc), len(pts), max(1, max_descriptor_rows)))
+    cols = int(desc.shape[1])
+    if rows <= 0 or cols <= 0:
+        return b""
+
+    desc_bytes = np.ascontiguousarray(desc[:rows], dtype=np.uint8).tobytes()
+    pts_bytes = np.ascontiguousarray(pts[:rows], dtype=np.float16).tobytes()
+    payload = struct.pack("<HH", rows, cols) + pts_bytes + desc_bytes
+    return zlib.compress(payload, level=3)
+
+
+def deserialize_feature_blob(blob: bytes) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    if not blob:
+        return np.empty((0, 2), dtype=np.float32), None
+    raw = zlib.decompress(blob)
+    if len(raw) < 4:
+        return np.empty((0, 2), dtype=np.float32), None
+
+    rows, cols = struct.unpack("<HH", raw[:4])
+    if rows <= 0 or cols <= 0:
+        return np.empty((0, 2), dtype=np.float32), None
+
+    pts_size = rows * 2 * 2  # float16 x 2
+    desc_size = rows * cols
+    expected = 4 + pts_size + desc_size
+    if len(raw) < expected:
+        return np.empty((0, 2), dtype=np.float32), None
+
+    pts_start = 4
+    pts_end = pts_start + pts_size
+    desc_end = pts_end + desc_size
+    pts = (
+        np.frombuffer(raw[pts_start:pts_end], dtype=np.float16)
+        .astype(np.float32)
+        .reshape(rows, 2)
+    )
+    desc = (
+        np.frombuffer(raw[pts_end:desc_end], dtype=np.uint8)
+        .reshape(rows, cols)
+        .copy()
+    )
+    return pts, desc
