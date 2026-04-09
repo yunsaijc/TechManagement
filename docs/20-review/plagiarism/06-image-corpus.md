@@ -68,6 +68,11 @@
 - 后台单 worker 串行执行
 - 状态与结果写入 `build_jobs`
 
+5. 原子发布：
+- build 先写入 shadow sqlite
+- 成功后再 promote 到 active sqlite
+- 查询全程只读 active 库
+
 ## 4. 数据模型（V2）
 
 ### 4.1 Manifest

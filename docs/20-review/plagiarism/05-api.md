@@ -241,6 +241,7 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
 **POST** `/api/v1/plagiarism/image/corpus/build-jobs`
 
 说明：推荐主入口。接口只提交任务并立即返回，后台 worker 串行执行，避免请求线程长时间阻塞。
+构建结果先写 shadow sqlite，完成后再 promote 到 active sqlite。
 
 #### 请求参数
 

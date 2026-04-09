@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor
+import subprocess
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -20,10 +21,9 @@ from .config import (
     DEFAULT_MIN_INLIERS,
     IMAGE_PLAGIARISM_DEBUG_ROOT,
 )
-from .corpus import ImageCorpusManager, read_status, resolve_project_doc
+from .corpus import ImageCorpusManager, resolve_project_doc
 
 router = APIRouter()
-_BUILD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 
 
 def _normalize_guide_codes(
@@ -65,21 +65,13 @@ def _normalize_guide_codes(
     return dedup
 
 
-def _run_build_job(job_id: str) -> None:
-    manager = ImageCorpusManager()
-    job = manager.start_build_job(job_id)
-    if not job or str(job.get("status")) != "running":
-        return
-    try:
-        result = manager.build_batch(
-            corpus_path=Path(str(job["corpus_path"])),
-            limit=int(job["limit"]),
-            reset_cursor=bool(job["reset_cursor"]),
-        )
-    except Exception as exc:
-        manager.finish_build_job(job_id, status="failed", result=None, error=str(exc))
-        return
-    manager.finish_build_job(job_id, status="completed", result=result, error=None)
+def _spawn_build_job(job_id: str) -> None:
+    subprocess.Popen(
+        [sys.executable, "-m", "src.services.plagiarism_image.build_runner", "--job-id", str(job_id)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 @router.post("")
@@ -271,7 +263,11 @@ async def check_image_plagiarism_by_guide_codes(
 
 @router.get("/corpus/status")
 async def get_image_corpus_status() -> ApiResponse[dict]:
-    return ApiResponse(status="success", data=read_status())
+    manager = ImageCorpusManager()
+    try:
+        return ApiResponse(status="success", data=manager.status())
+    finally:
+        manager.close()
 
 
 @router.post("/corpus/build-batch")
@@ -291,6 +287,8 @@ async def build_image_corpus_batch(
         raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        manager.close()
     return ApiResponse(status="success", data=result)
 
 
@@ -311,20 +309,28 @@ async def submit_image_corpus_build_job(
         raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    _BUILD_EXECUTOR.submit(_run_build_job, str(job["job_id"]))
+    finally:
+        manager.close()
+    _spawn_build_job(str(job["job_id"]))
     return ApiResponse(status="success", data=job)
 
 
 @router.get("/corpus/build-jobs/{job_id}")
 async def get_image_corpus_build_job(job_id: str) -> ApiResponse[dict]:
     manager = ImageCorpusManager()
-    job = manager.get_build_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="build job 不存在")
-    return ApiResponse(status="success", data=job)
+    try:
+        job = manager.get_build_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="build job 不存在")
+        return ApiResponse(status="success", data=job)
+    finally:
+        manager.close()
 
 
 @router.post("/corpus/reset")
 async def reset_image_corpus() -> ApiResponse[dict]:
     manager = ImageCorpusManager()
-    return ApiResponse(status="success", data=manager.reset())
+    try:
+        return ApiResponse(status="success", data=manager.reset())
+    finally:
+        manager.close()

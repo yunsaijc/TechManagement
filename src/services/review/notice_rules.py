@@ -91,8 +91,8 @@ _NOTICE_2026_RULES: Dict[str, List[Dict[str, Any]]] = {
         {
             "code": "cooperation_region_check",
             "requirement": "合作单位应在新疆维吾尔自治区巴音郭楞蒙古自治州、新疆生产建设兵团第二师铁门关市或西藏自治区阿里地区注册。",
-            "automation": "requires_data",
-            "reason": "当前未接入合作单位注册地区",
+            "automation": "auto",
+            "reason": "",
         },
         {
             "code": "cooperation_agreement_required",
@@ -228,8 +228,8 @@ _NOTICE_2026_COMMON_RULES: List[Dict[str, Any]] = [
     {
         "code": "applicant_qualification_check",
         "requirement": "项目申报单位应为河北省所属的或者在河北省行政区域内登记、注册、具有独立法人资格的企事业单位；行政机关不得作为申报单位或合作单位。",
-        "automation": "requires_data",
-        "reason": "当前未接入单位法人属性与行政机关识别",
+        "automation": "auto",
+        "reason": "",
     },
     {
         "code": "project_leader_age_check",
@@ -306,8 +306,8 @@ _NOTICE_2026_COMMON_RULES: List[Dict[str, Any]] = [
     {
         "code": "leader_achievement_attachment_check",
         "requirement": "项目负责人及骨干人员科研水平及主要研究成果证明材料应作为附件上传。",
-        "automation": "manual",
-        "reason": "当前缺少成果证明材料与人员角色的稳定映射",
+        "automation": "auto",
+        "reason": "",
     },
     {
         "code": "other_policy_compliance",

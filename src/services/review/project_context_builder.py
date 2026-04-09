@@ -47,6 +47,10 @@ class ProjectContextBuilder:
             guide_name=project_row.guide_name,
             applicant_unit=project_row.unit_name or project_row.applicant_unit,
             applicant_unit_type=project_info_updates.get("applicant_unit_type", ""),
+            applicant_region=project_info_updates.get("applicant_region", ""),
+            applicant_credit_code=project_info_updates.get("applicant_credit_code", ""),
+            applicant_is_independent_legal_person=project_info_updates.get("applicant_is_independent_legal_person"),
+            applicant_is_government_agency=project_info_updates.get("applicant_is_government_agency", False),
             registered_date=project_info_updates.get("registered_date", ""),
             project_leader_birth_date=project_info_updates.get("project_leader_birth_date", ""),
             execution_period_years=self._calculate_execution_period(project_row.start_date, project_row.end_date),
@@ -60,6 +64,8 @@ class ProjectContextBuilder:
             has_special_industry_requirement=project_info_updates.get("has_special_industry_requirement", False),
             has_biosafety_activity=project_info_updates.get("has_biosafety_activity", False),
             has_cooperation_unit=project_info_updates.get("has_cooperation_unit", False),
+            leader_achievement_categories=project_info_updates.get("leader_achievement_categories", []),
+            leader_achievement_evidence_lines=project_info_updates.get("leader_achievement_evidence_lines", []),
         )
         cooperation_payload = proposal_facts.get("cooperation_info") or {}
 

@@ -87,6 +87,32 @@
 - 附件级审查结果
 - 建议和待人工复核项
 
+### 第八步：报告工作台组装
+
+在 `ProjectReviewResult` 之上，继续组装面向调试页/报告页的展示模型。
+
+建议生成三类结构：
+
+- 左栏项目索引
+- 中栏规则卡片流
+- 右栏证据定位目标
+
+这一层不负责重新执行规则，只负责把已有结果组织成可浏览、可点击、可跳转的工作台数据。
+
+### 第九步：生成三栏报告页
+
+最终不再建议输出“单页长表格”，而是输出 `三栏审阅工作台`：
+
+- 左栏：批次内项目列表
+- 中栏：当前项目的审查结果流
+- 右栏：申报书/附件证据查看器
+
+建议：
+
+- 继续沿用 `debug_review/{batch_id}/index.html`
+- 由同一个 HTML 文件完成状态切换和跳转
+- 静态资源继续写入批次调试目录，避免引入额外部署链路
+
 ## 参考流程图
 
 ```text
@@ -99,7 +125,47 @@ zxmc
   -> review identifiable attachments
   -> run project rules
   -> build ProjectReviewResult
+  -> build report view model
+  -> render review workspace html
 ```
+
+## 报告页交互草案
+
+### 左栏：项目切换
+
+左栏负责批次内项目切换，建议展示：
+
+- 项目名称
+- 项目 ID
+- 项目类型
+- 失败项数量
+- 需人工处理数量
+
+点击项目后：
+
+- 中栏刷新为该项目规则结果
+- 右栏默认展示项目摘要或最近一次证据
+
+### 中栏：规则点击
+
+中栏每条规则项都应具备一个或多个 `EvidenceTarget`。
+
+点击规则后：
+
+- 若存在证据目标，右栏跳到最佳命中点
+- 若存在多个命中点，右栏允许在当前规则上下文中切换
+- 若暂无精确定位，至少跳到对应文件和页码
+
+### 右栏：证据查看
+
+右栏建议支持：
+
+- 文件级切换
+- 页级跳转
+- 命中点前后切换
+- 打开原文件
+
+不建议使用 hover 自动跳转，必须显式点击触发。
 
 ## 与现有接口的关系
 
@@ -170,6 +236,7 @@ GET  /api/v1/review/project-types
 - `src/services/review/project_index_repo.py`
 - `src/services/review/project_context_builder.py`
 - `src/services/review/project_rules/`
+- `src/services/review/report_view_builder.py`
 - `src/app/routes/project_review.py`
 
 其中：
@@ -178,6 +245,7 @@ GET  /api/v1/review/project-types
 - `project_index_repo.py` 负责根据 `zxmc` 查询项目列表
 - `project_context_builder.py` 负责根据 `year + project_id` 扫描目录并构造上下文
 - `project_rules/` 负责项目级规则
+- `report_view_builder.py` 负责把项目级结果转换为三栏报告所需结构
 - `project_review.py` 提供项目级 API
 
 现有 `src/services/review/agent.py` 保持附件级职责。
@@ -192,5 +260,6 @@ GET  /api/v1/review/project-types
 - 附件级结果直接复用现有 `ReviewResult`
 - 附件文件名乱码时优先降级到人工复核，而不是武断判失败
 - 不默认把申报书作为当前主审对象
+- 报告层与规则层分离，避免在 HTML 拼装阶段重新解释业务规则
 
 这样可以在最小风险下完成能力扩展，并保持文档和实现一致。

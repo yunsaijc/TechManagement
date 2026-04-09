@@ -165,6 +165,85 @@
 - 它不是为了替代 `results`，而是把 `results`、配置和人工复核状态统一折叠成单条规则视图
 - 最终调用方应优先查看它，而不是自行拼 `results + manual_review_items`
 
+### `EvidenceTarget`
+
+表示某条规则可跳转的证据定位目标。该模型用于支撑“中栏点规则，右栏跳原文/附件”的交互。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `target_id` | `str` | 证据目标唯一标识 |
+| `source_type` | `str` | `proposal` / `attachment` / `generated_preview` |
+| `source_file` | `str` | 源文件路径 |
+| `source_file_name` | `str` | 源文件名 |
+| `page` | `int \| None` | 命中页码 |
+| `bbox` | `list[float] \| None` | 页内区域坐标，可选 |
+| `excerpt` | `str` | 证据摘要文本 |
+| `preview_file` | `str \| None` | 预渲染截图或缩略图路径 |
+| `confidence` | `float \| None` | 命中置信度 |
+
+说明：
+
+- `EvidenceTarget` 是报告查看器使用的统一定位模型
+- 它不替代原始 `evidence`，而是把各种规则证据统一抽象为“可跳转目标”
+- 第一阶段至少应支持 `source_file + page`
+- 第二阶段再补 `bbox`
+
+### `RuleReportItem`
+
+表示报告层的一条可点击规则项。它是 `PolicyRuleCheck` 在前端/调试页上的展示模型。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `rule_code` | `str` | 规则编码 |
+| `rule_label` | `str` | 中文显示名称 |
+| `requirement` | `str` | 审查要求 |
+| `status` | `str` | 当前状态 |
+| `summary` | `str` | 结果摘要 |
+| `evidence_targets` | `list[EvidenceTarget]` | 可跳转证据列表 |
+| `group` | `str` | 报告分组，例如 `failed` / `manual` / `passed` |
+
+说明：
+
+- `RuleReportItem` 面向报告交互
+- 它可以由 `policy_rule_checks + results + manual_review_items` 组装得到
+- 调用方不需要自己再把多个模型拼接成界面卡片
+
+### `ProjectReportView`
+
+表示单项目在报告页面上的聚合展示模型。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `project_id` | `str` | 项目 ID |
+| `project_name` | `str` | 项目名称 |
+| `project_type` | `str` | 项目类型 |
+| `summary` | `str` | 项目摘要 |
+| `failed_count` | `int` | 失败项数量 |
+| `manual_count` | `int` | 需人工处理数量 |
+| `passed_count` | `int` | 通过项数量 |
+| `rule_items` | `list[RuleReportItem]` | 可点击规则列表 |
+
+### `BatchReportIndexItem`
+
+表示左侧项目栏中的单个项目条目。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `project_id` | `str` | 项目 ID |
+| `project_name` | `str` | 项目名称 |
+| `project_type` | `str` | 项目类型 |
+| `failed_count` | `int` | 失败项数量 |
+| `manual_count` | `int` | 需人工处理数量 |
+| `attachment_count` | `int` | 附件数 |
+
 ### `ProjectReviewResult`
 
 表示项目级形式审查结果。建议字段：
@@ -183,6 +262,7 @@
 | `suggestions` | `list[str]` | 建议 |
 | `processed_at` | `datetime` | 处理时间 |
 | `processing_time` | `float` | 总耗时 |
+| `report_view` | `ProjectReportView \| None` | 面向三栏报告工作台的聚合视图 |
 
 ## 关系说明
 
@@ -203,6 +283,7 @@ ProjectReviewResult
   -> 缺失附件列表
   -> 附件级 ReviewResult 列表
   -> 待人工复核项
+  -> report_view
 ```
 
 推荐读取顺序：
@@ -213,6 +294,8 @@ ProjectReviewResult
    说明：查看项目级规则链实际执行了哪些规则
 3. `manual_review_items`
    说明：查看当前仍需人工复核的剩余项
+4. `report_view`
+   说明：供报告页直接消费的聚合展示结构
 
 ## 与现有实现的衔接
 
