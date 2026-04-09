@@ -11,7 +11,8 @@
 3. 项目画像识别：在九维检查前推断 `project_profile` 与维度覆盖规则  
 4. 并发调度：并行执行九维检查、划重点、指南贴合、技术摸底  
 5. 结果合并：统一评分、总结、证据去重、异常归并  
-6. 持久化：写入评审结果与证据链
+6. 报告产物：输出正式审阅工作台 HTML 与 debug HTML  
+7. 持久化：写入评审结果与证据链
 
 ## 编排流程
 
@@ -26,7 +27,8 @@ Step 4 并行执行
   - Benchmark Analyzer
   - Chat Index Builder（按开关启用）
 Step 5 汇总评分与建议
-Step 6 写入 storage 并返回结果
+Step 6 生成正式 HTML / debug HTML
+Step 7 写入 storage 并返回结果
 ```
 
 ## 并发策略
@@ -79,6 +81,8 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - 评审调试 JSON 会落 `page_chunks`，用于问答阶段自动重建索引
 - 正式 HTML 报告内嵌聊天前端，直接调用 `/api/v1/evaluation/chat/ask`
 - 即使 `chat_ready=false`，前端也允许直接提问，首问触发后端自动建索引
+- 正式 HTML 采用“左正文、右结果”的审阅工作台布局
+- 右侧所有 `evidence/citation` 应复用统一跳转协议，驱动左侧正文定位
 - 报告可能以本地文件形式打开，因此应用层需允许跨域访问正文评审 API
 - 检索阶段会对问题做轻量意图识别，例如：
   - 研究目标
@@ -112,6 +116,19 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - `evidence`（`file/page/snippet/source`）
 - `chat_ready`
 - `partial`、`errors`
+
+报告产物包含：
+
+- `EVAL_{project_id}.html`：正式审阅工作台
+- `EVAL_{project_id}.debug.html`：调试报告
+- `EVAL_{project_id}.json`：用于重建报告与正文联动的数据底座
+
+正式工作台最小要求：
+
+- 左侧正文阅读区基于 `page_chunks` 按页渲染
+- 右侧结果区展示评分、划重点、问答、证据
+- 任一 `evidence/citation` 点击后都能把左侧正文定位到对应页
+- 若 `snippet` 可匹配到正文片段，则需对命中块做临时高亮
 
 ## 异常与降级
 

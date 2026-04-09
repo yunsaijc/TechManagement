@@ -5,12 +5,15 @@
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List
+
+from src.services.evaluation.parsers import DocumentParser
 
 
 class ReportGenerator:
@@ -60,8 +63,40 @@ class ReportGenerator:
         debug_json = Path(debug_json_path)
         output_html = Path(output_html_path)
         data = json.loads(debug_json.read_text(encoding="utf-8"))
+        updated = self._ensure_page_chunks(data)
+        if updated:
+            debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
         return output_html
+
+    def _ensure_page_chunks(self, data: Dict[str, Any]) -> bool:
+        """兼容旧 debug JSON，缺少 page_chunks 时尝试回源补齐"""
+        page_chunks = data.get("page_chunks")
+        if isinstance(page_chunks, list) and page_chunks:
+            return False
+
+        meta = data.get("meta") or {}
+        if not isinstance(meta, dict):
+            return False
+
+        file_path = str(meta.get("file_path") or "").strip()
+        if not file_path or not os.path.exists(file_path):
+            return False
+
+        source_name = str(data.get("source_name") or meta.get("file_name") or os.path.basename(file_path))
+        parser = DocumentParser()
+        parsed = asyncio.run(parser.parse(file_path, source_name=source_name))
+        recovered_chunks = parsed.get("page_chunks") or []
+        if not recovered_chunks:
+            return False
+
+        data["page_chunks"] = recovered_chunks
+        recovered_meta = parsed.get("meta") or {}
+        if isinstance(recovered_meta, dict):
+            merged_meta = dict(meta)
+            merged_meta.update(recovered_meta)
+            data["meta"] = merged_meta
+        return True
 
     def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
@@ -74,6 +109,7 @@ class ReportGenerator:
         industry_fit = result.get("industry_fit")
         benchmark = result.get("benchmark")
         sections = data.get("sections") or {}
+        page_chunks = data.get("page_chunks") or []
         expert_qna = data.get("expert_qna") or []
         evidence_map = self._build_evidence_map(evidence)
         evaluation_id = str(result.get("evaluation_id") or "")
@@ -88,6 +124,8 @@ class ReportGenerator:
         left_tail = ""
         right_tail = ""
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
+        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, debug_mode)
+        layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
 
         if debug_mode:
             left_tail = f"""
@@ -281,11 +319,16 @@ class ReportGenerator:
     }}
     .content-grid {{
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
       gap: 20px;
       align-items: stretch;
       min-height: 0;
       height: 100%;
+    }}
+    .workspace-layout {{
+      grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.95fr);
+    }}
+    .debug-layout {{
+      grid-template-columns: minmax(0, 1fr) 360px;
     }}
     .main-stack,
     .side-stack {{
@@ -296,6 +339,129 @@ class ReportGenerator:
       overflow: auto;
       padding-right: 6px;
       max-height: 100%;
+    }}
+    .side-stack {{
+      padding-right: 2px;
+    }}
+    .doc-panel {{
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }}
+    .doc-panel-inner {{
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 16px;
+    }}
+    .doc-toolbar {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
+    .doc-toolbar-meta {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .doc-stat {{
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }}
+    .doc-help {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }}
+    .doc-viewer {{
+      min-height: 0;
+      overflow: auto;
+      padding-right: 6px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }}
+    .doc-page {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      scroll-margin-top: 18px;
+    }}
+    .doc-page.is-active {{
+      border-color: #88a4c3;
+      box-shadow: 0 0 0 3px rgba(29, 60, 97, 0.12);
+    }}
+    .doc-page-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }}
+    .doc-page-title {{
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .doc-page-sub {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }}
+    .doc-chunk-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .doc-chunk {{
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #e3e9f0;
+      background: #fdfefe;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.85;
+      font-size: 14px;
+    }}
+    .doc-chunk.is-match {{
+      border-color: #e2b562;
+      background: #fff8e7;
+      box-shadow: inset 0 0 0 1px rgba(229, 164, 43, 0.28);
+    }}
+    .jump-link {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d6e5;
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }}
+    .jump-link:hover {{
+      background: #eaf1f7;
+      border-color: #9eb6cf;
+    }}
+    .jump-link-row {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
     }}
     .panel-inner {{
       padding: 22px;
@@ -764,6 +930,7 @@ class ReportGenerator:
         </div>
         <div class="hero-lead">面向专家快速阅览的正文评审报告，重点展示结论、问题、证据与可追问能力。</div>
         <nav class="hero-nav">
+          {'' if debug_mode else '<a class="nav-link" href="#report-document">申报书正文</a>'}
           <a class="nav-link" href="#report-overview">评审结论</a>
           <a class="nav-link" href="#report-dimensions">维度评分</a>
           <a class="nav-link" href="#report-chat">专家聊天</a>
@@ -775,13 +942,18 @@ class ReportGenerator:
         </nav>
       </header>
 
-      <div class="content-grid">
+      <div class="{layout_class}">
         <main class="main-stack">
+          {document_panel}
+          {left_tail}
+        </main>
+
+        <aside class="side-stack">
           <section class="panel" id="report-overview">
             <div class="panel-inner">
               <div class="panel-head">
                 <h2>{report_summary_title}</h2>
-                <div class="panel-note">先给专家连续阅读的结论，再进入逐项核对。</div>
+                <div class="panel-note">右侧给出结论与问题，左侧同步承接原文核验。</div>
               </div>
               <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
               <div class="facts-grid">
@@ -838,11 +1010,6 @@ class ReportGenerator:
               </div>
             </div>
           </section>
-
-          {left_tail}
-        </main>
-
-        <aside class="side-stack">
           {self._render_chat_panel(
               evaluation_id=evaluation_id,
               chat_ready=bool(result.get("chat_ready")),
@@ -1066,6 +1233,171 @@ class ReportGenerator:
                 best_index = index
         return best_index
 
+    def _render_document_panel(
+        self,
+        page_chunks: List[Dict[str, Any]],
+        meta: Dict[str, Any],
+        debug_mode: bool,
+    ) -> str:
+        """渲染左侧正文阅读区"""
+        if debug_mode:
+            return ""
+
+        pages: Dict[int, List[Dict[str, Any]]] = {}
+        for chunk in page_chunks:
+            if not isinstance(chunk, dict):
+                continue
+            page = int(chunk.get("page", 0) or 0)
+            if page <= 0:
+                continue
+            pages.setdefault(page, []).append(chunk)
+
+        page_count = len(pages) or int(meta.get("page_count", 0) or 0)
+        if not pages:
+            body_html = '<div class="empty">当前没有可渲染的正文页切片，暂时无法提供联动阅读。</div>'
+        else:
+            page_cards: List[str] = []
+            for page_no in sorted(pages):
+                chunks_html: List[str] = []
+                for index, chunk in enumerate(pages[page_no], start=1):
+                    section = str(chunk.get("section") or "").strip()
+                    text = str(chunk.get("text") or "").strip()
+                    if not text:
+                        continue
+                    section_html = (
+                        f'<div class="doc-page-sub">{html.escape(section)}</div>'
+                        if section
+                        else ""
+                    )
+                    chunks_html.append(
+                        f"""
+                        <article
+                          class="doc-chunk"
+                          data-page="{page_no}"
+                          data-snippet="{html.escape(self._normalize_search_text(text[:220]))}"
+                        >
+                          {section_html}
+                          <div>{html.escape(text)}</div>
+                        </article>
+                        """
+                    )
+                page_cards.append(
+                    f"""
+                    <section class="doc-page" data-page="{page_no}" id="doc-page-{page_no}">
+                      <div class="doc-page-head">
+                        <div class="doc-page-title">第 {page_no} 页</div>
+                        <div class="doc-page-sub">基于正文解析结果重建的阅读视图</div>
+                      </div>
+                      <div class="doc-chunk-list">
+                        {''.join(chunks_html) or '<div class="empty">本页暂无可展示正文</div>'}
+                      </div>
+                    </section>
+                    """
+                )
+            body_html = "".join(page_cards)
+
+        return f"""
+        <section class="panel doc-panel" id="report-document">
+          <div class="panel-inner doc-panel-inner">
+            <div class="panel-head">
+              <h2>申报书正文</h2>
+              <div class="panel-note">右侧点击任一证据后，左侧会跳页并尝试高亮命中片段。</div>
+            </div>
+            <div class="doc-toolbar">
+              <div class="doc-toolbar-meta">
+                <div class="doc-stat">源文件：{html.escape(str(meta.get("file_name") or "-"))}</div>
+                <div class="doc-stat">页数：{html.escape(str(page_count or "-"))}</div>
+                <div class="doc-stat">分页：{"近似分页" if meta.get("page_estimated") else "原始页码"}</div>
+              </div>
+              <div class="doc-help">证据不足时至少完成页级跳转，片段高亮按 `snippet` 匹配。</div>
+            </div>
+            <div class="doc-viewer" id="doc-viewer">
+              {body_html}
+            </div>
+          </div>
+        </section>
+        {self._render_document_jump_script()}
+        """
+
+    def _render_jump_link(
+        self,
+        page: Any,
+        snippet: Any,
+        label: str = "查看原文",
+    ) -> str:
+        """渲染统一的正文跳转入口"""
+        try:
+            page_no = int(page)
+        except (TypeError, ValueError):
+            page_no = 0
+        if page_no <= 0:
+            return ""
+        return (
+            f'<a class="jump-link" href="#doc-page-{page_no}" '
+            f'data-doc-jump="true" data-page="{page_no}" '
+            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}">'
+            f'{html.escape(label)} · 第 {page_no} 页</a>'
+        )
+
+    def _render_document_jump_script(self) -> str:
+        """正文跳转与片段高亮脚本"""
+        return """
+        <script>
+          (() => {
+            const viewer = document.getElementById("doc-viewer");
+            if (!viewer) return;
+
+            const normalize = (value) => String(value || "")
+              .replace(/\\s+/g, "")
+              .replace(/[，。；：、“”‘’（）()【】《》,.!?\\-]/g, "")
+              .trim();
+
+            let activeTimer = null;
+
+            const clearActiveState = () => {
+              viewer.querySelectorAll(".doc-page.is-active").forEach((node) => node.classList.remove("is-active"));
+              viewer.querySelectorAll(".doc-chunk.is-match").forEach((node) => node.classList.remove("is-match"));
+            };
+
+            const jumpToEvidence = (page, snippet) => {
+              const pageNode = viewer.querySelector(`.doc-page[data-page="${page}"]`);
+              if (!pageNode) return;
+
+              clearActiveState();
+              pageNode.classList.add("is-active");
+
+              const normalizedSnippet = normalize(snippet).slice(0, 120);
+              let matchedChunk = null;
+              if (normalizedSnippet) {
+                matchedChunk = Array.from(pageNode.querySelectorAll(".doc-chunk")).find((node) => {
+                  const text = node.dataset.snippet || normalize(node.textContent).slice(0, 300);
+                  return text.includes(normalizedSnippet) || normalizedSnippet.includes(text.slice(0, 48));
+                });
+              }
+
+              const target = matchedChunk || pageNode;
+              if (matchedChunk) matchedChunk.classList.add("is-match");
+              target.scrollIntoView({ behavior: "smooth", block: "center" });
+
+              if (activeTimer) window.clearTimeout(activeTimer);
+              activeTimer = window.setTimeout(() => {
+                pageNode.classList.remove("is-active");
+                if (matchedChunk) matchedChunk.classList.remove("is-match");
+              }, 3600);
+            };
+
+            document.addEventListener("click", (event) => {
+              const trigger = event.target.closest("[data-doc-jump]");
+              if (!trigger) return;
+              event.preventDefault();
+              const page = Number(trigger.dataset.page || 0);
+              if (!page) return;
+              jumpToEvidence(page, trigger.dataset.snippet || "");
+            });
+          })();
+        </script>
+        """
+
     def _render_evidence(self, evidence: List[Dict[str, Any]]) -> str:
         if not evidence:
             return '<div class="empty">暂无证据</div>'
@@ -1078,6 +1410,7 @@ class ReportGenerator:
                 "<div class=\"fold-body\">"
                 f"<div><strong>文件：</strong>{html.escape(str(item.get('file') or '-'))}</div>"
                 f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}</div>"
+                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'))}</div>"
                 "</div>"
                 "</details>"
             )
@@ -1126,6 +1459,7 @@ class ReportGenerator:
                     f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
                     f"<div>文件：{html.escape(str(citation.get('file') or '-'))}</div>"
                     f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
+                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'))}</div>"
                     "</div>"
                 )
                 for citation in citations[:3]
@@ -1269,6 +1603,15 @@ class ReportGenerator:
                       <div>页码：第 ${{escapeHtml(citation.page || "-")}} 页</div>
                       <div>文件：${{escapeHtml(citation.file || "-")}}</div>
                       <div>片段：${{escapeHtml(citation.snippet || "-")}}</div>
+                      <div class="jump-link-row">
+                        <a
+                          class="jump-link"
+                          href="#doc-page-${{escapeHtml(citation.page || "-")}}"
+                          data-doc-jump="true"
+                          data-page="${{escapeHtml(citation.page || "")}}"
+                          data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
+                        >查看原文 · 第 ${{escapeHtml(citation.page || "-")}} 页</a>
+                      </div>
                     </div>
                   `).join("")}}</div>`
                 : "";
@@ -1373,6 +1716,7 @@ class ReportGenerator:
                 meta_html = (
                     f'<div class="subtle">证据页：第 {html.escape(str(page))} 页</div>'
                     f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
+                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet)}</div>'
                 )
             rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
         return "<ol class=\"list\">" + "".join(rows) + "</ol>"
@@ -1433,6 +1777,12 @@ class ReportGenerator:
             f"<tr><th>近似分页</th><td>{'是' if meta.get('page_estimated') else '否'}</td></tr>"
             '</table>'
         )
+
+    def _normalize_search_text(self, value: str) -> str:
+        """统一跳转匹配文本，减少断行与标点差异影响"""
+        normalized = re.sub(r"\s+", "", str(value or ""))
+        normalized = re.sub(r"[，。；：、“”‘’（）()【】《》,.!?\-]", "", normalized)
+        return normalized.strip()
 
     def _score_class(self, score: Any) -> str:
         try:

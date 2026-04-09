@@ -16,6 +16,10 @@ import numpy as np
 from .config import (
     DEFAULT_FEATURE_DESCRIPTOR_ROWS,
     DEFAULT_HASH_HAMMING_MAX,
+    IMAGE_BUILD_IOWAIT_CHECK_EVERY_DOCS,
+    IMAGE_BUILD_IOWAIT_RATIO_THRESHOLD,
+    IMAGE_BUILD_IOWAIT_SAMPLE_SECONDS,
+    IMAGE_BUILD_IOWAIT_SLEEP_SECONDS,
     IMAGE_PLAGIARISM_CHECKPOINT_PATH,
     IMAGE_PLAGIARISM_DEFAULT_CORPUS_PATH,
     IMAGE_BUILD_LARGE_CORPUS_DOC_THRESHOLD,
@@ -26,6 +30,7 @@ from .config import (
     IMAGE_PLAGIARISM_LOCAL_ROOT,
     IMAGE_PLAGIARISM_MANIFEST_PATH,
     IMAGE_PLAGIARISM_REMOTE_ROOT,
+    IMAGE_PLAGIARISM_SHADOW_DIR,
 )
 from .extractor import extract_images_from_file
 from .hashing import (
@@ -246,6 +251,15 @@ class ImageCorpusManager:
             self._feature_conn = None
         return {"removed": removed}
 
+    def close(self) -> None:
+        if self._feature_conn is not None:
+            self._feature_conn.close()
+            self._feature_conn = None
+
+    def shadow_db_path(self, job_id: str) -> Path:
+        IMAGE_PLAGIARISM_SHADOW_DIR.mkdir(parents=True, exist_ok=True)
+        return IMAGE_PLAGIARISM_SHADOW_DIR / f"{job_id}.sqlite3"
+
     def create_build_job(
         self,
         corpus_path: Optional[Path],
@@ -261,10 +275,10 @@ class ImageCorpusManager:
         conn.execute(
             (
                 "INSERT INTO build_jobs("
-                "job_id, status, corpus_path, limit_value, reset_cursor, created_at, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "job_id, status, corpus_path, limit_value, reset_cursor, created_at, updated_at, worker_pid"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             ),
-            (job_id, "queued", str(corpus_dir), int(limit), 1 if reset_cursor else 0, now, now),
+            (job_id, "queued", str(corpus_dir), int(limit), 1 if reset_cursor else 0, now, now, None),
         )
         conn.commit()
         return self.get_build_job(job_id) or {"job_id": job_id, "status": "queued"}
@@ -274,14 +288,14 @@ class ImageCorpusManager:
         row = conn.execute(
             (
                 "SELECT job_id, status, corpus_path, limit_value, reset_cursor, created_at, updated_at, "
-                "started_at, finished_at, result_json, error_text "
+                "started_at, finished_at, worker_pid, result_json, error_text "
                 "FROM build_jobs WHERE job_id = ?"
             ),
             (job_id,),
         ).fetchone()
         if row is None:
             return None
-        result_json = row[9]
+        result_json = row[10]
         result = None
         if result_json:
             try:
@@ -298,8 +312,9 @@ class ImageCorpusManager:
             "updated_at": float(row[6]) if row[6] is not None else None,
             "started_at": float(row[7]) if row[7] is not None else None,
             "finished_at": float(row[8]) if row[8] is not None else None,
+            "worker_pid": int(row[9]) if row[9] is not None else None,
             "result": result,
-            "error": str(row[10]) if row[10] is not None else None,
+            "error": str(row[11]) if row[11] is not None else None,
         }
 
     def start_build_job(self, job_id: str) -> Optional[Dict]:
@@ -317,13 +332,21 @@ class ImageCorpusManager:
             return self.get_build_job(job_id)
         return self.get_build_job(job_id)
 
+    def attach_build_job_pid(self, job_id: str, worker_pid: int) -> None:
+        conn = self._get_feature_conn()
+        conn.execute(
+            "UPDATE build_jobs SET worker_pid = ?, updated_at = ? WHERE job_id = ?",
+            (int(worker_pid), time.time(), job_id),
+        )
+        conn.commit()
+
     def finish_build_job(self, job_id: str, status: str, result: Optional[Dict], error: Optional[str]) -> None:
         conn = self._get_feature_conn()
         now = time.time()
         conn.execute(
             (
-                "UPDATE build_jobs SET status = ?, updated_at = ?, finished_at = ?, result_json = ?, error_text = ? "
-                "WHERE job_id = ?"
+                "UPDATE build_jobs SET status = ?, updated_at = ?, finished_at = ?, worker_pid = NULL, "
+                "result_json = ?, error_text = ? WHERE job_id = ?"
             ),
             (
                 str(status),
@@ -335,6 +358,58 @@ class ImageCorpusManager:
             ),
         )
         conn.commit()
+
+    def promote_shadow_db(self, shadow_db_path: Path) -> None:
+        shadow_db_path = Path(shadow_db_path)
+        if not shadow_db_path.exists():
+            raise FileNotFoundError(f"shadow db 不存在: {shadow_db_path}")
+        lock_fp = self._acquire_build_lock()
+        try:
+            conn = self._get_feature_conn()
+            shadow_alias = "shadowdb"
+            conn.execute(f"ATTACH DATABASE ? AS {shadow_alias}", (str(shadow_db_path),))
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                for table in ("documents", "images", "manifest_docs", "build_state", "image_features"):
+                    conn.execute(f"DELETE FROM {table}")
+                conn.execute(
+                    "INSERT INTO documents SELECT * FROM shadowdb.documents"
+                )
+                conn.execute(
+                    "INSERT INTO images SELECT * FROM shadowdb.images"
+                )
+                conn.execute(
+                    "INSERT INTO manifest_docs SELECT * FROM shadowdb.manifest_docs"
+                )
+                conn.execute(
+                    "INSERT INTO build_state SELECT * FROM shadowdb.build_state"
+                )
+                conn.execute(
+                    "INSERT INTO image_features SELECT * FROM shadowdb.image_features"
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.execute(f"DETACH DATABASE {shadow_alias}")
+            self._index_cache = None
+            self._doc_fp_cache.clear()
+            self._image_fp_cache.clear()
+            self._invalidate_fast_index()
+        finally:
+            self._release_build_lock(lock_fp)
+
+    def cleanup_shadow_db(self, shadow_db_path: Path) -> None:
+        shadow_db_path = Path(shadow_db_path)
+        candidates = [
+            shadow_db_path,
+            shadow_db_path.with_name(shadow_db_path.name + "-wal"),
+            shadow_db_path.with_name(shadow_db_path.name + "-shm"),
+        ]
+        for path in candidates:
+            if path.exists():
+                path.unlink()
 
     def build_batch(
         self,
@@ -378,9 +453,13 @@ class ImageCorpusManager:
             processed = 0
             failed: List[Dict] = []
             indexed_images = 0
+            throttle_events = 0
 
             for path in selected:
                 processed += 1
+                if processed % IMAGE_BUILD_IOWAIT_CHECK_EVERY_DOCS == 0:
+                    if self._maybe_throttle_for_io_pressure():
+                        throttle_events += 1
                 doc_id = path.stem
                 try:
                     file_stat = path.stat()
@@ -506,6 +585,7 @@ class ImageCorpusManager:
                 "total_docs": len(all_docs),
                 "timings": {"total_seconds": round(time.time() - t0, 2)},
                 "manifest_cache": bool(used_manifest_cache),
+                "throttle_events": throttle_events,
                 "failed_docs": failed,
             }
         finally:
@@ -763,6 +843,41 @@ class ImageCorpusManager:
                     "（建议 3000~5000），避免小批次循环导致磁盘 IO 打满。"
                 )
             )
+
+    def _maybe_throttle_for_io_pressure(self) -> bool:
+        before = self._read_proc_stat_cpu_times()
+        if before is None:
+            return False
+        time.sleep(IMAGE_BUILD_IOWAIT_SAMPLE_SECONDS)
+        after = self._read_proc_stat_cpu_times()
+        if after is None:
+            return False
+
+        total_delta = after[0] - before[0]
+        iowait_delta = after[1] - before[1]
+        if total_delta <= 0:
+            return False
+
+        ratio = float(iowait_delta) / float(total_delta)
+        if ratio < IMAGE_BUILD_IOWAIT_RATIO_THRESHOLD:
+            return False
+
+        time.sleep(IMAGE_BUILD_IOWAIT_SLEEP_SECONDS)
+        return True
+
+    @staticmethod
+    def _read_proc_stat_cpu_times() -> Optional[Tuple[int, int]]:
+        try:
+            line = Path("/proc/stat").read_text(encoding="utf-8").splitlines()[0]
+        except Exception:
+            return None
+        parts = line.split()
+        if len(parts) < 7 or parts[0] != "cpu":
+            return None
+        values = [int(item) for item in parts[1:]]
+        total = sum(values)
+        iowait = values[4] if len(values) > 4 else 0
+        return total, iowait
 
     def _load_runtime_fp_from_index_entry(
         self,
@@ -1050,10 +1165,11 @@ class ImageCorpusManager:
     def _get_feature_conn(self) -> sqlite3.Connection:
         if self._feature_conn is None:
             self.feature_db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(self.feature_db_path))
+            conn = sqlite3.connect(str(self.feature_db_path), timeout=30.0, check_same_thread=False)
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA temp_store=MEMORY")
+            conn.execute("PRAGMA busy_timeout=30000")
             conn.execute(
                 (
                     "CREATE TABLE IF NOT EXISTS documents ("
@@ -1123,6 +1239,7 @@ class ImageCorpusManager:
                     "updated_at REAL NOT NULL,"
                     "started_at REAL,"
                     "finished_at REAL,"
+                    "worker_pid INTEGER,"
                     "result_json TEXT,"
                     "error_text TEXT"
                     ")"
@@ -1149,10 +1266,20 @@ class ImageCorpusManager:
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_features_sha_norm ON image_features(sha256_norm)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_features_doc_id ON image_features(doc_id)")
+            self._ensure_runtime_schema(conn)
             self._maybe_migrate_legacy_json(conn)
             conn.commit()
             self._feature_conn = conn
         return self._feature_conn
+
+    @staticmethod
+    def _ensure_runtime_schema(conn: sqlite3.Connection) -> None:
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(build_jobs)").fetchall()
+        }
+        if "worker_pid" not in columns:
+            conn.execute("ALTER TABLE build_jobs ADD COLUMN worker_pid INTEGER")
 
     def _delete_feature_rows(self, conn: sqlite3.Connection, image_ids: List[str]) -> None:
         if not image_ids:
