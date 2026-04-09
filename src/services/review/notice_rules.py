@@ -217,8 +217,8 @@ _NOTICE_2026_RULES: Dict[str, List[Dict[str, Any]]] = {
         {
             "code": "unfinished_basic_project_check",
             "requirement": "截至2026年1月1日，未完成验收的省自然基金和中央引导地方科技发展资金基础研究项目负责人，不得申报本批次基础研究项目。",
-            "automation": "requires_data",
-            "reason": "当前未接入负责人历史项目验收状态",
+            "automation": "system_managed",
+            "reason": "该限制由申报系统前置控制，不纳入本服务重复审查",
         },
     ],
 }

@@ -7,6 +7,8 @@ IMAGE_PLAGIARISM_DATA_ROOT = Path("data/plagiarism_image")
 IMAGE_PLAGIARISM_INDEX_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_index.json"
 IMAGE_PLAGIARISM_CHECKPOINT_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_checkpoint.json"
 IMAGE_PLAGIARISM_MANIFEST_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_manifest.json"
+IMAGE_PLAGIARISM_FEATURE_DB_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_features.sqlite3"
+IMAGE_PLAGIARISM_BUILD_LOCK_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_build.lock"
 
 # Keep paths independent from existing text plagiarism corpus files.
 IMAGE_PLAGIARISM_LOCAL_ROOT = Path("/home/tdkx/workspace/tech/data/corpus_local")
@@ -18,3 +20,8 @@ DEFAULT_HASH_HAMMING_MAX = 18
 DEFAULT_HIGH_SCORE = 0.82
 DEFAULT_MEDIUM_SCORE = 0.62
 DEFAULT_MIN_INLIERS = 10
+DEFAULT_FEATURE_DESCRIPTOR_ROWS = 192
+
+# Build safety guardrails (to avoid excessive disk IO from tiny batch loops on large corpora).
+IMAGE_BUILD_LARGE_CORPUS_DOC_THRESHOLD = 3000
+IMAGE_BUILD_MIN_LIMIT_LARGE_CORPUS = 1000

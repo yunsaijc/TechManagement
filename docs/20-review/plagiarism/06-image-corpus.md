@@ -63,7 +63,12 @@
 - checkpoint 记录游标
 - 失败文档单独记录，不阻断整体
 
-## 4. 数据模型（V1）
+4. 建库任务化：
+- API 负责提交 job
+- 后台单 worker 串行执行
+- 状态与结果写入 `build_jobs`
+
+## 4. 数据模型（V2）
 
 ### 4.1 Manifest
 
@@ -76,29 +81,22 @@
 - `file_mtime`
 - `action` (`new` / `update` / `unchanged`)
 
-### 4.2 Index
+### 4.2 Primary Index DB
 
-`data/plagiarism_image/index/image_corpus.json`
+`data/plagiarism_image/index/image_features.sqlite3`
 
-按图片记录：
-- `image_id`
-- `doc_id`
-- `doc_path`
-- `page`
-- `image_index`
-- `width` / `height`
-- `sha256_raw`
-- `sha256_norm`
-- `phash_hex`
-- `updated_at`
+主表：
+- `documents`
+- `images`
+- `image_features`
+- `manifest_docs`
+- `build_state`
 
-### 4.3 Checkpoint
-
-`data/plagiarism_image/index/image_checkpoint.json`
-
-- `next_cursor`
-- `has_more`
-- `updated_at`
+说明：
+- `documents/images` 是主索引元数据
+- `image_features` 存压缩后的 ORB 描述子 + 关键点
+- `manifest_docs/build_state` 管理扫描结果与断点续跑
+- 在线阶段直接读 SQLite，不再依赖大 JSON 主文件
 
 ## 5. 流程
 
@@ -106,18 +104,24 @@
 
 1. 扫描文档目录，生成 manifest
 2. `build_batch(limit)` 解析 docx/pdf 抽图
-3. 生成 hash 特征并写入 index
+3. 生成 hash + ORB 特征，并增量写入 SQLite
 4. 更新 checkpoint
+
+安全保护：
+- 大语料（>=3000 文档）下，`limit < 1000` 会被拒绝（HTTP 400）
+- 目的：避免小批次循环触发高频全量扫描/大文件重写导致磁盘 IO 打满
+- build 任务有全局锁（同一时刻仅允许 1 个 build-batch 执行）
 
 ### 5.2 在线查重（by-guide-codes）
 
 1. 查询项目元数据（`zndm IN (...) and isSubmit='1'`）
 2. 读取 primary 文档并抽图
-3. 每张 primary 图在 corpus 中召回候选：
+3. 每张 primary 图在 corpus 中召回候选（索引检索，不线性扫）：
 - exact：`sha256_norm`
-- near-dup：`pHash Hamming <= 阈值`
-4. 对候选做几何验证（ORB + RANSAC）
-5. 生成按 primary 项目聚合的结果 + HTML 报告
+- near-dup：`pHash BK-tree` + `Hamming <= 阈值`
+4. 对候选做几何验证（ORB + RANSAC，按 query 图并行）
+5. `exact_sha256_norm` 命中时该 query 图直接早停
+6. 生成按 primary 项目聚合的结果 + HTML 报告
 
 ## 6. 默认阈值（V1）
 

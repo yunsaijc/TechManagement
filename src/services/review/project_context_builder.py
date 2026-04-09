@@ -85,6 +85,7 @@ class ProjectContextBuilder:
             proposal_file_paths,
             applicant_unit=project_row.applicant_unit,
             unit_name=project_row.unit_name,
+            project_leader=project_row.project_leader,
         )
         proposal_elapsed = round(time.perf_counter() - proposal_started, 3)
         if not attachments_dir.exists() or not attachments_dir.is_dir():

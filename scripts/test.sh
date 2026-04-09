@@ -30,6 +30,26 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
     -F 'debug=true'
 
 
+# 查重 - 图片查重建库
+reset=true; while true; do r=$(curl -s -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/image/corpus/build-batch' \
+    -F 'corpus_path=/home/tdkx/workspace/tech/data/corpus_local/sbs_5000' \
+    -F 'limit=300' -F "reset_cursor=${reset}"); \
+    echo "$r"; has_more=$(echo "$r" | UV_CACHE_DIR=/tmp/.uv-cache uv run python -c "import sys,json;print(json.load(sys.stdin)['data']['has_more'])"); [ "$has_more" = "False" ] && break; reset=false; done
+
+
+# 查重-批量图片查重
+curl -s -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/image/by-guide-codes' \
+    -F 'guide_codes=["c2f3b7b1f9534463ad726e6936c91859",
+      "959c8e453dd942ddb72f0ef52c07342f",
+      "7581bc8d6d564153848fcb5d14b1942e"]' \
+    -F 'limit=20' -F 'read_remote_if_missing=true' \
+    -F 'top_k_coarse=80' -F 'top_k_final=8' \
+    -F 'verify_workers=6' -F 'debug=true'
+
+
+
+
+
 # 30-grouping
 
 # 分组 - 代码写死了一批数据，对那批数据进行分组，按照每组15个项目分组

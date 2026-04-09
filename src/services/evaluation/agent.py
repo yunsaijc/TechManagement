@@ -680,7 +680,8 @@ class EvaluationAgent:
         if not index_payload.get("chunk_count"):
             return []
 
-        report_qa_agent = EvaluationQAAgent(llm=None, indexer=self.chat_indexer)
+        # 报告内典型问答优先使用实际 LLM，失败时由 QAAgent 内部降级到规则回答
+        report_qa_agent = EvaluationQAAgent(llm=self.llm, indexer=self.chat_indexer)
 
         async def ask_one(question: str) -> Dict[str, Any]:
             try:

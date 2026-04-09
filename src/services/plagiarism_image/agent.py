@@ -2,18 +2,80 @@
 
 from __future__ import annotations
 
+import os
+import time
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import numpy as np
+
 from .config import IMAGE_PLAGIARISM_DEBUG_ROOT
 from .corpus import ImageCorpusManager
 from .extractor import extract_images_from_file
-from .hashing import ImageHasher
+from .hashing import ImageHasher, RuntimeImageFingerprint
 from .matcher import ImageMatcher, MatchConfig
 from .report_builder import ImageReportBuilder
 from .schemas import ImageAsset, ImageMatch
+
+
+def _lightweight_asset(asset: ImageAsset) -> ImageAsset:
+    return ImageAsset(
+        doc_id=asset.doc_id,
+        image_id=asset.image_id,
+        file_name=asset.file_name,
+        page=asset.page,
+        image_index=asset.image_index,
+        image_bytes=b"",
+        width=asset.width,
+        height=asset.height,
+    )
+
+
+def _lightweight_fp(fp: RuntimeImageFingerprint) -> RuntimeImageFingerprint:
+    return RuntimeImageFingerprint(
+        meta=fp.meta,
+        normalized_bgr=np.empty((0, 0, 3), dtype=np.uint8),
+        gray=np.empty((0, 0), dtype=np.uint8),
+        keypoint_pts=fp.keypoint_pts,
+        descriptors=fp.descriptors,
+    )
+
+
+def _verify_query_candidates_task(
+    query_asset: ImageAsset,
+    query_fp: RuntimeImageFingerprint,
+    source_items: List[Tuple[ImageAsset, RuntimeImageFingerprint]],
+    include_low: bool,
+    top_k_final: int,
+    matcher_cfg: Dict[str, float],
+) -> List[ImageMatch]:
+    matcher = ImageMatcher(
+        MatchConfig(
+            hash_hamming_max=int(matcher_cfg["hash_hamming_max"]),
+            high_score=float(matcher_cfg["high_score"]),
+            medium_score=float(matcher_cfg["medium_score"]),
+            min_inliers_high=int(matcher_cfg["min_inliers_high"]),
+        )
+    )
+    matches: List[ImageMatch] = []
+    for source_asset, source_fp in source_items:
+        m = matcher.compare(
+            query_asset=query_asset,
+            source_asset=source_asset,
+            query_fp=query_fp,
+            source_fp=source_fp,
+        )
+        if m is None:
+            continue
+        if not include_low and m.level == "low":
+            continue
+        matches.append(m)
+
+    matches.sort(key=lambda x: (-x.score, x.source_doc, x.source_image_id))
+    return matches[: max(1, int(top_k_final))]
 
 
 class ImagePlagiarismAgent:
@@ -175,10 +237,12 @@ class ImagePlagiarismAgent:
         top_k_coarse: int = 80,
         top_k_final: int = 8,
         max_pair_checks: int = 120000,
+        verify_workers: int = 0,
+        verify_backend: str = "auto",
     ) -> Dict:
         assets_by_doc: Dict[str, List[ImageAsset]] = {}
         warnings: List[Dict] = []
-        runtime_fp: Dict[str, object] = {}
+        runtime_fp: Dict[str, RuntimeImageFingerprint] = {}
 
         for doc_id, file_name, file_data in files:
             try:
@@ -195,11 +259,14 @@ class ImagePlagiarismAgent:
                 if fp is None:
                     warnings.append({"doc_id": doc_id, "image_id": asset.image_id, "warning": "fingerprint_failed"})
                     continue
-                runtime_fp[asset.image_id] = fp
+                runtime_fp[asset.image_id] = _lightweight_fp(fp)
 
         matches: List[ImageMatch] = []
         pair_checks = 0
         hard_stop = False
+        exact_hit_count = 0
+        coarse_candidate_total = 0
+        verify_jobs: List[Tuple[ImageAsset, RuntimeImageFingerprint, List[Tuple[ImageAsset, RuntimeImageFingerprint]]]] = []
 
         for doc_id, assets in assets_by_doc.items():
             if hard_stop:
@@ -210,22 +277,84 @@ class ImagePlagiarismAgent:
                 fp = runtime_fp.get(asset.image_id)
                 if fp is None:
                     continue
-                candidates = corpus_manager.retrieve_matches_for_query_image(
+                query_asset = _lightweight_asset(asset)
+                retrieval = corpus_manager.retrieve_candidates_for_query_image(
                     query_asset=asset,
                     query_fp=fp,
-                    matcher=self.matcher,
-                    include_low=self.include_low,
                     hash_hamming_max=hash_hamming_max,
                     top_k_coarse=top_k_coarse,
                     top_k_final=top_k_final,
                     exclude_doc_id=doc_id,
                 )
-                pair_checks += int(top_k_coarse)
-                if pair_checks >= max_pair_checks:
+                coarse_candidate_total += int(retrieval.get("coarse_candidates", 0) or 0)
+
+                exact_matches = retrieval.get("exact_matches", [])
+                if exact_matches:
+                    exact_hit_count += 1
+                    matches.extend(exact_matches)
+                    continue
+
+                verify_candidates = list(retrieval.get("verify_candidates", []))
+                if not verify_candidates:
+                    continue
+
+                remain = max_pair_checks - pair_checks
+                if remain <= 0:
                     warnings.append({"warning": "max_pair_checks_reached", "max_pair_checks": max_pair_checks})
                     hard_stop = True
                     break
-                matches.extend(candidates)
+                if len(verify_candidates) > remain:
+                    verify_candidates = verify_candidates[:remain]
+                    warnings.append({"warning": "max_pair_checks_reached", "max_pair_checks": max_pair_checks})
+                    hard_stop = True
+                pair_checks += len(verify_candidates)
+                verify_jobs.append((query_asset, fp, verify_candidates))
+                if hard_stop:
+                    break
+
+        verify_t0 = time.time()
+        if verify_jobs:
+            worker_count = self._resolve_verify_workers(verify_workers, len(verify_jobs))
+            backend = self._resolve_verify_backend(verify_backend)
+            cfg = {
+                "hash_hamming_max": self.matcher.cfg.hash_hamming_max,
+                "high_score": self.matcher.cfg.high_score,
+                "medium_score": self.matcher.cfg.medium_score,
+                "min_inliers_high": self.matcher.cfg.min_inliers_high,
+            }
+            if worker_count <= 1:
+                for query_asset, query_fp, source_items in verify_jobs:
+                    matches.extend(
+                        _verify_query_candidates_task(
+                            query_asset=query_asset,
+                            query_fp=query_fp,
+                            source_items=source_items,
+                            include_low=self.include_low,
+                            top_k_final=top_k_final,
+                            matcher_cfg=cfg,
+                        )
+                    )
+            else:
+                executor_cls = ProcessPoolExecutor if backend == "process" else ThreadPoolExecutor
+                with executor_cls(max_workers=worker_count) as pool:
+                    futures = [
+                        pool.submit(
+                            _verify_query_candidates_task,
+                            query_asset,
+                            query_fp,
+                            source_items,
+                            self.include_low,
+                            top_k_final,
+                            cfg,
+                        )
+                        for query_asset, query_fp, source_items in verify_jobs
+                    ]
+                    for fut in as_completed(futures):
+                        try:
+                            matches.extend(fut.result())
+                        except Exception as exc:
+                            warnings.append({"warning": "verify_task_failed", "error": str(exc)})
+        verify_seconds = round(time.time() - verify_t0, 3)
 
         dedup: Dict[Tuple[str, str, str, str], ImageMatch] = {}
         for m in matches:
@@ -267,8 +396,30 @@ class ImagePlagiarismAgent:
             "images": sum(len(v) for v in assets_by_doc.values()),
             "fingerprinted_images": len(runtime_fp),
             "pair_checks": pair_checks,
+            "coarse_candidates": coarse_candidate_total,
+            "exact_hit_queries": exact_hit_count,
+            "verify_jobs": len(verify_jobs),
+            "verify_backend": self._resolve_verify_backend(verify_backend),
+            "verify_seconds": verify_seconds,
             "matches": [asdict(m) for m in final_matches],
             "level_count": dict(level_count),
             "warnings": warnings,
             "debug_report_path": str(report_path) if report_path else None,
         }
+
+    @staticmethod
+    def _resolve_verify_workers(requested: int, job_count: int) -> int:
+        if job_count <= 1:
+            return 1
+        if requested and requested > 0:
+            return max(1, min(int(requested), job_count))
+        cpu = os.cpu_count() or 2
+        return max(1, min(job_count, max(1, cpu - 1), 8))
+
+    @staticmethod
+    def _resolve_verify_backend(raw: str) -> str:
+        value = str(raw or "").strip().lower()
+        if value in {"process", "thread"}:
+            return value
+        # Auto picks thread backend to avoid heavy ndarray pickling overhead.
+        return "thread"

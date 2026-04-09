@@ -208,6 +208,10 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
 | `hash_hamming_max` | Integer | 否 | `18` | pHash Hamming 粗召回阈值 |
 | `min_inliers_high` | Integer | 否 | `10` | high 的最小几何内点 |
 | `include_low` | Boolean | 否 | `false` | 是否返回 low 结果 |
+| `top_k_coarse` | Integer | 否 | `80` | 粗召回后参与精校验的候选上限 |
+| `top_k_final` | Integer | 否 | `8` | 每张 query 图最终保留的匹配上限 |
+| `verify_workers` | Integer | 否 | `0` | 几何验证进程数（`0`=自动） |
+| `verify_backend` | String | 否 | `auto` | `auto/thread/process`，默认自动选 thread |
 | `debug` | Boolean | 否 | `false` | 是否生成调试报告 |
 | `max_pair_checks` | Integer | 否 | `120000` | 安全预算，防止单次任务失控 |
 
@@ -231,6 +235,26 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/plagiarism/by-guide-codes' \
 **POST** `/api/v1/plagiarism/image/corpus/build-batch`
 
 说明：离线小批构建；每次只处理小批文档，写入 `data/plagiarism_image/index`，支持断点续跑。
+
+### 4) 提交图片库构建任务
+
+**POST** `/api/v1/plagiarism/image/corpus/build-jobs`
+
+说明：推荐主入口。接口只提交任务并立即返回，后台 worker 串行执行，避免请求线程长时间阻塞。
+
+#### 请求参数
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `corpus_path` | String | 否 | 默认语料路径 | 语料目录 |
+| `limit` | Integer | 否 | `20` | 本次批量处理文档数 |
+| `reset_cursor` | Boolean | 否 | `false` | 是否从头开始 |
+
+### 5) 查询图片库构建任务
+
+**GET** `/api/v1/plagiarism/image/corpus/build-jobs/{job_id}`
+
+说明：返回 `queued/running/completed/failed` 以及结果或错误信息。
 
 ---
 
