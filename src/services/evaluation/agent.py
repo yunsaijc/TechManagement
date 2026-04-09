@@ -726,6 +726,7 @@ class EvaluationAgent:
                     "html_file": f"{path.stem}.html",
                     "debug_html_file": f"{path.stem}.debug.html",
                     "json_file": path.name,
+                    "payload": payload,
                 }
             )
 

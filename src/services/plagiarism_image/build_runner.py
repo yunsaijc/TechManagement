@@ -53,6 +53,8 @@ def main() -> int:
         job = manager.start_build_job(args.job_id)
         if not job or str(job.get("status")) != "running":
             return 0
+        if not bool(job.get("reset_cursor")):
+            manager.clone_active_db_to_shadow(shadow_path)
         result = shadow_manager.build_batch(
             corpus_path=job["corpus_path"],
             limit=int(job["limit"]),
