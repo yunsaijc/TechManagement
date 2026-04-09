@@ -7,7 +7,7 @@ import hashlib
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.services.plagiarism.ngram import NGram, NGramSplitter
 from src.services.plagiarism.tokenizer import Sentence
@@ -100,6 +100,8 @@ class ComparisonEngine:
         self.sentence_similarity_threshold = 0.40
         self.gap_block_min_length = 50
         self.gap_sentence_block_min_length = 35
+        self.light_mode_escalate_similarity = 0.12
+        self.light_mode_escalate_chars = 900
         self._hard_boundary_pattern = re.compile(
             r"\[表格行\d+\]\s*(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|"
             r"[一二三四五六七八九十]+[、\.．]|"
@@ -140,6 +142,8 @@ class ComparisonEngine:
         threshold_medium: float = 0.5,
         raw_texts: Optional[Dict[str, str]] = None,
         search_windows: Optional[Dict[str, List[any]]] = None, # 传入召回窗口作为搜索引导
+        primary_doc_only: Optional[str] = None,
+        light_mode_docs: Optional[Dict[str, bool]] = None,
     ) -> List[DocumentSimilarity]:
         """
         执行文档间比对 - Winnowing 算法
@@ -162,6 +166,7 @@ class ComparisonEngine:
         """
         # 预处理：建立位置到区间的映射
         excluded_ranges = excluded_ranges or {}
+        light_mode_docs = light_mode_docs or {}
         
         # Step 1: 切分 N-gram
         splitter = NGramSplitter(n=self.ngram_size)
@@ -184,82 +189,82 @@ class ComparisonEngine:
         
         for i, doc_a in enumerate(doc_ids):
             for doc_b in doc_ids[i + 1:]:
+                pair_doc_a = doc_a
+                pair_doc_b = doc_b
+                if primary_doc_only:
+                    if pair_doc_a != primary_doc_only and pair_doc_b != primary_doc_only:
+                        continue
+                    # 统一让 primary_doc 在左侧，便于后续窗口门控
+                    if pair_doc_b == primary_doc_only and pair_doc_a != primary_doc_only:
+                        pair_doc_a, pair_doc_b = pair_doc_b, pair_doc_a
+
                 # 查找连续匹配区间
+                text_a = doc_texts.get(pair_doc_a, "")
+                text_b = doc_texts.get(pair_doc_b, "")
+                primary_guide_ranges = None
+                if search_windows and pair_doc_b in search_windows:
+                    primary_guide_ranges = self._build_primary_guide_ranges(
+                        search_windows.get(pair_doc_b) or [],
+                        len(text_a),
+                    )
+
                 continuous_ranges = self._find_continuous_ranges(
-                    doc_a,
-                    doc_b,
+                    pair_doc_a,
+                    pair_doc_b,
                     doc_ngrams,
                     fingerprint_index,
-                    excluded_ranges.get(doc_a, []),
-                    excluded_ranges.get(doc_b, []),
+                    excluded_ranges.get(pair_doc_a, []),
+                    excluded_ranges.get(pair_doc_b, []),
+                    primary_guide_ranges=primary_guide_ranges,
                 )
-
-                text_a = doc_texts.get(doc_a, "")
-                text_b = doc_texts.get(doc_b, "")
-                
-                # 合并相邻/重叠的区间
-                merged_ranges = self._merge_continuous_ranges(continuous_ranges, text_a, text_b)
-
-                merged_ranges = [
-                    self._expand_continuous_range(r, text_a, text_b)
-                    for r in merged_ranges
-                ]
-                merged_ranges = [
-                    r for r in merged_ranges
-                    if (r.end_a - r.start_a) >= self.min_match_length
-                    and (r.end_b - r.start_b) >= self.min_match_length
-                ]
-                
-                # 转换为 Match 对象
-                matches = self._ranges_to_matches(
-                    merged_ranges,
-                    doc_a,
-                    doc_b,
-                    doc_texts,
-                )
-                matches = self._expand_matches_by_sentence_similarity(
-                    matches,
-                    docs.get(doc_a, []),
-                    docs.get(doc_b, []),
-                    text_a,
-                    text_b,
-                )
-                matches = self._realign_matches_by_source_continuity(
-                    matches,
-                    text_a,
-                    text_b,
-                )
-                matches = self._align_matches_to_numbered_outline_blocks(
-                    matches,
-                    text_a,
-                    text_b,
-                )
-                matches = self._dedupe_and_filter_matches(matches)
-                matches.extend(
-                    self._rescue_numbered_outline_blocks(
-                        matches,
-                        text_a,
-                        text_b,
-                        doc_b,
-                        guide_windows=search_windows.get(doc_b) if search_windows else None,
+                # 召回窗口门控若过严，回退一次全量扫描，保证召回稳定
+                if not continuous_ranges and primary_guide_ranges:
+                    continuous_ranges = self._find_continuous_ranges(
+                        pair_doc_a,
+                        pair_doc_b,
+                        doc_ngrams,
+                        fingerprint_index,
+                        excluded_ranges.get(pair_doc_a, []),
+                        excluded_ranges.get(pair_doc_b, []),
+                        primary_guide_ranges=None,
                     )
+
+                is_light_mode = bool(light_mode_docs.get(pair_doc_b, False))
+                matches = self._collect_pair_matches(
+                    pair_doc_a=pair_doc_a,
+                    pair_doc_b=pair_doc_b,
+                    docs=docs,
+                    doc_texts=doc_texts,
+                    continuous_ranges=continuous_ranges,
+                    guide_windows=(search_windows.get(pair_doc_b) if search_windows else None),
+                    light_mode=is_light_mode,
                 )
-                matches = self._normalize_matches_for_presentation(
-                    matches,
-                    text_a,
-                    text_b,
-                    doc_b,
-                )
-                matches = self._dedupe_and_filter_matches(matches)
-                
-                # 计算相似度
-                total_chars = len(doc_texts[doc_a])
+
+                total_chars = len(doc_texts[pair_doc_a])
                 duplicate_chars = sum(len(m.text) for m in matches)
                 similarity = duplicate_chars / total_chars if total_chars > 0 else 0
+
+                # 轻量模式若打出较高重复，自动回退完整流程，避免漏报。
+                if (
+                    is_light_mode
+                    and matches
+                    and (similarity >= self.light_mode_escalate_similarity or duplicate_chars >= self.light_mode_escalate_chars)
+                ):
+                    matches = self._collect_pair_matches(
+                        pair_doc_a=pair_doc_a,
+                        pair_doc_b=pair_doc_b,
+                        docs=docs,
+                        doc_texts=doc_texts,
+                        continuous_ranges=continuous_ranges,
+                        guide_windows=(search_windows.get(pair_doc_b) if search_windows else None),
+                        light_mode=False,
+                    )
+                    duplicate_chars = sum(len(m.text) for m in matches)
+                    similarity = duplicate_chars / total_chars if total_chars > 0 else 0
                 
                 results.append(DocumentSimilarity(
-                    doc_a=doc_a,
-                    doc_b=doc_b,
+                    doc_a=pair_doc_a,
+                    doc_b=pair_doc_b,
                     similarity=similarity,
                     type=self._classify(similarity, threshold_high, threshold_medium),
                     total_chars=total_chars,
@@ -268,6 +273,89 @@ class ComparisonEngine:
                 ))
         
         return results
+
+    def _collect_pair_matches(
+        self,
+        pair_doc_a: str,
+        pair_doc_b: str,
+        docs: Dict[str, List[Sentence]],
+        doc_texts: Dict[str, str],
+        continuous_ranges: List[ContinuousMatch],
+        guide_windows: Optional[List[any]] = None,
+        light_mode: bool = False,
+    ) -> List[Match]:
+        text_a = doc_texts.get(pair_doc_a, "")
+        text_b = doc_texts.get(pair_doc_b, "")
+
+        merged_ranges = self._merge_continuous_ranges(continuous_ranges, text_a, text_b)
+        merged_ranges = [
+            self._expand_continuous_range(r, text_a, text_b)
+            for r in merged_ranges
+        ]
+        merged_ranges = [
+            r for r in merged_ranges
+            if (r.end_a - r.start_a) >= self.min_match_length
+            and (r.end_b - r.start_b) >= self.min_match_length
+        ]
+
+        matches = self._ranges_to_matches(
+            merged_ranges,
+            pair_doc_a,
+            pair_doc_b,
+            doc_texts,
+        )
+        if not matches:
+            return []
+
+        if light_mode:
+            # 轻量路径：跳过最重的句级扩展与编号块救援，仅做连续性对齐 + 展示归一化。
+            matches = self._realign_matches_by_source_continuity(
+                matches,
+                text_a,
+                text_b,
+            )
+            matches = self._normalize_matches_for_presentation(
+                matches,
+                text_a,
+                text_b,
+                pair_doc_b,
+            )
+            return self._dedupe_and_filter_matches(matches)
+
+        matches = self._expand_matches_by_sentence_similarity(
+            matches,
+            docs.get(pair_doc_a, []),
+            docs.get(pair_doc_b, []),
+            text_a,
+            text_b,
+        )
+        matches = self._realign_matches_by_source_continuity(
+            matches,
+            text_a,
+            text_b,
+        )
+        matches = self._align_matches_to_numbered_outline_blocks(
+            matches,
+            text_a,
+            text_b,
+        )
+        matches = self._dedupe_and_filter_matches(matches)
+        matches.extend(
+            self._rescue_numbered_outline_blocks(
+                matches,
+                text_a,
+                text_b,
+                pair_doc_b,
+                guide_windows=guide_windows,
+            )
+        )
+        matches = self._normalize_matches_for_presentation(
+            matches,
+            text_a,
+            text_b,
+            pair_doc_b,
+        )
+        return self._dedupe_and_filter_matches(matches)
 
     def _build_fingerprint_index(
         self,
@@ -299,6 +387,7 @@ class ComparisonEngine:
         fingerprint_index: Dict,
         excluded_a: List[ExcludedRange],
         excluded_b: List[ExcludedRange],
+        primary_guide_ranges: Optional[List[Tuple[int, int]]] = None,
     ) -> List[ContinuousMatch]:
         """
         查找两个文档间的连续匹配区间 - Winnowing 算法
@@ -334,6 +423,8 @@ class ComparisonEngine:
         matched_positions: List[Tuple[int, int]] = []
         for idx_a, ng_a in enumerate(ngrams_a):
             if self._is_position_excluded(ng_a.position, excluded_a):
+                continue
+            if primary_guide_ranges and not self._in_any_range(ng_a.position, primary_guide_ranges):
                 continue
 
             fp = self._generate_fingerprint(ng_a.text)
@@ -380,6 +471,46 @@ class ComparisonEngine:
 
         continuous_ranges.sort(key=lambda r: (r.start_a, r.start_b, -r.match_count))
         return self._dedupe_ranges(continuous_ranges)
+
+    @staticmethod
+    def _in_any_range(position: int, ranges: List[Tuple[int, int]]) -> bool:
+        for start, end in ranges:
+            if start <= position < end:
+                return True
+        return False
+
+    def _build_primary_guide_ranges(
+        self,
+        guide_windows: List[Any],
+        text_len: int,
+        padding: int = 180,
+    ) -> List[Tuple[int, int]]:
+        if not guide_windows or text_len <= 0:
+            return []
+        ranges: List[Tuple[int, int]] = []
+        for window in guide_windows:
+            if isinstance(window, dict):
+                start = int(window.get("primary_start", 0) or 0)
+                end = int(window.get("primary_end", 0) or 0)
+            else:
+                start = int(getattr(window, "primary_start", 0) or 0)
+                end = int(getattr(window, "primary_end", 0) or 0)
+            if end <= start:
+                continue
+            left = max(0, start - padding)
+            right = min(text_len, end + padding)
+            if right > left:
+                ranges.append((left, right))
+        if not ranges:
+            return []
+        ranges.sort(key=lambda item: item[0])
+        merged: List[Tuple[int, int]] = []
+        for left, right in ranges:
+            if not merged or left > merged[-1][1]:
+                merged.append((left, right))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], right))
+        return merged
 
     def _dedupe_ranges(
         self,

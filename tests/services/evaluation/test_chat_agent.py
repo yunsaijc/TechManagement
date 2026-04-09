@@ -106,6 +106,71 @@ async def test_evaluation_agent_ask_requires_existing_chat_index(tmp_path: Path,
 
 
 @pytest.mark.asyncio
+async def test_evaluation_agent_ask_auto_rebuilds_chat_index_from_debug_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """缺少索引时应自动重建，并正常返回回答与引用"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    content = {
+        "sections": {"项目简介": "项目目标：建设智能化科普咨询平台。"},
+        "page_chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 6,
+                "section": "项目简介",
+                "text": "项目简介\n项目目标：建设智能化科普咨询平台。",
+            }
+        ],
+        "meta": {
+            "file_name": "demo.pdf",
+            "page_count": 1,
+            "parser_version": "test",
+            "page_estimated": False,
+        },
+    }
+
+    request = EvaluationRequest(
+        project_id="demo-project-rebuild",
+        dimensions=["team"],
+        enable_highlight=False,
+        enable_industry_fit=False,
+        enable_benchmark=False,
+        enable_chat_index=False,
+    )
+    result = await agent.evaluate(request=request, content=content, source_name="demo.pdf")
+
+    monkeypatch.setattr(
+        agent,
+        "_load_debug_payload",
+        lambda project_id: {
+            "evaluation_id": result.evaluation_id,
+            "page_chunks": content["page_chunks"],
+            "meta": {"file_path": ""},
+        },
+    )
+
+    answer = await agent.ask(result.evaluation_id, "这个项目的研究目标是什么？")
+
+    assert answer.answer
+    assert answer.citations
+    assert answer.citations[0].file == "demo.pdf"
+    assert answer.citations[0].page == 6
+
+    rebuilt_index = await agent.storage.load_chat_index(result.evaluation_id)
+    assert rebuilt_index is not None
+    assert rebuilt_index.get("chunk_count", 0) > 0
+
+    refreshed_result = await agent.storage.get_by_evaluation_id(result.evaluation_id)
+    assert refreshed_result is not None
+    assert refreshed_result.chat_ready is True
+
+
+@pytest.mark.asyncio
 async def test_evaluation_agent_ask_validation_data_stays_cautious(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """验证数据问题在缺少直接证据时应保持谨慎，并返回引用"""
     agent = EvaluationAgent(llm=BrokenLLM())

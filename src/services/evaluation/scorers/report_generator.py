@@ -5,12 +5,15 @@
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List
+
+from src.services.evaluation.parsers import DocumentParser
 
 
 class ReportGenerator:
@@ -49,6 +52,11 @@ class ReportGenerator:
         "目的",
         "意义",
     ]
+    PROJECT_NAME_PATTERNS = [
+        r"项\s*目\s*名\s*称\s*[：:]\s*(.+?)(?:申\s*报\s*单\s*位|承\s*担\s*单\s*位|合\s*作\s*单\s*位|项目负责人|$)",
+        r"项目名称\s*\|\s*(.+?)\s*\|\s*所属专项",
+        r"项目名称\s+(.+?)\s+所属专项",
+    ]
 
     def build_from_debug_file(
         self,
@@ -60,8 +68,77 @@ class ReportGenerator:
         debug_json = Path(debug_json_path)
         output_html = Path(output_html_path)
         data = json.loads(debug_json.read_text(encoding="utf-8"))
+        if not debug_mode:
+            data["_workspace_projects"] = self._collect_workspace_projects(
+                debug_dir=debug_json.parent,
+                current_stem=debug_json.stem,
+            )
+        updated = self._ensure_page_chunks(data)
+        if updated:
+            debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
         return output_html
+
+    def _collect_workspace_projects(self, debug_dir: Path, current_stem: str) -> List[Dict[str, Any]]:
+        """收集同目录下可切换的项目列表，供单项目工作台左侧项目栏使用"""
+        projects: List[Dict[str, Any]] = []
+        for path in sorted(debug_dir.glob("EVAL_*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            result = payload.get("result") or {}
+            if not isinstance(result, dict):
+                continue
+            project_id = str(result.get("project_id") or payload.get("project_id") or path.stem)
+            project_name = str(
+                result.get("project_name")
+                or payload.get("project_name")
+                or payload.get("source_name")
+                or project_id
+            )
+            projects.append(
+                {
+                    "project_id": project_id,
+                    "project_name": project_name,
+                    "score": result.get("overall_score"),
+                    "grade": result.get("grade"),
+                    "html_file": f"{path.stem}.html",
+                    "active": path.stem == current_stem,
+                }
+            )
+        return projects
+
+    def _ensure_page_chunks(self, data: Dict[str, Any]) -> bool:
+        """兼容旧 debug JSON，缺少 page_chunks 时尝试回源补齐"""
+        page_chunks = data.get("page_chunks")
+        if isinstance(page_chunks, list) and page_chunks:
+            return False
+
+        meta = data.get("meta") or {}
+        if not isinstance(meta, dict):
+            return False
+
+        file_path = str(meta.get("file_path") or "").strip()
+        if not file_path or not os.path.exists(file_path):
+            return False
+
+        source_name = str(data.get("source_name") or meta.get("file_name") or os.path.basename(file_path))
+        parser = DocumentParser()
+        parsed = asyncio.run(parser.parse(file_path, source_name=source_name))
+        recovered_chunks = parsed.get("page_chunks") or []
+        if not recovered_chunks:
+            return False
+
+        data["page_chunks"] = recovered_chunks
+        recovered_meta = parsed.get("meta") or {}
+        if isinstance(recovered_meta, dict):
+            merged_meta = dict(meta)
+            merged_meta.update(recovered_meta)
+            data["meta"] = merged_meta
+        return True
 
     def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
@@ -74,7 +151,9 @@ class ReportGenerator:
         industry_fit = result.get("industry_fit")
         benchmark = result.get("benchmark")
         sections = data.get("sections") or {}
+        page_chunks = data.get("page_chunks") or []
         expert_qna = data.get("expert_qna") or []
+        workspace_projects = data.get("_workspace_projects") or []
         evidence_map = self._build_evidence_map(evidence)
         evaluation_id = str(result.get("evaluation_id") or "")
 
@@ -83,11 +162,13 @@ class ReportGenerator:
         title = result.get("project_name") or result.get("project_id") or "评审报告"
         score_class = self._score_class(score)
         report_title = "项目智能评审报告" if not debug_mode else "项目评审调试报告"
-        report_eyebrow = "Expert Evaluation Report" if not debug_mode else "Evaluation Debug Report"
-        report_summary_title = "评审结论" if not debug_mode else "综合意见"
         left_tail = ""
         right_tail = ""
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
+        project_nav = self._render_project_nav(workspace_projects, debug_mode)
+        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, debug_mode)
+        document_nav = self._render_document_nav(page_chunks, sections, debug_mode)
+        layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
 
         if debug_mode:
             left_tail = f"""
@@ -183,42 +264,38 @@ class ReportGenerator:
       box-shadow: var(--shadow);
     }}
     .hero {{
-      padding: 24px 26px;
+      padding: 14px 18px;
       background: linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
     }}
     .hero-top {{
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 20px;
-      flex-wrap: wrap;
-    }}
-    .eyebrow {{
-      color: var(--brand);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 8px;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: nowrap;
     }}
     .report-title {{
       margin: 0;
-      font-size: 28px;
-      line-height: 1.35;
+      font-size: 18px;
+      line-height: 1.3;
       font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }}
     .report-subtitle {{
-      margin-top: 8px;
+      margin-top: 2px;
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.7;
+      font-size: 11px;
+      line-height: 1.4;
     }}
     .score-card {{
-      min-width: 220px;
-      padding: 18px 20px;
+      min-width: 132px;
+      padding: 8px 10px;
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 14px;
+      flex-shrink: 0;
     }}
     .score-good {{
       border-color: rgba(31, 122, 77, 0.28);
@@ -231,48 +308,38 @@ class ReportGenerator:
     }}
     .score-label {{
       color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 8px;
+      font-size: 11px;
+      margin-bottom: 4px;
     }}
     .score-main {{
       display: flex;
       align-items: baseline;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
     }}
     .score-value {{
-      font-size: 44px;
+      font-size: 28px;
       line-height: 1;
       font-weight: 800;
     }}
     .score-grade {{
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 700;
       color: var(--brand);
-    }}
-    .hero-lead {{
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.8;
-    }}
-    .hero-nav {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 16px;
     }}
     .nav-link {{
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 9px 14px;
+      padding: 7px 11px;
       border: 1px solid var(--line);
       border-radius: 999px;
       background: var(--panel);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
     }}
     .nav-link:hover {{
       border-color: #bfd0e3;
@@ -281,12 +348,19 @@ class ReportGenerator:
     }}
     .content-grid {{
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
       gap: 20px;
       align-items: stretch;
       min-height: 0;
       height: 100%;
     }}
+    .workspace-layout {{
+      grid-template-columns: 190px 220px minmax(0, 1.2fr) minmax(400px, 0.92fr);
+    }}
+    .debug-layout {{
+      grid-template-columns: minmax(0, 1fr) 360px;
+    }}
+    .project-stack,
+    .nav-stack,
     .main-stack,
     .side-stack {{
       display: grid;
@@ -296,6 +370,241 @@ class ReportGenerator:
       overflow: auto;
       padding-right: 6px;
       max-height: 100%;
+    }}
+    .side-stack {{
+      padding-right: 2px;
+    }}
+    .project-stack {{
+      padding-right: 0;
+    }}
+    .nav-stack {{
+      padding-right: 0;
+    }}
+    .project-panel {{
+      min-height: 0;
+      overflow: hidden;
+    }}
+    .project-panel-inner {{
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+    }}
+    .project-panel-title {{
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .project-list {{
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }}
+    .project-link {{
+      display: grid;
+      gap: 6px;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+    }}
+    .project-link:hover,
+    .project-link.is-active {{
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }}
+    .project-link-title {{
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.55;
+      word-break: break-word;
+    }}
+    .project-link-meta {{
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      word-break: break-all;
+    }}
+    .project-link-score {{
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }}
+    .rail-panel {{
+      min-height: 0;
+      overflow: hidden;
+    }}
+    .rail-inner {{
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+    }}
+    .rail-title {{
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .rail-meta {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }}
+    .rail-group {{
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }}
+    .rail-group-title {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }}
+    .rail-scroll {{
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }}
+    .rail-links {{
+      display: grid;
+      gap: 8px;
+    }}
+    .rail-link {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+      font-size: 13px;
+      line-height: 1.6;
+    }}
+    .rail-link:hover,
+    .rail-link.is-active {{
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }}
+    .rail-link-label {{
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .rail-link-meta {{
+      color: var(--muted);
+      font-size: 12px;
+      flex-shrink: 0;
+    }}
+    .doc-panel {{
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }}
+    .doc-panel-inner {{
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }}
+    .doc-viewer {{
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }}
+    .doc-page {{
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      scroll-margin-top: 18px;
+    }}
+    .doc-page.is-active {{
+      border-color: #88a4c3;
+      box-shadow: 0 0 0 3px rgba(29, 60, 97, 0.12);
+    }}
+    .doc-page-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }}
+    .doc-page-title {{
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .doc-page-sub {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }}
+    .doc-chunk-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .doc-chunk {{
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #e3e9f0;
+      background: #fdfefe;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.85;
+      font-size: 14px;
+    }}
+    .doc-chunk.is-match {{
+      border-color: #e2b562;
+      background: #fff8e7;
+      box-shadow: inset 0 0 0 1px rgba(229, 164, 43, 0.28);
+    }}
+    .jump-link {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d6e5;
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }}
+    .jump-link:hover {{
+      background: #eaf1f7;
+      border-color: #9eb6cf;
+    }}
+    .jump-link-row {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
     }}
     .panel-inner {{
       padding: 22px;
@@ -317,6 +626,13 @@ class ReportGenerator:
       color: var(--muted);
       font-size: 13px;
       line-height: 1.7;
+    }}
+    .workspace-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
     }}
     .summary {{
       margin: 0;
@@ -692,6 +1008,47 @@ class ReportGenerator:
       font-size: 13px;
       line-height: 1.7;
     }}
+    .result-shell {{
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }}
+    .result-tabs {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }}
+    .result-tab {{
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }}
+    .result-tab.is-active {{
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }}
+    .result-panels {{
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }}
+    .result-panel {{
+      display: none;
+    }}
+    .result-panel.is-active {{
+      display: block;
+    }}
+    .result-panel > .panel {{
+      box-shadow: none;
+    }}
     @media (max-width: 1320px) {{
       body {{
         overflow: auto;
@@ -708,6 +1065,8 @@ class ReportGenerator:
         height: auto;
         grid-template-rows: auto auto;
       }}
+      .project-stack,
+      .nav-stack,
       .main-stack,
       .side-stack {{
         overflow: visible;
@@ -728,11 +1087,19 @@ class ReportGenerator:
       .panel-inner {{
         padding: 18px;
       }}
+      .hero-top {{
+        flex-wrap: wrap;
+      }}
+      .result-tabs {{
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 4px;
+      }}
       .facts-grid {{
         grid-template-columns: 1fr;
       }}
       .report-title {{
-        font-size: 22px;
+        font-size: 18px;
       }}
       .score-trigger,
       .score-card-head {{
@@ -749,11 +1116,7 @@ class ReportGenerator:
     <div class="page-stack">
       <header class="panel hero">
         <div class="hero-top">
-          <div>
-            <div class="eyebrow">{report_eyebrow}</div>
-            <h1 class="report-title">{html.escape(str(title))}</h1>
-            <div class="report-subtitle">{report_title}</div>
-          </div>
+          <h1 class="report-title">{html.escape(str(title))}</h1>
           <div class="score-card {score_class}">
             <div class="score-label">综合评分 / 等级</div>
             <div class="score-main">
@@ -762,229 +1125,472 @@ class ReportGenerator:
             </div>
           </div>
         </div>
-        <div class="hero-lead">面向专家快速阅览的正文评审报告，重点展示结论、问题、证据与可追问能力。</div>
-        <nav class="hero-nav">
-          <a class="nav-link" href="#report-overview">评审结论</a>
-          <a class="nav-link" href="#report-dimensions">维度评分</a>
-          <a class="nav-link" href="#report-chat">专家聊天</a>
-          <a class="nav-link" href="#report-qna">典型问答</a>
-          <a class="nav-link" href="#report-fit">指南贴合</a>
-          <a class="nav-link" href="#report-benchmark">技术摸底</a>
-          <a class="nav-link" href="#report-evidence">证据链</a>
-          {f'<a class="nav-link" href="#report-debug">调试信息</a>' if debug_mode else ''}
-        </nav>
       </header>
 
-      <div class="content-grid">
+      <div class="{layout_class}">
+        {project_nav}
+        {document_nav}
         <main class="main-stack">
-          <section class="panel" id="report-overview">
-            <div class="panel-inner">
-              <div class="panel-head">
-                <h2>{report_summary_title}</h2>
-                <div class="panel-note">先给专家连续阅读的结论，再进入逐项核对。</div>
-              </div>
-              <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-              <div class="facts-grid">
-                <div class="mini-card">
-                  <div class="label">结构化摘要</div>
-                  <div class="value">{"已生成" if highlights else "未生成"}</div>
-                </div>
-                <div class="mini-card">
-                  <div class="label">专家问答</div>
-                  <div class="value">{"已生成" if expert_qna else "未生成"}</div>
-                </div>
-                <div class="mini-card">
-                  <div class="label">聊天索引</div>
-                  <div class="value">{"已构建" if result.get("chat_ready") else "未构建"}</div>
-                </div>
-                <div class="mini-card">
-                  <div class="label">建议条数</div>
-                  <div class="value">{len(recommendations)}</div>
-                </div>
-                <div class="mini-card">
-                  <div class="label">证据总数</div>
-                  <div class="value">{len(evidence)}</div>
-                </div>
-                <div class="mini-card">
-                  <div class="label">模型版本</div>
-                  <div class="value">{html.escape(str(result.get("model_version") or "-"))}</div>
-                </div>
-              </div>
-              <div class="highlight-grid">
-                <div class="highlight-card">
-                  <div class="highlight-label">研究目标</div>
-                  {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
-                </div>
-                <div class="highlight-card">
-                  <div class="highlight-label">创新点</div>
-                  {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
-                </div>
-                <div class="highlight-card">
-                  <div class="highlight-label">技术路线</div>
-                  {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel" id="report-dimensions">
-            <div class="panel-inner">
-              <div class="panel-head">
-                <h2>维度评分</h2>
-                <div class="panel-note">默认展开最需要关注的一项，其余按需展开。</div>
-              </div>
-              <div class="score-list">
-                {self._render_dimension_scores(dimension_scores)}
-              </div>
-            </div>
-          </section>
-
+          {document_panel}
           {left_tail}
         </main>
 
         <aside class="side-stack">
-          {self._render_chat_panel(
-              evaluation_id=evaluation_id,
-              chat_ready=bool(result.get("chat_ready")),
-              expert_qna=expert_qna,
-              debug_mode=debug_mode,
-          )}
-
-          <section class="panel" id="report-qna">
+          <section class="panel result-shell" id="result-shell">
             <div class="panel-inner">
-              <div class="panel-head">
-                <h2>专家关注问答</h2>
-                <div class="panel-note">展示典型问题，证据默认折叠。</div>
+              <div class="workspace-head">
+                <h2>{report_title}</h2>
+                {"" if debug_mode else """
+                <div class="result-tabs" id="result-tabs">
+                  <button type="button" class="result-tab is-active" data-tab-target="report-overview">评审结论</button>
+                  <button type="button" class="result-tab" data-tab-target="report-dimensions">维度评分</button>
+                  <button type="button" class="result-tab" data-tab-target="report-chat">专家聊天</button>
+                  <button type="button" class="result-tab" data-tab-target="report-qna">典型问答</button>
+                  <button type="button" class="result-tab" data-tab-target="report-fit">指南贴合</button>
+                  <button type="button" class="result-tab" data-tab-target="report-benchmark">技术摸底</button>
+                  <button type="button" class="result-tab" data-tab-target="report-evidence">证据链</button>
+                </div>
+                """}
               </div>
-              {self._render_expert_qna(expert_qna)}
-            </div>
-          </section>
+              <div class="result-panels">
+                <section class="result-panel is-active" id="report-overview">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
+                      <div class="facts-grid">
+                        <div class="mini-card">
+                          <div class="label">结构化摘要</div>
+                          <div class="value">{"已生成" if highlights else "未生成"}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">专家问答</div>
+                          <div class="value">{"已生成" if expert_qna else "未生成"}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">聊天索引</div>
+                          <div class="value">{"已构建" if result.get("chat_ready") else "未构建"}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">建议条数</div>
+                          <div class="value">{len(recommendations)}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">证据总数</div>
+                          <div class="value">{len(evidence)}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">模型版本</div>
+                          <div class="value">{html.escape(str(result.get("model_version") or "-"))}</div>
+                        </div>
+                      </div>
+                      <div class="highlight-grid">
+                        <div class="highlight-card">
+                          <div class="highlight-label">研究目标</div>
+                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
+                        </div>
+                        <div class="highlight-card">
+                          <div class="highlight-label">创新点</div>
+                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
+                        </div>
+                        <div class="highlight-card">
+                          <div class="highlight-label">技术路线</div>
+                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </section>
 
-          <section class="panel">
-            <div class="panel-inner">
-              <h2>修改建议</h2>
-              {self._render_list(recommendations, "暂无建议")}
-            </div>
-          </section>
+                <section class="result-panel" id="report-dimensions">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      <div class="score-list">
+                        {self._render_dimension_scores(dimension_scores)}
+                      </div>
+                    </div>
+                  </section>
+                </section>
 
-          <section class="panel" id="report-fit">
-            <div class="panel-inner">
-              <h2>指南贴合</h2>
-              {self._render_industry_fit(industry_fit)}
-            </div>
-          </section>
+                {self._render_chat_panel(
+                    evaluation_id=evaluation_id,
+                    chat_ready=bool(result.get("chat_ready")),
+                    expert_qna=expert_qna,
+                    debug_mode=debug_mode,
+                )}
 
-          <section class="panel" id="report-benchmark">
-            <div class="panel-inner">
-              <h2>技术摸底</h2>
-              {self._render_benchmark(benchmark)}
-            </div>
-          </section>
+                <section class="result-panel" id="report-qna">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_expert_qna(expert_qna)}
+                    </div>
+                  </section>
+                </section>
 
-          <section class="panel" id="report-evidence">
-            <div class="panel-inner">
-              <div class="panel-head">
-                <h2>证据链</h2>
-                <div class="panel-note">需要核对原文时再展开。</div>
+                <section class="result-panel" id="report-fit">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_industry_fit(industry_fit)}
+                    </div>
+                  </section>
+                </section>
+
+                <section class="result-panel" id="report-benchmark">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_benchmark(benchmark)}
+                    </div>
+                  </section>
+                </section>
+
+                <section class="result-panel" id="report-evidence">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_evidence(evidence)}
+                    </div>
+                  </section>
+                </section>
+
+                {right_tail}
               </div>
-              {self._render_evidence(evidence)}
             </div>
           </section>
-
-          {right_tail}
         </aside>
       </div>
     </div>
   </div>
+  {self._render_result_tabs_script(debug_mode)}
 </body>
 </html>"""
 
     def build_index_html(self, records: List[Dict[str, Any]]) -> str:
-        """构建 debug 目录索引页"""
-        rows = []
-        for record in records:
-            rows.append(
-                "<tr>"
-                f"<td>{html.escape(str(record.get('created_at') or '-'))}</td>"
-                f"<td>{html.escape(str(record.get('project_id') or '-'))}</td>"
-                f"<td>{html.escape(str(record.get('project_name') or '-'))}</td>"
-                f"<td>{html.escape(str(record.get('source_name') or '-'))}</td>"
-                f"<td>{html.escape(str(record.get('overall_score') or '-'))}</td>"
-                f"<td>{html.escape(str(record.get('grade') or '-'))}</td>"
-                f"<td>{'是' if record.get('partial') else '否'}</td>"
-                f"<td><a href=\"{html.escape(str(record.get('html_file') or '#'))}\">正式报告</a> / "
-                f"<a href=\"{html.escape(str(record.get('debug_html_file') or '#'))}\">调试报告</a> / "
-                f"<a href=\"{html.escape(str(record.get('json_file') or '#'))}\">JSON</a></td>"
-                "</tr>"
+        """构建多项目总工作台"""
+        project_items: List[str] = []
+        default_html = ""
+        default_title = "项目评审工作台"
+        default_score = ""
+        for index, record in enumerate(records):
+            payload = record.get("payload") or {}
+            sections = payload.get("sections") if isinstance(payload, dict) else {}
+            result = payload.get("result") if isinstance(payload, dict) else {}
+            preferred_name = self._extract_project_name_from_payload(payload)
+            project_name = preferred_name or str(record.get("project_name") or record.get("project_id") or "未命名项目")
+            project_id = str(record.get("project_id") or "-")
+            grade = str(record.get("grade") or "-")
+            score = str(record.get("overall_score") or "-")
+            html_file = str(record.get("html_file") or "#")
+            debug_html_file = str(record.get("debug_html_file") or "#")
+            json_file = str(record.get("json_file") or "#")
+            summary = ""
+            if isinstance(result, dict):
+                summary = str(result.get("summary") or "").strip()
+            summary = summary[:48] + ("..." if len(summary) > 48 else "")
+            score_text = f"{score} / {grade}"
+            active_class = " is-active" if index == 0 else ""
+            if index == 0:
+                default_html = html_file
+                default_title = project_name
+                default_score = score_text
+            project_items.append(
+                f"""
+                <button
+                  type="button"
+                  class="project-item{active_class}"
+                  data-project-html="{html.escape(html_file)}"
+                  data-project-title="{html.escape(project_name)}"
+                  data-project-score="{html.escape(score_text)}"
+                >
+                  <div class="project-item-top">
+                    <div class="project-item-title">{html.escape(project_name)}</div>
+                    <div class="project-item-score">{html.escape(score)} / {html.escape(grade)}</div>
+                  </div>
+                  <div class="project-item-meta">{html.escape(project_id)}</div>
+                  <div class="project-item-summary">{html.escape(summary or '暂无摘要')}</div>
+                  <div class="project-item-links">
+                    <a href="{html.escape(html_file)}" target="evaluation-workspace-frame">正式</a>
+                    <a href="{html.escape(debug_html_file)}" target="_blank" rel="noopener noreferrer">调试</a>
+                    <a href="{html.escape(json_file)}" target="_blank" rel="noopener noreferrer">JSON</a>
+                  </div>
+                </button>
+                """
             )
+
+        empty_state = '<div class="empty-state">暂无评审结果</div>'
+        workspace_html = (
+            f"""
+            <div class="workspace-shell">
+              <aside class="project-rail">
+                <div class="project-rail-head">
+                  <h1>项目评审工作台</h1>
+                  <div class="project-rail-sub">左侧切项目，右侧查看该项目完整评审报告。</div>
+                </div>
+                <div class="project-list">
+                  {''.join(project_items)}
+                </div>
+              </aside>
+              <section class="workspace-main">
+                <div class="workspace-head">
+                  <div class="workspace-title" id="workspace-title">{html.escape(default_title)}</div>
+                  <div class="workspace-score" id="workspace-score">{html.escape(default_score)}</div>
+                </div>
+                <iframe
+                  id="evaluation-workspace-frame"
+                  class="workspace-frame"
+                  name="evaluation-workspace-frame"
+                  src="{html.escape(default_html)}"
+                  title="项目评审工作台"
+                ></iframe>
+              </section>
+            </div>
+            """
+            if records
+            else empty_state
+        )
 
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>debug_eval 索引</title>
+  <title>项目评审工作台</title>
   <style>
+    * {{
+      box-sizing: border-box;
+      min-width: 0;
+    }}
+    html, body {{
+      height: 100%;
+    }}
     body {{
       margin: 0;
-      padding: 24px;
-      font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-      background: #f7f4ee;
-      color: #1f2937;
+      font-family: "Source Han Sans SC", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background: #f3f5f7;
+      color: #1b2430;
+      overflow: hidden;
     }}
-    .wrap {{
-      max-width: 1200px;
-      margin: 0 auto;
-      background: #fffdf8;
-      border: 1px solid #eadfce;
-      border-radius: 20px;
-      padding: 24px;
+    .workspace-shell {{
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+      gap: 0;
     }}
-    h1 {{ margin: 0 0 10px; }}
-    .sub {{ color: #6b7280; margin-bottom: 18px; }}
-    table {{
+    .project-rail {{
+      border-right: 1px solid #d7dfe8;
+      background: #fbfcfd;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+    }}
+    .project-rail-head {{
+      padding: 20px 18px 14px;
+      border-bottom: 1px solid #e6edf4;
+    }}
+    .project-rail-head h1 {{
+      margin: 0 0 6px;
+      font-size: 20px;
+      line-height: 1.4;
+    }}
+    .project-rail-sub {{
+      color: #66758a;
+      font-size: 13px;
+      line-height: 1.7;
+    }}
+    .project-list {{
+      min-height: 0;
+      overflow: auto;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }}
+    .project-item {{
       width: 100%;
-      border-collapse: collapse;
-      background: white;
-    }}
-    th, td {{
-      border-top: 1px solid #eadfce;
-      padding: 12px 10px;
+      border: 1px solid #d7dfe8;
+      border-radius: 12px;
+      background: #ffffff;
       text-align: left;
-      font-size: 14px;
-      line-height: 1.6;
-      vertical-align: top;
+      padding: 10px 11px;
+      cursor: pointer;
+      display: grid;
+      gap: 4px;
+      box-shadow: 0 4px 12px rgba(18, 31, 53, 0.035);
     }}
-    th {{
-      color: #6b7280;
-      font-weight: 600;
-      white-space: nowrap;
+    .project-item:hover,
+    .project-item.is-active {{
+      border-color: #9eb6cf;
+      background: #eef4f9;
     }}
-    a {{ color: #8f3d2e; text-decoration: none; }}
+    .project-item-top {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }}
+    .project-item-title {{
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.45;
+    }}
+    .project-item-score {{
+      flex-shrink: 0;
+      color: #1d3c61;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #c8d6e5;
+      border-radius: 999px;
+      padding: 2px 7px;
+      background: #f5f8fb;
+    }}
+    .project-item-meta {{
+      color: #66758a;
+      font-size: 11px;
+      line-height: 1.45;
+      word-break: break-all;
+    }}
+    .project-item-summary {{
+      color: #334155;
+      font-size: 12px;
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+    }}
+    .project-item-links {{
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .project-item-links a {{
+      color: #1d3c61;
+      font-size: 11px;
+      font-weight: 700;
+      text-decoration: none;
+      position: relative;
+      z-index: 1;
+    }}
+    .workspace-main {{
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: #eef2f6;
+    }}
+    .workspace-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 20px;
+      background: #ffffff;
+      border-bottom: 1px solid #d7dfe8;
+    }}
+    .workspace-title {{
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .workspace-score {{
+      flex-shrink: 0;
+      color: #1d3c61;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid #c8d6e5;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: #f5f8fb;
+    }}
+    .workspace-frame {{
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #eef2f6;
+    }}
+    .empty-state {{
+      display: grid;
+      place-items: center;
+      height: 100vh;
+      color: #66758a;
+      font-size: 16px;
+    }}
+    @media (max-width: 1024px) {{
+      body {{
+        overflow: auto;
+      }}
+      .workspace-shell {{
+        height: auto;
+        min-height: 100vh;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 70vh;
+      }}
+      .project-rail {{
+        border-right: 0;
+        border-bottom: 1px solid #d7dfe8;
+      }}
+      .workspace-head {{
+        align-items: flex-start;
+        flex-direction: column;
+      }}
+    }}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>debug_eval</h1>
-    <div class="sub">正文评审调试产物索引。最新记录在最上方。</div>
-    <table>
-      <thead>
-        <tr>
-          <th>创建时间</th>
-          <th>项目ID</th>
-          <th>项目名称</th>
-          <th>源文件</th>
-          <th>总分</th>
-          <th>等级</th>
-          <th>降级</th>
-          <th>文件</th>
-        </tr>
-      </thead>
-      <tbody>
-        {''.join(rows) or '<tr><td colspan="8">暂无调试报告</td></tr>'}
-      </tbody>
-    </table>
-  </div>
+  {workspace_html}
+  <script>
+    (() => {{
+      const items = Array.from(document.querySelectorAll(".project-item"));
+      const frame = document.getElementById("evaluation-workspace-frame");
+      const title = document.getElementById("workspace-title");
+      const score = document.getElementById("workspace-score");
+      if (!items.length || !frame) return;
+
+      const syncEmbeddedLayout = () => {{
+        try {{
+          const doc = frame.contentDocument;
+          if (!doc) return;
+          const rail = doc.getElementById("project-rail");
+          if (rail) {{
+            const stack = rail.closest(".project-stack");
+            if (stack) stack.style.display = "none";
+          }}
+          const styleId = "embedded-workspace-override";
+          let style = doc.getElementById(styleId);
+          if (!style) {{
+            style = doc.createElement("style");
+            style.id = styleId;
+            style.textContent = `
+              .workspace-layout {{
+                grid-template-columns: 220px minmax(0, 1.2fr) minmax(400px, 0.92fr) !important;
+              }}
+            `;
+            doc.head.appendChild(style);
+          }}
+        }} catch (error) {{
+          console.warn("failed to sync embedded evaluation layout", error);
+        }}
+      }};
+
+      const activate = (item) => {{
+        items.forEach((node) => node.classList.toggle("is-active", node === item));
+        frame.src = item.dataset.projectHtml || "";
+        if (title) {{
+          title.textContent = item.dataset.projectTitle || "";
+        }}
+        if (score) {{
+          score.textContent = item.dataset.projectScore || "";
+        }}
+      }};
+
+      frame.addEventListener("load", syncEmbeddedLayout);
+      items.forEach((item) => {{
+        item.addEventListener("click", (event) => {{
+          const link = event.target.closest("a");
+          if (link) return;
+          activate(item);
+        }});
+      }});
+
+      syncEmbeddedLayout();
+    }})();
+  </script>
 </body>
 </html>"""
 
@@ -1066,6 +1672,289 @@ class ReportGenerator:
                 best_index = index
         return best_index
 
+    def _render_document_panel(
+        self,
+        page_chunks: List[Dict[str, Any]],
+        meta: Dict[str, Any],
+        debug_mode: bool,
+    ) -> str:
+        """渲染左侧正文阅读区"""
+        if debug_mode:
+            return ""
+
+        pages: Dict[int, List[Dict[str, Any]]] = {}
+        for chunk in page_chunks:
+            if not isinstance(chunk, dict):
+                continue
+            page = int(chunk.get("page", 0) or 0)
+            if page <= 0:
+                continue
+            pages.setdefault(page, []).append(chunk)
+
+        page_count = len(pages) or int(meta.get("page_count", 0) or 0)
+        if not pages:
+            body_html = '<div class="empty">当前没有可渲染的正文页切片，暂时无法提供联动阅读。</div>'
+        else:
+            page_cards: List[str] = []
+            for page_no in sorted(pages):
+                chunks_html: List[str] = []
+                for index, chunk in enumerate(pages[page_no], start=1):
+                    section = str(chunk.get("section") or "").strip()
+                    text = str(chunk.get("text") or "").strip()
+                    if not text:
+                        continue
+                    section_html = (
+                        f'<div class="doc-page-sub">{html.escape(section)}</div>'
+                        if section
+                        else ""
+                    )
+                    chunks_html.append(
+                        f"""
+                        <article
+                          class="doc-chunk"
+                          data-page="{page_no}"
+                          data-snippet="{html.escape(self._normalize_search_text(text[:220]))}"
+                        >
+                          {section_html}
+                          <div>{html.escape(text)}</div>
+                        </article>
+                        """
+                    )
+                page_cards.append(
+                    f"""
+                    <section class="doc-page" data-page="{page_no}" id="doc-page-{page_no}">
+                      <div class="doc-page-head">
+                        <div class="doc-page-title">第 {page_no} 页</div>
+                      </div>
+                      <div class="doc-chunk-list">
+                        {''.join(chunks_html) or '<div class="empty">本页暂无可展示正文</div>'}
+                      </div>
+                    </section>
+                    """
+                )
+            body_html = "".join(page_cards)
+
+        return f"""
+        <section class="panel doc-panel" id="report-document">
+          <div class="panel-inner doc-panel-inner">
+            <div class="doc-viewer" id="doc-viewer">
+              {body_html}
+            </div>
+          </div>
+        </section>
+        {self._render_document_jump_script()}
+        """
+
+    def _render_document_nav(
+        self,
+        page_chunks: List[Dict[str, Any]],
+        sections: Dict[str, str],
+        debug_mode: bool,
+    ) -> str:
+        """渲染左侧阅读导航栏"""
+        if debug_mode:
+            return ""
+
+        pages: Dict[int, str] = {}
+        section_pages: Dict[str, int] = {}
+        for chunk in page_chunks:
+            if not isinstance(chunk, dict):
+                continue
+            try:
+                page = int(chunk.get("page", 0) or 0)
+            except (TypeError, ValueError):
+                page = 0
+            if page <= 0:
+                continue
+            pages.setdefault(page, str(chunk.get("text") or "").strip())
+            section = str(chunk.get("section") or "").strip()
+            if section and section not in section_pages:
+                section_pages[section] = page
+
+        section_links = []
+        for name, page in list(section_pages.items())[:10]:
+            section_links.append(
+                f'<a class="rail-link" href="#doc-page-{page}" data-doc-jump="true" data-page="{page}" data-snippet="">'
+                f'<span class="rail-link-label">{html.escape(name)}</span>'
+                f'<span class="rail-link-meta">P{page}</span>'
+                "</a>"
+            )
+
+        page_links = []
+        for page, preview in sorted(pages.items()):
+            page_links.append(
+                f'<a class="rail-link" href="#doc-page-{page}" data-doc-jump="true" data-page="{page}" '
+                f'data-snippet="{html.escape(self._normalize_search_text(preview[:120]))}">'
+                f'<span class="rail-link-label">第 {page} 页</span>'
+                f'<span class="rail-link-meta">跳转</span>'
+                "</a>"
+            )
+
+        section_block = (
+            f"""
+            <div class="rail-group">
+              <div class="rail-group-title">章节</div>
+              <div class="rail-links">{"".join(section_links)}</div>
+            </div>
+            """
+            if section_links
+            else ""
+        )
+        page_block = (
+            f"""
+            <div class="rail-group">
+              <div class="rail-group-title">正文页</div>
+              <div class="rail-links">{"".join(page_links) or '<div class="empty">暂无页码</div>'}</div>
+            </div>
+            """
+        )
+
+        return f"""
+        <aside class="nav-stack">
+          <section class="panel rail-panel" id="document-rail">
+            <div class="panel-inner rail-inner">
+              <div>
+                <div class="rail-title">正文导航</div>
+                <div class="rail-meta">按章节或页码快速定位原文。</div>
+              </div>
+              <div class="rail-group">
+                <div class="rail-group-title">项目</div>
+                <div class="rail-links">
+                  <a class="rail-link is-active" href="#report-document">
+                    <span class="rail-link-label">当前项目</span>
+                    <span class="rail-link-meta">{len(pages)} 页</span>
+                  </a>
+                </div>
+              </div>
+              <div class="rail-scroll">
+                {section_block}
+                {page_block}
+              </div>
+            </div>
+          </section>
+        </aside>
+        """
+
+    def _render_project_nav(
+        self,
+        workspace_projects: List[Dict[str, Any]],
+        debug_mode: bool,
+    ) -> str:
+        """渲染最左侧项目切换栏，仅扩展左侧，不干扰现有正文与结果布局"""
+        if debug_mode or not workspace_projects:
+            return ""
+
+        links: List[str] = []
+        for item in workspace_projects:
+            active_class = " is-active" if item.get("active") else ""
+            title = str(item.get("project_name") or item.get("project_id") or "未命名项目")
+            project_id = str(item.get("project_id") or "-")
+            score = item.get("score")
+            grade = str(item.get("grade") or "-")
+            score_text = f"{score} / {grade}" if score is not None else grade
+            href = str(item.get("html_file") or "#")
+            links.append(
+                f"""
+                <a class="project-link{active_class}" href="{html.escape(href)}">
+                  <div class="project-link-title">{html.escape(title)}</div>
+                  <div class="project-link-meta">{html.escape(project_id)}</div>
+                  <div class="project-link-score">{html.escape(score_text)}</div>
+                </a>
+                """
+            )
+
+        return f"""
+        <aside class="project-stack">
+          <section class="panel project-panel" id="project-rail">
+            <div class="panel-inner project-panel-inner">
+              <div class="project-panel-title">项目</div>
+              <div class="project-list">
+                {''.join(links)}
+              </div>
+            </div>
+          </section>
+        </aside>
+        """
+
+    def _render_jump_link(
+        self,
+        page: Any,
+        snippet: Any,
+        label: str = "查看原文",
+    ) -> str:
+        """渲染统一的正文跳转入口"""
+        try:
+            page_no = int(page)
+        except (TypeError, ValueError):
+            page_no = 0
+        if page_no <= 0:
+            return ""
+        return (
+            f'<a class="jump-link" href="#doc-page-{page_no}" '
+            f'data-doc-jump="true" data-page="{page_no}" '
+            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}">'
+            f'{html.escape(label)} · 第 {page_no} 页</a>'
+        )
+
+    def _render_document_jump_script(self) -> str:
+        """正文跳转与片段高亮脚本"""
+        return """
+        <script>
+          (() => {
+            const viewer = document.getElementById("doc-viewer");
+            if (!viewer) return;
+
+            const normalize = (value) => String(value || "")
+              .replace(/\\s+/g, "")
+              .replace(/[，。；：、“”‘’（）()【】《》,.!?\\-]/g, "")
+              .trim();
+
+            let activeTimer = null;
+
+            const clearActiveState = () => {
+              viewer.querySelectorAll(".doc-page.is-active").forEach((node) => node.classList.remove("is-active"));
+              viewer.querySelectorAll(".doc-chunk.is-match").forEach((node) => node.classList.remove("is-match"));
+            };
+
+            const jumpToEvidence = (page, snippet) => {
+              const pageNode = viewer.querySelector(`.doc-page[data-page="${page}"]`);
+              if (!pageNode) return;
+
+              clearActiveState();
+              pageNode.classList.add("is-active");
+
+              const normalizedSnippet = normalize(snippet).slice(0, 120);
+              let matchedChunk = null;
+              if (normalizedSnippet) {
+                matchedChunk = Array.from(pageNode.querySelectorAll(".doc-chunk")).find((node) => {
+                  const text = node.dataset.snippet || normalize(node.textContent).slice(0, 300);
+                  return text.includes(normalizedSnippet) || normalizedSnippet.includes(text.slice(0, 48));
+                });
+              }
+
+              const target = matchedChunk || pageNode;
+              if (matchedChunk) matchedChunk.classList.add("is-match");
+              target.scrollIntoView({ behavior: "smooth", block: "center" });
+
+              if (activeTimer) window.clearTimeout(activeTimer);
+              activeTimer = window.setTimeout(() => {
+                pageNode.classList.remove("is-active");
+                if (matchedChunk) matchedChunk.classList.remove("is-match");
+              }, 3600);
+            };
+
+            document.addEventListener("click", (event) => {
+              const trigger = event.target.closest("[data-doc-jump]");
+              if (!trigger) return;
+              event.preventDefault();
+              const page = Number(trigger.dataset.page || 0);
+              if (!page) return;
+              jumpToEvidence(page, trigger.dataset.snippet || "");
+            });
+          })();
+        </script>
+        """
+
     def _render_evidence(self, evidence: List[Dict[str, Any]]) -> str:
         if not evidence:
             return '<div class="empty">暂无证据</div>'
@@ -1078,6 +1967,7 @@ class ReportGenerator:
                 "<div class=\"fold-body\">"
                 f"<div><strong>文件：</strong>{html.escape(str(item.get('file') or '-'))}</div>"
                 f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}</div>"
+                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'))}</div>"
                 "</div>"
                 "</details>"
             )
@@ -1126,6 +2016,7 @@ class ReportGenerator:
                     f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
                     f"<div>文件：{html.escape(str(citation.get('file') or '-'))}</div>"
                     f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
+                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'))}</div>"
                     "</div>"
                 )
                 for citation in citations[:3]
@@ -1159,22 +2050,26 @@ class ReportGenerator:
             for question in suggestions[:6]
         )
 
-        ready_text = "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。" if chat_ready else "当前评审未构建聊天索引，无法发起实时问答。请重新评审并启用 enable_chat_index。"
-        status_text = "等待提问" if chat_ready else "未构建聊天索引"
-        submit_disabled = "" if chat_ready and evaluation_id else "disabled"
-        textarea_disabled = "" if chat_ready and evaluation_id else "disabled"
+        ready_text = (
+            "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。"
+            if chat_ready
+            else "当前记录未预构建聊天索引。可直接提问，系统会在首问时自动尝试构建索引。"
+        )
+        status_text = "等待提问" if evaluation_id else "缺少评审ID"
+        submit_disabled = "" if evaluation_id else "disabled"
+        textarea_disabled = "" if evaluation_id else "disabled"
         toolbar_note = f"默认使用项目当前 API 端口 {default_api_base}；如果服务不在当前地址，可直接改这里。"
         escaped_eval_id = html.escape(evaluation_id)
         suggestions_block = suggestion_html or '<div class="chat-status">暂无可复用的典型问题。</div>'
         escaped_default_api_base = html.escape(default_api_base)
 
         return f"""
-        <section class="panel">
-          <div class="panel-inner">
-            <h2>专家即时问答</h2>
+        <section class="result-panel" id="report-chat">
+          <section class="panel">
+            <div class="panel-inner">
             <div
               class="chat-shell"
-              id="report-chat"
+              id="chat-shell"
               data-evaluation-id="{escaped_eval_id}"
               data-chat-ready="{str(chat_ready).lower()}"
             >
@@ -1206,11 +2101,12 @@ class ReportGenerator:
                 </div>
               </form>
             </div>
-          </div>
+            </div>
+          </section>
         </section>
         <script>
           (() => {{
-            const shell = document.getElementById("report-chat");
+            const shell = document.getElementById("chat-shell");
             if (!shell) return;
 
             const evaluationId = shell.dataset.evaluationId || "";
@@ -1245,10 +2141,10 @@ class ReportGenerator:
               .replace(/'/g, "&#39;");
 
             const setBusy = (busy, text) => {{
-              if (submitButton) submitButton.disabled = busy || !chatReady || !evaluationId;
-              if (questionInput) questionInput.disabled = busy || !chatReady || !evaluationId;
+              if (submitButton) submitButton.disabled = busy || !evaluationId;
+              if (questionInput) questionInput.disabled = busy || !evaluationId;
               suggestionButtons.forEach((button) => {{
-                button.disabled = busy || !chatReady || !evaluationId;
+                button.disabled = busy || !evaluationId;
               }});
               if (statusNode) {{
                 statusNode.textContent = text || (busy ? "正在生成回答..." : "等待提问");
@@ -1265,6 +2161,15 @@ class ReportGenerator:
                       <div>页码：第 ${{escapeHtml(citation.page || "-")}} 页</div>
                       <div>文件：${{escapeHtml(citation.file || "-")}}</div>
                       <div>片段：${{escapeHtml(citation.snippet || "-")}}</div>
+                      <div class="jump-link-row">
+                        <a
+                          class="jump-link"
+                          href="#doc-page-${{escapeHtml(citation.page || "-")}}"
+                          data-doc-jump="true"
+                          data-page="${{escapeHtml(citation.page || "")}}"
+                          data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
+                        >查看原文 · 第 ${{escapeHtml(citation.page || "-")}} 页</a>
+                      </div>
                     </div>
                   `).join("")}}</div>`
                 : "";
@@ -1278,7 +2183,7 @@ class ReportGenerator:
               thread.scrollTop = thread.scrollHeight;
             }};
 
-            const normalizeBase = (value) => String(value || "").trim().replace(/\/+$/, "");
+            const normalizeBase = (value) => String(value || "").trim().replace(/\\/+$/, "");
 
             const askQuestion = async (question) => {{
               const text = String(question || "").trim();
@@ -1286,8 +2191,8 @@ class ReportGenerator:
                 setBusy(false, "请输入问题");
                 return;
               }}
-              if (!chatReady || !evaluationId) {{
-                setBusy(false, "当前评审未构建聊天索引");
+              if (!evaluationId) {{
+                setBusy(false, "缺少评审ID，无法发起提问");
                 return;
               }}
 
@@ -1331,10 +2236,77 @@ class ReportGenerator:
               }});
             }});
 
-            setBusy(false, chatReady ? "等待提问" : "未构建聊天索引");
+            setBusy(false, chatReady ? "等待提问" : "可直接提问（首次会自动建索引）");
           }})();
         </script>
         """
+
+    def _render_result_tabs_script(self, debug_mode: bool) -> str:
+        """右侧结果区 tab 切换脚本"""
+        if debug_mode:
+            return ""
+        return """
+        <script>
+          (() => {
+            const root = document.getElementById("result-shell");
+            if (!root) return;
+            const tabs = Array.from(root.querySelectorAll(".result-tab"));
+            const panels = Array.from(root.querySelectorAll(".result-panel"));
+            if (!tabs.length || !panels.length) return;
+
+            const activate = (targetId) => {
+              tabs.forEach((tab) => {
+                tab.classList.toggle("is-active", tab.dataset.tabTarget === targetId);
+              });
+              panels.forEach((panel) => {
+                panel.classList.toggle("is-active", panel.id === targetId);
+              });
+            };
+
+            tabs.forEach((tab) => {
+              tab.addEventListener("click", () => activate(tab.dataset.tabTarget || ""));
+            });
+
+            activate("report-overview");
+          })();
+        </script>
+        """
+
+    def _extract_project_name_from_payload(self, payload: Dict[str, Any]) -> str:
+        """尽量从现有调试载荷中提取真实项目名称，避免 index 回退成文件名"""
+        if not isinstance(payload, dict):
+            return ""
+        sections = payload.get("sections") or {}
+        candidates: List[str] = []
+        if isinstance(sections, dict):
+            direct_name = str(sections.get("项目名称") or "").strip()
+            if direct_name:
+                return direct_name
+            for key in ("概述", "项目基本信息", "项目简介"):
+                value = sections.get(key)
+                if value:
+                    candidates.append(str(value))
+
+        root_name = str(payload.get("project_name") or "").strip()
+        result_name = str((payload.get("result") or {}).get("project_name") or "").strip()
+        for value in (root_name, result_name):
+            if value and not value.lower().endswith(".pdf"):
+                return value
+
+        for text in candidates:
+            normalized_text = re.sub(r"\s+", " ", text)
+            for pattern in self.PROJECT_NAME_PATTERNS:
+                match = re.search(pattern, normalized_text, flags=re.IGNORECASE)
+                if match:
+                    name = re.sub(r"\s+", " ", match.group(1)).strip(" ：:|")
+                    if (
+                        name
+                        and "要求简练" not in name
+                        and "字数不宜过多" not in name
+                        and "项目申报书分为" not in name
+                    ):
+                        return name
+        return ""
 
     def _build_evidence_map(self, evidence: List[Dict[str, Any]]) -> Dict[tuple[str, str], Dict[str, Any]]:
         """按摘要分类和条目构建证据映射"""
@@ -1369,6 +2341,7 @@ class ReportGenerator:
                 meta_html = (
                     f'<div class="subtle">证据页：第 {html.escape(str(page))} 页</div>'
                     f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
+                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet)}</div>'
                 )
             rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
         return "<ol class=\"list\">" + "".join(rows) + "</ol>"
@@ -1429,6 +2402,12 @@ class ReportGenerator:
             f"<tr><th>近似分页</th><td>{'是' if meta.get('page_estimated') else '否'}</td></tr>"
             '</table>'
         )
+
+    def _normalize_search_text(self, value: str) -> str:
+        """统一跳转匹配文本，减少断行与标点差异影响"""
+        normalized = re.sub(r"\s+", "", str(value or ""))
+        normalized = re.sub(r"[，。；：、“”‘’（）()【】《》,.!?\-]", "", normalized)
+        return normalized.strip()
 
     def _score_class(self, score: Any) -> str:
         try:
