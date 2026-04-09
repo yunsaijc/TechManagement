@@ -116,6 +116,19 @@ class ProjectReviewAgent:
         rules = ProjectRuleRegistry.create_chain(rule_names)
 
         results: List[CheckResult] = []
+        # 批次模式下如果主申报书未定位到，先给出显式失败，避免被一堆“需人工处理”淹没。
+        if context.project_index_row is not None and not (context.scan_info or {}).get("proposal_main_file"):
+            results.append(
+                CheckResult(
+                    item="proposal_file_presence",
+                    status=CheckStatus.FAILED,
+                    message="未找到主申报书文件，请检查 /mnt/remote_corpus 挂载与目录结构",
+                    evidence={
+                        "proposal_dir": (context.scan_info or {}).get("proposal_dir", ""),
+                        "proposal_files": (context.scan_info or {}).get("proposal_files", []),
+                    },
+                )
+            )
         for rule in rules:
             if await rule.should_run(context):
                 results.append(await rule.check(context))
@@ -450,7 +463,7 @@ class ProjectReviewAgent:
                 "condition_field": "has_cooperation_unit",
             },
             "cooperation_region_check": {
-                "source_rule": "",
+                "source_rule": "cooperation_region_check",
                 "condition_field": "has_cooperation_unit",
             },
             "platform_scope_check": {"source_rule": ""},
@@ -460,7 +473,7 @@ class ProjectReviewAgent:
             "shared_mechanism_check": {"source_rule": ""},
             "provincial_nsf_conflict_check": {"source_rule": ""},
             "unfinished_basic_project_check": {"source_rule": ""},
-            "applicant_qualification_check": {"source_rule": ""},
+            "applicant_qualification_check": {"source_rule": "applicant_qualification_check"},
             "project_leader_age_check": {"source_rule": "project_leader_age_check"},
             "active_guidance_project_leader_check": {"source_rule": ""},
             "project_count_limit_check": {"source_rule": ""},
@@ -468,7 +481,7 @@ class ProjectReviewAgent:
             "enterprise_active_guidance_project_check": {"source_rule": ""},
             "performance_metric_count_check": {"source_rule": "performance_metric_count_check"},
             "budget_forbidden_expense_check": {"source_rule": "budget_forbidden_expense_check"},
-            "leader_achievement_attachment_check": {"source_rule": ""},
+            "leader_achievement_attachment_check": {"source_rule": "leader_achievement_attachment_check"},
             "beijing_tianjin_partner_check": {"source_rule": ""},
             "cluster_region_check": {"source_rule": ""},
             "other_policy_compliance": {"source_rule": ""},

@@ -17,6 +17,10 @@ class ProjectInfo(BaseModel):
     guide_name: str = Field(default="", description="指南名称")
     applicant_unit: str = Field(default="", description="申报单位")
     applicant_unit_type: str = Field(default="", description="申报单位类型")
+    applicant_region: str = Field(default="", description="申报单位注册地区")
+    applicant_credit_code: str = Field(default="", description="统一社会信用代码")
+    applicant_is_independent_legal_person: Optional[bool] = Field(default=None, description="是否独立法人")
+    applicant_is_government_agency: bool = Field(False, description="申报单位是否行政机关")
     registered_date: str = Field(default="", description="注册时间")
     project_leader_birth_date: str = Field(default="", description="项目负责人出生日期")
     execution_period_years: float = Field(0, description="执行期")
@@ -30,6 +34,8 @@ class ProjectInfo(BaseModel):
     has_special_industry_requirement: bool = Field(False, description="是否涉及特种行业")
     has_biosafety_activity: bool = Field(False, description="是否涉及生物安全活动")
     has_cooperation_unit: bool = Field(False, description="是否有合作单位")
+    leader_achievement_categories: List[str] = Field(default_factory=list, description="负责人/骨干成果类别")
+    leader_achievement_evidence_lines: List[str] = Field(default_factory=list, description="负责人/骨干成果线索")
 
 
 class CooperationInfo(BaseModel):
@@ -38,6 +44,7 @@ class CooperationInfo(BaseModel):
     cooperation_units: List[str] = Field(default_factory=list, description="合作单位列表")
     cooperation_unit_types: List[str] = Field(default_factory=list, description="合作单位类型列表")
     cooperation_regions: List[str] = Field(default_factory=list, description="合作单位地区列表")
+    cooperation_unit_region_details: List[Dict[str, str]] = Field(default_factory=list, description="合作单位地区明细")
     has_formal_cooperation_agreement: bool = Field(False, description="是否有正式合作协议")
     has_management_recommendation_letter: bool = Field(False, description="是否有推荐函")
 

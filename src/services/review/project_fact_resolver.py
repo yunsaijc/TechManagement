@@ -20,7 +20,13 @@ class ProjectFactResolver:
         self.pdf_parser = PDFParser()
         self.docx_parser = DOCXParser()
 
-    async def resolve(self, proposal_files: List[Path], applicant_unit: str = "", unit_name: str = "") -> Dict[str, Any]:
+    async def resolve(
+        self,
+        proposal_files: List[Path],
+        applicant_unit: str = "",
+        unit_name: str = "",
+        project_leader: str = "",
+    ) -> Dict[str, Any]:
         """解析申报书事实"""
         main_file = self._select_main_proposal_file(proposal_files)
         preferred_unit_name = unit_name or applicant_unit
@@ -30,11 +36,18 @@ class ProjectFactResolver:
                 "proposal_text_excerpt": "",
                 "project_info_updates": {
                     "applicant_unit_type": self._infer_applicant_unit_type(preferred_unit_name),
+                    "applicant_region": "",
+                    "applicant_credit_code": "",
+                    "applicant_is_independent_legal_person": None,
+                    "applicant_is_government_agency": self._is_government_agency(preferred_unit_name),
+                    "leader_achievement_categories": [],
+                    "leader_achievement_evidence_lines": [],
                 },
                 "cooperation_info": {
                     "cooperation_units": [],
                     "cooperation_unit_types": [],
                     "cooperation_regions": [],
+                    "cooperation_unit_region_details": [],
                     "has_formal_cooperation_agreement": False,
                     "has_management_recommendation_letter": False,
                 },
@@ -43,14 +56,25 @@ class ProjectFactResolver:
         text = await self._extract_text(main_file)
         form_fields = self._extract_form_fields(text)
         cooperation_units = self._extract_cooperation_units(text, form_fields)
+        cooperation_region_details = self._extract_cooperation_unit_region_details(text, cooperation_units)
+        leader_achievement = self._extract_leader_achievement_facts(text, form_fields)
         applicant_unit_type = self._infer_applicant_unit_type(
             preferred_unit_name,
             form_fields.get("单位性质", ""),
         )
         project_info_updates = {
             "applicant_unit_type": applicant_unit_type,
+            "applicant_region": self._extract_applicant_region(text, form_fields),
+            "applicant_credit_code": self._extract_applicant_credit_code(text, form_fields),
+            "applicant_is_independent_legal_person": self._extract_is_independent_legal_person(text, form_fields),
+            "applicant_is_government_agency": self._is_government_agency(preferred_unit_name),
             "registered_date": self._extract_registered_date(text, form_fields),
-            "project_leader_birth_date": self._extract_project_leader_birth_date(text, form_fields),
+            "project_leader_birth_date": self._extract_project_leader_birth_date(
+                main_file,
+                text,
+                form_fields,
+                project_leader,
+            ),
             "fiscal_funding": self._extract_budget_amount(text, form_fields, ["申请财政资金", "申请省财政资金", "财政资金", "拟申请财政资金"]),
             "self_funding": self._extract_budget_amount(text, form_fields, ["自筹资金", "单位自筹", "配套资金"]),
             "budget_line_items": self._extract_budget_line_items(text),
@@ -58,6 +82,8 @@ class ProjectFactResolver:
             "has_special_industry_requirement": self._extract_boolean_fact(text, form_fields, ["安全生产", "特种行业", "行业准入", "生产许可", "经营许可"], negative_hints=["无", "否"]),
             "has_biosafety_activity": self._extract_boolean_fact(text, form_fields, ["生物安全", "人类遗传资源", "病原微生物", "实验动物"], negative_hints=["无", "否"]),
             "has_cooperation_unit": self._extract_has_cooperation_unit(text, form_fields, cooperation_units),
+            "leader_achievement_categories": leader_achievement["categories"],
+            "leader_achievement_evidence_lines": leader_achievement["evidence_lines"],
         }
         project_info_updates.update(self._extract_performance_metrics(main_file))
 
@@ -68,7 +94,8 @@ class ProjectFactResolver:
             "cooperation_info": {
                 "cooperation_units": cooperation_units,
                 "cooperation_unit_types": [self._infer_applicant_unit_type(unit) for unit in cooperation_units],
-                "cooperation_regions": self._extract_regions(cooperation_units),
+                "cooperation_regions": self._extract_regions(cooperation_units, cooperation_region_details),
+                "cooperation_unit_region_details": cooperation_region_details,
                 "has_formal_cooperation_agreement": self._contains_any(text, ["合作协议", "合作合同", "联合申报协议"]),
                 "has_management_recommendation_letter": self._contains_any(text, ["推荐函", "推荐意见", "科技管理部门推荐"]),
             },
@@ -164,8 +191,19 @@ class ProjectFactResolver:
                 return self._parse_amount(match.group(1))
         return 0.0
 
-    def _extract_project_leader_birth_date(self, text: str, form_fields: Dict[str, str]) -> str:
+    def _extract_project_leader_birth_date(
+        self,
+        path: Path,
+        text: str,
+        form_fields: Dict[str, str],
+        project_leader: str = "",
+    ) -> str:
         """提取项目负责人出生日期"""
+        if path.suffix.lower() == ".docx":
+            from_docx = self._extract_project_leader_birth_date_from_docx(path, project_leader)
+            if from_docx:
+                return from_docx
+
         for key, value in form_fields.items():
             if any(token in key for token in ["出生日期", "出生年月", "负责人出生日期", "负责人出生年月"]):
                 normalized = self._normalize_date(value)
@@ -188,6 +226,75 @@ class ProjectFactResolver:
             if normalized:
                 return normalized
         return ""
+
+    def _extract_project_leader_birth_date_from_docx(self, path: Path, project_leader: str = "") -> str:
+        """从 docx 成员表提取项目负责人出生日期（优先取身份证）"""
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        id_pattern = re.compile(
+            r"(?<!\d)([1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[0-9Xx])(?!\d)"
+        )
+        try:
+            with zipfile.ZipFile(path) as archive:
+                xml_bytes = archive.read("word/document.xml")
+            root = ET.fromstring(xml_bytes)
+        except Exception:
+            return ""
+        body = root.find("w:body", ns)
+        if body is None:
+            return ""
+
+        normalized_leader = re.sub(r"\s+", "", project_leader or "")
+
+        for table in body.findall("w:tbl", ns):
+            rows: List[List[str]] = []
+            for tr in table.findall("w:tr", ns):
+                row = []
+                for tc in tr.findall("w:tc", ns):
+                    cell = "".join(node.text or "" for node in tc.findall(".//w:t", ns)).strip()
+                    row.append(re.sub(r"\s+", "", cell))
+                if row:
+                    rows.append(row)
+            if len(rows) < 2:
+                continue
+
+            header = rows[0]
+            if "证件号码" not in "".join(header):
+                continue
+            name_idx = self._find_header_index(header, ["姓名"])
+            id_idx = self._find_header_index(header, ["证件号码", "身份证号", "身份证号码"])
+            role_idx = self._find_header_index(header, ["分工", "角色", "承担任务"])
+            if id_idx < 0:
+                continue
+
+            leader_first: str = ""
+            for row in rows[1:]:
+                if id_idx >= len(row):
+                    continue
+                id_match = id_pattern.search(row[id_idx] or "")
+                if not id_match:
+                    continue
+                candidate_birth = f"{id_match.group(1)[6:10]}-{id_match.group(1)[10:12]}-{id_match.group(1)[12:14]}"
+
+                role_text = row[role_idx] if role_idx >= 0 and role_idx < len(row) else ""
+                name_text = row[name_idx] if name_idx >= 0 and name_idx < len(row) else ""
+                normalized_name = re.sub(r"\s+", "", name_text)
+
+                if "项目负责人" in role_text:
+                    return candidate_birth
+                if normalized_leader and normalized_name and normalized_name == normalized_leader:
+                    return candidate_birth
+                if not leader_first:
+                    leader_first = candidate_birth
+            if leader_first:
+                return leader_first
+        return ""
+
+    def _find_header_index(self, headers: List[str], candidates: List[str]) -> int:
+        """查找表头索引"""
+        for idx, text in enumerate(headers):
+            if any(candidate in text for candidate in candidates):
+                return idx
+        return -1
 
     def _extract_budget_line_items(self, text: str) -> List[str]:
         """抽取预算相关明细行，供预算禁列项检查使用"""
@@ -327,17 +434,57 @@ class ProjectFactResolver:
                     units.append(cleaned)
         return units[:10]
 
-    def _extract_regions(self, units: List[str]) -> List[str]:
+    def _extract_cooperation_unit_region_details(self, text: str, cooperation_units: List[str]) -> List[Dict[str, str]]:
+        """提取合作单位及地区明细"""
+        details: Dict[str, Dict[str, str]] = {
+            unit: {"unit": unit, "region": "", "source": "unit_name"}
+            for unit in cooperation_units
+        }
+
+        section_match = re.search(r"合作单位概况([\s\S]{0,1200})", text)
+        if section_match:
+            section_text = section_match.group(1)
+            for line in section_text.splitlines():
+                clean = line.strip()
+                if not clean.startswith("[表格行"):
+                    continue
+                if "]" in clean:
+                    clean = clean.split("]", 1)[1].strip()
+                raw_parts = [self._normalize_field_token(part) for part in clean.split("|")]
+                parts = [part for part in raw_parts if part]
+                if not parts:
+                    continue
+                unit = self._clean_unit_name(parts[0])
+                if not self._looks_like_unit(unit):
+                    continue
+                region = ""
+                for part in parts[1:5]:
+                    candidate = self._normalize_region_text(part)
+                    if self._looks_like_region_text(candidate):
+                        region = candidate
+                        break
+                if unit not in details:
+                    details[unit] = {"unit": unit, "region": region, "source": "cooperation_overview_table"}
+                elif region and not details[unit].get("region"):
+                    details[unit]["region"] = region
+                    details[unit]["source"] = "cooperation_overview_table"
+
+        return list(details.values())[:20]
+
+    def _extract_regions(self, units: List[str], details: List[Dict[str, str]] | None = None) -> List[str]:
         """从单位名称中抽取粗粒度地区"""
-        region_tokens = [
-            "北京", "天津", "河北", "新疆", "西藏", "巴音郭楞", "铁门关", "阿里",
-            "石家庄", "唐山", "承德", "秦皇岛", "邯郸", "保定", "沧州",
-        ]
+        region_tokens = self._region_tokens()
         regions: List[str] = []
         for unit in units:
             for token in region_tokens:
                 if token in unit and token not in regions:
                     regions.append(token)
+        for item in details or []:
+            region = self._normalize_region_text(item.get("region", ""))
+            if not region:
+                continue
+            if region not in regions:
+                regions.append(region)
         return regions
 
     def _infer_applicant_unit_type(self, unit_name: str, unit_nature: str = "") -> str:
@@ -354,6 +501,98 @@ class ProjectFactResolver:
         if "医院" in text:
             return "hospital"
         return "institution"
+
+    def _extract_applicant_region(self, text: str, form_fields: Dict[str, str]) -> str:
+        """提取申报单位注册地区"""
+        region_keys = ["注册（纳税）地区", "注册地区", "纳税地区", "所属地区", "单位地址", "注册地"]
+        for key in region_keys:
+            value = form_fields.get(key, "")
+            region = self._normalize_region_text(value)
+            if region:
+                return region
+        for key, value in form_fields.items():
+            if any(token in key for token in region_keys):
+                region = self._normalize_region_text(value)
+                if region:
+                    return region
+        cover_region = self._extract_cover_field(text, ["注册地区", "注册地", "单位地址"])
+        return self._normalize_region_text(cover_region)
+
+    def _extract_applicant_credit_code(self, text: str, form_fields: Dict[str, str]) -> str:
+        """提取统一社会信用代码"""
+        for key, value in form_fields.items():
+            if any(token in key for token in ["统一社会信用代码", "社会信用代码"]):
+                code = self._extract_credit_code_token(value)
+                if code:
+                    return code
+        return self._extract_credit_code_token(text)
+
+    def _extract_is_independent_legal_person(self, text: str, form_fields: Dict[str, str]) -> bool | None:
+        """提取是否独立法人"""
+        for key, value in form_fields.items():
+            if any(token in key for token in ["独立法人", "法人资格", "是否法人", "独立法 人"]):
+                normalized = re.sub(r"\s+", "", value)
+                if any(token in normalized for token in ["是", "有"]):
+                    return True
+                if any(token in normalized for token in ["否", "无"]):
+                    return False
+        compact = re.sub(r"\s+", "", text)
+        if re.search(r"独立法人[：:]*是", compact):
+            return True
+        if re.search(r"独立法人[：:]*否", compact):
+            return False
+        return None
+
+    def _extract_leader_achievement_facts(self, text: str, form_fields: Dict[str, str]) -> Dict[str, List[str]]:
+        """提取负责人/骨干成果类别线索"""
+        category_patterns = {
+            "patent_certificate": [r"专利", r"知识产权", r"发明授权"],
+            "research_paper": [r"论文", r"期刊", r"SCI", r"EI", r"文章"],
+            "award_certificate": [r"获奖", r"奖励", r"奖项", r"荣誉"],
+            "retrieval_report": [r"查新", r"检索报告"],
+        }
+        scope_hints = ["负责人", "骨干", "主要研究成果", "代表性成果", "科研水平", "成果证明"]
+        categories: set[str] = set()
+        evidence_lines: List[str] = []
+
+        lines = text.splitlines()
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                continue
+            if len(line) > 180:
+                line = line[:180]
+            normalized = re.sub(r"\s+", "", line)
+            if not any(hint in normalized for hint in scope_hints):
+                continue
+            hit = False
+            for doc_kind, patterns in category_patterns.items():
+                if any(re.search(pattern, normalized, re.I) for pattern in patterns):
+                    categories.add(doc_kind)
+                    hit = True
+            if hit and line not in evidence_lines:
+                evidence_lines.append(line)
+            if len(evidence_lines) >= 20:
+                break
+
+        # 兜底：从字段值中补充显式成果描述
+        for key, value in form_fields.items():
+            key_text = re.sub(r"\s+", "", key)
+            if not any(token in key_text for token in ["成果", "代表作", "获奖", "论文", "专利"]):
+                continue
+            normalized = re.sub(r"\s+", "", value)
+            for doc_kind, patterns in category_patterns.items():
+                if any(re.search(pattern, normalized, re.I) for pattern in patterns):
+                    categories.add(doc_kind)
+            if value and value not in evidence_lines:
+                evidence_lines.append(value[:180])
+            if len(evidence_lines) >= 20:
+                break
+
+        return {
+            "categories": sorted(categories),
+            "evidence_lines": evidence_lines[:20],
+        }
 
     def _extract_boolean_fact(
         self,
@@ -416,6 +655,101 @@ class ProjectFactResolver:
     def _contains_any(self, text: str, keywords: List[str]) -> bool:
         """是否包含任一关键词"""
         return any(keyword in text for keyword in keywords)
+
+    def _is_government_agency(self, name: str) -> bool:
+        """粗判是否行政机关"""
+        normalized = re.sub(r"\s+", "", str(name or ""))
+        if not normalized:
+            return False
+        agency_tokens = [
+            "人民政府",
+            "党委",
+            "人民法院",
+            "人民检察院",
+            "人大常委会",
+            "政协",
+            "行政审批局",
+            "发展和改革委员会",
+            "科学技术局",
+            "科技局",
+            "财政局",
+            "税务局",
+            "教育局",
+            "公安局",
+            "应急管理局",
+            "机关事务",
+            "管理委员会",
+            "委员会",
+        ]
+        if any(token in normalized for token in agency_tokens):
+            if any(white in normalized for white in ["医院", "大学", "学院", "研究院", "研究所", "实验室", "中心"]):
+                return False
+            return True
+        return False
+
+    def _extract_credit_code_token(self, text: str) -> str:
+        """提取统一社会信用代码 token"""
+        normalized = str(text or "").upper()
+        match = re.search(r"(?<![0-9A-Z])([0-9A-Z]{18})(?![0-9A-Z])", normalized)
+        if not match:
+            return ""
+        value = match.group(1)
+        if value.isdigit():
+            return ""
+        return value
+
+    def _normalize_region_text(self, value: str) -> str:
+        """清洗地区字段文本"""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = re.sub(r"\s+", "", text)
+        text = re.sub(r"^(中国|中华人民共和国)", "", text)
+        text = re.sub(r"^(注册（纳税）地区|注册地区|注册地|所属地区|单位地址)[:：]?", "", text)
+        text = text.strip("()（）[]【】,，;；。")
+        return text[:80]
+
+    def _looks_like_region_text(self, value: str) -> bool:
+        """粗判是否地区文本"""
+        text = self._normalize_region_text(value)
+        if not text:
+            return False
+        if len(text) <= 2:
+            return False
+        tokens = self._region_tokens() + [
+            "自治区",
+            "自治州",
+            "省",
+            "市",
+            "区",
+            "县",
+            "兵团",
+        ]
+        return any(token in text for token in tokens)
+
+    def _region_tokens(self) -> List[str]:
+        """地区关键词"""
+        return [
+            "北京",
+            "天津",
+            "河北",
+            "新疆",
+            "西藏",
+            "巴音郭楞",
+            "铁门关",
+            "阿里",
+            "石家庄",
+            "唐山",
+            "承德",
+            "秦皇岛",
+            "邯郸",
+            "保定",
+            "沧州",
+            "廊坊",
+            "衡水",
+            "张家口",
+            "邢台",
+        ]
 
     def _extract_cover_field(self, text: str, field_names: List[str]) -> str:
         """提取封面字段"""

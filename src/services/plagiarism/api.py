@@ -1,7 +1,7 @@
 """查重服务 API 路由"""
+import asyncio
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -28,14 +28,6 @@ router = APIRouter()
 _CORPUS_REFRESH_STATUS_PATH = Path("data/plagiarism/corpus_refresh_status.json")
 _CORPUS_REFRESH_LOG_PATH = Path("data/plagiarism/corpus_refresh.log")
 _CORPUS_REFRESH_CHECKPOINT_PATH = Path("data/plagiarism/corpus_refresh_checkpoint.json")
-
-
-def _copy_debug_artifact(src: Path, dst: Path) -> Optional[str]:
-    if not src.exists():
-        return None
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-    return str(dst)
 
 
 def _read_corpus_refresh_status() -> dict:
@@ -355,6 +347,7 @@ async def check_plagiarism_by_guide_codes(
     debug: bool = Form(False),
     limit: Optional[int] = Form(None),
     read_remote_if_missing: bool = Form(True),
+    max_concurrency: int = Form(2),
 ) -> ApiResponse[dict]:
     """按指南代码批量执行“单项目 vs 库”查重。"""
     cleaned_codes = _normalize_guide_codes(guide_codes_raw, guide_codes_list)
@@ -435,51 +428,59 @@ async def check_plagiarism_by_guide_codes(
         section_config=config,
         debug=debug,
     )
-    for project in available_projects:
-        file_path = Path(project["file_path"])
-        try:
-            file_data = file_path.read_bytes()
-        except Exception as exc:
-            missing_docs.append(
-                {
-                    "id": project["id"],
-                    "xmmc": project["xmmc"],
-                    "year": project["year"],
-                    "zndm": project["zndm"],
-                    "guide_name": project["guide_name"],
-                    "expected_local_paths": [project["file_path"]],
-                    "remote_path": project["remote_path"],
-                    "remote_exists": project["remote_exists"],
-                    "error": f"读取文件失败: {exc}",
-                }
-            )
-            continue
+    worker_count = max(1, min(int(max_concurrency), 4))
+    semaphore = asyncio.Semaphore(worker_count)
 
-        try:
-            result = await agent.check(
-                [(f"{project['id']}.docx", file_data)],
-                file_paths={f"{project['id']}.docx": str(file_path)},
-                use_corpus=True,
-            )
-        except Exception as exc:
-            failed_projects.append(
-                {
-                    "id": project["id"],
-                    "xmmc": project["xmmc"],
-                    "year": project["year"],
-                    "zndm": project["zndm"],
-                    "guide_name": project["guide_name"],
-                    "file_path": project["file_path"],
-                    "storage": project["storage"],
-                    "remote_path": project["remote_path"],
-                    "remote_exists": project["remote_exists"],
-                    "error": str(exc),
-                }
-            )
-            continue
+    async def _run_project(project: dict) -> tuple[str, dict]:
+        async with semaphore:
+            file_path = Path(project["file_path"])
+            try:
+                file_data = file_path.read_bytes()
+            except Exception as exc:
+                return (
+                    "missing",
+                    {
+                        "id": project["id"],
+                        "xmmc": project["xmmc"],
+                        "year": project["year"],
+                        "zndm": project["zndm"],
+                        "guide_name": project["guide_name"],
+                        "expected_local_paths": [project["file_path"]],
+                        "remote_path": project["remote_path"],
+                        "remote_exists": project["remote_exists"],
+                        "error": f"读取文件失败: {exc}",
+                    },
+                )
 
-        results.append(
-            {
+            project_debug_dir = None
+            if debug:
+                project_debug_dir = Path("debug_plagiarism") / "by_guide_codes" / project["id"]
+
+            try:
+                result = await agent.check(
+                    [(f"{project['id']}.docx", file_data)],
+                    file_paths={f"{project['id']}.docx": str(file_path)},
+                    use_corpus=True,
+                    debug_output_dir=project_debug_dir,
+                )
+            except Exception as exc:
+                return (
+                    "failed",
+                    {
+                        "id": project["id"],
+                        "xmmc": project["xmmc"],
+                        "year": project["year"],
+                        "zndm": project["zndm"],
+                        "guide_name": project["guide_name"],
+                        "file_path": project["file_path"],
+                        "storage": project["storage"],
+                        "remote_path": project["remote_path"],
+                        "remote_exists": project["remote_exists"],
+                        "error": str(exc),
+                    },
+                )
+
+            result_item = {
                 "project": {
                     "id": project["id"],
                     "xmmc": project["xmmc"],
@@ -492,21 +493,9 @@ async def check_plagiarism_by_guide_codes(
                 },
                 "result": _serialize_plagiarism_result(result),
             }
-        )
-        if debug:
-            debug_root = Path("debug_plagiarism")
-            project_debug_dir = debug_root / "by_guide_codes" / project["id"]
-            project_debug_dir.mkdir(parents=True, exist_ok=True)
-            debug_json_copy = _copy_debug_artifact(
-                debug_root / "plagiarism_debug.json",
-                project_debug_dir / "plagiarism_debug.json",
-            )
-            report_html_copy = _copy_debug_artifact(
-                debug_root / "plagiarism_report_mammoth.html",
-                project_debug_dir / "plagiarism_report_mammoth.html",
-            )
-            batch_debug_projects.append(
-                {
+            debug_item = None
+            if debug:
+                debug_item = {
                     "project": {
                         "id": project["id"],
                         "xmmc": project["xmmc"],
@@ -518,23 +507,32 @@ async def check_plagiarism_by_guide_codes(
                     },
                     "result": _serialize_plagiarism_result(result),
                     "debug": {
-                        "debug_json_path": debug_json_copy,
-                        "report_html_path": report_html_copy,
+                        "report_html_path": str(project_debug_dir / "plagiarism_report_mammoth.html") if project_debug_dir else None,
                     },
                 }
+            return (
+                "ok",
+                {
+                    "result_item": result_item,
+                    "debug_item": debug_item,
+                },
             )
+
+    job_results = await asyncio.gather(*[_run_project(project) for project in available_projects])
+    for status, payload in job_results:
+        if status == "missing":
+            missing_docs.append(payload)
+        elif status == "failed":
+            failed_projects.append(payload)
+        elif status == "ok":
+            results.append(payload["result_item"])
+            if debug and payload.get("debug_item"):
+                batch_debug_projects.append(payload["debug_item"])
 
     batch_report_path = None
     if debug and (results or failed_projects):
         batch_debug_dir = Path("debug_plagiarism") / "by_guide_codes"
         batch_debug_dir.mkdir(parents=True, exist_ok=True)
-        batch_json_path = batch_debug_dir / "batch_results.json"
-        batch_payload = {
-            "guide_codes": cleaned_codes,
-            "results": batch_debug_projects,
-            "failed_projects": failed_projects,
-        }
-        batch_json_path.write_text(json.dumps(batch_payload, ensure_ascii=False, indent=2), encoding="utf-8")
         batch_report_path = str(
             BatchPlagiarismReportBuilder().build(
                 results=batch_debug_projects,
