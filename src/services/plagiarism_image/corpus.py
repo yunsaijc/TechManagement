@@ -33,7 +33,13 @@ from .config import (
     IMAGE_PLAGIARISM_MANIFEST_PATH,
     IMAGE_PLAGIARISM_REMOTE_ROOT,
     IMAGE_PLAGIARISM_SHADOW_DIR,
+    IMAGE_EMBEDDING_MIN_SCORE,
+    IMAGE_EMBEDDING_RERANK_ENABLED,
+    IMAGE_EMBEDDING_TOP_K,
+    IMAGE_EMBEDDING_VERIFY_TOP_K,
+    IMAGE_EMBEDDING_MODEL,
 )
+from .embedding import BailianImageEmbeddingClient
 from .extractor import extract_images_from_file
 from .hashing import (
     ImageHasher,
@@ -136,6 +142,24 @@ def _load_checkpoint_json(path: Path) -> Dict:
     )
 
 
+def _serialize_embedding_blob(vector: Optional[np.ndarray]) -> Optional[bytes]:
+    if vector is None:
+        return None
+    arr = np.asarray(vector, dtype=np.float32)
+    if arr.ndim != 1 or arr.size == 0:
+        return None
+    return arr.tobytes()
+
+
+def _deserialize_embedding_blob(blob: Optional[bytes]) -> Optional[np.ndarray]:
+    if not blob:
+        return None
+    arr = np.frombuffer(blob, dtype=np.float32)
+    if arr.ndim != 1 or arr.size == 0:
+        return None
+    return arr.copy()
+
+
 @dataclass
 class _BKNode:
     value: int
@@ -221,6 +245,9 @@ class ImageCorpusManager:
         self._sha_to_image_ids: Dict[str, List[str]] = {}
         self._phash_int_by_image_id: Dict[str, int] = {}
         self._phash_tree = _PhashBKTree()
+        self._embedding_client: Optional[BailianImageEmbeddingClient] = None
+        self._embedding_cache: Dict[str, np.ndarray] = {}
+        self._embedding_cache_limit = 10000
 
     def _db_index_snapshot(self) -> Dict:
         conn = self._get_feature_conn()
@@ -273,6 +300,9 @@ class ImageCorpusManager:
     def status(self) -> Dict:
         index = self._load_index()
         ckpt = self._load_checkpoint()
+        conn = self._get_feature_conn()
+        row = conn.execute("SELECT COUNT(1) FROM image_features WHERE embedding_blob IS NOT NULL").fetchone()
+        embedding_images = int(row[0] or 0) if row else 0
         return {
             "index_path": str(self.index_path),
             "manifest_path": str(self.manifest_path),
@@ -283,6 +313,9 @@ class ImageCorpusManager:
             "index_exists": self.feature_db_path.exists(),
             "indexed_images": len(index.get("images", {})),
             "indexed_docs": len(index.get("documents", {})),
+            "embedded_images": embedding_images,
+            "embedding_enabled": IMAGE_EMBEDDING_RERANK_ENABLED and self._get_embedding_client().enabled,
+            "embedding_model": IMAGE_EMBEDDING_MODEL,
             "updated_at": index.get("updated_at"),
             "corpus_path": index.get("corpus_path"),
             "checkpoint": ckpt,
@@ -305,6 +338,7 @@ class ImageCorpusManager:
         self._index_cache = None
         self._doc_fp_cache.clear()
         self._image_fp_cache.clear()
+        self._embedding_cache.clear()
         self._invalidate_fast_index()
         if self._feature_conn is not None:
             self._feature_conn.close()
@@ -617,11 +651,95 @@ class ImageCorpusManager:
         top_k_coarse: int = 80,
         top_k_final: int = 8,
         exclude_doc_id: Optional[str] = None,
+        query_embedding: Optional[np.ndarray] = None,
+        source_embeddings: Optional[Dict[str, np.ndarray]] = None,
+    ) -> Dict[str, object]:
+        coarse = self.retrieve_coarse_candidates_for_query_image(
+            query_asset=query_asset,
+            query_fp=query_fp,
+            hash_hamming_max=hash_hamming_max,
+            top_k_coarse=top_k_coarse,
+            top_k_final=top_k_final,
+            exclude_doc_id=exclude_doc_id,
+        )
+        exact_matches = coarse.get("exact_matches", [])
+        coarse_candidates_count = int(coarse.get("coarse_candidates", 0) or 0)
+        if exact_matches:
+            return {
+                "exact_matches": exact_matches,
+                "verify_candidates": [],
+                "coarse_candidates": coarse_candidates_count,
+                "embedding_enabled": IMAGE_EMBEDDING_RERANK_ENABLED and self._get_embedding_client().enabled,
+                "embedding_candidates": 0,
+                "embedding_hits": 0,
+            }
+
+        shortlisted = list(coarse.get("shortlisted", []))
+        shortlisted_entries = [entry for _, entry in shortlisted]
+
+        embedding_enabled = IMAGE_EMBEDDING_RERANK_ENABLED and self._get_embedding_client().enabled
+        embedding_candidates = 0
+        embedding_hits = 0
+        reranked_entries: List[Dict] = list(shortlisted_entries)
+        if embedding_enabled and shortlisted_entries:
+            reranked_entries = []
+            if query_embedding is None and query_asset.image_bytes:
+                query_embedding = self._embed_query_asset(query_asset)
+            if query_embedding is not None:
+                embedding_candidates = min(len(shortlisted_entries), max(1, int(IMAGE_EMBEDDING_TOP_K)))
+                rerank_pool = shortlisted_entries[:embedding_candidates]
+                if source_embeddings is None:
+                    source_embeddings = self._get_or_create_embeddings_for_entries(rerank_pool)
+                scored_entries: List[Tuple[float, int, Dict]] = []
+                for ham, entry in shortlisted[:embedding_candidates]:
+                    image_id = str(entry.get("image_id", ""))
+                    source_embedding = source_embeddings.get(image_id) if source_embeddings is not None else None
+                    if source_embedding is None:
+                        continue
+                    embedding_hits += 1
+                    score = float(np.dot(query_embedding, source_embedding))
+                    if score < IMAGE_EMBEDDING_MIN_SCORE:
+                        continue
+                    scored_entries.append((score, ham, entry))
+
+                scored_entries.sort(key=lambda x: (-x[0], x[1], str(x[2].get("image_id", ""))))
+                verify_limit = max(1, min(int(top_k_final), int(IMAGE_EMBEDDING_VERIFY_TOP_K)))
+                for score, _, entry in scored_entries[:verify_limit]:
+                    entry_copy = dict(entry)
+                    entry_copy["_embedding_score"] = round(score, 4)
+                    reranked_entries.append(entry_copy)
+
+        loaded_map = self._load_runtime_fps_for_entries(reranked_entries)
+        verify_candidates: List[Tuple[ImageAsset, RuntimeImageFingerprint, Optional[float]]] = []
+        for entry in reranked_entries:
+            image_id = str(entry.get("image_id", ""))
+            loaded = loaded_map.get(image_id)
+            if loaded is None:
+                continue
+            verify_candidates.append((loaded[0], loaded[1], self._as_optional_float(entry.get("_embedding_score"))))
+
+        return {
+            "exact_matches": [],
+            "verify_candidates": verify_candidates,
+            "coarse_candidates": coarse_candidates_count,
+            "embedding_enabled": embedding_enabled,
+            "embedding_candidates": embedding_candidates,
+            "embedding_hits": embedding_hits,
+        }
+
+    def retrieve_coarse_candidates_for_query_image(
+        self,
+        query_asset: ImageAsset,
+        query_fp: RuntimeImageFingerprint,
+        hash_hamming_max: int = DEFAULT_HASH_HAMMING_MAX,
+        top_k_coarse: int = 80,
+        top_k_final: int = 8,
+        exclude_doc_id: Optional[str] = None,
     ) -> Dict[str, object]:
         index = self._load_index()
         images_meta = index.get("images", {})
         if not images_meta:
-            return {"exact_matches": [], "verify_candidates": [], "coarse_candidates": 0}
+            return {"exact_matches": [], "shortlisted": [], "coarse_candidates": 0}
 
         self._ensure_fast_index(index)
 
@@ -651,20 +769,21 @@ class ImageCorpusManager:
                         reason="exact_sha256_norm_index",
                         query_page=query_asset.page,
                         source_page=int(entry.get("page", 0) or 0),
+                        embedding_score=1.0,
                     )
                 )
             if exact_matches:
                 exact_matches.sort(key=lambda x: (x.source_doc, x.source_image_id))
                 return {
                     "exact_matches": exact_matches[: max(1, int(top_k_final))],
-                    "verify_candidates": [],
+                    "shortlisted": [],
                     "coarse_candidates": len(exact_ids),
                 }
 
         query_phash = query_fp.meta.phash_hex
         query_phash_int = phash_hex_to_int(query_phash)
         if query_phash_int is None:
-            return {"exact_matches": [], "verify_candidates": [], "coarse_candidates": 0}
+            return {"exact_matches": [], "shortlisted": [], "coarse_candidates": 0}
 
         candidate_ids = self._phash_tree.query(query_phash_int, int(hash_hamming_max))
         query_area = max(1.0, float(query_asset.width * query_asset.height))
@@ -692,21 +811,9 @@ class ImageCorpusManager:
             candidates.append((ham, entry))
 
         candidates.sort(key=lambda x: x[0])
-        shortlisted = candidates[: max(1, int(top_k_coarse))]
-
-        shortlisted_entries = [entry for _, entry in shortlisted]
-        loaded_map = self._load_runtime_fps_for_entries(shortlisted_entries)
-        verify_candidates: List[Tuple[ImageAsset, RuntimeImageFingerprint]] = []
-        for entry in shortlisted_entries:
-            image_id = str(entry.get("image_id", ""))
-            loaded = loaded_map.get(image_id)
-            if loaded is None:
-                continue
-            verify_candidates.append(loaded)
-
         return {
             "exact_matches": [],
-            "verify_candidates": verify_candidates,
+            "shortlisted": candidates[: max(1, int(top_k_coarse))],
             "coarse_candidates": len(candidates),
         }
 
@@ -735,12 +842,14 @@ class ImageCorpusManager:
             return list(exact_matches)[: max(1, int(top_k_final))]
 
         matches: List[ImageMatch] = []
-        for source_asset, source_fp in retrieval.get("verify_candidates", []):
+        for item in retrieval.get("verify_candidates", []):
+            source_asset, source_fp, embedding_score = item
             m = matcher.compare(
                 query_asset=query_asset,
                 source_asset=source_asset,
                 query_fp=query_fp,
                 source_fp=source_fp,
+                embedding_score=embedding_score,
             )
             if m is None:
                 continue
@@ -884,8 +993,8 @@ class ImageCorpusManager:
                 (
                     "INSERT INTO image_features("
                     "image_id, doc_id, doc_path, file_mtime, page, image_index, width, height, "
-                    "sha256_norm, phash_hex, feature_blob, updated_at"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "sha256_norm, phash_hex, feature_blob, embedding_blob, embedding_model, embedding_updated_at, updated_at"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 (
                     row["image_id"],
@@ -899,6 +1008,9 @@ class ImageCorpusManager:
                     row["sha256_norm"],
                     row["phash_hex"],
                     sqlite3.Binary(row["feature_blob"]),
+                    None,
+                    None,
+                    None,
                     row["updated_at"],
                 ),
             )
@@ -1205,6 +1317,172 @@ class ImageCorpusManager:
             stale_key = next(iter(self._image_fp_cache.keys()))
             self._image_fp_cache.pop(stale_key, None)
 
+    def _put_embedding_cache(self, image_id: str, value: np.ndarray) -> None:
+        if not image_id:
+            return
+        self._embedding_cache[image_id] = value
+        if len(self._embedding_cache) > self._embedding_cache_limit:
+            stale_key = next(iter(self._embedding_cache.keys()))
+            self._embedding_cache.pop(stale_key, None)
+
+    @staticmethod
+    def _as_optional_float(value: object) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _get_embedding_client(self) -> BailianImageEmbeddingClient:
+        if self._embedding_client is None:
+            self._embedding_client = BailianImageEmbeddingClient()
+        return self._embedding_client
+
+    def _embed_query_asset(self, asset: ImageAsset) -> Optional[np.ndarray]:
+        client = self._get_embedding_client()
+        if not client.enabled or not asset.image_bytes:
+            return None
+        try:
+            vectors = client.embed_images([asset.image_bytes])
+        except Exception:
+            return None
+        return vectors[0] if vectors else None
+
+    def _get_or_create_embeddings_for_entries(self, entries: List[Dict]) -> Dict[str, np.ndarray]:
+        if not entries:
+            return {}
+        conn = self._get_feature_conn()
+        out: Dict[str, np.ndarray] = {}
+        pending: List[Dict] = []
+        for entry in entries:
+            image_id = str(entry.get("image_id", ""))
+            if not image_id:
+                continue
+            cached = self._embedding_cache.get(image_id)
+            if cached is not None:
+                out[image_id] = cached
+                continue
+            pending.append(entry)
+
+        if not pending:
+            return out
+
+        placeholders = ",".join("?" for _ in pending)
+        rows = conn.execute(
+            f"SELECT image_id, embedding_blob FROM image_features WHERE image_id IN ({placeholders})",
+            tuple(str(entry.get("image_id", "")) for entry in pending),
+        ).fetchall()
+        db_map = {str(row[0]): _deserialize_embedding_blob(row[1]) for row in rows}
+        missing: List[Dict] = []
+        for entry in pending:
+            image_id = str(entry.get("image_id", ""))
+            vector = db_map.get(image_id)
+            if vector is not None:
+                out[image_id] = vector
+                self._put_embedding_cache(image_id, vector)
+            else:
+                missing.append(entry)
+
+        if not missing:
+            return out
+
+        client = self._get_embedding_client()
+        if not client.enabled:
+            return out
+
+        bytes_by_image_id = self._load_image_bytes_for_entries(missing)
+        request_entries: List[Dict] = []
+        request_bytes: List[bytes] = []
+        for entry in missing:
+            image_id = str(entry.get("image_id", ""))
+            image_bytes = bytes_by_image_id.get(image_id)
+            if not image_bytes:
+                continue
+            request_entries.append(entry)
+            request_bytes.append(image_bytes)
+        if not request_bytes:
+            return out
+
+        try:
+            vectors = client.embed_images(request_bytes)
+        except Exception:
+            return out
+        now = time.time()
+        write_rows: List[Tuple[bytes, str, float, str]] = []
+        for entry, vector in zip(request_entries, vectors):
+            if vector is None:
+                continue
+            image_id = str(entry.get("image_id", ""))
+            out[image_id] = vector
+            self._put_embedding_cache(image_id, vector)
+            blob = _serialize_embedding_blob(vector)
+            if blob is None:
+                continue
+            write_rows.append((blob, IMAGE_EMBEDDING_MODEL, now, image_id))
+        if write_rows:
+            conn.executemany(
+                (
+                    "UPDATE image_features SET embedding_blob = ?, embedding_model = ?, "
+                    "embedding_updated_at = ? WHERE image_id = ?"
+                ),
+                write_rows,
+            )
+            conn.commit()
+        return out
+
+    def ensure_embeddings_for_entries(self, entries: List[Dict]) -> Dict[str, np.ndarray]:
+        return self._get_or_create_embeddings_for_entries(entries)
+
+    def batch_embed_query_assets(self, assets: List[ImageAsset]) -> Dict[str, np.ndarray]:
+        client = self._get_embedding_client()
+        if not client.enabled or not assets:
+            return {}
+        valid_assets = [asset for asset in assets if asset.image_bytes]
+        if not valid_assets:
+            return {}
+        try:
+            vectors = client.embed_images([asset.image_bytes for asset in valid_assets])
+        except Exception:
+            return {}
+        out: Dict[str, np.ndarray] = {}
+        for asset, vector in zip(valid_assets, vectors):
+            if vector is None:
+                continue
+            out[asset.image_id] = vector
+        return out
+
+    def _load_image_bytes_for_entries(self, entries: List[Dict]) -> Dict[str, bytes]:
+        out: Dict[str, bytes] = {}
+        grouped: Dict[Tuple[str, float], List[Dict]] = {}
+        for entry in entries:
+            doc_path = str(entry.get("doc_path", ""))
+            file_mtime = float(entry.get("file_mtime") or 0.0)
+            if not doc_path:
+                continue
+            grouped.setdefault((doc_path, file_mtime), []).append(entry)
+
+        for (doc_path_str, _), bucket in grouped.items():
+            doc_path = Path(doc_path_str)
+            if not doc_path.exists() or not doc_path.is_file():
+                continue
+            try:
+                file_data = doc_path.read_bytes()
+            except Exception:
+                continue
+            doc_id = str(bucket[0].get("doc_id") or doc_path.stem)
+            try:
+                assets = extract_images_from_file(doc_id=doc_id, file_name=doc_path.name, file_data=file_data)
+            except Exception:
+                continue
+            by_pos = {(int(asset.page), int(asset.image_index)): asset.image_bytes for asset in assets}
+            for entry in bucket:
+                pos = (int(entry.get("page", 0) or 0), int(entry.get("image_index", 0) or 0))
+                image_bytes = by_pos.get(pos)
+                if image_bytes:
+                    out[str(entry.get("image_id", ""))] = image_bytes
+        return out
+
     def _to_lightweight_fp(self, fp: RuntimeImageFingerprint) -> RuntimeImageFingerprint:
         return RuntimeImageFingerprint(
             meta=fp.meta,
@@ -1367,6 +1645,9 @@ class ImageCorpusManager:
                     "sha256_norm TEXT,"
                     "phash_hex TEXT,"
                     "feature_blob BLOB,"
+                    "embedding_blob BLOB,"
+                    "embedding_model TEXT,"
+                    "embedding_updated_at REAL,"
                     "updated_at REAL NOT NULL"
                     ")"
                 )
@@ -1381,12 +1662,16 @@ class ImageCorpusManager:
 
     @staticmethod
     def _ensure_runtime_schema(conn: sqlite3.Connection) -> None:
-        columns = {
-            str(row[1])
-            for row in conn.execute("PRAGMA table_info(build_jobs)").fetchall()
-        }
-        if "worker_pid" not in columns:
+        build_job_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(build_jobs)").fetchall()}
+        if "worker_pid" not in build_job_columns:
             conn.execute("ALTER TABLE build_jobs ADD COLUMN worker_pid INTEGER")
+        image_feature_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(image_features)").fetchall()}
+        if "embedding_blob" not in image_feature_columns:
+            conn.execute("ALTER TABLE image_features ADD COLUMN embedding_blob BLOB")
+        if "embedding_model" not in image_feature_columns:
+            conn.execute("ALTER TABLE image_features ADD COLUMN embedding_model TEXT")
+        if "embedding_updated_at" not in image_feature_columns:
+            conn.execute("ALTER TABLE image_features ADD COLUMN embedding_updated_at REAL")
 
     def _delete_feature_rows(self, conn: sqlite3.Connection, image_ids: List[str]) -> None:
         if not image_ids:
@@ -1397,6 +1682,7 @@ class ImageCorpusManager:
         )
         for iid in image_ids:
             self._image_fp_cache.pop(iid, None)
+            self._embedding_cache.pop(iid, None)
 
     def _get_image_ids_for_doc(self, conn: sqlite3.Connection, doc_id: str) -> List[str]:
         return [str(row[0]) for row in conn.execute("SELECT image_id FROM images WHERE doc_id = ?", (doc_id,)).fetchall()]
@@ -1534,8 +1820,8 @@ class ImageCorpusManager:
             (
                 "INSERT INTO image_features("
                 "image_id, doc_id, doc_path, file_mtime, page, image_index, width, height, "
-                "sha256_norm, phash_hex, feature_blob, updated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "sha256_norm, phash_hex, feature_blob, embedding_blob, embedding_model, embedding_updated_at, updated_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(image_id) DO UPDATE SET "
                 "doc_id=excluded.doc_id, "
                 "doc_path=excluded.doc_path, "
@@ -1547,6 +1833,9 @@ class ImageCorpusManager:
                 "sha256_norm=excluded.sha256_norm, "
                 "phash_hex=excluded.phash_hex, "
                 "feature_blob=excluded.feature_blob, "
+                "embedding_blob=NULL, "
+                "embedding_model=NULL, "
+                "embedding_updated_at=NULL, "
                 "updated_at=excluded.updated_at"
             ),
             (
@@ -1561,6 +1850,9 @@ class ImageCorpusManager:
                 fp.meta.sha256_norm,
                 fp.meta.phash_hex,
                 sqlite3.Binary(blob),
+                None,
+                None,
+                None,
                 time.time(),
             ),
         )
