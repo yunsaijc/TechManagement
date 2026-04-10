@@ -13,6 +13,8 @@ from .config import (
     DEFAULT_HIGH_SCORE,
     DEFAULT_MEDIUM_SCORE,
     DEFAULT_MIN_INLIERS,
+    IMAGE_EMBEDDING_HIGH_SCORE,
+    IMAGE_EMBEDDING_MEDIUM_SCORE,
 )
 from .hashing import RuntimeImageFingerprint, phash_hamming
 from .schemas import ImageAsset, ImageMatch
@@ -37,6 +39,7 @@ class ImageMatcher:
         source_asset: ImageAsset,
         query_fp: RuntimeImageFingerprint,
         source_fp: RuntimeImageFingerprint,
+        embedding_score: Optional[float] = None,
     ) -> Optional[ImageMatch]:
         if query_asset.doc_id == source_asset.doc_id:
             return None
@@ -56,6 +59,7 @@ class ImageMatcher:
                 reason="exact_sha256_norm",
                 query_page=query_asset.page,
                 source_page=source_asset.page,
+                embedding_score=1.0,
             )
 
         hamming = phash_hamming(query_fp.meta.phash_hex, source_fp.meta.phash_hex)
@@ -72,7 +76,18 @@ class ImageMatcher:
         geometry_score = min(float(inliers) / 40.0, 1.0)
 
         score = round(0.6 * hash_score + 0.4 * geometry_score, 4)
-        if score >= self.cfg.high_score and inliers >= self.cfg.min_inliers_high:
+        reason = "hash+geometry"
+        if embedding_score is not None:
+            embedding_score = round(float(embedding_score), 4)
+            score = round(0.75 * embedding_score + 0.15 * geometry_score + 0.10 * hash_score, 4)
+            reason = "hash+embedding+geometry"
+            if embedding_score >= IMAGE_EMBEDDING_HIGH_SCORE and inliers >= self.cfg.min_inliers_high:
+                level = "high"
+            elif embedding_score >= IMAGE_EMBEDDING_MEDIUM_SCORE and inliers >= max(8, self.cfg.min_inliers_high - 2):
+                level = "medium"
+            else:
+                level = "low"
+        elif score >= self.cfg.high_score and inliers >= self.cfg.min_inliers_high:
             level = "high"
         elif score >= self.cfg.medium_score:
             level = "medium"
@@ -90,9 +105,10 @@ class ImageMatcher:
             inliers=inliers,
             geometry_score=round(geometry_score, 4),
             level=level,
-            reason="hash+geometry",
+            reason=reason,
             query_page=query_asset.page,
             source_page=source_asset.page,
+            embedding_score=embedding_score,
         )
 
     def _geometry_inliers(
