@@ -25,6 +25,13 @@ from src.services.review.project_index_repo import ProjectIndexRepository
 
 class BatchReviewAgent:
     """批次级形式审查 Agent"""
+    PROJECT_TYPE_LABELS = {
+        "regional_innovation": "区域创新体系建设项目",
+        "innovation_base": "科技创新基地项目",
+        "achievement_transformation": "科技成果转移转化项目",
+        "basic_research": "基础研究项目",
+        "unknown": "未识别项目类型",
+    }
     DOC_KIND_LABELS = {
         "commitment_letter": "承诺书",
         "recommendation_letter": "合作方科技管理部门推荐函",
@@ -206,6 +213,7 @@ class BatchReviewAgent:
             project_count=len(project_results),
             project_results=project_results,
             debug_dir=debug_writer.output_dir,
+            report_url=f"/debug-review/{batch_id}/index.html",
             summary=summary,
             suggestions=suggestions,
             processing_time=time.time() - start_time,
@@ -240,12 +248,20 @@ class BatchReviewAgent:
         """生成批次调试 HTML 页面"""
         payload = self._build_workspace_payload(project_results, project_context_map)
         payload_json = json.dumps(payload, ensure_ascii=False)
-        suggestion_items = "".join(f"<li>{escape(item)}</li>" for item in suggestions) or "<li>无</li>"
-        project_count = len(project_results)
         failed_count = sum(
             1
             for result in project_results
             if any(item.status in {"failed", "warning"} for item in result.results) or result.manual_review_items
+        )
+        project_count = len(project_results)
+        suggestion_items = "".join(
+            f"<span class='batch-note'>{escape(item)}</span>" for item in suggestions
+        ) or "<span class='batch-note'>无额外提示</span>"
+        batch_badges = self._render_status_badges(
+            [
+                ("需关注", str(failed_count), "failed"),
+                ("项目数", str(project_count), "passed"),
+            ]
         )
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -281,7 +297,7 @@ class BatchReviewAgent:
       color: var(--text);
     }}
     .page {{
-      max-width: 1680px;
+      max-width: 1960px;
       margin: 0 auto;
       padding: 24px;
     }}
@@ -292,39 +308,55 @@ class BatchReviewAgent:
       box-shadow: var(--shadow);
     }}
     .hero {{
-      padding: 24px;
-      margin-bottom: 20px;
+      padding: 14px 18px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
     }}
     .hero h1 {{
-      margin: 0 0 8px;
-      font-size: 28px;
+      margin: 0;
+      font-size: 20px;
     }}
     .hero p {{
-      margin: 6px 0;
+      margin: 0;
       color: var(--muted);
+      font-size: 13px;
     }}
-    .metrics {{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-      margin-top: 18px;
+    .hero-main {{
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }}
-    .metric {{
-      padding: 14px 16px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
-    }}
-    .metric strong {{
-      display: block;
-      font-size: 24px;
-      margin-top: 6px;
-    }}
-    .links {{
-      margin-top: 16px;
+    .hero-meta {{
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+      align-items: center;
+    }}
+    .hero-stats {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }}
+    .batch-notes {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }}
+    .batch-note {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 12px;
     }}
     a {{
       color: #175cd3;
@@ -332,9 +364,10 @@ class BatchReviewAgent:
     }}
     .workspace {{
       display: grid;
-      grid-template-columns: 280px minmax(480px, 1.3fr) minmax(360px, 0.95fr);
+      grid-template-columns: 260px minmax(0, 1.9fr) minmax(320px, 0.95fr);
       gap: 18px;
       align-items: start;
+      min-width: 0;
     }}
     .sidebar, .center-panel, .viewer-panel {{
       min-height: 72vh;
@@ -342,6 +375,9 @@ class BatchReviewAgent:
       border: 1px solid var(--line);
       border-radius: 18px;
       box-shadow: var(--shadow);
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
     }}
     .sidebar {{
       padding: 18px 14px;
@@ -425,13 +461,6 @@ class BatchReviewAgent:
       font-size: 14px;
       line-height: 1.6;
     }}
-    .panel-links {{
-      margin-top: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      font-size: 13px;
-    }}
     .badge {{
       border-radius: 999px;
       padding: 4px 9px;
@@ -449,12 +478,6 @@ class BatchReviewAgent:
     .status-not_applicable {{ color: var(--na); background: #f2f4f7; }}
     .status-system_managed {{ color: var(--system); background: #eff6ff; }}
     .status-skipped {{ color: var(--na); background: #f2f4f7; }}
-    .summary-badges {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 12px;
-    }}
     .result-sections {{
       display: flex;
       flex-direction: column;
@@ -512,6 +535,9 @@ class BatchReviewAgent:
       padding: 14px;
       cursor: pointer;
       transition: 0.18s ease;
+      box-sizing: border-box;
+      min-width: 0;
+      max-width: 100%;
     }}
     .rule-card:hover {{
       border-color: var(--line-strong);
@@ -532,12 +558,17 @@ class BatchReviewAgent:
       font-size: 15px;
       font-weight: 800;
       line-height: 1.5;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }}
     .rule-card-requirement {{
       color: var(--text);
       font-size: 13px;
       line-height: 1.7;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }}
     .rule-card-meta {{
       display: grid;
@@ -546,13 +577,28 @@ class BatchReviewAgent:
       margin-top: 10px;
       font-size: 12px;
       color: var(--muted);
+      min-width: 0;
     }}
     .rule-card-meta-label {{
       color: var(--muted);
     }}
-    .viewer-panel {{
+    .rule-card-meta > div {{
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }}
+    .center-panel {{
       position: sticky;
       top: 16px;
+      padding: 18px 18px 16px;
+    }}
+    .viewer-panel {{
+      padding: 18px 18px 20px;
+      overflow: hidden;
+    }}
+    #rulesPanel {{
+      min-width: 0;
+      max-width: 100%;
     }}
     .viewer-empty {{
       color: var(--muted);
@@ -585,7 +631,7 @@ class BatchReviewAgent:
       grid-template-columns: 84px 1fr;
       gap: 8px 12px;
       font-size: 13px;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }}
     .viewer-meta-label {{
       color: var(--muted);
@@ -594,7 +640,8 @@ class BatchReviewAgent:
       border: 1px solid var(--line);
       border-radius: 14px;
       background: #f8fafc;
-      min-height: 360px;
+      min-height: 72vh;
+      height: 72vh;
       overflow: hidden;
       display: flex;
       align-items: stretch;
@@ -602,7 +649,7 @@ class BatchReviewAgent:
     }}
     .viewer-preview iframe {{
       width: 100%;
-      min-height: 420px;
+      height: 100%;
       border: 0;
       background: #fff;
     }}
@@ -624,7 +671,56 @@ class BatchReviewAgent:
       border: 1px solid var(--line);
       border-radius: 14px;
       background: #fbfcfe;
-      padding: 14px;
+      padding: 12px 14px;
+    }}
+    .viewer-layout {{
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }}
+    .pdf-only {{
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }}
+    .viewer-preview.hidden,
+    .viewer-fallback.hidden,
+    .clip-panel.hidden,
+    .evidence-tabs.hidden,
+    .viewer-meta.hidden {{
+      display: none;
+    }}
+    .viewer-aux {{
+      margin-top: 12px;
+    }}
+    .packet-frame {{
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+    }}
+    .pdf-toast {{
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 4;
+      max-width: min(520px, calc(100% - 48px));
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(15, 118, 110, 0.28);
+      background: rgba(240, 253, 250, 0.96);
+      color: #115e59;
+      box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+      font-size: 13px;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+    }}
+    .pdf-toast.show {{
+      opacity: 1;
+      transform: translateX(-50%) translateY(4px);
     }}
     .clip-title {{
       margin: 0 0 10px;
@@ -772,7 +868,7 @@ class BatchReviewAgent:
     }}
     @media (max-width: 1320px) {{
       .workspace {{
-        grid-template-columns: 240px minmax(420px, 1fr) minmax(320px, 0.9fr);
+        grid-template-columns: 240px minmax(0, 1.45fr) minmax(320px, 0.9fr);
       }}
     }}
     @media (max-width: 1080px) {{
@@ -791,35 +887,29 @@ class BatchReviewAgent:
 <body>
   <div class="page">
     <section class="hero">
-      <h1>批次审查工作台</h1>
-      <p>批次 ID：<span class="mono">{escape(batch_id)}</span></p>
-      <p>zxmc：<span class="mono">{escape(request.zxmc)}</span></p>
-      <p>摘要：{escape(summary)}</p>
-      <div class="metrics">
-        <div class="metric"><div>项目数</div><strong>{project_count}</strong></div>
-        <div class="metric"><div>需关注项目</div><strong>{failed_count}</strong></div>
-        <div class="metric"><div>limit</div><strong>{escape(str(request.limit or "未限制"))}</strong></div>
+      <div class="hero-main">
+        <h1>批次审查工作台</h1>
+        <div class="hero-meta">
+          <p>批次：<span class="mono">{escape(batch_id)}</span></p>
+          <p>zxmc：<span class="mono">{escape(request.zxmc)}</span></p>
+        </div>
       </div>
-      <div class="links">
-        <a href="request.json">request.json</a>
-        <a href="project_index.json">project_index.json</a>
-        <a href="batch_summary.json">batch_summary.json</a>
-      </div>
-      <ul>{suggestion_items}</ul>
+      <div class="hero-stats">{batch_badges}</div>
+      <div class="batch-notes">{suggestion_items}</div>
     </section>
     <section class="workspace">
       <aside class="sidebar">
         <div class="sidebar-head">
           <h2 class="sidebar-title">项目列表</h2>
-          <div class="sidebar-subtitle">左侧切项目，中间看规则，右侧固定查看当前项目的合并材料。</div>
+          <div class="sidebar-subtitle">左侧切项目，中间查看材料，右侧查看规则结果。</div>
         </div>
         <div class="project-list" id="projectList"></div>
       </aside>
       <main class="center-panel">
-        <div id="centerPanel"></div>
+        <div id="pdfPanel"></div>
       </main>
       <aside class="viewer-panel">
-        <div id="viewerPanel"></div>
+        <div id="rulesPanel"></div>
       </aside>
     </section>
   </div>
@@ -856,11 +946,10 @@ class BatchReviewAgent:
       container.innerHTML = REPORT_DATA.projects.map((project, index) => `
         <button class="project-item ${{index === state.projectIndex ? "active" : ""}}" data-project-index="${{index}}">
           <div class="project-item-title">${{escapeHtml(project.project_name || project.project_id)}}</div>
-          <div class="project-item-meta">${{escapeHtml(project.project_id)}} · ${{escapeHtml(project.project_type)}}</div>
+          <div class="project-item-meta">${{escapeHtml(project.project_id)}} · ${{escapeHtml(project.project_type_label || project.project_type)}}</div>
           <div class="project-item-stats">
             ${{statusBadge("failed", `失败 ${{project.counts.failed}}`)}}
             ${{statusBadge("manual", `需人工 ${{project.counts.manual}}`)}}
-            ${{statusBadge("passed", `通过 ${{project.counts.passed}}`)}}
           </div>
         </button>
       `).join("");
@@ -875,7 +964,7 @@ class BatchReviewAgent:
     function selectProject(index) {{
       state.projectIndex = index;
       const project = REPORT_DATA.projects[index];
-      state.ruleId = project.default_rule_id || findFirstRuleId(project) || "";
+      state.ruleId = findPreferredRuleId(project) || project.default_rule_id || findFirstRuleId(project) || "";
       state.evidenceIndex = 0;
       renderAll();
     }}
@@ -892,50 +981,66 @@ class BatchReviewAgent:
       return "";
     }}
 
+    function hasNavigableEvidence(item) {{
+      const targets = item?.evidence_targets || [];
+      return targets.some((target) => Number(target?.packet_page || 0) > 0);
+    }}
+
+    function findPreferredRuleId(project) {{
+      const sections = [...project.policy_sections, ...project.extra_sections];
+      for (const preferredStatus of ["failed", "manual", "passed"]) {{
+        for (const section of sections) {{
+          for (const group of section.groups) {{
+            for (const item of (group.items || [])) {{
+              if (String(item.status || "") === preferredStatus && hasNavigableEvidence(item)) {{
+                return item.id;
+              }}
+            }}
+          }}
+        }}
+      }}
+      for (const section of sections) {{
+        for (const group of section.groups) {{
+          for (const item of (group.items || [])) {{
+            if (hasNavigableEvidence(item)) {{
+              return item.id;
+            }}
+          }}
+        }}
+      }}
+      return "";
+    }}
+
     function selectRule(ruleId) {{
       state.ruleId = ruleId;
       state.evidenceIndex = 0;
-      renderCenterPanel();
-      renderViewerPanel();
+      renderRulesPanel();
+      renderPdfPanel();
     }}
 
     function selectEvidence(index) {{
       state.evidenceIndex = index;
-      renderViewerPanel();
+      renderPdfPanel();
     }}
 
-    function renderCenterPanel() {{
+    function renderRulesPanel() {{
       const project = REPORT_DATA.projects[state.projectIndex];
-      const center = document.getElementById("centerPanel");
+      const panel = document.getElementById("rulesPanel");
       if (!project) {{
-        center.innerHTML = '<div class="empty">无项目</div>';
+        panel.innerHTML = '<div class="empty">无项目</div>';
         return;
       }}
-      center.innerHTML = `
+      panel.innerHTML = `
         <div class="panel-head">
           <h2>${{escapeHtml(project.project_name || project.project_id)}}</h2>
-          <div class="project-summary">${{escapeHtml(project.summary)}}</div>
-          <div class="summary-badges">
-            ${{statusBadge("failed", `失败 ${{project.counts.failed}}`)}}
-            ${{statusBadge("manual", `需人工处理 ${{project.counts.manual}}`)}}
-            ${{statusBadge("passed", `通过 ${{project.counts.passed}}`)}}
-            ${{statusBadge("system_managed", `系统已限制 ${{project.counts.system_managed}}`)}}
-            ${{statusBadge("not_applicable", `不适用 ${{project.counts.not_applicable}}`)}}
-          </div>
-          <div class="panel-links">
-            <a href="${{escapeHtml(project.links.context)}}" target="_blank" rel="noopener noreferrer">context.json</a>
-            <a href="${{escapeHtml(project.links.result)}}" target="_blank" rel="noopener noreferrer">result.json</a>
-            <a href="${{escapeHtml(project.links.scan)}}" target="_blank" rel="noopener noreferrer">scan.json</a>
-            ${{project.links.packet ? `<a href="${{escapeHtml(project.links.packet)}}" target="_blank" rel="noopener noreferrer">review_packet.pdf</a>` : ""}}
-            ${{project.links.packet_page_map ? `<a href="${{escapeHtml(project.links.packet_page_map)}}" target="_blank" rel="noopener noreferrer">packet.page_map.json</a>` : ""}}
-          </div>
+          <div class="project-summary">${{escapeHtml(project.project_type_label || project.project_type)}} · ${{statusBadge("failed", `失败 ${{project.counts.failed}}`)}} ${{statusBadge("manual", `需人工 ${{project.counts.manual}}`)}}</div>
         </div>
         <div class="result-sections">
           ${{renderSections(project.policy_sections, "审查要点对照")}}
           ${{renderSections(project.extra_sections, "额外检查项")}}
         </div>
       `;
-      center.querySelectorAll(".rule-card").forEach((node) => {{
+      panel.querySelectorAll(".rule-card").forEach((node) => {{
         node.addEventListener("click", () => {{
           selectRule(String(node.dataset.ruleId || ""));
         }});
@@ -950,7 +1055,6 @@ class BatchReviewAgent:
         <section class="result-section">
           <div class="section-head">
             <div class="section-head-title">${{escapeHtml(section.title)}}</div>
-            <div class="project-item-stats">${{section.badges.map((badge) => statusBadge(badge.status, `${{badge.label}} ${{badge.value}}`)).join("")}}</div>
           </div>
           <div class="section-subgroups">
             ${{renderGroups(section.groups.filter((group) => !group.folded))}}
@@ -1022,85 +1126,227 @@ class BatchReviewAgent:
       return null;
     }}
 
-    function renderViewerPanel() {{
-      const project = REPORT_DATA.projects[state.projectIndex];
-      const viewer = document.getElementById("viewerPanel");
-      if (!project) {{
-        viewer.innerHTML = '<div class="viewer-empty">无项目。</div>';
+    function ensurePdfShell() {{
+      const viewer = document.getElementById("pdfPanel");
+      if (!viewer) {{
+        return null;
+      }}
+      if (!viewer.dataset.initialized) {{
+        viewer.innerHTML = `
+          <div class="pdf-only">
+            <div class="pdf-toast" id="pdfToast"></div>
+            <div class="viewer-preview hidden" id="viewerPreview">
+              <iframe class="packet-frame" id="packetFrame" title="review packet viewer"></iframe>
+            </div>
+            <div class="viewer-fallback" id="viewerFallback">选择一条规则后，在这里查看对应材料。</div>
+          </div>
+        `;
+        viewer.dataset.initialized = "1";
+      }}
+      return viewer;
+    }}
+
+    function showPdfToast(message) {{
+      const toast = document.getElementById("pdfToast");
+      if (!toast) {{
         return;
       }}
+      if (toast.dataset.timerId) {{
+        clearTimeout(Number(toast.dataset.timerId));
+      }}
+      toast.textContent = String(message || "");
+      toast.classList.add("show");
+      const timerId = window.setTimeout(() => {{
+        toast.classList.remove("show");
+        toast.textContent = "";
+        toast.dataset.timerId = "";
+      }}, 1800);
+      toast.dataset.timerId = String(timerId);
+    }}
+
+    function buildViewerPayload(target, packetPage) {{
+      return {{
+        type: "gotoPacketTarget",
+        page: Number(packetPage || 0),
+        location_label: String(target.location_label || ""),
+        highlight_mode: String(target.highlight_mode || "none"),
+        highlight_text: String(target.highlight_text || target.clip || ""),
+        highlight_rects: Array.isArray(target.highlight_rects) ? target.highlight_rects : [],
+      }};
+    }}
+
+    function postViewerPayload(frame, payload) {{
+      const pageNumber = Number(payload?.page || 0);
+      if (!frame || !pageNumber) {{
+        return;
+      }}
+      const send = () => {{
+        try {{
+          frame.contentWindow?.postMessage(payload, "*");
+        }} catch (error) {{
+          console.warn("viewer postMessage failed", error);
+        }}
+      }};
+      window.setTimeout(send, 0);
+      window.setTimeout(send, 120);
+      window.setTimeout(send, 320);
+    }}
+
+    function setViewerPacket(viewerUri, payload) {{
+      const frame = document.getElementById("packetFrame");
+      if (!frame) {{
+        return;
+      }}
+      const nextUri = String(viewerUri || "");
+      const pageNumber = Number(payload?.page || 0);
+      if (!nextUri) {{
+        frame.removeAttribute("src");
+        frame.dataset.viewerUri = "";
+        frame.dataset.pendingPayload = "";
+        return;
+      }}
+      if (frame.dataset.viewerUri !== nextUri) {{
+        frame.dataset.viewerUri = nextUri;
+        frame.dataset.pendingPayload = JSON.stringify(payload || {{}});
+        frame.onload = () => {{
+          const pendingPayload = frame.dataset.pendingPayload ? JSON.parse(frame.dataset.pendingPayload) : null;
+          if (pendingPayload && Number(pendingPayload.page || 0) > 0) {{
+            postViewerPayload(frame, pendingPayload);
+          }}
+        }};
+        frame.src = nextUri;
+        return;
+      }}
+      if (pageNumber > 0) {{
+        frame.dataset.pendingPayload = JSON.stringify(payload || {{}});
+        postViewerPayload(frame, payload);
+      }}
+    }}
+
+    function renderPdfPanel() {{
+      const project = REPORT_DATA.projects[state.projectIndex];
+      const viewer = ensurePdfShell();
+      if (!project) {{
+        if (viewer) {{
+          viewer.innerHTML = '<div class="viewer-empty">无项目。</div>';
+          delete viewer.dataset.initialized;
+        }}
+        return;
+      }}
+      const previewNode = document.getElementById("viewerPreview");
+      const fallbackNode = document.getElementById("viewerFallback");
       const rule = getActiveRule(project);
+      const packet = project.packet || {{}};
       if (!rule) {{
-        viewer.innerHTML = '<div class="viewer-empty">选择中间的规则项后，在这里查看对应证据或规则说明。</div>';
+        if (previewNode) previewNode.classList.add("hidden");
+        if (fallbackNode) {{
+          fallbackNode.textContent = "选择一条规则后，在这里查看对应材料。";
+          fallbackNode.classList.remove("hidden");
+        }}
+        const viewerUri = packet.viewer_file ? String(packet.viewer_file) : "";
+        const defaultPage = Number(packet.default_page || 1);
+        if (viewerUri && defaultPage > 0) {{
+          if (previewNode) previewNode.classList.remove("hidden");
+          if (fallbackNode) fallbackNode.classList.add("hidden");
+          setViewerPacket(viewerUri, {{
+            type: "gotoPacketTarget",
+            page: defaultPage,
+            location_label: "项目材料",
+            highlight_mode: "none",
+            highlight_text: "",
+            highlight_rects: [],
+          }});
+          return;
+        }}
+        setViewerPacket("", null);
         return;
       }}
       const targets = rule.evidence_targets || [];
       const activeIndex = Math.max(0, Math.min(state.evidenceIndex, targets.length - 1));
       const target = targets[activeIndex] || null;
-      viewer.innerHTML = `
-        <div class="panel-head">
-          <h3>${{escapeHtml(rule.title)}}</h3>
-          <div class="project-summary">${{escapeHtml(rule.summary || "点击不同规则可切换证据。")}}</div>
-        </div>
-        ${{targets.length ? `<div class="evidence-tabs">${{targets.map((item, index) => `
-          <button class="evidence-tab ${{index === activeIndex ? "active" : ""}}" data-evidence-index="${{index}}">
-            ${{escapeHtml(item.tab_label || `证据${{index + 1}}`)}}
-          </button>
-        `).join("")}}</div>` : ""}}
-        ${{target ? renderEvidenceTarget(target, project) : '<div class="viewer-empty">当前规则暂无可跳转证据。可通过中栏说明和 JSON 进一步排查。</div>'}}
-      `;
-      viewer.querySelectorAll(".evidence-tab").forEach((node) => {{
-        node.addEventListener("click", () => {{
-          selectEvidence(Number(node.dataset.evidenceIndex || 0));
-        }});
-      }});
+      if (!target) {{
+        const viewerUri = packet.viewer_file ? String(packet.viewer_file) : "";
+        const defaultPage = Number(packet.default_page || 1);
+        if (viewerUri && defaultPage > 0) {{
+          if (previewNode) previewNode.classList.remove("hidden");
+          if (fallbackNode) fallbackNode.classList.add("hidden");
+          setViewerPacket(viewerUri, {{
+            type: "gotoPacketTarget",
+            page: defaultPage,
+            location_label: "项目材料",
+            highlight_mode: "none",
+            highlight_text: "",
+            highlight_rects: [],
+          }});
+          showPdfToast("当前规则暂无可定位材料，已切到该项目材料首页。");
+        }} else {{
+          if (previewNode) previewNode.classList.add("hidden");
+          if (fallbackNode) {{
+            fallbackNode.textContent = "当前规则暂无可定位材料。";
+            fallbackNode.classList.remove("hidden");
+          }}
+          setViewerPacket("", null);
+        }}
+      }} else {{
+        renderEvidenceTarget(target, project);
+      }}
     }}
 
     function renderEvidenceTarget(target, project) {{
       const packet = project.packet || {{}};
-      const packetPage = Number(target.packet_page || packet.default_page || 1);
-      const packetUri = packet.packet_file ? `${{packet.packet_file}}#page=${{packetPage}}` : "";
-      return `
-        <div class="viewer-meta">
-          <div class="viewer-meta-label">来源文件</div><div class="mono">${{escapeHtml(target.source_file || "-")}}</div>
-          <div class="viewer-meta-label">定位</div><div>${{escapeHtml(target.location_label || "-")}}</div>
-          <div class="viewer-meta-label">Packet页码</div><div>${{packetUri ? `第${{packetPage}}页` : "不可用"}}</div>
-          <div class="viewer-meta-label">打开原件</div><div>${{target.open_uri ? `<a href="${{escapeHtml(target.open_uri)}}" target="_blank" rel="noopener noreferrer">打开原文件</a>` : "不可用"}}</div>
-        </div>
-        <div class="viewer-preview">${{renderPreview(target, packetUri)}}</div>
-        <div class="clip-panel">
-          <div class="clip-title">${{target.viewer_mode === "document" ? "证据摘要" : "规则说明"}}</div>
-          <pre class="mono">${{escapeHtml(target.clip || "无证据摘要")}}</pre>
-        </div>
-      `;
+      const packetPage = target.packet_page ? Number(target.packet_page) : 0;
+      const viewerUri = packet.viewer_file
+        ? String(packet.viewer_file)
+        : "";
+      const previewNode = document.getElementById("viewerPreview");
+      const fallbackNode = document.getElementById("viewerFallback");
+      renderPreview(target, viewerUri, buildViewerPayload(target, packetPage), previewNode, fallbackNode);
     }}
 
-    function renderPreview(target, packetUri) {{
-      if (packetUri) {{
-        return `<iframe src="${{escapeHtml(packetUri)}}" title="review packet"></iframe>`;
+    function renderPreview(target, viewerUri, viewerPayload, previewNode, fallbackNode) {{
+      if (viewerUri && Number(viewerPayload?.page || 0) > 0) {{
+        if (previewNode) previewNode.classList.remove("hidden");
+        if (fallbackNode) fallbackNode.classList.add("hidden");
+        setViewerPacket(viewerUri, viewerPayload);
+        return;
       }}
-      if (target.preview_mode === "html" && target.preview_uri) {{
-        return `<iframe src="${{escapeHtml(target.preview_uri)}}" title="evidence html"></iframe>`;
-      }}
-      if (target.preview_mode === "image" && target.preview_uri) {{
-        return `<img src="${{escapeHtml(target.preview_uri)}}" alt="evidence image">`;
-      }}
-      if (target.preview_mode === "pdf" && target.preview_uri) {{
-        return `<iframe src="${{escapeHtml(target.preview_uri)}}" title="evidence pdf"></iframe>`;
-      }}
+      if (!fallbackNode) return;
       if (target.viewer_mode === "explanation") {{
-        return `<div class="viewer-fallback">这条证据属于规则计算结果或附件目录汇总，不对应单个可预览页面。</div>`;
+        const hasOpenPacket = !!document.getElementById("packetFrame")?.dataset.viewerUri;
+        if (hasOpenPacket) {{
+          if (previewNode) previewNode.classList.remove("hidden");
+          if (fallbackNode) fallbackNode.classList.add("hidden");
+          showPdfToast("这条规则没有对应的可定位原文页面。");
+          return;
+        }}
+        if (previewNode) previewNode.classList.add("hidden");
+        setViewerPacket("", null);
+        fallbackNode.textContent = "这条规则没有对应的可定位原文页面。";
+        fallbackNode.classList.remove("hidden");
+        return;
       }}
       if (target.open_uri) {{
-        return `<div class="viewer-fallback">当前文件暂不支持内嵌预览。<br><a href="${{escapeHtml(target.open_uri)}}" target="_blank" rel="noopener noreferrer">打开原文件</a></div>`;
+        if (previewNode) previewNode.classList.add("hidden");
+        setViewerPacket("", null);
+        fallbackNode.textContent = "当前材料暂不可在右侧预览。";
+        fallbackNode.classList.remove("hidden");
+        return;
       }}
-      return `<div class="viewer-fallback">当前证据没有可用预览资产。</div>`;
+      if (previewNode && document.getElementById("packetFrame")?.dataset.viewerUri) {{
+        previewNode.classList.remove("hidden");
+        fallbackNode.classList.add("hidden");
+        return;
+      }}
+      if (previewNode) previewNode.classList.add("hidden");
+      setViewerPacket("", null);
+      fallbackNode.textContent = "当前证据没有可用预览资产。";
+      fallbackNode.classList.remove("hidden");
     }}
 
     function renderAll() {{
       renderProjectList();
-      renderCenterPanel();
-      renderViewerPanel();
+      renderRulesPanel();
+      renderPdfPanel();
     }}
 
     if (REPORT_DATA.projects.length) {{
@@ -1181,14 +1427,26 @@ class BatchReviewAgent:
         return {
             "preview_file": relative_path,
             "preview_mode": "html",
-            "blocks": [
+            "block_count": len(paragraphs),
+            "blocks": self._build_preview_blocks(paragraphs),
+        }
+
+    def _build_preview_blocks(self, paragraphs: List[str]) -> List[Dict[str, Any]]:
+        """为 docx 预览块补充累计字符位置，供页码估算使用"""
+        blocks: List[Dict[str, Any]] = []
+        char_end = 0
+        for index, paragraph in enumerate(paragraphs, start=1):
+            paragraph_text = str(paragraph or "")
+            char_end += len(paragraph_text)
+            blocks.append(
                 {
                     "anchor_id": f"p-{index}",
-                    "text": paragraph,
+                    "text": paragraph_text,
+                    "char_count": len(paragraph_text),
+                    "char_end": char_end,
                 }
-                for index, paragraph in enumerate(paragraphs, start=1)
-            ],
-        }
+            )
+        return blocks
 
     def _extract_docx_preview_paragraphs(self, path: Path) -> List[str]:
         """轻量提取 docx 预览段落"""
@@ -1400,13 +1658,335 @@ class BatchReviewAgent:
         page_map_file = f"projects/{project_id}/review_packet.page_map.json"
         debug_writer.write_bytes(packet_file, packet_bytes)
         debug_writer.write_json(page_map_file, page_map)
+        viewer_assets = self._write_packet_viewer_assets(
+            debug_writer=debug_writer,
+            project_id=project_id,
+            packet_bytes=packet_bytes,
+        )
         return {
             "packet_file": packet_file,
+            "packet_abs_path": str((Path(debug_writer.output_dir) / packet_file).resolve()),
             "page_map_file": page_map_file,
             "page_map": page_map,
             "source_items": source_items,
             "default_page": 1,
+            "viewer_file": viewer_assets.get("viewer_file", ""),
+            "page_images": viewer_assets.get("page_images", []),
         }
+
+    def _write_packet_viewer_assets(
+        self,
+        debug_writer: ReviewDebugWriter,
+        project_id: str,
+        packet_bytes: bytes,
+    ) -> Dict[str, Any]:
+        """为 packet 生成可滚动页面 viewer 资产"""
+        if not packet_bytes:
+            return {}
+        try:
+            packet_doc = fitz.open(stream=packet_bytes, filetype="pdf")
+        except Exception:
+            return {}
+
+        page_images: List[Dict[str, Any]] = []
+        try:
+            for page_index in range(packet_doc.page_count):
+                page = packet_doc.load_page(page_index)
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.2, 1.2), alpha=False)
+                image_rel_path = f"projects/{project_id}/packet_pages/page-{page_index + 1:04d}.png"
+                debug_writer.write_bytes(image_rel_path, pix.tobytes("png"))
+                page_images.append(
+                    {
+                        "page": page_index + 1,
+                        "image_file": image_rel_path,
+                        "width": pix.width,
+                        "height": pix.height,
+                    }
+                )
+        finally:
+            packet_doc.close()
+
+        viewer_file = f"projects/{project_id}/packet_viewer.html"
+        viewer_html = self._build_packet_viewer_html(
+            title=f"{project_id} 审查材料",
+            page_images=page_images,
+        )
+        debug_writer.write_text(viewer_file, viewer_html)
+        return {
+            "viewer_file": viewer_file,
+            "page_images": page_images,
+        }
+
+    def _build_packet_viewer_html(self, title: str, page_images: List[Dict[str, Any]]) -> str:
+        """构造 packet 页面 viewer HTML"""
+        pages_html = []
+        for item in page_images:
+            if not isinstance(item, dict):
+                continue
+            page = int(item.get("page", 0) or 0)
+            image_file = str(item.get("image_file", "")).strip()
+            if not page or not image_file:
+                continue
+            image_src = f"packet_pages/{Path(image_file).name}"
+            pages_html.append(
+                "<section class='packet-page' "
+                f"id='packet-page-{page}' data-page='{page}'>"
+                f"<div class='page-index'>第 {page} 页</div>"
+                f"<img loading='lazy' src='{escape(image_src)}' alt='packet page {page}'>"
+                "</section>"
+            )
+        pages_content = "".join(pages_html) or "<div class='empty'>当前材料暂无可预览页面。</div>"
+        return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)}</title>
+  <style>
+    :root {{
+      --bg: #dfe5ec;
+      --panel: #f3f6fa;
+      --page-bg: #ffffff;
+      --line: #c8d2de;
+      --text: #182230;
+      --muted: #5f6b7a;
+      --accent: #0f766e;
+    }}
+    * {{
+      box-sizing: border-box;
+    }}
+    html, body {{
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }}
+    body {{
+      overflow-y: auto;
+    }}
+    .viewer-root {{
+      min-height: 100%;
+      padding: 18px 0 28px;
+    }}
+    .viewer-head {{
+      display: flex;
+      justify-content: center;
+      padding: 0 12px 12px;
+    }}
+    .head-stack {{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-width: min(900px, calc(100vw - 48px));
+    }}
+    .page-pill {{
+      min-width: 110px;
+      text-align: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(15, 118, 110, 0.18);
+      background: rgba(255, 255, 255, 0.92);
+      color: #115e59;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      backdrop-filter: blur(10px);
+    }}
+    .focus-card {{
+      display: none;
+      width: min(900px, calc(100vw - 48px));
+      padding: 10px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(15, 118, 110, 0.2);
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--text);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    }}
+    .focus-card.show {{
+      display: block;
+    }}
+    .focus-label {{
+      font-size: 12px;
+      font-weight: 800;
+      color: #0f766e;
+      margin-bottom: 4px;
+    }}
+    .focus-text {{
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }}
+    .pages {{
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 0 18px;
+    }}
+    .packet-page {{
+      position: relative;
+      width: min(1120px, calc(100vw - 72px));
+      background: var(--page-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+      transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+    }}
+    .packet-page.active {{
+      border-color: rgba(15, 118, 110, 0.36);
+      box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12), 0 18px 48px rgba(15, 23, 42, 0.12);
+    }}
+    .page-index {{
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .packet-page img {{
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #fff;
+    }}
+    .highlight-layer {{
+      position: absolute;
+      inset: 33px 0 0 0;
+      pointer-events: none;
+    }}
+    .highlight-rect {{
+      position: absolute;
+      border-radius: 10px;
+      background: rgba(251, 191, 36, 0.22);
+      border: 3px solid rgba(245, 158, 11, 0.92);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75), 0 10px 24px rgba(245, 158, 11, 0.22);
+    }}
+    .empty {{
+      padding: 32px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+    }}
+  </style>
+</head>
+<body>
+  <div class="viewer-root">
+    <div class="viewer-head">
+      <div class="head-stack">
+        <div class="page-pill" id="pagePill">第 1 页</div>
+        <div class="focus-card" id="focusCard">
+          <div class="focus-label" id="focusLabel">命中定位</div>
+          <div class="focus-text" id="focusText"></div>
+        </div>
+      </div>
+    </div>
+    <div class="pages" id="pages">{pages_content}</div>
+  </div>
+  <script>
+    const pagePill = document.getElementById("pagePill");
+    const focusCard = document.getElementById("focusCard");
+    const focusLabel = document.getElementById("focusLabel");
+    const focusText = document.getElementById("focusText");
+    let activePage = 1;
+
+    function setActivePage(page) {{
+      const pageNumber = Number(page || 1);
+      activePage = pageNumber;
+      document.querySelectorAll(".packet-page.active").forEach((node) => node.classList.remove("active"));
+      const target = document.getElementById(`packet-page-${{pageNumber}}`);
+      if (target) {{
+        target.classList.add("active");
+      }}
+      if (pagePill) {{
+        pagePill.textContent = `第 ${{pageNumber}} 页`;
+      }}
+    }}
+
+    function gotoPage(page, smooth) {{
+      const pageNumber = Number(page || 1);
+      const target = document.getElementById(`packet-page-${{pageNumber}}`);
+      if (!target) return;
+      setActivePage(pageNumber);
+      target.scrollIntoView({{ behavior: smooth ? "smooth" : "auto", block: "start" }});
+    }}
+
+    function clearHighlights() {{
+      document.querySelectorAll(".highlight-layer").forEach((node) => node.remove());
+    }}
+
+    function applyHighlights(page, rects) {{
+      clearHighlights();
+      const pageNumber = Number(page || 0);
+      const target = document.getElementById(`packet-page-${{pageNumber}}`);
+      if (!target || !Array.isArray(rects) || !rects.length) {{
+        return;
+      }}
+      const layer = document.createElement("div");
+      layer.className = "highlight-layer";
+      rects.forEach((item) => {{
+        if (!item) return;
+        const x = Number(item.x || 0);
+        const y = Number(item.y || 0);
+        const w = Number(item.w || 0);
+        const h = Number(item.h || 0);
+        if (!(w > 0) || !(h > 0)) return;
+        const rect = document.createElement("div");
+        rect.className = "highlight-rect";
+        rect.style.left = `${{x * 100}}%`;
+        rect.style.top = `${{y * 100}}%`;
+        rect.style.width = `${{w * 100}}%`;
+        rect.style.height = `${{h * 100}}%`;
+        layer.appendChild(rect);
+      }});
+      if (layer.childElementCount) {{
+        target.appendChild(layer);
+      }}
+    }}
+
+    function updateFocusCard(payload) {{
+      const label = String(payload.location_label || payload.label || "命中定位");
+      const text = String(payload.highlight_text || payload.text || "").trim();
+      if (!text) {{
+        focusCard?.classList.remove("show");
+        if (focusText) focusText.textContent = "";
+        return;
+      }}
+      if (focusLabel) focusLabel.textContent = label;
+      if (focusText) focusText.textContent = text;
+      focusCard?.classList.add("show");
+    }}
+
+    window.addEventListener("message", (event) => {{
+      const payload = event.data || {{}};
+      if (payload.type !== "gotoPacketTarget") return;
+      gotoPage(payload.page, true);
+      applyHighlights(payload.page, payload.highlight_rects || []);
+      updateFocusCard(payload);
+    }});
+
+    const observer = new IntersectionObserver((entries) => {{
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      const page = Number(visible.target.dataset.page || activePage || 1);
+      setActivePage(page);
+    }}, {{
+      root: null,
+      threshold: [0.35, 0.6, 0.85],
+    }});
+
+    document.querySelectorAll(".packet-page").forEach((node) => observer.observe(node));
+    gotoPage(1, false);
+  </script>
+</body>
+</html>"""
 
     def _collect_packet_sources(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """收集 packet 合并输入，保持原始顺序"""
@@ -1574,26 +2154,36 @@ class BatchReviewAgent:
                 item["id"]
                 for item in all_items
                 if item["status"] in {"failed", "manual"}
+                and any(
+                    (isinstance(target.get("packet_page"), int) and target.get("packet_page", 0) > 0)
+                    or str(target.get("source_file") or "").strip() not in {"", "-"}
+                    for target in item.get("evidence_targets", [])
+                )
             ),
-            all_items[0]["id"] if all_items else "",
+            next(
+                (
+                    item["id"]
+                    for item in all_items
+                    if item["status"] in {"failed", "manual"}
+                ),
+                all_items[0]["id"] if all_items else "",
+            ),
         )
         return {
             "project_id": result.project_id,
             "project_name": project_name,
             "project_type": result.project_type,
+            "project_type_label": self._project_type_label(result.project_type),
             "summary": result.summary,
             "counts": status_counts,
             "policy_sections": policy_sections,
             "extra_sections": extra_sections,
             "default_rule_id": default_rule_id,
-            "links": {
-                "context": f"projects/{result.project_id}.context.json",
-                "result": f"projects/{result.project_id}.result.json",
-                "scan": f"projects/{result.project_id}.scan.json",
-                "packet": str(packet_assets.get("packet_file", "")),
-                "packet_page_map": str(packet_assets.get("page_map_file", "")),
+            "packet": {
+                "packet_file": str(packet_assets.get("packet_file", "")),
+                "viewer_file": str(packet_assets.get("viewer_file", "")),
+                "default_page": int(packet_assets.get("default_page", 1) or 1),
             },
-            "packet": packet_assets,
         }
 
     def _count_workspace_items(self, items: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -1609,6 +2199,11 @@ class BatchReviewAgent:
             group_key = str(item.get("group", "passed"))
             counts[group_key] = counts.get(group_key, 0) + 1
         return counts
+
+    def _project_type_label(self, project_type: str) -> str:
+        """项目类型中文标签"""
+        key = str(project_type or "").strip()
+        return self.PROJECT_TYPE_LABELS.get(key, key or "未识别项目类型")
 
     def _build_section_payload(self, title: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """按状态分组构造展示 section"""
@@ -1707,6 +2302,7 @@ class BatchReviewAgent:
         """把规则映射成右栏可浏览的证据目标"""
         scan_info = context_payload.get("scan_info", {}) if isinstance(context_payload, dict) else {}
         proposal_facts = scan_info.get("proposal_facts", {}) if isinstance(scan_info, dict) else {}
+        project_info_updates = proposal_facts.get("project_info_updates", {}) if isinstance(proposal_facts, dict) else {}
         preview_assets = scan_info.get("preview_assets", {}) if isinstance(scan_info, dict) else {}
         packet_assets = scan_info.get("packet_assets", {}) if isinstance(scan_info, dict) else {}
         proposal_file = (
@@ -1823,20 +2419,19 @@ class BatchReviewAgent:
             if targets:
                 return targets
 
-        clip = self._format_evidence_clip(getattr(source_result, "evidence", {}), getattr(source_result, "message", ""))
-        if source_result.item == "registered_date_limit":
-            clip = self._extract_keyword_snippet(proposal_excerpt, "注册时间") or clip
-        elif source_result.item == "project_leader_age_check":
-            clip = self._extract_keyword_snippet(proposal_excerpt, "负责人") or clip
-        elif source_result.item == "funding_ratio_check":
-            clip = self._extract_keyword_snippet(proposal_excerpt, "财政资金") or clip
-        elif source_result.item == "performance_metric_count_check":
-            clip = self._extract_keyword_snippet(proposal_excerpt, "绩效") or clip
-        elif source_result.item == "budget_forbidden_expense_check":
-            clip = self._extract_keyword_snippet(proposal_excerpt, "预算") or clip
-        elif source_result.item == "cooperation_region_check":
-            clip = self._extract_keyword_snippet(proposal_excerpt, "合作单位") or clip
-        elif source_result.item == "proposal_file_presence":
+        clip = self._build_proposal_rule_clip(
+            rule_item=str(source_result.item or ""),
+            evidence=getattr(source_result, "evidence", {}),
+            proposal_excerpt=proposal_excerpt,
+            project_info_updates=project_info_updates,
+            fallback_message=getattr(source_result, "message", ""),
+        )
+        rule_highlight = self._build_rule_highlight_spec(
+            rule_item=str(source_result.item or ""),
+            evidence=getattr(source_result, "evidence", {}),
+            project_info_updates=project_info_updates,
+        )
+        if source_result.item == "proposal_file_presence":
             clip = self._format_evidence_clip(getattr(source_result, "evidence", {}), getattr(source_result, "message", ""))
 
         if proposal_file:
@@ -1850,6 +2445,7 @@ class BatchReviewAgent:
                     page=None,
                     preview_assets=preview_assets,
                     packet_assets=packet_assets,
+                    rule_highlight=rule_highlight,
                 )
             )
         elif clip:
@@ -1927,6 +2523,7 @@ class BatchReviewAgent:
         page: int | None,
         preview_assets: Dict[str, Any],
         packet_assets: Dict[str, Any],
+        rule_highlight: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """构造文件类证据目标"""
         path = Path(source_file) if source_file else None
@@ -1936,6 +2533,8 @@ class BatchReviewAgent:
         preview_uri = ""
         preview_mode = "none"
         anchor_id = self._resolve_preview_anchor(preview_asset, clip)
+        if page is None:
+            page = self._estimate_page_from_anchor(preview_asset, anchor_id, packet_assets, source_file)
         if isinstance(preview_asset, dict) and preview_asset.get("preview_file"):
             preview_uri = str(preview_asset.get("preview_file", ""))
             preview_mode = str(preview_asset.get("preview_mode", "html"))
@@ -1949,6 +2548,16 @@ class BatchReviewAgent:
             preview_uri = self._build_file_uri(path, page=page, for_embed=True) if path else ""
         packet_page = self._resolve_packet_page(packet_assets, source_file, page)
         packet_uri = str(packet_assets.get("packet_file", "")) if isinstance(packet_assets, dict) else ""
+        highlight_payload = self._resolve_packet_highlight(
+            packet_assets,
+            packet_page,
+            clip,
+            source_file,
+            rule_highlight=rule_highlight,
+        )
+        matched_packet_page = highlight_payload.get("page")
+        if isinstance(matched_packet_page, int) and matched_packet_page > 0:
+            packet_page = matched_packet_page
         viewer_mode = "document" if preview_uri or open_uri else "explanation"
         return {
             "target_id": target_id,
@@ -1963,6 +2572,9 @@ class BatchReviewAgent:
             "anchor_id": anchor_id,
             "packet_uri": packet_uri,
             "packet_page": packet_page,
+            "highlight_mode": highlight_payload.get("mode", "none"),
+            "highlight_text": highlight_payload.get("text", ""),
+            "highlight_rects": highlight_payload.get("rects", []),
         }
 
     def _build_generic_target(
@@ -1994,20 +2606,764 @@ class BatchReviewAgent:
         page_map = packet_assets.get("page_map", [])
         if not isinstance(page_map, list):
             return None
+        exact_match: Dict[str, Any] | None = None
+        proposal_match: Dict[str, Any] | None = None
         for item in page_map:
             if not isinstance(item, dict):
                 continue
-            if str(item.get("source_file") or "") != str(source_file or ""):
+            item_source = str(item.get("source_file") or "")
+            if item_source == str(source_file or ""):
+                exact_match = item
+                break
+            if self._is_same_proposal_family(source_file, item_source) and str(item.get("source_kind") or "") == "proposal":
+                proposal_match = proposal_match or item
+        matched = exact_match or proposal_match
+        if not isinstance(matched, dict):
+            return None
+        start_page = matched.get("start_page")
+        end_page = matched.get("end_page")
+        if not isinstance(start_page, int) or start_page <= 0:
+            return None
+        if isinstance(page, int) and page > 0:
+            max_page = end_page if isinstance(end_page, int) and end_page >= start_page else start_page
+            return min(start_page + page - 1, max_page)
+        return start_page
+
+    def _resolve_packet_highlight(
+        self,
+        packet_assets: Dict[str, Any],
+        packet_page: int | None,
+        clip: str,
+        source_file: str,
+        rule_highlight: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """根据定位摘要在 packet 页中搜索并生成高亮框"""
+        text = self._condense_highlight_text(clip)
+        if not isinstance(packet_assets, dict) or not isinstance(packet_page, int) or packet_page <= 0:
+            return {"mode": "none", "text": text, "rects": [], "page": packet_page}
+        packet_abs_path = str(packet_assets.get("packet_abs_path", "")).strip()
+        if not packet_abs_path:
+            return {"mode": "none", "text": text, "rects": [], "page": packet_page}
+
+        candidates = self._build_highlight_candidates(text)
+        if not candidates:
+            return {"mode": "none", "text": text, "rects": [], "page": packet_page}
+
+        try:
+            with fitz.open(packet_abs_path) as packet_doc:
+                if packet_page > packet_doc.page_count:
+                    return {"mode": "none", "text": text, "rects": [], "page": packet_page}
+                special_payload = self._resolve_special_packet_highlight(
+                    packet_doc=packet_doc,
+                    packet_assets=packet_assets,
+                    packet_page=packet_page,
+                    clip=text,
+                    source_file=source_file,
+                    rule_highlight=rule_highlight,
+                )
+                if special_payload.get("rects"):
+                    return special_payload
+                special_page = special_payload.get("page")
+                if isinstance(special_page, int) and special_page > 0:
+                    packet_page = special_page
+                primary_pages, fallback_pages = self._build_packet_search_pages(
+                    packet_assets,
+                    source_file,
+                    packet_page,
+                    packet_doc.page_count,
+                )
+                matched_page, matched_text, rects = self._search_packet_pages_highlights(
+                    packet_doc,
+                    primary_pages,
+                    candidates,
+                    packet_page,
+                )
+                if not rects and fallback_pages:
+                    matched_page, matched_text, rects = self._search_packet_pages_highlights(
+                        packet_doc,
+                        fallback_pages,
+                        candidates,
+                        packet_page,
+                    )
+        except Exception:
+            return {"mode": "none", "text": text, "rects": [], "page": packet_page}
+
+        if rects:
+            return {
+                "mode": "rect",
+                "text": matched_text or text,
+                "rects": rects,
+                "page": matched_page,
+            }
+        return {"mode": "none", "text": text, "rects": [], "page": packet_page}
+
+    def _resolve_special_packet_highlight(
+        self,
+        packet_doc: fitz.Document,
+        packet_assets: Dict[str, Any],
+        packet_page: int,
+        clip: str,
+        source_file: str,
+        rule_highlight: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        """针对结构化规则使用更稳定的 packet 定位逻辑"""
+        if not isinstance(rule_highlight, dict):
+            return {"mode": "none", "text": clip, "rects": [], "page": packet_page}
+        rule_item = str(rule_highlight.get("rule_item") or "").strip()
+        evidence = rule_highlight.get("evidence", {})
+        project_info_updates = rule_highlight.get("project_info_updates", {})
+        if not isinstance(evidence, dict):
+            evidence = {}
+        if not isinstance(project_info_updates, dict):
+            project_info_updates = {}
+
+        if rule_item == "funding_ratio_check":
+            return self._resolve_funding_ratio_packet_highlight(
+                packet_doc=packet_doc,
+                packet_assets=packet_assets,
+                packet_page=packet_page,
+                source_file=source_file,
+                clip=clip,
+                evidence=evidence,
+                project_info_updates=project_info_updates,
+            )
+        if rule_item == "budget_forbidden_expense_check":
+            return self._resolve_budget_forbidden_packet_highlight(
+                packet_doc=packet_doc,
+                packet_assets=packet_assets,
+                packet_page=packet_page,
+                source_file=source_file,
+                clip=clip,
+                evidence=evidence,
+                project_info_updates=project_info_updates,
+            )
+        if rule_item == "performance_metric_count_check":
+            return self._resolve_performance_metric_packet_highlight(
+                packet_doc=packet_doc,
+                packet_assets=packet_assets,
+                packet_page=packet_page,
+                source_file=source_file,
+                clip=clip,
+                evidence=evidence,
+            )
+        return {"mode": "none", "text": clip, "rects": [], "page": packet_page}
+
+    def _resolve_funding_ratio_packet_highlight(
+        self,
+        packet_doc: fitz.Document,
+        packet_assets: Dict[str, Any],
+        packet_page: int,
+        source_file: str,
+        clip: str,
+        evidence: Dict[str, Any],
+        project_info_updates: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """财政/自筹资金比例：优先定位“经费来源”整行"""
+        ratio_line = self._find_budget_line_for_ratio(evidence, project_info_updates)
+        page_numbers = self._build_priority_packet_pages(
+            packet_assets,
+            source_file,
+            packet_page,
+            packet_doc.page_count,
+        )
+        best_page = self._select_best_packet_page_by_text(
+            packet_doc,
+            page_numbers,
+            [ratio_line, "经费来源", "专项经费", "自筹经费", "财政资金"],
+            packet_page,
+        )
+        page = packet_doc.load_page(best_page - 1)
+        row_rect = self._find_row_band_rect(
+            page,
+            [ratio_line, "经费来源", "专项经费", "自筹经费", "财政资金"],
+        )
+        if not row_rect:
+            return {"mode": "none", "text": ratio_line or clip, "rects": [], "page": best_page}
+        return {
+            "mode": "rect",
+            "text": ratio_line or "经费来源",
+            "rects": self._rects_to_payload([row_rect], page.rect, pad_x_ratio=0.016, pad_y_ratio=0.012),
+            "page": best_page,
+        }
+
+    def _resolve_budget_forbidden_packet_highlight(
+        self,
+        packet_doc: fitz.Document,
+        packet_assets: Dict[str, Any],
+        packet_page: int,
+        source_file: str,
+        clip: str,
+        evidence: Dict[str, Any],
+        project_info_updates: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """经费禁列项：命中禁列项时框整行，否则退到预算说明区"""
+        forbidden_line = self._find_first_forbidden_budget_line(evidence)
+        forbidden_terms = []
+        for item in evidence.get("forbidden_hits", []) if isinstance(evidence.get("forbidden_hits"), list) else []:
+            if not isinstance(item, dict):
                 continue
-            start_page = item.get("start_page")
-            end_page = item.get("end_page")
-            if not isinstance(start_page, int) or start_page <= 0:
+            term = str(item.get("term", "")).strip()
+            if term:
+                forbidden_terms.append(term)
+        budget_anchor = self._find_budget_section_anchor(project_info_updates)
+        page_numbers = self._build_priority_packet_pages(
+            packet_assets,
+            source_file,
+            packet_page,
+            packet_doc.page_count,
+        )
+        best_page = self._select_best_packet_page_by_text(
+            packet_doc,
+            page_numbers,
+            [forbidden_line, *forbidden_terms[:3], budget_anchor, "项目预算基本测算说明", "间接经费", "绩效支出"],
+            packet_page,
+        )
+        page = packet_doc.load_page(best_page - 1)
+        row_rect = self._find_row_band_rect(
+            page,
+            [forbidden_line, *forbidden_terms[:3], budget_anchor, "项目预算基本测算说明", "间接经费", "绩效支出"],
+        )
+        if not row_rect:
+            return {"mode": "none", "text": forbidden_line or budget_anchor or clip, "rects": [], "page": best_page}
+        return {
+            "mode": "rect",
+            "text": forbidden_line or budget_anchor or "预算说明",
+            "rects": self._rects_to_payload([row_rect], page.rect, pad_x_ratio=0.016, pad_y_ratio=0.012),
+            "page": best_page,
+        }
+
+    def _resolve_performance_metric_packet_highlight(
+        self,
+        packet_doc: fitz.Document,
+        packet_assets: Dict[str, Any],
+        packet_page: int,
+        source_file: str,
+        clip: str,
+        evidence: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """绩效指标：按指标表整块定位，不再只框局部词"""
+        metric_names = self._extract_performance_metric_names(evidence)
+        page_numbers = self._build_priority_packet_pages(
+            packet_assets,
+            source_file,
+            packet_page,
+            packet_doc.page_count,
+        )
+        best_page = self._select_best_packet_page_by_text(
+            packet_doc,
+            page_numbers,
+            ["预期绩效目标", "绩效指标", "一级指标", "三级指标", "指标值", *metric_names[:4]],
+            packet_page,
+        )
+        page = packet_doc.load_page(best_page - 1)
+        section_rects: List[fitz.Rect] = []
+        heading_rect = self._find_row_band_rect(page, ["绩效指标", "一级指标", "三级指标", "指标值"])
+        if heading_rect:
+            section_rects.append(heading_rect)
+        for metric_name in metric_names[:8]:
+            row_rect = self._find_row_band_rect(page, [metric_name])
+            if row_rect:
+                section_rects.append(row_rect)
+        if not section_rects:
+            return {"mode": "none", "text": metric_names[0] if metric_names else clip, "rects": [], "page": best_page}
+        merged_rect = self._union_rects(section_rects)
+        if not merged_rect:
+            return {"mode": "none", "text": metric_names[0] if metric_names else clip, "rects": [], "page": best_page}
+        return {
+            "mode": "rect",
+            "text": "绩效指标表",
+            "rects": self._rects_to_payload([merged_rect], page.rect, pad_x_ratio=0.018, pad_y_ratio=0.016),
+            "page": best_page,
+        }
+
+    def _build_priority_packet_pages(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        preferred_page: int,
+        packet_page_count: int,
+    ) -> List[int]:
+        """生成带优先级的 packet 页序列"""
+        page_range = self._resolve_source_packet_range(packet_assets, source_file)
+        if page_range:
+            start_page, end_page = page_range
+            pages = list(range(max(1, start_page), min(packet_page_count, end_page) + 1))
+        else:
+            start_page = max(1, preferred_page - 4)
+            end_page = min(packet_page_count, preferred_page + 4)
+            pages = list(range(start_page, end_page + 1))
+        return sorted(set(pages), key=lambda value: (0 if value == preferred_page else 1, abs(value - preferred_page), value))
+
+    def _select_best_packet_page_by_text(
+        self,
+        packet_doc: fitz.Document,
+        page_numbers: List[int],
+        terms: List[str],
+        preferred_page: int,
+    ) -> int:
+        """按文本命中度选择最可能的 packet 页"""
+        usable_terms = [term for term in terms if str(term or "").strip()]
+        if not usable_terms:
+            return preferred_page
+        best_page = preferred_page
+        best_score = -10**9
+        for page_number in page_numbers:
+            if page_number <= 0 or page_number > packet_doc.page_count:
                 continue
-            if isinstance(page, int) and page > 0:
-                max_page = end_page if isinstance(end_page, int) and end_page >= start_page else start_page
-                return min(start_page + page - 1, max_page)
-            return start_page
+            page = packet_doc.load_page(page_number - 1)
+            page_text = self._normalize_packet_text(page.get_text("text"))
+            if not page_text:
+                continue
+            score = -abs(page_number - preferred_page) * 12
+            for term in usable_terms:
+                local_best = 0
+                for variant in self._build_anchor_terms(term):
+                    normalized_variant = self._normalize_packet_text(variant)
+                    if len(normalized_variant) < 2:
+                        continue
+                    if normalized_variant in page_text:
+                        local_best = max(local_best, len(normalized_variant) * 10)
+                score += local_best
+            if score > best_score:
+                best_score = score
+                best_page = page_number
+        return best_page
+
+    def _find_row_band_rect(self, page: fitz.Page, anchor_terms: List[str]) -> fitz.Rect | None:
+        """在页面内按锚点词找到整行/整带区域"""
+        anchor_rect = self._find_best_anchor_rect(page, anchor_terms)
+        if not anchor_rect:
+            return None
+        return self._expand_rect_to_row_band(page, anchor_rect)
+
+    def _find_best_anchor_rect(self, page: fitz.Page, anchor_terms: List[str]) -> fitz.Rect | None:
+        """优先用行文本，再回退到 search_for，找到最稳定的锚点框"""
+        best_rect: fitz.Rect | None = None
+        best_score = 0
+        line_items = self._extract_page_line_items(page)
+        for term in anchor_terms:
+            for variant in self._build_anchor_terms(term):
+                normalized_variant = self._normalize_packet_text(variant)
+                if len(normalized_variant) < 2:
+                    continue
+                for item in line_items:
+                    normalized_line = item["normalized_text"]
+                    if not normalized_line:
+                        continue
+                    if normalized_variant in normalized_line or normalized_line in normalized_variant:
+                        score = min(len(normalized_variant), len(normalized_line)) * 100
+                    else:
+                        score = self._shared_substring_score(normalized_variant, normalized_line) * 100
+                    if score > best_score:
+                        best_score = score
+                        best_rect = fitz.Rect(item["rect"])
+                if best_score >= max(600, len(normalized_variant) * 100):
+                    continue
+                hits = page.search_for(variant)
+                if hits:
+                    merged = self._union_rects(hits[:8])
+                    score = len(normalized_variant) * 100
+                    if merged and score > best_score:
+                        best_score = score
+                        best_rect = merged
+        return best_rect if best_score >= 400 else None
+
+    def _expand_rect_to_row_band(self, page: fitz.Page, anchor_rect: fitz.Rect) -> fitz.Rect:
+        """根据锚点框把高亮扩成整行/整带"""
+        page_rect = page.rect
+        words = page.get_text("words")
+        if not words:
+            return fitz.Rect(anchor_rect)
+        band_pad = max(anchor_rect.height * 1.4, page_rect.height * 0.012)
+        band_top = anchor_rect.y0 - band_pad
+        band_bottom = anchor_rect.y1 + band_pad
+        row_words: List[fitz.Rect] = []
+        for word in words:
+            if len(word) < 5:
+                continue
+            rect = fitz.Rect(word[:4])
+            center_y = (rect.y0 + rect.y1) / 2
+            if band_top <= center_y <= band_bottom:
+                row_words.append(rect)
+        merged = self._union_rects(row_words)
+        return merged or fitz.Rect(anchor_rect)
+
+    def _extract_page_line_items(self, page: fitz.Page) -> List[Dict[str, Any]]:
+        """按 block/line 聚合页面文本行"""
+        words = page.get_text("words")
+        grouped: Dict[tuple[int, int], List[Any]] = {}
+        for word in words:
+            if len(word) < 8:
+                continue
+            key = (int(word[5]), int(word[6]))
+            grouped.setdefault(key, []).append(word)
+        items: List[Dict[str, Any]] = []
+        for _, entries in grouped.items():
+            ordered = sorted(entries, key=lambda item: (item[1], item[0]))
+            text = "".join(str(item[4]) for item in ordered).strip()
+            if not text:
+                continue
+            rects = [fitz.Rect(item[:4]) for item in ordered]
+            merged = self._union_rects(rects)
+            if not merged:
+                continue
+            items.append(
+                {
+                    "text": text,
+                    "normalized_text": self._normalize_packet_text(text),
+                    "rect": merged,
+                }
+            )
+        return sorted(items, key=lambda item: (item["rect"].y0, item["rect"].x0))
+
+    def _build_anchor_terms(self, text: str) -> List[str]:
+        """构造更适合 packet 行匹配的锚点词"""
+        value = str(text or "").strip()
+        if not value:
+            return []
+        candidates = [value]
+        split_parts = re.split(r"[|｜]", value)
+        for part in split_parts:
+            cleaned = part.strip()
+            if len(cleaned) >= 4:
+                candidates.append(cleaned)
+        no_brackets = re.sub(r"[（(].*?[）)]", "", value).strip()
+        if len(no_brackets) >= 4:
+            candidates.append(no_brackets)
+        compact = re.sub(r"\s+", "", value)
+        if len(compact) >= 6:
+            candidates.extend(self._build_chinese_fragment_candidates(compact)[:8])
+        deduped: List[str] = []
+        seen = set()
+        for item in candidates:
+            key = self._normalize_packet_text(item)
+            if len(key) < 2 or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
+        return deduped[:10]
+
+    def _extract_performance_metric_names(self, evidence: Dict[str, Any]) -> List[str]:
+        """提取绩效指标名称列表"""
+        rows = evidence.get("performance_metric_rows", [])
+        if not isinstance(rows, list):
+            return []
+        names: List[str] = []
+        seen = set()
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            metric_name = str(item.get("metric_name", "")).strip()
+            if metric_name and metric_name not in seen:
+                seen.add(metric_name)
+                names.append(metric_name)
+        return names
+
+    def _build_rule_highlight_spec(
+        self,
+        rule_item: str,
+        evidence: Any,
+        project_info_updates: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """构造结构化规则的专用定位信息"""
+        if rule_item not in {"funding_ratio_check", "budget_forbidden_expense_check", "performance_metric_count_check"}:
+            return {}
+        if not isinstance(evidence, dict):
+            return {}
+        return {
+            "rule_item": rule_item,
+            "evidence": evidence,
+            "project_info_updates": project_info_updates if isinstance(project_info_updates, dict) else {},
+        }
+
+    def _normalize_packet_text(self, value: Any) -> str:
+        """归一化 packet 文本，便于页级/行级匹配"""
+        text = str(value or "")
+        return re.sub(r"\s+", "", text)
+
+    def _union_rects(self, rects: List[fitz.Rect]) -> fitz.Rect | None:
+        """合并多个 rect"""
+        valid = [fitz.Rect(rect) for rect in rects if rect is not None]
+        if not valid:
+            return None
+        merged = fitz.Rect(valid[0])
+        for rect in valid[1:]:
+            merged |= rect
+        return merged
+
+    def _rects_to_payload(
+        self,
+        rects: List[fitz.Rect],
+        page_rect: fitz.Rect,
+        pad_x_ratio: float = 0.012,
+        pad_y_ratio: float = 0.008,
+    ) -> List[Dict[str, float]]:
+        """把 rect 转成前端 viewer 需要的归一化 payload"""
+        if not rects or page_rect.width <= 0 or page_rect.height <= 0:
+            return []
+        payload: List[Dict[str, float]] = []
+        pad_x = page_rect.width * pad_x_ratio
+        pad_y = page_rect.height * pad_y_ratio
+        for rect in rects[:4]:
+            expanded = fitz.Rect(
+                max(page_rect.x0, rect.x0 - pad_x),
+                max(page_rect.y0, rect.y0 - pad_y),
+                min(page_rect.x1, rect.x1 + pad_x),
+                min(page_rect.y1, rect.y1 + pad_y),
+            )
+            payload.append(
+                {
+                    "x": round(expanded.x0 / page_rect.width, 6),
+                    "y": round(expanded.y0 / page_rect.height, 6),
+                    "w": round((expanded.x1 - expanded.x0) / page_rect.width, 6),
+                    "h": round((expanded.y1 - expanded.y0) / page_rect.height, 6),
+                }
+            )
+        return payload
+
+    def _search_packet_pages_highlights(
+        self,
+        packet_doc: fitz.Document,
+        page_numbers: List[int],
+        candidates: List[str],
+        preferred_page: int,
+    ) -> tuple[int | None, str, List[Dict[str, float]]]:
+        """在多个 packet 页中查找最优文本高亮页"""
+        best_page: int | None = None
+        best_text = ""
+        best_rects: List[Dict[str, float]] = []
+        best_score = -10**9
+        best_order = 10**9
+
+        normalized_candidates = [candidate for candidate in candidates if str(candidate).strip()]
+        for page_number in page_numbers:
+            if page_number <= 0 or page_number > packet_doc.page_count:
+                continue
+            page = packet_doc.load_page(page_number - 1)
+            page_rect = page.rect
+            if page_rect.width <= 0 or page_rect.height <= 0:
+                continue
+            matched_candidates: List[str] = []
+            matched_rects: List[fitz.Rect] = []
+            for candidate in normalized_candidates:
+                search_hits = page.search_for(candidate)
+                if search_hits:
+                    matched_candidates.append(candidate)
+                    matched_rects.extend(search_hits[:6])
+            if not matched_rects:
+                continue
+
+            merged_rects = self._merge_highlight_rects(matched_rects, page_rect)
+            score = (
+                len(matched_candidates) * 1000
+                + sum(len(re.sub(r"\s+", "", candidate)) for candidate in matched_candidates[:6])
+                + len(merged_rects) * 10
+                - abs(page_number - preferred_page) * 450
+            )
+            page_order = page_numbers.index(page_number)
+            if score > best_score or (score == best_score and page_order < best_order):
+                best_score = score
+                best_order = page_order
+                best_page = page_number
+                best_text = " / ".join(matched_candidates[:3])
+                best_rects = merged_rects
+        return best_page, best_text, best_rects
+
+    def _merge_highlight_rects(
+        self,
+        rects: List[fitz.Rect],
+        page_rect: fitz.Rect,
+    ) -> List[Dict[str, float]]:
+        """把多个小命中框合并成更稳定、更易读的高亮区域"""
+        if not rects or page_rect.width <= 0 or page_rect.height <= 0:
+            return []
+
+        sorted_rects = sorted(rects, key=lambda rect: (rect.y0, rect.x0))
+        merged: List[fitz.Rect] = []
+        vertical_gap = page_rect.height * 0.02
+        horizontal_gap = page_rect.width * 0.04
+
+        for rect in sorted_rects:
+            current = fitz.Rect(rect)
+            if not merged:
+                merged.append(current)
+                continue
+            last = merged[-1]
+            same_band = (
+                abs(current.y0 - last.y0) <= vertical_gap
+                or abs(current.y1 - last.y1) <= vertical_gap
+                or current.intersects(last)
+            )
+            close_horizontally = current.x0 <= last.x1 + horizontal_gap
+            close_vertically = current.y0 <= last.y1 + vertical_gap
+            if same_band and close_horizontally and close_vertically:
+                merged[-1] = fitz.Rect(
+                    min(last.x0, current.x0),
+                    min(last.y0, current.y0),
+                    max(last.x1, current.x1),
+                    max(last.y1, current.y1),
+                )
+            else:
+                merged.append(current)
+
+        padded: List[Dict[str, float]] = []
+        pad_x = page_rect.width * 0.012
+        pad_y = page_rect.height * 0.008
+        for rect in merged[:4]:
+            expanded = fitz.Rect(
+                max(page_rect.x0, rect.x0 - pad_x),
+                max(page_rect.y0, rect.y0 - pad_y),
+                min(page_rect.x1, rect.x1 + pad_x),
+                min(page_rect.y1, rect.y1 + pad_y),
+            )
+            padded.append(
+                {
+                    "x": round(expanded.x0 / page_rect.width, 6),
+                    "y": round(expanded.y0 / page_rect.height, 6),
+                    "w": round((expanded.x1 - expanded.x0) / page_rect.width, 6),
+                    "h": round((expanded.y1 - expanded.y0) / page_rect.height, 6),
+                }
+            )
+        return padded
+
+    def _build_packet_search_pages(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        packet_page: int,
+        packet_page_count: int,
+    ) -> tuple[List[int], List[int]]:
+        """构造 packet 搜索页范围：先搜附近页，必要时再扩到整份材料"""
+        primary_pages: List[int] = []
+        fallback_pages: List[int] = []
+        primary_seen = set()
+        fallback_seen = set()
+
+        def append_primary(page_number: int) -> None:
+            if 1 <= page_number <= packet_page_count and page_number not in primary_seen:
+                primary_seen.add(page_number)
+                primary_pages.append(page_number)
+
+        def append_fallback(page_number: int) -> None:
+            if 1 <= page_number <= packet_page_count and page_number not in primary_seen and page_number not in fallback_seen:
+                fallback_seen.add(page_number)
+                fallback_pages.append(page_number)
+
+        append_primary(packet_page)
+        for offset in range(1, 3):
+            append_primary(packet_page - offset)
+            append_primary(packet_page + offset)
+
+        page_range = self._resolve_source_packet_range(packet_assets, source_file)
+        if page_range:
+            start_page, end_page = page_range
+            if start_page > end_page:
+                start_page, end_page = end_page, start_page
+            for page_number in range(start_page, min(end_page, packet_page_count) + 1):
+                append_fallback(page_number)
+        return primary_pages, fallback_pages
+
+    def _resolve_source_packet_range(self, packet_assets: Dict[str, Any], source_file: str) -> tuple[int, int] | None:
+        """读取 source_file 在 packet 中对应的页范围"""
+        if not isinstance(packet_assets, dict):
+            return None
+        page_map = packet_assets.get("page_map", [])
+        if not isinstance(page_map, list):
+            return None
+        exact_match: Dict[str, Any] | None = None
+        proposal_match: Dict[str, Any] | None = None
+        for item in page_map:
+            if not isinstance(item, dict):
+                continue
+            item_source = str(item.get("source_file") or "")
+            if item_source == str(source_file or ""):
+                exact_match = item
+                break
+            if self._is_same_proposal_family(source_file, item_source) and str(item.get("source_kind") or "") == "proposal":
+                proposal_match = proposal_match or item
+        matched = exact_match or proposal_match
+        if not isinstance(matched, dict):
+            return None
+        start_page = matched.get("start_page")
+        end_page = matched.get("end_page")
+        if isinstance(start_page, int) and isinstance(end_page, int) and start_page > 0 and end_page > 0:
+            return start_page, end_page
+        if isinstance(start_page, int) and start_page > 0:
+            return start_page, start_page
         return None
+
+    def _condense_highlight_text(self, clip: str, max_len: int = 160) -> str:
+        """压缩 evidence 摘要，供 viewer 展示"""
+        text = re.sub(r"\s+", " ", str(clip or "")).strip()
+        if len(text) <= max_len:
+            return text
+        return text[:max_len].rstrip() + "..."
+
+    def _build_highlight_candidates(self, text: str) -> List[str]:
+        """从 evidence 摘要中构造可搜索的高亮候选词"""
+        normalized = str(text or "").strip()
+        if not normalized:
+            return []
+
+        candidates: List[str] = []
+        for line in re.split(r"[\n\r]+", normalized):
+            stripped = line.strip(" -:：;；,.，。|")
+            if stripped:
+                candidates.append(stripped)
+            for part in re.split(r"[|｜]", stripped):
+                part = part.strip(" -:：;；,.，。")
+                if part:
+                    candidates.append(part)
+
+        for token in re.split(r"[\s,，。;；:：/\\()（）_-]+", normalized):
+            token = token.strip(" -|")
+            compact = re.sub(r"\s+", "", token)
+            if re.search(r"[\u4e00-\u9fff]", compact):
+                if len(compact) >= 4:
+                    candidates.append(compact)
+                    candidates.extend(self._build_chinese_fragment_candidates(compact))
+            elif len(compact) >= 6:
+                candidates.append(compact)
+
+        deduped: List[str] = []
+        seen = set()
+        for candidate in sorted(candidates, key=len, reverse=True):
+            compact = re.sub(r"\s+", "", candidate)
+            if len(compact) < 4:
+                continue
+            key = compact[:120]
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate[:120])
+            if len(deduped) >= 12:
+                break
+        return deduped
+
+    def _build_chinese_fragment_candidates(self, text: str) -> List[str]:
+        """为长中文串补充可搜索片段，适配 PDF 断行场景"""
+        compact = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", str(text or ""))
+        if len(compact) < 8:
+            return []
+        fragments: List[str] = []
+        for window in (12, 10, 8, 6):
+            if len(compact) < window:
+                continue
+            fragments.append(compact[:window])
+            fragments.append(compact[-window:])
+            for start in range(0, len(compact) - window + 1, max(1, window // 2)):
+                fragments.append(compact[start:start + window])
+        return fragments[:24]
+    
+    def _is_same_proposal_family(self, left: str, right: str) -> bool:
+        """判断两个路径是否指向同一项目的申报书不同格式"""
+        left_path = Path(str(left or ""))
+        right_path = Path(str(right or ""))
+        if not left_path.name or not right_path.name:
+            return False
+        if left_path.parent != right_path.parent:
+            return False
+        return left_path.stem == right_path.stem
 
     def _resolve_preview_anchor(self, preview_asset: Any, clip: str) -> str:
         """根据证据摘要在 docx 预览块中寻找最接近的锚点"""
@@ -2037,6 +3393,252 @@ class BatchReviewAgent:
                 best_score = score
                 best_anchor = anchor_id
         return best_anchor if best_score >= 6 else ""
+
+    def _build_proposal_rule_clip(
+        self,
+        rule_item: str,
+        evidence: Any,
+        proposal_excerpt: str,
+        project_info_updates: Dict[str, Any],
+        fallback_message: str,
+    ) -> str:
+        """为申报书类规则挑选更接近原文的定位片段"""
+        formatted = self._format_evidence_clip(evidence, fallback_message)
+        if not isinstance(evidence, dict):
+            return formatted
+
+        if rule_item == "registered_date_limit":
+            registered_date = str(evidence.get("registered_date", "")).strip()
+            if registered_date:
+                return f"注册时间 | {registered_date}"
+            return self._extract_keyword_snippet(proposal_excerpt, "注册时间") or formatted
+
+        if rule_item == "project_leader_age_check":
+            birth_date = str(evidence.get("project_leader_birth_date", "")).strip()
+            if birth_date:
+                return self._compact_date_token(birth_date) or birth_date
+            return self._extract_keyword_snippet(proposal_excerpt, "出生") or self._extract_keyword_snippet(proposal_excerpt, "负责人") or formatted
+
+        if rule_item == "funding_ratio_check":
+            matched_line = self._find_budget_line_for_ratio(evidence, project_info_updates)
+            if matched_line:
+                return matched_line
+            return formatted
+
+        if rule_item == "performance_metric_count_check":
+            metric_line = self._find_first_performance_metric_line(evidence)
+            if metric_line:
+                return metric_line
+            return self._extract_keyword_snippet(proposal_excerpt, "绩效指标") or formatted
+
+        if rule_item == "budget_forbidden_expense_check":
+            budget_anchor = self._find_budget_section_anchor(project_info_updates)
+            if budget_anchor:
+                return budget_anchor
+            forbidden_line = self._find_first_forbidden_budget_line(evidence)
+            if forbidden_line:
+                return forbidden_line
+            return self._extract_keyword_snippet(proposal_excerpt, "预算") or formatted
+
+        if rule_item == "cooperation_region_check":
+            region_line = self._find_cooperation_region_line(evidence)
+            if region_line:
+                return region_line
+            return self._extract_keyword_snippet(proposal_excerpt, "合作单位") or formatted
+
+        if rule_item == "applicant_qualification_check":
+            unit = str(evidence.get("applicant_unit", "")).strip()
+            region = str(evidence.get("applicant_region", "")).strip()
+            if unit and region:
+                return f"{unit} {region}"
+            return formatted
+
+        return formatted
+
+    def _find_budget_line_for_ratio(self, evidence: Dict[str, Any], project_info_updates: Dict[str, Any]) -> str:
+        """在预算文本中定位财政/自筹资金比例对应原文"""
+        budget_lines = project_info_updates.get("budget_line_items", [])
+        if not isinstance(budget_lines, list):
+            return ""
+        fiscal_funding = evidence.get("fiscal_funding")
+        self_funding = evidence.get("self_funding")
+        fiscal_tokens = self._build_number_tokens(fiscal_funding)
+        self_tokens = self._build_number_tokens(self_funding)
+        for raw_line in budget_lines:
+            line = str(raw_line or "").strip()
+            if not line:
+                continue
+            if any(token in line for token in ["专项经费", "财政资金"]) and any(token in line for token in ["自筹经费", "自筹资金"]):
+                if (not fiscal_tokens or any(token in line for token in fiscal_tokens)) and (not self_tokens or any(token in line for token in self_tokens)):
+                    return line
+        return ""
+
+    def _find_first_performance_metric_line(self, evidence: Dict[str, Any]) -> str:
+        """定位绩效指标原文行"""
+        rows = evidence.get("performance_metric_rows", [])
+        if not isinstance(rows, list):
+            return ""
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            raw_row = item.get("raw_row")
+            if isinstance(raw_row, list):
+                text = " | ".join(str(value).strip() for value in raw_row if str(value).strip())
+                if text:
+                    return text
+            metric_name = str(item.get("metric_name", "")).strip()
+            if metric_name:
+                return metric_name
+        return ""
+
+    def _find_first_forbidden_budget_line(self, evidence: Dict[str, Any]) -> str:
+        """定位预算禁列项命中的原文行"""
+        forbidden_hits = evidence.get("forbidden_hits", [])
+        if not isinstance(forbidden_hits, list):
+            return ""
+        for item in forbidden_hits:
+            if not isinstance(item, dict):
+                continue
+            line = str(item.get("line", "")).strip()
+            if line:
+                return line
+        return ""
+
+    def _find_budget_section_anchor(self, project_info_updates: Dict[str, Any]) -> str:
+        """在预算区选择一个稳定可命中的锚点"""
+        budget_lines = project_info_updates.get("budget_line_items", [])
+        if not isinstance(budget_lines, list):
+            return ""
+        preferred_keywords = ["项目预算基本测算说明", "第五部分 项目预算表", "经费来源：", "序号 | 预算科目名称 | 金额"]
+        for keyword in preferred_keywords:
+            for raw_line in budget_lines:
+                line = str(raw_line or "").strip()
+                if line and keyword in line:
+                    return line
+        return ""
+
+    def _find_cooperation_region_line(self, evidence: Dict[str, Any]) -> str:
+        """定位合作单位地区原文行"""
+        unmatched = evidence.get("unmatched_units", [])
+        if isinstance(unmatched, list):
+            for item in unmatched:
+                if not isinstance(item, dict):
+                    continue
+                unit = str(item.get("unit", "")).strip()
+                region = str(item.get("region_text", "")).strip()
+                if unit and region:
+                    return f"{unit} | {region}"
+                if unit:
+                    return unit
+        details = evidence.get("cooperation_region_details", [])
+        if isinstance(details, list):
+            for item in details:
+                if not isinstance(item, dict):
+                    continue
+                unit = str(item.get("unit", "")).strip()
+                region = str(item.get("region", "")).strip()
+                if unit and region:
+                    return f"{unit} | {region}"
+        return ""
+
+    def _build_number_tokens(self, value: Any) -> List[str]:
+        """把数值转换成常见文本写法，便于回查原文"""
+        if not isinstance(value, (int, float)):
+            return []
+        normalized = float(value)
+        tokens = {
+            str(int(normalized)) if normalized.is_integer() else "",
+            f"{normalized:.0f}" if normalized.is_integer() else "",
+            f"{normalized:.1f}",
+            f"{normalized:.2f}",
+        }
+        return [token for token in tokens if token]
+
+    def _compact_date_token(self, value: str) -> str:
+        """把日期压缩成 19820516 形式，便于命中身份证号"""
+        digits = re.sub(r"\D+", "", str(value or ""))
+        if len(digits) >= 8:
+            return digits[:8]
+        return digits
+
+    def _estimate_page_from_anchor(
+        self,
+        preview_asset: Any,
+        anchor_id: str,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+    ) -> int | None:
+        """把 docx/html 预览锚点近似换算成原文件页码"""
+        if not isinstance(preview_asset, dict) or not anchor_id:
+            return None
+        blocks = preview_asset.get("blocks", [])
+        if not isinstance(blocks, list) or not blocks:
+            return None
+
+        matched_block: Dict[str, Any] | None = None
+        total_chars = 0
+        for item in blocks:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "")
+            total_chars += max(1, len(text))
+            if str(item.get("anchor_id") or "") == anchor_id:
+                matched_block = item
+        if not matched_block or total_chars <= 0:
+            return None
+
+        proposal_page_count = self._resolve_source_page_count(packet_assets, source_file)
+        if not proposal_page_count or proposal_page_count <= 1:
+            return 1 if proposal_page_count == 1 else None
+
+        char_end = matched_block.get("char_end")
+        if not isinstance(char_end, int) or char_end <= 0:
+            index = self._extract_anchor_index(anchor_id)
+            block_count = preview_asset.get("block_count")
+            if not isinstance(block_count, int) or block_count <= 0 or index <= 0:
+                return None
+            ratio = min(1.0, max(0.0, index / block_count))
+        else:
+            ratio = min(1.0, max(0.0, char_end / total_chars))
+
+        estimated_page = int(ratio * proposal_page_count)
+        if ratio > 0 and estimated_page < proposal_page_count:
+            estimated_page += 1
+        return min(max(estimated_page, 1), proposal_page_count)
+
+    def _resolve_source_page_count(self, packet_assets: Dict[str, Any], source_file: str) -> int | None:
+        """读取 source_file 在 packet 中的页数"""
+        if not isinstance(packet_assets, dict):
+            return None
+        page_map = packet_assets.get("page_map", [])
+        if not isinstance(page_map, list):
+            return None
+        exact_match: Dict[str, Any] | None = None
+        proposal_match: Dict[str, Any] | None = None
+        for item in page_map:
+            if not isinstance(item, dict):
+                continue
+            item_source = str(item.get("source_file") or "")
+            if item_source == str(source_file or ""):
+                exact_match = item
+                break
+            if self._is_same_proposal_family(source_file, item_source) and str(item.get("source_kind") or "") == "proposal":
+                proposal_match = proposal_match or item
+        matched = exact_match or proposal_match
+        if not isinstance(matched, dict):
+            return None
+        page_count = matched.get("page_count")
+        return page_count if isinstance(page_count, int) and page_count > 0 else None
+
+    def _extract_anchor_index(self, anchor_id: str) -> int:
+        """提取形如 p-17 的锚点序号"""
+        match = re.search(r"(\d+)$", str(anchor_id or "").strip())
+        if not match:
+            return 0
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return 0
 
     def _normalize_preview_match_text(self, value: Any) -> str:
         """归一化预览匹配文本"""
@@ -2516,7 +4118,7 @@ class BatchReviewAgent:
                     lines.append(f"{label}: {value}")
             if lines:
                 return "\n".join(lines[:8])
-            return fallback_message or "证据字段较复杂，详见 result.json"
+            return fallback_message or "证据字段较复杂，需查看原始审查结果"
         if isinstance(evidence, list):
             if not evidence:
                 return fallback_message or "无附加证据列表"
