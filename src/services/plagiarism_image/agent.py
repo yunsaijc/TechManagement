@@ -109,6 +109,7 @@ class ImagePlagiarismAgent:
         debug_output_dir: Path | None = None,
         debug_output_html: Path | None = None,
         max_pair_checks: int = 120000,
+        document_labels: Dict[str, str] | None = None,
     ) -> Dict:
         assets_by_doc: Dict[str, List[ImageAsset]] = {}
         warnings: List[Dict] = []
@@ -206,14 +207,20 @@ class ImagePlagiarismAgent:
             out_dir = debug_output_dir or IMAGE_PLAGIARISM_DEBUG_ROOT
             output_html = debug_output_html or (out_dir / "plagiarism_image_report.html")
             image_bytes_map: Dict[str, bytes] = {}
+            primary_documents: Dict[str, Tuple[str, bytes]] = {}
             for assets in assets_by_doc.values():
                 for asset in assets:
                     image_bytes_map[asset.image_id] = asset.image_bytes
+            for doc_id, file_name, file_data in files:
+                primary_documents[doc_id] = (file_name, file_data)
             report_path = self.report_builder.build(
                 title="图片查重报告",
                 matches=final_matches,
                 output_html_path=output_html,
                 image_bytes_map=image_bytes_map,
+                primary_documents=primary_documents,
+                document_labels=document_labels
+                or {doc_id: Path(file_name).stem for doc_id, file_name, _ in files},
             )
 
         return {
@@ -240,6 +247,7 @@ class ImagePlagiarismAgent:
         max_pair_checks: int = 120000,
         verify_workers: int = 0,
         verify_backend: str = "auto",
+        document_labels: Dict[str, str] | None = None,
     ) -> Dict:
         assets_by_doc: Dict[str, List[ImageAsset]] = {}
         warnings: List[Dict] = []
@@ -408,9 +416,12 @@ class ImagePlagiarismAgent:
             out_dir = debug_output_dir or IMAGE_PLAGIARISM_DEBUG_ROOT
             output_html = debug_output_html or (out_dir / "plagiarism_image_report.html")
             image_bytes_map: Dict[str, bytes] = {}
+            primary_documents: Dict[str, Tuple[str, bytes]] = {}
             for assets in assets_by_doc.values():
                 for asset in assets:
                     image_bytes_map[asset.image_id] = asset.image_bytes
+            for doc_id, file_name, file_data in files:
+                primary_documents[doc_id] = (file_name, file_data)
             for item in final_matches:
                 if item.source_image_id in image_bytes_map:
                     continue
@@ -422,6 +433,9 @@ class ImagePlagiarismAgent:
                 matches=final_matches,
                 output_html_path=output_html,
                 image_bytes_map=image_bytes_map,
+                primary_documents=primary_documents,
+                document_labels=document_labels
+                or {doc_id: Path(file_name).stem for doc_id, file_name, _ in files},
             )
 
         return {
