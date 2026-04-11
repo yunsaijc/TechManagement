@@ -159,6 +159,7 @@ class BatchReviewResult(BaseModel):
     project_count: int = Field(..., description="项目数量")
     project_results: List[ProjectReviewResult] = Field(default_factory=list, description="项目审查结果")
     debug_dir: str = Field(default="", description="调试输出目录")
+    report_url: str = Field(default="", description="报告访问地址")
     summary: str = Field(..., description="批次审查总结")
     suggestions: List[str] = Field(default_factory=list, description="建议")
     processed_at: datetime = Field(default_factory=datetime.now)

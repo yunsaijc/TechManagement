@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # 加载 .env 配置（从项目根目录）
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
@@ -23,6 +24,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
+DEBUG_REVIEW_DIR = Path(__file__).parent.parent.parent / "debug_review"
+DEBUG_REVIEW_DIR.mkdir(parents=True, exist_ok=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,6 +43,7 @@ app.include_router(plagiarism.router, prefix="/api/v1/plagiarism", tags=["查重
 app.include_router(plagiarism_image.router, prefix="/api/v1/plagiarism/image", tags=["图片查重"])
 app.include_router(perfcheck.router, prefix="/api/v1/perfcheck", tags=["绩效核验"])
 app.include_router(evaluation.router, prefix="/api/v1/evaluation", tags=["正文评审"])
+app.mount("/debug-review", StaticFiles(directory=DEBUG_REVIEW_DIR), name="debug-review")
 
 
 @app.get("/health")

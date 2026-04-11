@@ -255,6 +255,7 @@ async def check_image_plagiarism_by_guide_codes(
             max_pair_checks=max_pair_checks,
             verify_workers=verify_workers,
             verify_backend=verify_backend,
+            document_labels={doc_id: (meta.get("xmmc") or doc_id) for doc_id, meta in project_meta.items()},
         )
 
     enriched = []
