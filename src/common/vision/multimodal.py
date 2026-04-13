@@ -32,10 +32,26 @@ class MultimodalLLM:
             分析结果
         """
         import base64
+        from PIL import Image
+        import io
+
+        # 压缩图片避免超过 LLM 10MB 限制
+        try:
+            img = Image.open(io.BytesIO(image_data))
+            max_dim = 2048
+            if max(img.size) > max_dim:
+                ratio = max_dim / max(img.size)
+                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=85, optimize=True)
+            image_data = buf.getvalue()
+        except Exception:
+            pass
 
         # 转换为 base64
         b64_image = base64.b64encode(image_data).decode("utf-8")
-        image_url = f"data:image/png;base64,{b64_image}"
+        image_url = f"data:image/jpeg;base64,{b64_image}"
 
         # 构建多模态消息
         message = HumanMessage(

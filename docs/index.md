@@ -43,14 +43,23 @@ docs/
 │   ├── 04-models.md                # 数据模型
 │   └── 05-api.md                  # API 接口文档
 │
+├── 40-evaluation/                   # 📝 正文评审服务
+│   ├── 01-overview.md              # 服务概述
+│   ├── 02-architecture.md          # 架构设计
+│   ├── 03-dimensions.md            # 评审维度详解
+│   ├── 04-checkers.md              # 检查器设计
+│   ├── 05-scorer.md                # 评分器设计
+│   ├── 06-agent.md                 # Agent 设计
+│   ├── 07-parsers.md               # 正文解析器设计
+│   ├── 08-api.md                   # API 接口文档
+│   └── 09-testing.md               # 测试文档
+│
 ├── 50-perfcheck/                    # 📈 绩效核验服务
 │   ├── 01-overview.md              # 服务概述
 │   ├── 02-rules.md                 # 规则设计
 │   ├── 03-agent.md                 # Agent 设计
 │   ├── 04-document-parser.md       # 文档解析方案
 │   └── 05-api.md                  # API 接口文档
-│
-
 
 ```
 
@@ -84,14 +93,23 @@ docs/
 │   ├── 04-models.md
 │   └── 05-api.md
 │
+├── 40-evaluation/       ← 正文评审服务（依赖 common）
+│   ├── 01-overview.md
+│   ├── 02-architecture.md
+│   ├── 03-dimensions.md
+│   ├── 04-checkers.md
+│   ├── 05-scorer.md
+│   ├── 06-agent.md
+│   ├── 07-parsers.md
+│   ├── 08-api.md
+│   └── 09-testing.md
+│
 ├── 50-perfcheck/        ← 绩效核验服务（依赖 common）
 │   ├── 01-overview.md
 │   ├── 02-rules.md
 │   ├── 03-agent.md
 │   ├── 04-document-parser.md
 │   └── 05-api.md
-│
-
 ```
 
 ## 服务依赖关系
@@ -126,4 +144,5 @@ docs/
 - [通用组件概述 →](10-common/01-overview.md)
 - [形式审查服务 →](20-review/01-overview.md)
 - [智能分组与专家匹配服务 →](30-grouping/01-overview.md)
+- [正文评审服务 →](40-evaluation/01-overview.md)
 - [绩效核验服务 →](50-perfcheck/01-overview.md)

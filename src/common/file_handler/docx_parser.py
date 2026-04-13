@@ -4,11 +4,34 @@
 """
 
 from typing import Any, Iterable, List
-import io
 import re
+from typing import List, Generator, Union
+import io
+import zipfile
+
+from docx import Document
+from docx.document import Document as DocDocument
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.table import Table
+from docx.text.paragraph import Paragraph
+from lxml import etree
 
 from src.common.file_handler.base import BaseFileParser, ParseResult
 from src.common.models.document import BoundingBox, DocumentContent, TextBlock
+
+
+def iter_block_items(parent: DocDocument) -> Generator[Union[Paragraph, Table], None, None]:
+    """按文档顺序遍历段落和表格（保持原始顺序）
+    
+    使用底层 XML 遍历，确保段落和表格按 DOCX 中的实际顺序输出。
+    """
+    parent_elm = parent.element.body
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, parent)
 
 
 class DOCXParser(BaseFileParser):
@@ -375,6 +398,8 @@ class DOCXParser(BaseFileParser):
         metadata = {
             "title": doc.core_properties.title or "",
             "author": doc.core_properties.author or "",
+            "total_blocks": len(text_blocks),
+            "tables": table_index,
         }
 
         return ParseResult(
@@ -392,7 +417,8 @@ class DOCXParser(BaseFileParser):
 
         doc = docx.Document(io.BytesIO(file_data))
         images: list[bytes] = []
-
+        
+        # 遍历所有段落中的内联图片
         for paragraph in doc.paragraphs:
             for run in paragraph.runs:
                 for inline_shape in run._element.xpath(".//w:drawing/wp:inline"):

@@ -17,13 +17,20 @@ from src.common.vision import MultimodalLLM
 
 logger = logging.getLogger(__name__)
 
+_BOUNDARY_FALLBACK_FIELDS = {"工作单位", "完成单位"}
+
 
 class FieldExtractor:
     """字段提取器 - 先定位 bbox 再 OCR 转写"""
 
     def __init__(self):
-        self._paddle_ocr = None
         self._llm_client = None
+
+    @property
+    def ocr(self):
+        """获取全局 OCR 实例"""
+        from src.services.review.extractor import get_global_ocr
+        return get_global_ocr()
 
     async def extract(
         self,
@@ -200,11 +207,8 @@ class FieldExtractor:
         import logging as _logging
         _logging.getLogger("ppocr").setLevel(_logging.ERROR)
 
-        from paddleocr import PaddleOCR
-
-        if self._paddle_ocr is None:
-            # 使用默认参数
-            self._paddle_ocr = PaddleOCR(use_angle_cls=True, lang='ch')
+        # 使用全局 OCR 实例
+        paddle_ocr = self.ocr
 
         fields = {"__fields": field_names}
         llm = self._get_llm()
@@ -271,7 +275,7 @@ class FieldExtractor:
             if use_ocr:
                 try:
                     cropped_np = np.array(cropped_img)
-                    ocr_result = self._paddle_ocr.ocr(cropped_np)
+                    ocr_result = paddle_ocr.ocr(cropped_np)
                     
                     # 兼容 PaddleOCR 不同版本的返回格式
                     if ocr_result and ocr_result[0]:
@@ -282,7 +286,8 @@ class FieldExtractor:
                         if isinstance(first_item, dict):
                             rec_texts = first_item.get("rec_texts") or first_item.get("text") or []
                             if isinstance(rec_texts, list):
-                                trans = rec_texts[0] if rec_texts else ""
+                                # 拼接所有文本行（处理 OCR 合并到一个 box 但包含多行文字的情况）
+                                trans = "".join(rec_texts) if rec_texts else ""
                             else:
                                 trans = str(rec_texts).strip()
                         # 旧格式常见: [[box], ('text', score)]
@@ -294,13 +299,27 @@ class FieldExtractor:
                         ):
                             trans = str(first_item[1][0]).strip()
                         
-                        logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:20]}...")
+                        logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:30]}...")
                 except Exception as e:
                     logger.warning(f"[FieldExtractor] OCR 识别失败: {e}")
 
             # OCR 失败则用 LLM
             if not trans.strip():
                 trans = await self._llm_transcribe(multi_llm, cropped_img, i, len(field_names), fname)
+
+            if fname in _BOUNDARY_FALLBACK_FIELDS:
+                trans = await self._retry_if_boundary_truncated(
+                    img=img,
+                    img_w=img_w,
+                    img_h=img_h,
+                    fname=fname,
+                    bbox=(x1, y1, x2, y2),
+                    current_text=trans.strip(),
+                    current_img=cropped_img,
+                    multi_llm=multi_llm,
+                    index=i,
+                    total=len(field_names),
+                )
 
             fields[fname] = trans.strip()
 
@@ -321,19 +340,131 @@ class FieldExtractor:
 直接返回文字，不要其他内容。"""
 
         try:
-            # 转 base64
+            # 转 base64（压缩图片避免超过 LLM 10MB 限制）
             buf = io.BytesIO()
-            cropped_img.save(buf, format="PNG")
+            cropped_img.save(buf, format="JPEG", quality=85, optimize=True)
             img_base64 = base64.b64encode(buf.getvalue()).decode()
 
             result = await multi_llm.generate([
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}},
                 {"type": "text", "text": prompt}
             ])
             return result.content if hasattr(result, 'content') else str(result)
         except Exception as e:
             logger.warning(f"[FieldExtractor] LLM 转写失败: {e}")
             return ""
+
+    async def _retry_if_boundary_truncated(
+        self,
+        img: Image.Image,
+        img_w: int,
+        img_h: int,
+        fname: str,
+        bbox: tuple,
+        current_text: str,
+        current_img: Image.Image,
+        multi_llm: MultimodalLLM,
+        index: int,
+        total: int,
+    ) -> str:
+        """对边界贴边的长字段做最小兜底重试。"""
+        directions = self._detect_boundary_touches(current_img)
+        if not any(directions.values()):
+            return current_text
+
+        candidate_boxes = [self._expand_bbox(bbox, directions)]
+        best_text = current_text
+        best_score = self._score_field_candidate(current_text, directions)
+
+        for candidate_bbox in candidate_boxes:
+            candidate_img = self._crop_with_bbox(img, img_w, img_h, candidate_bbox)
+            if candidate_img is None:
+                continue
+            candidate_text = await self._llm_transcribe(multi_llm, candidate_img, index, total, fname)
+            candidate_score = self._score_field_candidate(
+                candidate_text.strip(),
+                self._detect_boundary_touches(candidate_img),
+            )
+            if candidate_score > best_score:
+                best_text = candidate_text.strip()
+                best_score = candidate_score
+
+        return best_text
+
+    def _detect_boundary_touches(self, cropped_img: Image.Image) -> Dict[str, bool]:
+        """检测文字是否贴近裁剪图四边。"""
+        gray = cropped_img.convert("L")
+        arr = np.array(gray)
+        if arr.size == 0:
+            return {"left": False, "right": False, "top": False, "bottom": False}
+
+        foreground = arr < 245
+        h, w = foreground.shape
+        band_w = max(1, int(w * 0.05))
+        band_h = max(1, int(h * 0.05))
+
+        def dense(region: np.ndarray) -> bool:
+            if region.size == 0:
+                return False
+            return float(region.mean()) >= 0.02
+
+        return {
+            "left": dense(foreground[:, :band_w]),
+            "right": dense(foreground[:, w - band_w:]),
+            "top": dense(foreground[:band_h, :]),
+            "bottom": dense(foreground[h - band_h:, :]),
+        }
+
+    def _expand_bbox(self, bbox: tuple, directions: Dict[str, bool]) -> tuple:
+        """按贴边方向最小扩展 bbox。"""
+        x1, y1, x2, y2 = bbox
+        width = x2 - x1
+        height = y2 - y1
+
+        if directions.get("right"):
+            x2 = min(1.0, x2 + width * 0.3)
+        if directions.get("bottom"):
+            y2 = min(1.0, y2 + height * 0.5)
+        if directions.get("left"):
+            x1 = max(0.0, x1 - width * 0.12)
+        if directions.get("top"):
+            y1 = max(0.0, y1 - height * 0.12)
+
+        return (x1, y1, x2, y2)
+
+    def _crop_with_bbox(
+        self,
+        img: Image.Image,
+        img_w: int,
+        img_h: int,
+        bbox: tuple,
+    ) -> Optional[Image.Image]:
+        """按 bbox 裁剪并复用现有 padding 逻辑。"""
+        x1, y1, x2, y2 = bbox
+        if x2 - x1 < 0.005 or y2 - y1 < 0.005:
+            return None
+
+        left = int(x1 * img_w)
+        top = int(y1 * img_h)
+        right = int(x2 * img_w)
+        bottom = int(y2 * img_h)
+        if right - left < 5 or bottom - top < 5:
+            return None
+
+        cropped_img = img.crop((left, top, right, bottom))
+        from PIL import ImageOps
+        padding = int(min(cropped_img.width, cropped_img.height) * 0.15)
+        return ImageOps.expand(cropped_img, border=padding, fill='white')
+
+    def _score_field_candidate(self, text: str, touches: Dict[str, bool]) -> float:
+        """候选文本打分：优先不贴边，其次更完整。"""
+        text = (text or "").strip()
+        if not text:
+            return -1.0
+
+        score = float(len(text))
+        score -= 5.0 * sum(1 for touched in touches.values() if touched)
+        return score
 
     def _get_llm(self):
         """获取 LLM 客户端（temperature=0.5.5 稳定输出）"""

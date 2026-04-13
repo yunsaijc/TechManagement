@@ -1,5 +1,7 @@
 """智能分组与专家匹配 API 路由"""
-from typing import Dict, Optional
+import json
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -18,11 +20,59 @@ from src.common.models.grouping import (
     ProjectGroup,
 )
 from src.services.grouping import get_grouping_service
+from src.services.grouping.storage.project_repo import ProjectRepository
 from src.common.database import get_subject_repo
+from src.common.database.connection import get_project_connection
 
 router = APIRouter()
 
+DEBUG_GROUPING_FILE = Path(__file__).resolve().parents[3] / "debug_grouping" / "grouping_fixed.json"
+DEBUG_GROUPING_FILES = [
+    {
+        "key": "grouping_fixed",
+        "title": "分组方案 A",
+        "path": Path(__file__).resolve().parents[3] / "debug_grouping" / "grouping_fixed.json",
+    },
+    {
+        "key": "grouping_fixed_7e9c46e6622d4ce6854499ae17a2b1d6",
+        "title": "分组方案 B",
+        "path": Path(__file__).resolve().parents[3] / "debug_grouping" / "grouping_fixed_7e9c46e6622d4ce6854499ae17a2b1d6.json",
+    },
+]
+
+# 调试接口：查询项目
+@router.get("/debug/project/{project_id}")
+async def debug_project(project_id: str):
+    """根据ID查询项目原始数据"""
+    try:
+        project = ProjectRepository.get_project_by_id(project_id)
+        if not project:
+            return {"error": "项目不存在"}
+        return {
+            "id": project.id,
+            "xmmc": project.xmmc,
+            "ssxk1": project.ssxk1,
+            "ssxk2": project.ssxk2,
+            "xmjj": project.xmjj[:200] if project.xmjj else None,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 # 调试接口：查询学科
+@router.get("/debug/xkfl")
+async def debug_xkfl():
+    """查询学科分类表 sys_xkfl"""
+    try:
+        conn = get_project_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT code, name FROM sys_xkfl WHERE code LIKE '46%' ORDER BY code")
+                rows = cursor.fetchall()
+                return {"codes": [(r[0], r[1]) for r in rows]}
+        finally:
+            conn.close()
+    except Exception as e:
+        return {"error": str(e)}
 @router.get("/debug/subjects")
 async def debug_subjects():
     """查询学科表"""
@@ -51,6 +101,59 @@ async def debug_subjects_all():
         return {"count": len(subjects), "prefixes": dict(groups)}
     except Exception as e:
         return {"error": str(e)}
+
+
+@router.get("/debug/fixed-result", response_model=ApiResponse[Dict[str, Any]])
+async def debug_fixed_result() -> ApiResponse[Dict[str, Any]]:
+    """读取本地调试分组结果，供前端直接展示。"""
+    if not DEBUG_GROUPING_FILE.exists():
+        raise HTTPException(status_code=404, detail=f"调试结果不存在: {DEBUG_GROUPING_FILE}")
+
+    try:
+        with DEBUG_GROUPING_FILE.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取调试结果失败: {str(e)}")
+
+    return ApiResponse(
+        status=ResponseStatus.SUCCESS,
+        data=payload,
+        message="调试分组结果",
+        code=200,
+    )
+
+
+@router.get("/debug/fixed-results", response_model=ApiResponse[Dict[str, Any]])
+async def debug_fixed_results() -> ApiResponse[Dict[str, Any]]:
+    """读取两份本地调试分组结果，供前端并列展示。"""
+    datasets = []
+    for item in DEBUG_GROUPING_FILES:
+        path = item["path"]
+        if not path.exists():
+            continue
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"读取调试结果失败: {str(e)}")
+        datasets.append(
+            {
+                "key": item["key"],
+                "title": item["title"],
+                "filename": path.name,
+                "payload": payload,
+            }
+        )
+
+    if not datasets:
+        raise HTTPException(status_code=404, detail="未找到可展示的调试分组结果")
+
+    return ApiResponse(
+        status=ResponseStatus.SUCCESS,
+        data={"datasets": datasets},
+        message="调试分组结果集合",
+        code=200,
+    )
 
 # 存储分组和匹配结果（生产环境应使用数据库）
 _grouping_results: Dict[str, GroupingResult] = {}
@@ -167,7 +270,6 @@ async def full_grouping(request: FullGroupingRequest) -> ApiResponse[FullGroupin
                 group_count=result.statistics.total_groups,
                 balance_score=result.statistics.balance_score,
                 avg_projects_per_group=result.statistics.total_projects / max(1, result.statistics.total_groups),
-                avg_quality_per_group=result.statistics.avg_match_score
             )
         )
         

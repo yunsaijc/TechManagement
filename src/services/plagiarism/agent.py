@@ -1,191 +1,130 @@
 """查重服务 Agent
 
 基于句子级比对 + 位置追溯的查重方案。
+对齐业界最佳实践（知网、Turnitin）。
+
+核心流程:
+1. 文本提取 (PDF/DOCX → 结构化文本)
+2. 语义分句 (按标点分句，而非按行)
+3. 模板过滤 (白名单 + 标题检测 + 短句过滤)
+4. N-gram 切分 (滑动窗口)
+5. 指纹索引 + 连续匹配检测
+6. 结果聚合 (位置追溯、片段合并)
 """
+import json
+import re
 import time
-from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 from src.common.file_handler import get_parser
-
-
-@dataclass
-class DuplicateSegment:
-    """重复片段"""
-    text: str
-    line_number: int
-    source_docs: List[str] = field(default_factory=list)
-    source_lines: List[int] = field(default_factory=list)
-
-
-@dataclass
-class DocumentSimilarity:
-    """文档相似度"""
-    doc_a: str
-    doc_b: str
-    similarity: float
-    type: str  # "high", "medium", "low"
-    total_chars: int
-    duplicate_chars: int
-    duplicate_segments: List[DuplicateSegment] = field(default_factory=list)
-
-
-@dataclass
-class PlagiarismResult:
-    """查重结果"""
-    id: str
-    total_pairs: int
-    high_similarity: List[dict]
-    medium_similarity: List[dict]
-    low_similarity: List[dict]
-    processing_time: float
-
-
-class TextComparator:
-    """文本比对器 - 句子级精确匹配"""
-    
-    def __init__(
-        self,
-        threshold_high: float = 0.8,
-        threshold_medium: float = 0.5,
-    ):
-        self.threshold_high = threshold_high
-        self.threshold_medium = threshold_medium
-    
-    def compare(self, texts: Dict[str, str]) -> List[DocumentSimilarity]:
-        """执行句子级比对
-        
-        步骤:
-        1. 句子切分: 每个文档按换行切分
-        2. 构建句子库: {句子: {doc_id: [line_numbers]}}
-        3. 查找重复: 跨文档的相同句子
-        4. 计算相似度: 重复字数 / 总字数
-        """
-        # Step 1: 句子切分
-        sentence_map = {}  # {doc_id: [(line_no, text), ...]}
-        for doc_id, text in texts.items():
-            sentences = self._split_sentences(text)
-            sentence_map[doc_id] = sentences
-        
-        # Step 2: 构建句子库
-        # {text: {doc_id: [line_numbers]}}
-        text_sources: Dict[str, Dict[str, List[int]]] = defaultdict(lambda: defaultdict(list))
-        for doc_id, sentences in sentence_map.items():
-            for line_no, text in sentences:
-                text_sources[text][doc_id].append(line_no)
-        
-        # Step 3: 查找重复
-        results = []
-        doc_ids = list(texts.keys())
-        
-        for i, doc_a in enumerate(doc_ids):
-            for doc_b in doc_ids[i+1:]:
-                dup_segments = self._find_duplicates(
-                    sentence_map[doc_a],
-                    sentence_map[doc_b],
-                    text_sources,
-                    doc_b
-                )
-                
-                # 计算相似度
-                total_chars = len(texts[doc_a])
-                dup_chars = sum(len(seg.text) for seg in dup_segments)
-                similarity = dup_chars / total_chars if total_chars > 0 else 0
-                
-                results.append(DocumentSimilarity(
-                    doc_a=doc_a,
-                    doc_b=doc_b,
-                    similarity=similarity,
-                    type=self._classify(similarity),
-                    total_chars=total_chars,
-                    duplicate_chars=dup_chars,
-                    duplicate_segments=dup_segments,
-                ))
-        
-        return results
-    
-    def _split_sentences(self, text: str) -> List[Tuple[int, str]]:
-        """按换行符切分成句子，返回 (行号, 文本)"""
-        lines = text.split('\n')
-        return [(i+1, line.strip()) for i, line in enumerate(lines) if line.strip()]
-    
-    def _find_duplicates(
-        self,
-        sentences_a: List[Tuple[int, str]],
-        sentences_b: List[Tuple[int, str]],
-        text_sources: Dict,
-        doc_b: str,
-    ) -> List[DuplicateSegment]:
-        """查找两个文档间的重复句子"""
-        duplicates = []
-        texts_b = {text: line_no for line_no, text in sentences_b}
-        
-        for line_no_a, text_a in sentences_a:
-            if text_a in texts_b:
-                line_no_b = texts_b[text_a]
-                duplicates.append(DuplicateSegment(
-                    text=text_a,
-                    line_number=line_no_a,
-                    source_docs=[doc_b],
-                    source_lines=[line_no_b],
-                ))
-        
-        return duplicates
-    
-    def _classify(self, score: float) -> str:
-        """根据相似度分类"""
-        if score >= self.threshold_high:
-            return "high"
-        elif score >= self.threshold_medium:
-            return "medium"
-        return "low"
+from src.services.plagiarism.aggregator import ResultAggregator, PlagiarismResult
+from src.services.plagiarism.engine import ComparisonEngine
+from src.services.plagiarism.report_builder import PlagiarismHtmlReportBuilder
+from src.services.plagiarism.mammoth_report_builder import MammothPlagiarismReportBuilder
+from src.services.plagiarism.section_extractor import SectionExtractor
+from src.services.plagiarism.template_filter import TemplateFilter
+from src.services.plagiarism.template_prefilter import TemplatePreFilter
+from src.services.plagiarism.tokenizer import SentenceTokenizer
 
 
 class PlagiarismAgent:
     """查重 Agent"""
-    
+
     def __init__(
         self,
         threshold: float = 0.5,
         threshold_high: float = 0.8,
         threshold_medium: float = 0.5,
+        section_config: Optional[Dict] = None,
+        debug: bool = False,
+        capture_debug_output: bool = False,
     ):
+        """
+        初始化查重 Agent
+
+        Args:
+            threshold: 基础阈值
+            threshold_high: 高相似度阈值
+            threshold_medium: 中相似度阈值
+            section_config: Section 配置
+            debug: 是否保存 debug 信息
+        """
         self.threshold = threshold
         self.threshold_high = threshold_high
         self.threshold_medium = threshold_medium
-        
-        self.comparator = TextComparator(threshold_high, threshold_medium)
-    
+        self.debug = debug
+        self.capture_debug_output = capture_debug_output
+        self.primary_scope_info = None
+        self.last_debug_output: Optional[Dict] = None
+        self.last_debug_doc_ids: List[str] = []
+        self.last_primary_doc_id: Optional[str] = None
+
+        # 初始化 Section 提取器
+        if section_config and SectionExtractor.validate_config(section_config):
+            self.section_extractor = SectionExtractor(section_config)
+        else:
+            self.section_extractor = None
+
+        # 初始化 Layer 5 组件
+        self.tokenizer = SentenceTokenizer()
+        self.template_filter = TemplateFilter()
+        self.template_prefilter = TemplatePreFilter(template_filter=self.template_filter)
+        self.report_builder = PlagiarismHtmlReportBuilder()
+        self.mammoth_report_builder = MammothPlagiarismReportBuilder()
+        # Winnowing 参数优化：减少碎片化
+        self.comparison_engine = ComparisonEngine(
+            min_continuous_match=5,
+            ngram_size=8,
+            winnowing_window=8,
+            min_match_length=30,
+        )
+        self.result_aggregator = ResultAggregator(section_extractor=self.section_extractor)
+
     async def check(
         self,
-        files: List[tuple[str, bytes]],  # [(doc_id, file_data)]
+        files: List[Tuple[str, bytes]],  # [(doc_id, file_data)]
+        file_paths: Optional[Dict[str, str]] = None,  # {doc_id: file_path} 用于mammoth报告
     ) -> PlagiarismResult:
-        """执行查重
-        
+        """
+        执行查重
+
         Args:
             files: 文件列表 [(id, data), ...]
-            
+            file_paths: 文件路径字典 {doc_id: file_path}，用于生成mammoth格式报告（保留表格等格式）
+
         Returns:
             查重结果
         """
         start_time = time.time()
-        
+        self._file_paths = file_paths or {}
+
         # 1. 提取所有文本
-        texts = {}
-        for doc_id, file_data in files:
+        texts = {}  # {doc_id: full_text}
+        doc_ids = [doc_id for doc_id, _ in files]
+        primary_doc_id = doc_ids[0] if doc_ids else None
+
+        for idx, (doc_id, file_data) in enumerate(files):
             try:
                 # 检测文件类型
                 file_type = self._detect_type_from_bytes(file_data)
                 parser = get_parser(file_type)
                 result = await parser.parse(file_data)
-                text = result.content.to_text()
-                texts[doc_id] = text
-                print(f"[Plagiarism] 提取文本 {doc_id}: {len(text)} chars")
+
+                # 提取全部文本
+                full_text = result.content.to_text()
+                texts[doc_id] = full_text
+
+                print(f"[Plagiarism] 提取文本 {doc_id}: {len(full_text)} chars")
+
+                # Debug: 保存解析结果
+                if self.debug:
+                    self._save_debug(doc_id, result, full_text)
+
             except Exception as e:
                 print(f"[Plagiarism] 提取文本失败 {doc_id}: {e}")
                 texts[doc_id] = ""
-        
+
         if len(texts) < 2:
             return PlagiarismResult(
                 id=f"plagiarism_{int(time.time() * 1000)}",
@@ -195,59 +134,140 @@ class PlagiarismAgent:
                 low_similarity=[],
                 processing_time=time.time() - start_time,
             )
-        
-        # 2. 句子级比对
-        results = self.comparator.compare(texts)
-        print(f"[Plagiarism] 比对完成: {len(results)} 对")
-        for r in results:
-            print(f"  - {r.doc_a} vs {r.doc_b}: similarity={r.similarity:.4f}, type={r.type}")
-        
-        # 3. 过滤并分类
-        high_sim = []
-        medium_sim = []
-        low_sim = []
-        
-        for r in results:
-            print(f"[Plagiarism] 检查: similarity={r.similarity}, threshold={self.threshold}")
-            if r.similarity >= self.threshold:
-                result_dict = {
-                    "doc_a": r.doc_a,
-                    "doc_b": r.doc_b,
-                    "similarity": round(r.similarity, 4),
-                    "type": r.type,
-                    "total_chars": r.total_chars,
-                    "duplicate_chars": r.duplicate_chars,
-                    "duplicate_segments": [
-                        {
-                            "text": seg.text,
-                            "line_number": seg.line_number,
-                            "source_docs": seg.source_docs,
-                            "source_lines": seg.source_lines,
-                        }
-                        for seg in r.duplicate_segments[:10]  # 限制返回数量
-                    ],
+
+        # 2. 预处理：只对主文档进行 section 提取
+        extracted_texts = {}
+
+        for idx, doc_id in enumerate(doc_ids):
+            text = texts[doc_id]
+
+            if idx == 0 and self.section_extractor:
+                # 主文档：仅 primary 执行 section 截取
+                scope_details = self.section_extractor.extract_with_details(text)
+                extracted = scope_details.get("text", "")
+                start_pos = int(scope_details.get("start", -1))
+                end_pos = int(scope_details.get("end", -1))
+                if not extracted:
+                    raise ValueError(
+                        "primary 文档未命中配置的检测区域：请检查 section_config 的 start_pattern/end_pattern"
+                    )
+                self.primary_scope_info = {
+                    "doc_id": doc_id,
+                    "mode": scope_details.get("mode"),
+                    "start": start_pos,
+                    "end": end_pos,
+                    "char_count": len(extracted),
+                    "start_pattern": scope_details.get("start_pattern"),
+                    "end_pattern": scope_details.get("end_pattern"),
+                    "start_match_text": scope_details.get("start_match_text"),
+                    "end_match_text": scope_details.get("end_match_text"),
+                    "matched_sections": scope_details.get("matched_sections", []),
+                    "prefix_context": text[max(0, start_pos - 120):start_pos],
+                    "suffix_context": text[end_pos:min(len(text), end_pos + 120)],
+                    "text_preview": extracted[:1000],
                 }
-                
-                if r.type == "high":
-                    high_sim.append(result_dict)
-                elif r.type == "medium":
-                    medium_sim.append(result_dict)
-                else:
-                    low_sim.append(result_dict)
+                text = extracted
+
+            extracted_texts[doc_id] = text
+            print(f"[Plagiarism] Section提取 {doc_id}: {len(text)} chars")
+
+        # 3. 语义分句（不过滤，保持原始位置对齐）
+        sentences_map = {}  # {doc_id: [Sentence]}
+
+        for idx, doc_id in enumerate(doc_ids):
+            text = extracted_texts[doc_id]
+
+            # 分句（不过滤，用于比对）
+            sentences = self.tokenizer.tokenize(text)
+            print(f"[Plagiarism] 分句 {doc_id}: {len(sentences)} 句子")
+
+            sentences_map[doc_id] = sentences
+
+        # 4. 构建用于比对与坐标映射的文本
+        # 统一使用 section 提取后的原始文本，确保 start/end 与文本坐标一致。
+        processed_texts = dict(extracted_texts)
+
+        # 5. 前置模板过滤 - 标记应排除的位置区间
+        excluded_ranges = {}
+        for doc_id, sentences in sentences_map.items():
+            ranges = self.template_prefilter.mark_excluded_ranges(sentences)
+            if ranges:
+                excluded_ranges[doc_id] = ranges
+                print(f"[Plagiarism] 前置过滤排除 {len(ranges)} 个区间 for {doc_id}")
         
-        result = PlagiarismResult(
-            id=f"plagiarism_{int(time.time() * 1000)}",
-            total_pairs=len(results),
-            high_similarity=high_sim,
-            medium_similarity=medium_sim,
-            low_similarity=low_sim,
-            processing_time=time.time() - start_time,
+        # 6. N-gram 比对（传入排除区间）
+        similarities = self.comparison_engine.compare(
+            sentences_map,
+            excluded_ranges,
+            self.threshold_high,
+            self.threshold_medium,
+            raw_texts=processed_texts,
         )
-        
-        print(f"[Plagiarism] 查重完成: {result.total_pairs} 对, 高相似度 {len(high_sim)} 对")
-        
+        print(f"[Plagiarism] 比对完成: {len(similarities)} 对")
+
+        for r in similarities:
+            print(f"  - {r.doc_a} vs {r.doc_b}: similarity={r.similarity:.4f}, type={r.type}")
+
+        # 6. 结果聚合（后置过滤）
+        result = self.result_aggregator.aggregate(
+            similarities,
+            self.threshold_high,
+            self.threshold_medium,
+            doc_texts=processed_texts,
+            template_filter=self.template_filter,  # 传入模板过滤器用于后置过滤
+        )
+        result.processing_time = time.time() - start_time
+
+        print(f"[Plagiarism] 查重完成: {result.total_pairs} 对, 高相似度 {len(result.high_similarity)} 对")
+
+        # 6. 保存 debug 信息
+        if (self.debug or self.capture_debug_output) and primary_doc_id:
+            output = self.result_aggregator.format_debug_output(
+                similarities,
+                processed_texts,
+                primary_doc_id,
+                template_filter=self.template_filter,
+            )
+            output["documents"] = processed_texts
+            if self.primary_scope_info:
+                output["primary_scope"] = self.primary_scope_info
+            if excluded_ranges:
+                output["excluded_ranges"] = {
+                    doc_id: [{"start": r.start, "end": r.end, "reason": r.reason} for r in ranges]
+                    for doc_id, ranges in excluded_ranges.items()
+                }
+            self.last_debug_output = output
+            self.last_debug_doc_ids = list(doc_ids)
+            self.last_primary_doc_id = primary_doc_id
+
+        if self.debug and primary_doc_id:
+            self._save_plagiarism_debug(
+                doc_ids,
+                processed_texts,
+                primary_doc_id,
+                similarities,
+                excluded_ranges,  # 传入排除区间
+                primary_scope_info=self.primary_scope_info,
+            )
+
         return result
-    
+
+    async def check_with_paths(
+        self,
+        files: List[Tuple[str, bytes]],
+        file_paths: Dict[str, str],
+    ) -> PlagiarismResult:
+        """执行查重并传入文件路径（用于生成mammoth格式报告）
+        
+        Args:
+            files: 文件列表 [(id, data), ...]
+            file_paths: 文件路径字典 {doc_id: file_path}
+            
+        Returns:
+            查重结果
+        """
+        return await self.check(files, file_paths)
+
     def _detect_type_from_bytes(self, file_data: bytes) -> str:
         """根据文件数据检测类型"""
         if file_data[:4] == b'%PDF':
@@ -256,3 +276,102 @@ class PlagiarismAgent:
             return 'docx'
         else:
             return 'unknown'
+
+    def _save_debug(self, doc_id: str, result, full_text: str = ""):
+        """
+        保存 debug 结果
+
+        Args:
+            doc_id: 文档 ID
+            result: 解析结果
+            full_text: 完整文本
+        """
+        debug_dir = Path("debug_plagiarism")
+        debug_dir.mkdir(exist_ok=True)
+
+        output = {
+            "doc_id": doc_id,
+            "is_primary": False,
+            "metadata": result.metadata,
+        }
+
+        # 保存全文预览
+        if full_text:
+            output["full_text_preview"] = full_text[:3000]
+
+        filename = debug_dir / f"{doc_id}_parse.json"
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+
+        print(f"[Plagiarism] Debug: 保存解析结果到 {filename}")
+
+    def _save_plagiarism_debug(
+        self,
+        doc_ids: List[str],
+        processed_texts: Dict[str, str],
+        primary_doc_id: str,
+        similarities,
+        excluded_ranges: Dict[str, list] = None,  # 添加排除区间参数
+        primary_scope_info: Optional[Dict] = None,
+    ):
+        """保存查重详细debug信息"""
+        debug_dir = Path("debug_plagiarism")
+        debug_dir.mkdir(exist_ok=True)
+
+        # 格式化 debug 输出（应用后置过滤）
+        output = self.result_aggregator.format_debug_output(
+            similarities,
+            processed_texts,
+            primary_doc_id,
+            template_filter=self.template_filter,
+        )
+        output["documents"] = processed_texts
+        for doc_id, text in processed_texts.items():
+            safe_name = doc_id.replace("/", "_")
+            (debug_dir / f"{safe_name}.processed.txt").write_text(text, encoding="utf-8")
+        if primary_scope_info:
+            output["primary_scope"] = primary_scope_info
+            extracted_text = processed_texts.get(primary_doc_id, "")
+            (debug_dir / "primary_scope_extracted.txt").write_text(extracted_text, encoding="utf-8")
+            (debug_dir / "primary_scope_debug.json").write_text(
+                json.dumps(primary_scope_info, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        
+        # 添加排除区间信息
+        if excluded_ranges:
+            output["excluded_ranges"] = {
+                doc_id: [{"start": r.start, "end": r.end, "reason": r.reason} for r in ranges]
+                for doc_id, ranges in excluded_ranges.items()
+            }
+
+        filename = debug_dir / "plagiarism_debug.json"
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+
+        # 生成 mammoth 版报告（保留Word格式，包括表格）
+        mammoth_html_filename = debug_dir / "plagiarism_report_mammoth.html"
+        def _is_docx(doc_id: str) -> bool:
+            return doc_id.lower().endswith(".docx")
+
+        primary_path = None
+        if hasattr(self, "_file_paths") and _is_docx(primary_doc_id):
+            primary_path = self._file_paths.get(primary_doc_id)
+        source_path = None
+        for doc_id in doc_ids:
+            if doc_id != primary_doc_id and _is_docx(doc_id) and doc_id in (self._file_paths or {}):
+                source_path = self._file_paths[doc_id]
+                break
+        
+        try:
+            self.mammoth_report_builder.build_from_debug_file(
+                filename,
+                mammoth_html_filename,
+                primary_docx_path=primary_path,
+                source_docx_path=source_path,
+            )
+            print(f"[Plagiarism] Debug: 保存Mammoth格式报告到 {mammoth_html_filename}")
+        except Exception as e:
+            print(f"[Plagiarism] Debug: Mammoth报告生成失败: {e}")
+
+        print(f"[Plagiarism] Debug: 保存查重详情到 {filename}")

@@ -2,6 +2,7 @@
 from src.services.review.rules.base import BaseRule, CheckResult, ReviewContext
 from src.services.review.rules.checkers import (
     PrerequisiteCheckRule,
+    RetrievalReportCompletenessRule,
     SignatureCheckRule,
     StampCheckRule,
     WorkUnitConsistencyRule,

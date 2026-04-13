@@ -19,7 +19,6 @@ from src.common.models.grouping import (
     ProjectAnalysis,
     ProjectGroup,
     ProjectInGroup,
-    ProjectQuality,
     Expert,
     ExpertProfile,
     ExpertAssignment,
@@ -50,6 +49,21 @@ from src.common.models.perfcheck import (
     ResearchContent,
     OtherInfoComparison,
     UnitBudgetComparison,
+)
+from src.common.models.logicon import (
+    ConflictSeverity,
+    ConflictCategory,
+    DocSpan,
+    ExtractedEntity,
+    GraphEdge,
+    DocumentGraph,
+    ConflictItem,
+    GraphStats,
+    RuleInfo,
+    RuleConfigSnapshot,
+    LogicOnResult,
+    LogicOnTextRequest,
+    LogicOnTask,
 )
 
 
@@ -88,7 +102,6 @@ __all__ = [
     "ProjectAnalysis",
     "ProjectGroup",
     "ProjectInGroup",
-    "ProjectQuality",
     "Expert",
     "ExpertProfile",
     "ExpertAssignment",
@@ -129,4 +142,7 @@ __all__ = [
     "GraphStats",
     "RuleInfo",
     "RuleConfigSnapshot",
+    "LogicOnResult",
+    "LogicOnTextRequest",
+    "LogicOnTask",
 ]
