@@ -5,7 +5,7 @@ import { useRequestStore } from './request';
 import { useUiStore } from './ui';
 
 const SANDBOX_ACTIONS = [
-  { id: 'leadership_forecast', title: '沙盘推演', method: 'POST', path: '/pipeline/leadership-forecast', timeout: 900000 },
+  { id: 'leadership_forecast', title: '沙盘推演', method: 'POST', path: '/pipeline/leadership-forecast', timeout: 60000 },
 ];
 
 const LEADERSHIP_SCENARIOS = [

@@ -111,7 +111,19 @@ export const useRequestStore = defineStore('request', () => {
 
   function begin(moduleId, actionTitle) {
     const busy = moduleBusyState.value[moduleId];
-    if (busy && busy.inProgress) return false;
+    if (busy && busy.inProgress) {
+      const staleMs = 3 * 60 * 1000;
+      const startedAt = Number(busy.requestStartedAt || 0);
+      if (startedAt > 0 && (Date.now() - startedAt) > staleMs) {
+        moduleBusyState.value[moduleId] = {
+          inProgress: false,
+          requestStartedAt: 0,
+          progressText: '',
+        };
+      } else {
+        return false;
+      }
+    }
     moduleBusyState.value[moduleId] = {
       inProgress: true,
       requestStartedAt: Date.now(),
