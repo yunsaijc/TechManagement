@@ -10,6 +10,8 @@ from fastapi import HTTPException
 from src.common.models.evaluation import (
     EvaluationChatAskRequest,
     EvaluationChatAskResponse,
+    EvaluationCitationHighlightRequest,
+    EvaluationCitationHighlightResponse,
     EvaluationResult,
     GuideEvaluationResult,
 )
@@ -21,6 +23,7 @@ class StubEvaluationAgent:
     def __init__(self):
         self.evaluate_calls = []
         self.ask_calls = []
+        self.highlight_calls = []
         self.evaluate_by_guide_calls = []
 
     async def evaluate(self, request, file_path=None, content=None, source_name=""):
@@ -61,6 +64,30 @@ class StubEvaluationAgent:
             ],
         )
 
+    async def ask_stream(self, evaluation_id: str, question: str):
+        self.ask_calls.append({"evaluation_id": evaluation_id, "question": question, "stream": True})
+        if evaluation_id == "missing":
+            raise ValueError(f"评审记录不存在: {evaluation_id}")
+        yield {
+            "event": "status",
+            "message": "正在检索相关正文片段",
+        }
+        yield {
+            "event": "delta",
+            "text": "已定位到研究目标相关内容。",
+        }
+        yield {
+            "event": "done",
+            "answer": "已定位到研究目标相关内容。",
+            "citations": [
+                {
+                    "file": "demo.pdf",
+                    "page": 5,
+                    "snippet": "项目目标：建设智能科普服务平台。",
+                }
+            ],
+        }
+
     async def evaluate_by_guide(self, request):
         self.evaluate_by_guide_calls.append({"request": request})
         return GuideEvaluationResult(
@@ -83,6 +110,22 @@ class StubEvaluationAgent:
                 )
             ],
             errors=[],
+        )
+
+    async def resolve_chat_citation_highlight(self, evaluation_id: str, file: str, page: int, snippet: str):
+        self.highlight_calls.append(
+            {
+                "evaluation_id": evaluation_id,
+                "file": file,
+                "page": page,
+                "snippet": snippet,
+            }
+        )
+        if evaluation_id == "missing":
+            raise ValueError(f"评审记录不存在: {evaluation_id}")
+        return EvaluationCitationHighlightResponse(
+            packet_page=8,
+            highlight_rects=[{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05}],
         )
 
 
@@ -178,6 +221,59 @@ def test_chat_ask_route_returns_answer():
     assert "研究目标" in result.answer
     assert result.citations[0].file == "demo.pdf"
     assert stub_agent.ask_calls[0]["evaluation_id"] == "EVAL_API_DEMO"
+
+
+def test_chat_citation_highlight_route_returns_payload():
+    """聊天引用高亮路由应返回 packet 页码与高亮框"""
+    route_module = load_evaluation_route_module()
+    stub_agent = StubEvaluationAgent()
+    route_module._agent = stub_agent
+
+    result = asyncio.run(
+        route_module.resolve_chat_citation_highlight(
+            EvaluationCitationHighlightRequest(
+                evaluation_id="EVAL_API_DEMO",
+                file="demo.pdf",
+                page=5,
+                snippet="项目目标：建设智能科普服务平台。",
+            )
+        )
+    )
+
+    assert result.packet_page == 8
+    assert result.highlight_rects
+    assert stub_agent.highlight_calls[0]["evaluation_id"] == "EVAL_API_DEMO"
+
+
+def test_chat_ask_stream_route_returns_sse_events():
+    """流式聊天路由应返回 SSE 事件流"""
+    route_module = load_evaluation_route_module()
+    stub_agent = StubEvaluationAgent()
+    route_module._agent = stub_agent
+
+    response = asyncio.run(
+        route_module.ask_question_stream(
+            EvaluationChatAskRequest(
+                evaluation_id="EVAL_API_DEMO",
+                question="研究目标是什么？",
+            )
+        )
+    )
+
+    chunks = []
+
+    async def collect():
+        async for chunk in response.body_iterator:
+            chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+
+    asyncio.run(collect())
+
+    body = "".join(chunks)
+    assert response.media_type == "text/event-stream"
+    assert "event: status" in body
+    assert "event: delta" in body
+    assert "event: done" in body
+    assert "研究目标相关内容" in body
 
 
 def test_chat_ask_route_maps_not_found_to_404():

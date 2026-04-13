@@ -17,6 +17,16 @@ def _write_pdf(path: Path, text: str) -> None:
     doc.close()
 
 
+def _write_multi_page_pdf(path: Path, page_texts: list[str]) -> None:
+    """写入多页 PDF，供 packet 高亮回归测试使用"""
+    doc = fitz.open()
+    for text in page_texts:
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 96), text, fontsize=14)
+    doc.save(path)
+    doc.close()
+
+
 def _build_debug_payload(chat_ready: bool = True) -> dict:
     """构造最小调试载荷"""
     return {
@@ -91,6 +101,8 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert 'id="report-chat"' in html
     assert 'id="chat-form"' in html
     assert "/api/v1/evaluation/chat/ask" in html
+    assert "/api/v1/evaluation/chat/ask-stream" in html
+    assert "/api/v1/evaluation/chat/citation-highlight" in html
     assert 'data-evaluation-id="EVAL_DEMO"' in html
     assert "http://127.0.0.1:8888" in html
     assert "研究目标是什么" in html
@@ -99,6 +111,22 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert "风险控制" in html
     assert 'class="content-grid workspace-layout"' in html
     assert "hero-nav" not in html
+    assert 'id="chat-empty"' in html
+    assert 'id="chat-progress"' in html
+    assert 'id="chat-progress-status"' in html
+    assert "parseStructuredAnswer" in html
+    assert "chat-answer-head" in html
+    assert "chat-answer-tag" in html
+    assert "chat-followup" in html
+    assert "window.__evaluationJumpToTrigger" in html
+    assert "requestChatAnswerStream" in html
+    assert 'eventName === "status"' in html
+    assert "streamMessage.setPhase" in html
+    assert "setProgressState" in html
+    assert "chat-citation-label" in html
+    assert "chat-citation-snippet" not in html
+    assert "chat-live-skeleton" in html
+    assert "text/event-stream" not in html
 
 
 def test_report_generator_debug_html_hides_interactive_chat_panel():
@@ -207,6 +235,70 @@ def test_report_generator_formal_html_prefers_packet_viewer_when_available():
     assert 'data-file="demo.pdf"' in html
     assert 'data-packet-page="2"' in html
     assert "const pageMap = [{" in html
+    assert 'id="doc-toast"' in html
+    assert "未定位到精确片段，已跳转到对应页。" in html
+    assert 'data-packet-page="${escapeHtml(citation.packet_page || "")}"' in html
+    assert "JSON.stringify(citation.highlight_rects || [])" in html
+    assert 'data-chat-citation="true"' in html
+
+
+def test_report_generator_packet_page_matches_source_name_when_only_basename_is_available():
+    """仅有文件名时，也应能按 page_map 的 source_name 映射 packet 页码"""
+    generator = ReportGenerator()
+
+    packet_page = generator._resolve_packet_page(
+        packet_assets={
+            "page_map": [
+                {
+                    "source_file": "/tmp/projects/demo.pdf",
+                    "source_name": "demo.pdf",
+                    "source_kind": "proposal",
+                    "start_page": 4,
+                    "end_page": 8,
+                }
+            ]
+        },
+        source_file="demo.pdf",
+        page=2,
+    )
+
+    assert packet_page == 5
+
+
+def test_report_generator_packet_highlight_can_correct_to_neighbor_page(tmp_path: Path):
+    """packet 高亮应能在附近页纠正命中页，而不是死守传入页码"""
+    generator = ReportGenerator()
+    packet_pdf = tmp_path / "packet.pdf"
+    _write_multi_page_pdf(
+        packet_pdf,
+        [
+            "page one overview",
+            "page two contains key sentence: intelligent service platform demonstration",
+            "page three conclusion",
+        ],
+    )
+
+    payload = generator._resolve_packet_jump_payload(
+        packet_assets={
+            "packet_abs_path": str(packet_pdf),
+            "page_map": [
+                {
+                    "source_file": str(tmp_path / "demo.pdf"),
+                    "source_name": "demo.pdf",
+                    "source_kind": "proposal",
+                    "start_page": 1,
+                    "end_page": 3,
+                    "page_count": 3,
+                }
+            ],
+        },
+        source_file=str(tmp_path / "demo.pdf"),
+        page=1,
+        snippet="intelligent service platform demonstration",
+    )
+
+    assert payload["packet_page"] == 2
+    assert payload["highlight_rects"]
 
 
 def test_report_generator_build_from_debug_file_recovers_missing_page_chunks(
