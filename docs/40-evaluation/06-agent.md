@@ -70,16 +70,23 @@ Agent 只接收结构化检索结果并完成分析与合并。
 聊天能力分两段执行：
 
 1. 评审阶段：若 `enable_chat_index=true`，则根据解析器输出的 `page_chunks` 构建聊天索引并落盘  
-2. 问答阶段：`/chat/ask` 先加载评审结果，再加载聊天索引；若索引缺失会尝试自动重建（优先 `debug_eval` 页切片，其次原始文档），然后执行页码检索与回答生成
+2. 问答阶段：`/chat/ask` 与 `/chat/ask-stream` 共用同一套索引准备逻辑；先加载评审结果，再加载聊天索引；若索引缺失会尝试自动重建（优先 `debug_eval` 页切片，其次原始文档），然后执行页码检索与回答生成  
+3. 证据联动阶段：正式 HTML 中点击聊天证据时，再调用 `/chat/citation-highlight` 懒加载 `packet_page/highlight_rects`
 
 当前实现约束：
 
 - 聊天检索优先基于 `page_chunks`
 - 引用结果必须返回 `file/page/snippet`
+- 为降低响应时延，`/chat/ask` 不同步补齐 `highlight_rects`
+- 正式 HTML 聊天面板优先调用 `/api/v1/evaluation/chat/ask-stream`，失败时回退 `/api/v1/evaluation/chat/ask`
+- `ask-stream` 会额外输出阶段性 `status` 事件，供前端显示“正在准备索引 / 正在检索证据 / 正在生成回答”等动态进度
+- 在 `qwen` 兼容接口场景下，聊天热路径优先直连模型接口，并显式关闭 `thinking` 以压低首字延迟；若直连失败再回退通用 LLM 链路
 - 评审完成后会为正式 HTML 报告同步生成一组“专家关注问答”，用于直接展示典型问题与页码证据
 - “专家关注问答”默认使用 LLM 生成，若模型不可用则降级为规则式回答
 - 评审调试 JSON 会落 `page_chunks`，用于问答阶段自动重建索引
+- 进程内对 `evaluation result / chat index / debug payload / packet assets` 做小规模缓存，降低重复提问与重复点证据时的磁盘 IO
 - 正式 HTML 报告内嵌聊天前端，直接调用 `/api/v1/evaluation/chat/ask`
+- 正式 HTML 中的聊天证据链接在点击时调用 `/api/v1/evaluation/chat/citation-highlight`
 - 即使 `chat_ready=false`，前端也允许直接提问，首问触发后端自动建索引
 - 正式 HTML 采用“左正文、右结果”的审阅工作台布局
 - 右侧所有 `evidence/citation` 应复用统一跳转协议，驱动左侧正文定位
@@ -122,13 +129,17 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - `EVAL_{project_id}.html`：正式审阅工作台
 - `EVAL_{project_id}.debug.html`：调试报告
 - `EVAL_{project_id}.json`：用于重建报告与正文联动的数据底座
+- `projects/{project_id}/evaluation_packet.pdf`：统一材料包
+- `projects/{project_id}/evaluation_packet.page_map.json`：原文件页码到 packet 页码映射
+- `projects/{project_id}/packet_viewer.html`：左侧阅读 iframe 使用的 packet viewer
 
 正式工作台最小要求：
 
-- 左侧正文阅读区基于 `page_chunks` 按页渲染
+- 左侧优先加载统一 `packet viewer`，把正文与附件合并到单一阅读面板
+- 若 packet 资产缺失，再回退到基于 `page_chunks` 的按页正文渲染
 - 右侧结果区展示评分、划重点、问答、证据
 - 任一 `evidence/citation` 点击后都能把左侧正文定位到对应页
-- 若 `snippet` 可匹配到正文片段，则需对命中块做临时高亮
+- 若 `snippet` 可匹配到 packet 或正文片段，则需对命中区域做临时高亮；匹配失败时至少完成页级跳转
 
 ## 异常与降级
 
