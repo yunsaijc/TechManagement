@@ -14,8 +14,8 @@ class EvaluationProjectRepository:
     """正文评审项目仓库"""
 
     def __init__(self):
-        # 本地文件根目录：默认使用仓库内可配置目录，避免硬编码到测试样例数据
-        self.doc_root = Path(os.getenv("EVALUATION_PROJECT_DOC_ROOT", "data/evaluation_projects"))
+        self.corpus_root = Path(os.getenv("EVALUATION_CORPUS_ROOT", "/mnt/remote_corpus"))
+        self.submit_status = os.getenv("EVALUATION_SUBMIT_STATUS", "1")
 
     def get_project_info(self, project_id: str) -> Optional[Dict[str, str]]:
         """获取项目基础信息
@@ -34,9 +34,12 @@ class EvaluationProjectRepository:
                 b.cddwMc,
                 b.gjc,
                 b.year,
+                b.zndm,
+                zn.name AS guide_name,
                 j.xmjj
             FROM Sb_Jbxx b
             LEFT JOIN Sb_Jj j ON j.onlysign = b.id
+            LEFT JOIN sys_guide zn ON zn.id = b.zndm
             WHERE b.id = ?
         """
         rows = project_execute(sql, (project_id,))
@@ -52,13 +55,43 @@ class EvaluationProjectRepository:
             "gjc": row.gjc or "",
             "year": str(row.year or ""),
             "xmjj": row.xmjj or "",
+            "zndm": row.zndm or "",
+            "guide_name": row.guide_name or "",
         }
+
+    def get_projects_by_guide_code(self, zndm: str, limit: Optional[int] = None) -> List[Dict[str, str]]:
+        """按指南代码获取已提交项目列表"""
+        sql = """
+            SELECT
+                b.id,
+                b.xmmc,
+                b.year,
+                b.zndm,
+                zn.name AS guide_name
+            FROM Sb_Jbxx b
+            LEFT JOIN sys_guide zn ON zn.id = b.zndm
+            LEFT JOIN Sb_Sbzt s ON s.onlysign = b.id
+            WHERE b.zndm = ?
+              AND s.isSubmit = ?
+            ORDER BY b.id
+        """
+        rows = project_execute(sql, (zndm, self.submit_status))
+        projects: List[Dict[str, str]] = []
+        sliced_rows = rows[:limit] if limit else rows
+        for row in sliced_rows:
+            projects.append(
+                {
+                    "id": row.id,
+                    "xmmc": row.xmmc or "",
+                    "year": str(row.year or ""),
+                    "zndm": row.zndm or "",
+                    "guide_name": row.guide_name or "",
+                }
+            )
+        return projects
 
     def get_project_file_paths(self, project_id: str) -> List[str]:
         """获取项目申报文档列表
-
-        目录约定：
-        `EVALUATION_PROJECT_DOC_ROOT/{project_id}/`
 
         Args:
             project_id: 项目ID
@@ -66,33 +99,27 @@ class EvaluationProjectRepository:
         Returns:
             文档绝对路径列表
         """
-        project_dir = self.doc_root / project_id
-        if not project_dir.is_dir():
+        project_info = self.get_project_info(project_id)
+        if not project_info:
+            return []
+        year = str(project_info.get("year") or "").strip()
+        if not year:
             return []
 
-        paths: List[Path] = []
-        for pattern in ("*.docx", "*.pdf", "*.doc"):
-            paths.extend(project_dir.glob(pattern))
-            paths.extend(project_dir.glob(pattern.upper()))
+        doc_path = self.corpus_root / year / "sbs" / project_id / f"{project_id}.docx"
+        return [str(doc_path)] if doc_path.exists() else []
 
-        # 去重 + 排序（保证稳定）
-        unique_paths = sorted({p.resolve() for p in paths})
-        return [str(p) for p in unique_paths]
+    def get_expected_document_path(self, project_id: str) -> Optional[str]:
+        """获取按真实规则推断的正文路径"""
+        project_info = self.get_project_info(project_id)
+        if not project_info:
+            return None
+        year = str(project_info.get("year") or "").strip()
+        if not year:
+            return None
+        return str(self.corpus_root / year / "sbs" / project_id / f"{project_id}.docx")
 
     def get_primary_document_path(self, project_id: str) -> Optional[str]:
-        """获取主申报文档路径（优先 docx，再 pdf，再 doc）"""
+        """获取主申报文档路径"""
         paths = self.get_project_file_paths(project_id)
-        if not paths:
-            return None
-
-        def _priority(path: str) -> tuple[int, str]:
-            lower = path.lower()
-            if lower.endswith(".docx"):
-                return (0, lower)
-            if lower.endswith(".pdf"):
-                return (1, lower)
-            if lower.endswith(".doc"):
-                return (2, lower)
-            return (9, lower)
-
-        return sorted(paths, key=_priority)[0]
+        return paths[0] if paths else None

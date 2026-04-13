@@ -282,8 +282,8 @@ def _cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
 
 def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Optional[dict] = None) -> str:
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"grouping_{dataset_tag}_{timestamp}.json"
+        safe_tag = re.sub(r"[^0-9A-Za-z_.-]+", "_", dataset_tag or "fixed")
+        filename = f"grouping_{safe_tag}.json"
         filepath = os.path.join(DEBUG_DIR, filename)
         created_at = result.created_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(result.created_at, "strftime") else str(result.created_at)
 
@@ -311,6 +311,9 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                 "subject_code": group.subject_code,
                 "subject_name": group.subject_name,
                 "count": group.count,
+                "subject_code_2_distribution": group.subject_code_2_distribution,
+                "risk_flags": group.risk_flags,
+                "risk_details": group.risk_details,
                 "projects": [
                     {
                         "project_id": item.project_id,
@@ -318,7 +321,10 @@ def _save_grouping_result(dataset_tag: str, result: GroupingResult, meta: Option
                         "xmjj": _clean_html_text(item.xmjj)[:200] if item.xmjj else "",  # 截取前200字
                         "original_subject_code": item.original_subject_code or "",
                         "original_subject_name": item.original_subject_name or "",
+                        "original_subject_code_2": item.original_subject_code_2 or "",
+                        "original_subject_name_2": item.original_subject_name_2 or "",
                         "keywords": item.keywords or [],
+                        "risk_flags": item.risk_flags or [],
                     }
                     for item in group.projects
                 ],
@@ -341,7 +347,7 @@ class GroupingAgent:
         llm: Any = None,
         embedder: Any = None,
         max_per_group: int = 15,
-        min_per_group: int = 5,
+        min_per_group: int = 3,
         concurrency: int = 10,
         use_llm_validation: bool = False,  # 默认禁用LLM验证以提高速度
         merge_min_total_score: Optional[float] = None,
@@ -567,6 +573,126 @@ class GroupingAgent:
         if longest >= 3:
             return 0.55
         return 0.2
+
+    def _project_primary_subject_code(self, project: Project) -> str:
+        return (project.ssxk1 or "").strip()
+
+    def _project_secondary_subject_code(self, project: Project) -> str:
+        return (project.ssxk2 or "").strip()
+
+    def _project_subject_code_fallback(self, project: Project) -> str:
+        return (project.ssxk1 or project.ssxk2 or "").strip()
+
+    def _subject_similarity_between_projects(self, project_a: Project, project_b: Project) -> float:
+        """按“代码1主导、代码2辅助”计算两个项目的学科相似度。"""
+        code_a_1 = self._project_primary_subject_code(project_a)
+        code_a_2 = self._project_secondary_subject_code(project_a)
+        code_b_1 = self._project_primary_subject_code(project_b)
+        code_b_2 = self._project_secondary_subject_code(project_b)
+
+        primary_score = self._subject_similarity(code_a_1, code_b_1)
+        cross_scores = []
+        if code_a_1 and code_b_2:
+            cross_scores.append(self._subject_similarity(code_a_1, code_b_2))
+        if code_a_2 and code_b_1:
+            cross_scores.append(self._subject_similarity(code_a_2, code_b_1))
+        secondary_score = self._subject_similarity(code_a_2, code_b_2) if code_a_2 and code_b_2 else 0.0
+
+        cross_score = max(cross_scores) if cross_scores else 0.0
+        return max(
+            primary_score,
+            0.70 * primary_score + 0.20 * cross_score + 0.10 * secondary_score,
+        )
+
+    def _cluster_primary_subject_code(self, cluster: List[Project]) -> str:
+        codes = [self._project_primary_subject_code(project) for project in cluster if self._project_primary_subject_code(project)]
+        if not codes:
+            return self._project_subject_code_fallback(cluster[0]) if cluster else ""
+        return Counter(codes).most_common(1)[0][0]
+
+    def _cluster_secondary_subject_distribution(self, cluster: List[Project]) -> Dict[str, int]:
+        counter = Counter(
+            self._project_secondary_subject_code(project)
+            for project in cluster
+            if self._project_secondary_subject_code(project)
+        )
+        return dict(counter)
+
+    def _cluster_first_level_subjects(self, cluster: List[Project]) -> set[str]:
+        first_levels = set()
+        for project in cluster:
+            for code in (self._project_primary_subject_code(project), self._project_secondary_subject_code(project)):
+                first_level = self._get_first_level_category(code)
+                if first_level:
+                    first_levels.add(first_level)
+        return first_levels
+
+    def _group_risk_flags(
+        self,
+        cluster: List[Project],
+        global_primary_counter: Counter[str],
+        global_secondary_counter: Counter[str],
+        vector_map: Optional[Dict[str, np.ndarray]] = None,
+    ) -> Tuple[List[str], List[str], Dict[str, List[str]]]:
+        """生成组级/项目级风险标记。"""
+        flags: List[str] = []
+        details: List[str] = []
+        project_flags: Dict[str, List[str]] = defaultdict(list)
+
+        if not cluster:
+            return flags, details, project_flags
+
+        first_levels = self._cluster_first_level_subjects(cluster)
+        if len(first_levels) > 1:
+            flags.append("cross_level1")
+            details.append(f"组内跨一级学科：{', '.join(sorted(first_levels))}")
+
+        secondary_distribution = self._cluster_secondary_subject_distribution(cluster)
+        if cluster and len(secondary_distribution) >= max(3, math.ceil(len(cluster) * 0.5)):
+            flags.append("many_level2")
+            details.append(f"组内第二学科较多：{len(secondary_distribution)} 类")
+
+        primary_code = self._cluster_primary_subject_code(cluster)
+        primary_first_level = self._get_first_level_category(primary_code)
+        for project in cluster:
+            code_1 = self._project_primary_subject_code(project)
+            code_2 = self._project_secondary_subject_code(project)
+            if code_1 and global_primary_counter.get(code_1, 0) == 1:
+                flags.append("singleton_subject_code_1")
+                project_flags[project.id].append("singleton_subject_code_1")
+            if code_2 and global_secondary_counter.get(code_2, 0) == 1:
+                flags.append("singleton_subject_code_2")
+                project_flags[project.id].append("singleton_subject_code_2")
+
+            project_first_levels = {
+                level
+                for level in (
+                    self._get_first_level_category(code_1),
+                    self._get_first_level_category(code_2),
+                )
+                if level
+            }
+            if primary_first_level and project_first_levels and primary_first_level not in project_first_levels:
+                flags.append("subject_outlier")
+                project_flags[project.id].append("subject_outlier")
+
+        if len(cluster) < self.min_per_group or len(cluster) > self.max_per_group:
+            flags.append("size_exception")
+            details.append(f"组人数异常：{len(cluster)}，目标区间 {self.min_per_group}~{self.max_per_group}")
+
+        if vector_map:
+            center = self._cluster_center(cluster, vector_map)
+            if center is not None:
+                for project in cluster:
+                    vec = vector_map.get(project.id)
+                    if vec is None:
+                        continue
+                    similarity = _cosine_similarity(vec, center)
+                    if similarity < 0.45:
+                        flags.append("subject_outlier")
+                        project_flags[project.id].append("subject_outlier")
+
+        return list(dict.fromkeys(flags)), details, project_flags
 
     def _subject_group_key(self, project: Project) -> str:
         code = (project.ssxk1 or project.ssxk2 or "unknown").strip()
@@ -892,6 +1018,8 @@ class GroupingAgent:
                 code_b = projects[dst_idx].ssxk1 or projects[dst_idx].ssxk2 or ""
                 keyword_score = self._keyword_overlap_score(keywords_a, keyword_sets[dst_idx])
                 subject_score = self._subject_similarity(code_a, code_b)
+                keyword_score = self._keyword_overlap_score(keywords_a, keyword_sets[dst_idx])
+                subject_score = self._subject_similarity_between_projects(projects[src_idx], projects[dst_idx])
                 edge_score = 0.90 * cosine_sim + 0.06 * keyword_score + 0.04 * subject_score
                 if edge_score < edge_min_score:
                     continue
@@ -1360,7 +1488,7 @@ class GroupingAgent:
             small_group_ids = []
             counts = []
             for idx, cluster in enumerate(clusters, start=1):
-                code_counter = Counter((p.ssxk1 or p.ssxk2 or "") for p in cluster if (p.ssxk1 or p.ssxk2))
+                code_counter = Counter((p.ssxk1 or "") for p in cluster if p.ssxk1)
                 dominant_code = code_counter.most_common(1)[0][0] if code_counter else ""
                 dominant_name = self._get_subject_name(dominant_code) if dominant_code else "未知主题"
                 count = len(cluster)
@@ -1375,8 +1503,10 @@ class GroupingAgent:
                             "project_id": p.id,
                             "xmmc": p.xmmc,
                             "xmjj": _clean_html_text(p.xmjj) if p.xmjj else "",
-                            "original_subject_code": p.ssxk1 or p.ssxk2 or "",
-                            "original_subject_name": self._get_subject_name(p.ssxk1 or p.ssxk2 or ""),
+                            "original_subject_code": p.ssxk1 or "",
+                            "original_subject_name": self._get_subject_name(p.ssxk1 or ""),
+                            "original_subject_code_2": p.ssxk2 or "",
+                            "original_subject_name_2": self._get_subject_name(p.ssxk2 or ""),
                             "keywords": _parse_keywords_to_list(p.gjc)[:20],
                         }
                         for p in cluster
@@ -1596,15 +1726,38 @@ class GroupingAgent:
             main_themes=themes or [title],
         )
 
-    async def _build_groups(self, clusters: List[List[Project]]) -> List[ProjectGroup]:
+    async def _build_groups(
+        self,
+        clusters: List[List[Project]],
+        vector_map: Optional[Dict[str, np.ndarray]] = None,
+    ) -> List[ProjectGroup]:
         total_clusters = len(clusters)
         build_start = time.time()
+        global_primary_counter = Counter(
+            self._project_primary_subject_code(project)
+            for cluster in clusters
+            for project in cluster
+            if self._project_primary_subject_code(project)
+        )
+        global_secondary_counter = Counter(
+            self._project_secondary_subject_code(project)
+            for cluster in clusters
+            for project in cluster
+            if self._project_secondary_subject_code(project)
+        )
 
         async def build_one(index: int, cluster: List[Project]) -> ProjectGroup:
             cluster_start = time.time()
             print(f"[Grouping] 生成分组标题进度 {index}/{total_clusters}，簇内项目 {len(cluster)} 个")
 
             title, summary, subject_name = self._select_group_title(cluster)
+            group_flags, group_details, project_risk_map = self._group_risk_flags(
+                cluster,
+                global_primary_counter,
+                global_secondary_counter,
+                vector_map,
+            )
+            secondary_distribution = self._cluster_secondary_subject_distribution(cluster)
 
             project_items = []
             for project in cluster:
@@ -1623,17 +1776,23 @@ class GroupingAgent:
                         reason=summary or f"语义归入：{title}",
                         original_subject_code=project.ssxk1,
                         original_subject_name=self._get_subject_name(project.ssxk1 or ""),
+                        original_subject_code_2=project.ssxk2,
+                        original_subject_name_2=self._get_subject_name(project.ssxk2 or ""),
                         keywords=keywords,
+                        risk_flags=project_risk_map.get(project.id, []),
                     )
                 )
 
             group = ProjectGroup(
                 group_id=index,
-                subject_code=cluster[0].ssxk1 if cluster and cluster[0].ssxk1 else None,
+                subject_code=self._cluster_primary_subject_code(cluster) if cluster else None,
                 subject_name=subject_name or title,
                 projects=project_items,
                 count=len(cluster),
                 summary=self._build_group_summary(cluster, title),
+                subject_code_2_distribution=secondary_distribution,
+                risk_flags=group_flags,
+                risk_details=group_details,
             )
 
             print(
@@ -1679,6 +1838,7 @@ class GroupingAgent:
 
     async def group_projects(self, request: GroupingRequest) -> GroupingResult:
         start_time = time.time()
+        self.min_per_group = request.min_per_group
         self.max_per_group = request.max_per_group
         if request.merge_min_total_score is not None:
             self.merge_min_total_score = request.merge_min_total_score
@@ -1691,18 +1851,38 @@ class GroupingAgent:
         if request.merge_candidate_limit is not None:
             self.merge_candidate_limit = request.merge_candidate_limit
 
-        projects = self.project_repo.get_grouping_test_projects(category=request.category)
+        guide_codes: List[str] = []
+        if request.guide_codes:
+            seen = set()
+            for code in request.guide_codes:
+                normalized = (code or "").strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                guide_codes.append(normalized)
+
+        if guide_codes:
+            projects = self.project_repo.get_grouping_projects_by_guide_codes(
+                guide_codes=guide_codes,
+                category=request.category,
+            )
+            dataset_filter = self.project_repo.get_grouping_dataset_filter_by_guide_codes(guide_codes)
+        else:
+            projects = self.project_repo.get_grouping_test_projects(category=request.category)
+            dataset_filter = self.project_repo.get_grouping_dataset_filter()
+
         if not projects:
+            if guide_codes:
+                raise ValueError("指定 guide_codes 下没有可用的已提交项目（isSubmit=1）")
             raise ValueError("固定分组测试数据集中没有可用项目")
 
         projects = [project for project in projects if project.xmmc and project.xmmc.strip()]
         if not projects:
             raise ValueError("没有可用于分组的项目名称")
 
-        dataset_filter = self.project_repo.get_grouping_dataset_filter()
         print(
             f"[Grouping] 获取到 {len(projects)} 个项目，"
-            f"使用固定测试数据集 guide={dataset_filter['guide_code']} audit={dataset_filter['audit_status']}，开始分组"
+            f"数据过滤条件={dataset_filter}，开始分组"
         )
 
         cluster_start = time.time()
@@ -1768,11 +1948,16 @@ class GroupingAgent:
         )
 
         save_start = time.time()
-        filename = _save_grouping_result("fixed", result, meta={
+        dataset_tag = "fixed"
+        if guide_codes:
+            dataset_tag = f"fixed_{'_'.join(guide_codes)}"
+        filename = _save_grouping_result(dataset_tag, result, meta={
             "strategy": request.strategy.value if request.strategy else GroupingStrategy.SEMANTIC.value,
             "dataset_filter": dataset_filter,
             "input": {
                 "category": request.category,
+                "guide_codes": guide_codes,
+                "min_per_group": request.min_per_group,
                 "max_per_group": request.max_per_group,
                 "merge_min_total_score": self.merge_min_total_score,
                 "merge_min_text_score": self.merge_min_text_score,
@@ -1794,7 +1979,9 @@ class GroupingAgent:
 
     async def full_grouping(self, request: FullGroupingRequest) -> FullGroupingResult:
         grouping_request = GroupingRequest(
+            guide_codes=request.guide_codes,
             category=request.category,
+            min_per_group=request.min_per_group,
             max_per_group=request.max_per_group,
             strategy=GroupingStrategy.SEMANTIC,
             merge_min_total_score=request.merge_min_total_score,

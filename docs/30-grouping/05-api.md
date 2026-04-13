@@ -27,19 +27,18 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `min_per_group` | Integer | 否 | 每组最小项目数（默认5） |
+| `guide_codes` | String[] | 否 | 按 `zndm` 过滤项目，仅分组这些代码对应且 `isSubmit='1'` 的项目 |
+| `min_per_group` | Integer | 否 | 每组最小项目数（默认3） |
 | `max_per_group` | Integer | 否 | 每组最大项目数（默认15） |
-| `top_k_candidates` | Integer | 否 | 兼容旧参数；建议逐步替换为面向小组合并阶段的候选数配置 |
-| `enable_embedding` | Boolean | 否 | 是否启用 embedding 召回（默认true） |
-| `enable_llm` | Boolean | 否 | 是否启用 LLM 复核/标题生成（默认true） |
-| `needs_review_threshold` | Number | 否 | 低于该置信度标记复核（默认0.65） |
-| `merge_min_total_score` | Number | 否 | 小组合并总分阈值；建议仅作为兜底配置，不作为唯一门槛 |
-| `merge_min_text_score` | Number | 否 | 小组合并语义分阈值；建议仅作为兜底配置，不作为唯一门槛 |
-| `merge_reserve_ratio` | Number | 否 | 前几轮小组合并使用的软上限比例，例如 `0.8` 表示先按 `floor(max_per_group*0.8)` 留出空间 |
-| `merge_reserve_rounds` | Integer | 否 | 使用软上限的轮数，超过后恢复到 `max_per_group` |
-| `merge_candidate_limit` | Integer | 否 | 每个过小组保留的候选目标组数；建议配置化，不写死很小的固定值 |
+| `merge_min_total_score` | Number | 否 | 跨代码小组合并总分阈值；仅作为兜底配置 |
+| `merge_min_text_score` | Number | 否 | 跨代码小组合并语义分阈值；仅作为兜底配置 |
+| `merge_reserve_ratio` | Number | 否 | 兼容保留参数；当前主流程不再使用软上限 |
+| `merge_reserve_rounds` | Integer | 否 | 兼容保留参数；当前主流程不再按轮次切换软上限 |
+| `merge_candidate_limit` | Integer | 否 | 每个过小组保留的候选目标组数；用于同代码优先回收和跨代码召回 |
 
-> 说明：小组合并不再建议只依赖固定阈值，而应结合候选分布做动态判断。`merge_min_total_score`、`merge_min_text_score` 更适合作为兜底下限。小组合并阶段只要 `code_a != code_b` 即强制LLM校验；`code_a == code_b` 也不能仅凭代码直接合并，仍需通过语义一致性判断。
+> 说明：小组合并当前采用“同代码优先回收、跨代码阈值兜底 + LLM校验”的策略。`merge_min_total_score`、`merge_min_text_score` 仅用于跨代码候选；只要 `code_a != code_b` 即强制LLM校验。
+>
+> 说明：当传入 `guide_codes` 时，服务将执行 `zndm IN (...) AND isSubmit='1'` 查询，仅对这批项目分组；未传 `guide_codes` 时，沿用固定测试集逻辑。
 
 #### 请求示例
 
@@ -48,9 +47,12 @@ curl -X POST "http://localhost:8000/api/v1/grouping/projects" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "enable_embedding": true,
-    "enable_llm": true,
-    "min_per_group": 5,
+    "guide_codes": [
+      "c2f3b7b1f9534463ad726e6936c91859",
+      "959c8e453dd942ddb72f0ef52c07342f",
+      "7581bc8d6d564153848fcb5d14b1942e"
+    ],
+    "min_per_group": 3,
     "max_per_group": 15
   }'
 ```
@@ -207,11 +209,11 @@ curl -X POST "http://localhost:8000/api/v1/grouping/full" \
 
 - 输入以学科代码 + `xmmc` 为主，`xmjj` 为辅
 - 前半段继续采用关键词 Embedding 主导的初始聚类与大组拆分
-- 学科代码用于辅助判断，不是绝对硬约束；同代码也不应被视为天然可并
+- 学科代码用于辅助判断，不是绝对硬约束；但在小组合并阶段会优先回收同代码碎片
 - 小组合并应按“整轮统一决策”执行，而不是单个小组串行贪心
-- 小组合并时阈值应配置化，并结合每个小组候选分布做动态判断，不建议只依赖固定分数线
+- 小组合并默认先回收同代码碎片；跨代码候选再使用阈值兜底
 - 小组合并阶段：若候选组学科代码不同（`code_a != code_b`），必须先通过LLM校验
-- 小组合并前几轮建议使用软上限（`soft_cap`）给后续合并留空间，后几轮再放开到 `max_per_group`
+- 小组合并当前直接使用 `max_per_group` 作为容量上限，兼容保留的软上限参数不参与主流程
 - 学科相似度将优先参考三级代码，降低仅同一级大类导致的误并风险
 - 拆分粒度从一级学科扩展到三级学科优先，减少同大类内混杂
 - LLM校验缓存键包含项目上下文哈希，避免仅按代码对的粗复用

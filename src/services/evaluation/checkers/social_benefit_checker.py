@@ -22,9 +22,16 @@ class SocialBenefitChecker(BaseChecker):
     
     dimension = EvaluationDimension.SOCIAL_BENEFIT.value
     dimension_name = "社会效益"
+    ALTERNATIVE_SECTION_KEYS = [
+        "项目简介",
+        "项目立项背景及意义",
+        "申报项目与所属指南或申报通知方向的关联关系",
+        "项目绩效评价考核目标及指标",
+        "申报单位在该研究方向的前期任务承担情况、相关研究成果",
+    ]
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "社会贡献", "weight": 0.3, "description": "对社会发展的贡献"},
             {"name": "推广价值", "weight": 0.3, "description": "成果推广应用价值"},
@@ -35,9 +42,40 @@ class SocialBenefitChecker(BaseChecker):
     
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行社会效益检查"""
-        sections = self._extract_sections(content, self._required_sections)
+        sections = self._extract_sections(content, self.required_sections)
         
         if not sections:
+            if self.profile_matches(
+                content,
+                self.PROJECT_PROFILE_TECH_RND,
+                self.PROJECT_PROFILE_PLATFORM,
+                self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+            ):
+                alternative_sections = self._extract_sections(
+                    content,
+                    self.get_alternative_sections(self.ALTERNATIVE_SECTION_KEYS),
+                )
+                if alternative_sections:
+                    matched_names = list(alternative_sections.keys())
+                    opinion = "未设置独立社会效益章节，但项目简介、指南支撑关系和应用示范内容已体现社会价值，可进行基础判断。"
+                    issue = "社会效益未单列，已按应用示范与社会价值相关内容替代评估"
+                    if self.profile_matches(
+                        content,
+                        self.PROJECT_PROFILE_PLATFORM,
+                        self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                    ):
+                        opinion = "该项目更偏平台建设或科普实施类，已基于普及前景、推广范围和服务覆盖内容进行基础社会效益判断，不再强制要求独立社会效益章节。"
+                        issue = "未设置独立社会效益章节，已按推广应用与社会覆盖相关内容替代评估"
+                    return CheckResult(
+                        dimension=self.dimension,
+                        dimension_name=self.dimension_name,
+                        score=6.0,
+                        confidence=0.45,
+                        opinion=opinion,
+                        issues=[issue],
+                        highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
+                        items=[],
+                    )
             return CheckResult(
                 dimension=self.dimension,
                 dimension_name=self.dimension_name,

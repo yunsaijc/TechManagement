@@ -11,8 +11,10 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 from src.app.routes import review
+from src.app.routes import project_review
 from src.app.routes import grouping
 from src.app.routes import plagiarism
+from src.app.routes import plagiarism_image
 from src.app.routes import perfcheck
 from src.app.routes import evaluation
 from src.app.routes import sandbox
@@ -54,8 +56,10 @@ DEBUG_EVAL_DIR = Path(__file__).parent.parent.parent / "debug_eval"
 
 # 注册路由
 app.include_router(review.router, prefix="/api/v1/review", tags=["形式审查"])
+app.include_router(project_review.router, prefix="/api/v1/review", tags=["项目级形式审查"])
 app.include_router(grouping.router, prefix="/api/v1/grouping", tags=["智能分组"])
 app.include_router(plagiarism.router, prefix="/api/v1/plagiarism", tags=["查重"])
+app.include_router(plagiarism_image.router, prefix="/api/v1/plagiarism/image", tags=["图片查重"])
 app.include_router(perfcheck.router, prefix="/api/v1/perfcheck", tags=["绩效核验"])
 app.include_router(evaluation.router, prefix="/api/v1/evaluation", tags=["正文评审"])
 app.include_router(sandbox.router, prefix="/api/v1/sandbox", tags=["Sandbox研判"])

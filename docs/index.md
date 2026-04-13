@@ -34,7 +34,17 @@ docs/
 │   ├── 03-agent.md                # Agent 设计
 │   ├── 04-document-parser.md       # 文档解析方案
 │   ├── 05-api.md                  # API 接口文档
-│   └── 06-rules.md                # 规则系统
+│   ├── 06-rules.md                # 规则系统
+│   ├── project-review/            # 📦 项目级形式审查
+│   │   └── 01-overview.md         # 项目级方案概述
+│   │   ├── 02-models.md           # 输入输出模型
+│   │   ├── 03-rules.md            # 规则与配置设计
+│   │   └── 04-flow-and-api.md     # 执行流程与接口草案
+│   └── plagiarism/                 # 📝 查重服务
+│       ├── 01-overview.md          # 服务概述
+│       ├── 03-agent.md             # Agent 设计
+│       ├── 04-corpus.md            # 比对库管理
+│       └── 05-api.md               # API 接口文档
 │
 ├── 30-grouping/                     # 🧠 智能分组与专家匹配服务
 │   ├── 01-overview.md              # 服务概述
@@ -85,6 +95,7 @@ docs/
 │   ├── 04-document-parser.md
 │   ├── 05-api.md
 │   └── 06-rules.md
+│   └── project-review/
 │
 ├── 30-grouping/         ← 智能分组与专家匹配服务（依赖 common）
 │   ├── 01-overview.md
@@ -143,6 +154,7 @@ docs/
 - [奖励评审数据库 →](15-data/02-reward-db.md)
 - [通用组件概述 →](10-common/01-overview.md)
 - [形式审查服务 →](20-review/01-overview.md)
+- [查重服务 →](20-review/plagiarism/01-overview.md)
 - [智能分组与专家匹配服务 →](30-grouping/01-overview.md)
 - [正文评审服务 →](40-evaluation/01-overview.md)
 - [绩效核验服务 →](50-perfcheck/01-overview.md)

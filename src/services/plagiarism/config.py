@@ -1,8 +1,19 @@
-"""查重 section 配置
+"""查重配置。
 
-定义不同文档类型需要查重的区域配置。
+定义不同文档类型的 section 配置，以及默认 corpus 路径。
 """
+from pathlib import Path
 from typing import Dict, List, Any
+
+
+PLAGIARISM_DEFAULT_CORPUS_PATH = Path("/home/tdkx/workspace/tech/data/corpus_local/sbs_5000")
+PLAGIARISM_DEFAULT_CORPUS_LOCAL_ROOT = Path("/home/tdkx/workspace/tech/data/corpus_local")
+PLAGIARISM_DEFAULT_REMOTE_CORPUS_ROOT = Path("/mnt/remote_corpus")
+PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR = Path("/home/tdkx/workspace/tech/data/plagiarism/local_ingest")
+PLAGIARISM_DEFAULT_INDEX_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_index.json"
+PLAGIARISM_DEFAULT_SQLITE_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_index.db"
+PLAGIARISM_DEFAULT_MANIFEST_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_manifest.json"
+PLAGIARISM_DEFAULT_CHECKPOINT_PATH = PLAGIARISM_DEFAULT_LOCAL_INGEST_DIR / "corpus_refresh_checkpoint.json"
 
 
 # 白名单模板短语（不计入重复）
@@ -89,6 +100,30 @@ PLAGIARISM_SECTION_CONFIG: Dict[str, Dict[str, Any]] = {
                 "end_pattern": r"五\s*[、\.．]\s*项目实施的预期绩效目标",
             },
         ]
+    },
+    "hebei_nsfc_2026": {
+        "name": "河北省自然科学基金申报书（2026）",
+        "description": "适用于河北省自然科学基金申报书正文查重",
+        "whitelist_patterns": WHITELIST_TEMPLATE_PATTERNS,
+        "heading_patterns": HEADING_PATTERNS,
+        "table_patterns": TABLE_PATTERNS,
+        "sections": [
+            {
+                "name": "一、立论依据",
+                "start_pattern": r"一\s*[、\.．]\s*立论依据",
+                "end_pattern": r"3\s*[、\.．]\s*主要参考文献目录",
+            },
+            {
+                "name": "二、研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果",
+                "start_pattern": r"二\s*[、\.．]\s*研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果",
+                "end_pattern": r"三\s*[、\.．]\s*研究方案及可行性分析",
+            },
+            {
+                "name": "三、研究方案及可行性分析",
+                "start_pattern": r"三\s*[、\.．]\s*研究方案及可行性分析",
+                "end_pattern": r"四\s*[、\.．]\s*研究基础与工作条件",
+            },
+        ],
     },
 }
 

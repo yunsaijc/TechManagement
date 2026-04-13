@@ -1,449 +1,194 @@
-# 👥 专家匹配子服务设计
+# 👥 专家匹配子服务设计（V1）
 
 ## 概述
 
-专家匹配子服务是智能分组与专家匹配服务的核心组件之一，负责为每个分组匹配最合适的评审专家，实现全局最优匹配。
+本篇文档按 [API 接口文档](05-api.md) 的当前口径维护，描述 `POST /api/v1/grouping/match` 的输入、处理流程与输出结构。
 
-## 功能说明
-
-1. **专家画像构建**：从研究领域、论文、擅长专业提取专家研究方向
-2. **项目-专家匹配度计算**：基于向量相似度计算匹配度
-3. **全局最优匹配**：以组为单元的整体优化匹配
-4. **关系回避检测**：自动检测并回避师生、历史合作等关系
+专家匹配子服务目标是：为指定分组分配评审专家，并返回可解释的匹配结果与统计信息。
 
 ---
 
-## 业务流程
+## V1 范围
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      专家匹配子服务流程                            │
-└─────────────────────────────────────────────────────────────────┘
+当前版本聚焦以下能力：
 
-     输入: 项目列表 + 专家库
-         │
-         ▼
-┌─────────────────────┐
-│   1. 数据预处理     │
-│   - 专家数据加载    │
-│   - 文本融合        │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   2. 专家画像构建   │
-│   (LLM)             │
-│   - 研究方向提取    │
-│   - 领域标签提取    │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   3. 专家向量化     │
-│   (Embedding)      │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   4. 匹配度计算     │
-│   - 向量相似度      │
-│   - 学科匹配        │
-│   - 历史相关性      │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   5. 全局最优匹配   │
-│   (约束优化)        │
-│   - 匈牙利算法      │
-│   - 约束满足        │
-└──────┬──────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   6. 关系回避检测   │
-│   - 师生关系        │
-│   - 历史合作        │
-│   - 单位回避        │
-└──────┬──────────────┘
-         │
-         ▼
-     输出: 匹配结果
-```
+1. 按 `group_id` 对指定分组执行匹配
+2. 基于语义相似度生成项目-专家匹配分
+3. 支持关系回避开关（`avoid_relations`）
+4. 返回项目级专家列表、统计与警告信息
+
+当前版本不在本文承诺以下能力：
+
+1. 严格意义上的全局最优求解（如匈牙利/线性规划完整约束解）
+2. 复杂关系网络（师承图谱、论文合作图谱）全量接入
+3. 完整的历史评审行为建模
 
 ---
 
-## 核心模块
+## API 对齐
 
-### 1. 专家画像构建 (Profiler)
+### 1) 专家匹配接口
 
-负责使用 LLM 分析专家信息，构建专家画像。
+- 方法与路径：`POST /api/v1/grouping/match`
+- 基础路径：`/api/v1/grouping`
 
-#### 输入
+### 2) 请求参数（与 05-api 一致）
 
-```python
-# 专家原始数据
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `group_id` | Integer | 是 | - | 分组ID（来自分组接口返回） |
+| `experts_per_project` | Integer | 否 | 5 | 每个项目分配专家数 |
+| `min_experts_per_group` | Integer | 否 | 10 | 每组最少懂行专家数 |
+| `avoid_relations` | Boolean | 否 | true | 是否启用关系回避 |
+| `max_reviews_per_expert` | Integer | 否 | 5 | 每位专家最大评审数 |
+
+请求示例：
+
+```json
 {
-    "XM": "张教授",
-    "SXXK1": "1502040",
-    "SXZY": "有机化学,药物化学",
-    "YJLY": "主要从事有机合成方法学、金属催化反应、药物分子设计合成研究...",
-    "LWLZ": "在JACS、Angew等期刊发表论文80余篇，承担国家自然科学基金重点项目...",
-    "GZDW": "北京大学化学与分子工程学院"
+  "group_id": 1,
+  "experts_per_project": 5,
+  "min_experts_per_group": 10,
+  "avoid_relations": true,
+  "max_reviews_per_expert": 5
 }
 ```
 
-#### 处理流程
+### 3) 响应结构（与 05-api 一致）
 
-1. **文本融合**：拼接擅长专业 + 研究领域 + 论文论著
-2. **LLM 分析**：提取研究方向、领域专长
+顶层响应：
 
-#### LLM Prompt 示例
+- `status`
+- `data`
+- `message`
+- `code`
 
-```
-请分析以下专家信息，构建专家画像：
+`data` 字段结构：
 
-姓名：张教授
-擅长专业：有机化学,药物化学
-研究领域：主要从事有机合成方法学、金属催化反应、药物分子设计合成研究...
-论文论著：在JACS、Angew等期刊发表论文80余篇，承担国家自然科学基金重点项目...
+- `id`: 匹配任务ID（示例：`match_1709280000002`）
+- `group_id`: 分组ID
+- `matches`: 项目匹配列表
+- `statistics`: 统计信息
+- `warnings`: 警告信息
 
-请提取：
-1. 主要研究方向（如：有机合成、药物化学、金属催化等）
-2. 细分领域专长（如：不对称合成、药物设计等）
-3. 技术专长（如：有机合成、实验设计等）
-```
+`matches` 单项结构：
 
-#### 输出
+- `project_id`
+- `experts[]`
+  - `expert_id`
+  - `xm`
+  - `match_score`
+  - `reason`
+  - `avoidance`
 
-```python
-{
-    "main_research_area": "有机化学",
-    "sub_research_fields": ["有机合成", "药物化学", "金属催化"],
-    "tech_expertise": ["有机合成", "实验设计", "催化剂开发"],
-    "keywords": ["有机合成", "药物化学", "金属催化", "不对称合成"]
-}
-```
+`statistics` 结构：
 
-### 2. 匹配度计算 (Scorer)
+- `total_projects`
+- `total_experts`
+- `avg_match_score`
+- `avoidance_detected`
+- `experts_per_project`
+- `coverage_rate`
 
-计算项目与专家之间的匹配度。
+---
 
-#### 匹配维度
+## 处理流程（V1）
 
-| 维度 | 权重 | 说明 |
-|------|------|------|
-| 研究方向匹配 | 50% | 专家研究方向与项目内容的一致性 |
-| 学科匹配 | 30% | 专家熟悉学科与项目学科的匹配度 |
-| 历史相关性 | 20% | 专家历史评审相似项目的经验 |
-
-#### 计算流程
-
-```python
-def calculate_match_score(
-    project: Project,
-    expert: Expert,
-    project_vector: np.ndarray,
-    expert_vector: np.ndarray
-) -> float:
-    """计算项目-专家匹配度
-    
-    Args:
-        project: 项目
-        expert: 专家
-        project_vector: 项目向量
-        expert_vector: 专家向量
-    
-    Returns:
-        匹配度分数 (0-100)
-    """
-    # 1. 向量相似度 (50%)
-    vector_similarity = cosine_similarity(project_vector, expert_vector)
-    
-    # 2. 学科匹配 (30%)
-    subject_match = calculate_subject_match(
-        project.ssxg1, expert.sxxk1, expert.sxxk2
-    )
-    
-    # 3. 历史评审经验 (20%)
-    history_score = calculate_history_score(
-        expert.zjno, project.ssxz1
-    )
-    
-    # 加权计算
-    score = (
-        vector_similarity * 0.5 +
-        subject_match * 0.3 +
-        history_score * 0.2
-    )
-    
-    return score
-```
-
-### 3. 全局最优匹配 (Optimizer)
-
-使用约束优化算法实现全局最优匹配。
-
-#### 目标函数
-
-```
-最大化: Σ(匹配度 × 分配标志)
-
-约束条件:
-1. 每项目分配 N 个专家 (N=5)
-2. 每组 ≥ M 个懂行专家 (M=10)
-3. 每位专家评审项目数 ≤ 上限
-4. 回避关系专家不能分配
-```
-
-#### 匹配算法
-
-| 阶段 | 算法 | 说明 |
-|------|------|------|
-| 初筛 | 规则过滤 | 排除必须回避的专家 |
-| 打分 | 向量相似度 | 计算所有项目-专家匹配度 |
-| 分配 | 匈牙利算法 | 最优指派问题求解 |
-| 调优 | 贪心 + 模拟退火 | 局部优化 |
-
-#### 算法流程
-
-```python
-def optimize_matching(
-    projects: List[Project],
-    experts: List[Expert],
-    match_scores: np.ndarray,
-    constraints: MatchingConstraints
-) -> MatchingResult:
-    """全局最优匹配
-    
-    Args:
-        projects: 项目列表
-        experts: 专家列表
-        match_scores: 匹配度矩阵 (projects × experts)
-        constraints: 约束条件
-    
-    Returns:
-        匹配结果
-    """
-    # 1. 初筛 - 排除回避专家
-    valid_experts = filter_avoidance(projects, experts)
-    
-    # 2. 构建指派问题矩阵
-    # 每个项目需要分配 N 个专家
-    
-    # 3. 匈牙利算法求解
-    assignments = hungarian_algorithm(match_scores)
-    
-    # 4. 约束满足调整
-    assignments = satisfy_constraints(assignments, constraints)
-    
-    # 5. 生成结果
-    return MatchingResult(assignments=assignments)
-```
-
-### 4. 关系回避 (Avoidance)
-
-检测并回避可能影响评审公平性的关系。
-
-#### 回避类型
-
-| 类型 | 检测方法 | 处理方式 |
-|------|----------|----------|
-| 师生关系 | 专家毕业院校 = 项目负责人学位获取单位 | 排除 |
-| 历史合作 | 专家与项目负责人共同署名论文/项目 | 排除 |
-| 同一单位 | 专家单位 = 项目完成单位 | 警告，可保留 |
-| 竞争关系 | 专家所在单位与项目单位有利益冲突 | 排除 |
-
-#### 检测实现
-
-```python
-class AvoidanceChecker:
-    """关系回避检测器"""
-    
-    def check_teacher_student(
-        self,
-        expert: Expert,
-        project: Project
-    ) -> AvoidanceResult:
-        """检测师生关系
-        
-        Args:
-            expert: 专家
-            project: 项目
-        
-        Returns:
-            回避结果
-        """
-        # 获取专家毕业院校
-        expert_schools = self._get_expert_schools(expert)
-        
-        # 获取项目负责人学位获取单位
-        project_schools = self._get_project_schools(project)
-        
-        # 检测重叠
-        overlap = set(expert_schools) & set(project_schools)
-        
-        if overlap:
-            return AvoidanceResult(
-                avoided=True,
-                reason=f"师生关系：共同院校 {overlap}",
-                severity="high"
-            )
-        
-        return AvoidanceResult(avoided=False)
-    
-    def check_history_cooperation(
-        self,
-        expert: Expert,
-        project: Project
-    ) -> AvoidanceResult:
-        """检测历史合作关系"""
-        # 检查论文共同署名
-        # 检查项目共同承担
-        pass
-    
-    def check_same_unit(
-        self,
-        expert: Expert,
-        project: Project
-    ) -> AvoidanceResult:
-        """检测同一单位"""
-        if expert.gzdw == project.cddw_mc:
-            return AvoidanceResult(
-                avoided=False,  # 不排除，但标记
-                reason=f"同一单位：{expert.gzdw}",
-                severity="low"
-            )
-        return AvoidanceResult(avoided=False)
+```text
+输入 group_id + 匹配参数
+  -> 加载分组项目
+  -> 按学科代码/条件召回候选专家
+  -> 专家画像构建（研究方向、关键词等）
+  -> 项目与专家向量化
+  -> 计算项目-专家匹配分矩阵
+  -> 按参数执行分配（含关系回避与容量限制）
+  -> 汇总统计与 warnings
+  -> 输出 MatchingResult
 ```
 
 ---
 
-## 核心代码结构
+## 模块职责
 
 ### MatchingAgent
 
-```python
-class MatchingAgent:
-    """匹配 Agent，负责协调各组件完成专家匹配"""
-    
-    def __init__(
-        self,
-        llm: Any = None,
-        embedder: Any = None
-    ):
-        self.llm = llm or get_default_llm_client()
-        self.embedder = embedder or get_default_embedder()
-        self.profiler = ExpertProfiler(self.llm)
-        self.scorer = MatchScorer(self.embedder)
-        self.optimizer = MatchingOptimizer()
-        self.avoidance = AvoidanceChecker()
-    
-    async def match_experts(
-        self,
-        projects: List[Project],
-        experts: List[Expert],
-        group_id: int,
-        experts_per_project: int = 5,
-        min_experts_per_group: int = 10,
-        avoid_relations: bool = True,
-        max_reviews_per_expert: int = 5
-    ) -> MatchingResult:
-        """执行专家匹配
-        
-        Args:
-            projects: 项目列表
-            experts: 专家列表
-            group_id: 分组ID
-            experts_per_project: 每个项目分配的专家数
-            min_experts_per_group: 每组最少懂行专家数
-            avoid_relations: 是否回避关系
-            max_reviews_per_expert: 每位专家最大评审数
-        
-        Returns:
-            匹配结果
-        """
-        # 1. 专家画像构建
-        profiles = await self.profiler.profile_experts(experts)
-        
-        # 2. 专家向量化
-        expert_vectors = self.embedder.embed([
-            p.text for p in profiles
-        ])
-        
-        # 3. 项目向量化
-        project_vectors = self.embedder.embed([
-            p.content for p in projects
-        ])
-        
-        # 4. 计算匹配度矩阵
-        match_scores = self.scorer.calculate_matrix(
-            project_vectors, expert_vectors
-        )
-        
-        # 5. 关系回避过滤
-        if avoid_relations:
-            match_scores = self.avoidance.filter_scores(
-                projects, experts, match_scores
-            )
-        
-        # 6. 全局最优匹配
-        constraints = MatchingConstraints(
-            experts_per_project=experts_per_project,
-            min_experts_per_group=min_experts_per_group,
-            max_reviews_per_expert=max_reviews_per_expert
-        )
-        assignments = self.optimizer.optimize(
-            projects, experts, match_scores, constraints
-        )
-        
-        # 7. 生成结果
-        return MatchingResult(
-            group_id=group_id,
-            assignments=assignments,
-            statistics=calculate_statistics(assignments)
-        )
-```
+编排流程入口，负责：
+
+1. 组装输入参数
+2. 调用画像、打分、优化组件
+3. 生成 `MatchingResult`
+
+### ExpertProfiler
+
+负责专家画像构建，输入专家原始字段（如熟悉学科、擅长专业、研究领域、论文论著），输出结构化研究方向和关键词，供后续匹配计算使用。
+
+### MatchScorer
+
+负责项目-专家评分：
+
+1. 计算语义相似度
+2. 融合学科一致性信号
+3. 生成匹配分矩阵（0-100）
+
+### MatchingOptimizer
+
+负责把评分矩阵转换为最终分配结果，处理：
+
+1. `experts_per_project`
+2. `avoid_relations`
+3. `max_reviews_per_expert`
+4. `min_experts_per_group`（作为分组侧目标约束）
 
 ---
 
-## 匹配策略
+## 回避策略（V1）
 
-### 1. 匹配优先 vs 回避优先
+`avoid_relations=true` 时，匹配阶段启用关系回避检查。回避结果通过 `avoidance` 返回：
 
-| 策略 | 说明 | 适用场景 |
-|------|------|----------|
-| match_first | 优先保证匹配度，回避作为后置过滤 | 匹配度优先 |
-| avoid_first | 优先排除回避关系，再选最优 | 回避优先 |
+- `avoided`: 是否回避
+- `reason`: 回避原因
+- `severity`: 严重级别（`low/medium/high/none`）
 
-### 2. 局部最优 vs 全局最优
+V1 约定：
 
-| 策略 | 说明 | 适用场景 |
-|------|------|----------|
-| greedy | 贪心匹配，速度快 | 项目少 |
-| global | 全局优化，结果最优 | 项目多 |
+1. `high/medium`：优先不分配
+2. `low`：允许分配但进入 `warnings`
+3. `none`：正常分配
 
 ---
 
-## 扩展性设计
+## 统计口径（V1）
 
-### 新增回避规则
+- `total_projects`: 本次参与匹配的项目数
+- `total_experts`: 本次实际涉及的唯一专家数
+- `avg_match_score`: 全部分配记录的平均匹配分
+- `avoidance_detected`: 检测到的回避关系数量
+- `experts_per_project`: 请求中的目标值
+- `coverage_rate`: 唯一专家覆盖率
 
-```
-1. 在 matching/avoidance/ 下创建新规则类
-2. 继承 BaseAvoidance
-3. 实现 check() 方法
-4. 在 AvoidanceChecker 中注册
-```
+---
 
-### 新增匹配算法
+## 与完整流程接口关系
 
-```
-1. 在 matching/optimizer/ 下创建新算法类
-2. 继承 BaseOptimizer
-3. 实现 optimize() 方法
-4. 在 MatchingAgent 中注册
-```
+- `POST /api/v1/grouping/match`: 对单个分组执行专家匹配
+- `POST /api/v1/grouping/full`: 先分组，再对所有组执行匹配并聚合结果
+
+`/full` 的匹配参数与本篇文档保持一致，便于单组调试后无缝切换到全流程执行。
+
+---
+
+## 错误与降级约定
+
+常见错误场景：
+
+1. `group_id` 无效或分组不存在
+2. 候选专家不足，无法满足目标分配数
+3. 数据源或模型调用失败
+
+处理原则：
+
+1. 能返回部分结果时，返回 `warnings` 并保留可用分配
+2. 无法形成有效结果时，返回明确错误信息供上层重试或人工介入
 
 ---
 

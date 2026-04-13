@@ -7,6 +7,22 @@ from src.common.models.document import BoundingBox, DocumentContent, ImageRegion
 from src.common.models.enums import CheckItem, DocumentType
 from src.common.models.file import FileMeta, FileType, UploadFile
 from src.common.models.review import CheckResult, CheckStatus, ReviewResult
+from src.common.models.project_review import (
+    BatchReviewRequest,
+    BatchReviewResult,
+    ProjectInfo,
+    CooperationInfo,
+    ProjectAttachment,
+    ExternalChecks,
+    ProjectReviewRequest,
+    ProjectIndexRow,
+    MissingAttachment,
+    ManualReviewItem,
+    PolicyRuleCheck,
+    ProjectReviewResult,
+    ProjectTypeInfo,
+    ProjectReviewContext,
+)
 from src.common.models.types import JSON, ImageData, CheckFunction
 # 分组服务模型
 from src.common.models.grouping import (
@@ -76,6 +92,20 @@ __all__ = [
     "CheckStatus",
     "CheckResult",
     "ReviewResult",
+    "BatchReviewRequest",
+    "BatchReviewResult",
+    "ProjectInfo",
+    "CooperationInfo",
+    "ProjectAttachment",
+    "ExternalChecks",
+    "ProjectReviewRequest",
+    "ProjectIndexRow",
+    "MissingAttachment",
+    "ManualReviewItem",
+    "PolicyRuleCheck",
+    "ProjectReviewResult",
+    "ProjectTypeInfo",
+    "ProjectReviewContext",
     # 文档模型
     "BoundingBox",
     "TextBlock",

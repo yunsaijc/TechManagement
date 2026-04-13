@@ -1,6 +1,7 @@
 .env
 .vscode
 *cache
+data
 
 # Python-generated files
 __pycache__/
@@ -22,3 +23,7 @@ yolo*
 #test data
 tests/
 
+# test data / artifacts
+tests/**
+!tests/**/
+!tests/**/*.py

@@ -7,6 +7,7 @@
 | POST | `/api/v1/evaluation` | 按 `project_id` 执行融合评审 |
 | POST | `/api/v1/evaluation/evaluate` | 同上（别名） |
 | POST | `/api/v1/evaluation/evaluate/file` | 上传文件执行融合评审 |
+| POST | `/api/v1/evaluation/by-guide` | 按 `zndm` 查询真实项目并批量评审 |
 | POST | `/api/v1/evaluation/batch` | 批量评审 |
 | POST | `/api/v1/evaluation/chat/ask` | 基于评审结果问答（附页码证据） |
 | GET | `/api/v1/evaluation/{project_id}` | 获取最新评审结果 |
@@ -125,7 +126,45 @@ Content-Type: application/json
 
 返回 `total/success/failed/results/summary/errors`。
 
-## 4. 专家问答（带证据）
+## 4. 按指南代码批量评审
+
+### 请求
+
+```http
+POST /api/v1/evaluation/by-guide
+Content-Type: application/json
+```
+
+```json
+{
+  "zndm": "c2f3b7b1f9534463ad726e6936c91859",
+  "limit": 10,
+  "enable_highlight": true,
+  "enable_industry_fit": false,
+  "enable_benchmark": false,
+  "enable_chat_index": true,
+  "concurrency": 3
+}
+```
+
+### 说明
+
+- 服务端先按 `zndm` 查询 `Sb_Jbxx + Sb_Sbzt + sys_guide`
+- 仅评审 `isSubmit='1'` 的项目
+- `limit` 为可选参数；不传则全量，传入时仅处理前 N 个项目
+- 正文固定读取：
+  - `/mnt/remote_corpus/{year}/sbs/{id}/{id}.docx`
+
+### 响应
+
+返回：
+- `zndm`
+- `guide_name`
+- `total/success/failed`
+- `results`
+- `errors`
+
+## 5. 专家问答（带证据）
 
 ### 请求
 
@@ -161,7 +200,12 @@ Content-Type: application/json
 }
 ```
 
-## 5. 权重与维度接口
+### 说明
+
+- 若该 `evaluation_id` 尚未落盘聊天索引，服务会先自动尝试重建（优先使用 `debug_eval` 中的页切片，其次回源项目文档）
+- 仅当自动重建仍失败时，接口返回 `422`（错误信息包含“未构建聊天索引，且无法自动重建”）
+
+## 6. 权重与维度接口
 
 - `GET /api/v1/evaluation/dimensions`
 - `POST /api/v1/evaluation/weights/validate`
