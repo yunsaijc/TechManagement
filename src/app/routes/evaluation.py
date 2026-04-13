@@ -6,8 +6,10 @@
 import asyncio
 import json
 import os
+import re
 import statistics
 import tempfile
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
@@ -32,8 +34,146 @@ from src.services.evaluation.config import evaluation_config
 
 
 router = APIRouter(tags=["正文评审"])
+DEBUG_EVAL_DIR = Path(__file__).resolve().parents[3] / "debug_eval"
 
 _agent: Optional[EvaluationAgent] = None
+
+
+def _safe_text(value, fallback="-"):
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    return text if text else fallback
+
+
+_HASH_PDF_NAME_RE = re.compile(r"^[0-9a-f]{32}\.pdf$", re.IGNORECASE)
+
+
+def _cleanup_project_title(title: str) -> str:
+    # Remove line wraps introduced during OCR/text extraction while keeping spaces readable.
+    normalized = title.replace("\r", "")
+    normalized = re.sub(r"\s*\n\s*", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip(" :：|\t")
+    return normalized
+
+
+def _extract_project_title_from_text(text: str) -> str:
+    if not text:
+        return ""
+
+    table_match = re.search(r"项目名称\s*\|\s*(.+?)\s*\|\s*所属专项", text, re.DOTALL)
+    if table_match:
+        title = _cleanup_project_title(table_match.group(1))
+        if title:
+            return title
+
+    line_match = re.search(r"项目名称\s*[：:]\s*([^\n\r|]+)", text)
+    if line_match:
+        title = _cleanup_project_title(line_match.group(1))
+        if title:
+            return title
+
+    return ""
+
+
+def _resolve_project_title(raw: Dict[str, object], result: Dict[str, object], default_title: str) -> str:
+    title = _safe_text(default_title, "")
+    if title and not _HASH_PDF_NAME_RE.match(title):
+        return title
+
+    text_candidates: List[str] = []
+    sections = raw.get("sections")
+    if isinstance(sections, dict):
+        preferred_keys = ["概述", "项目基本信息", "项目申报单位基本信息"]
+        for key in preferred_keys:
+            value = sections.get(key)
+            if isinstance(value, str) and value.strip():
+                text_candidates.append(value)
+
+        for value in sections.values():
+            if isinstance(value, str) and value.strip():
+                text_candidates.append(value)
+
+    for candidate in text_candidates:
+        extracted = _extract_project_title_from_text(candidate)
+        if extracted:
+            return extracted
+
+    return _safe_text(default_title, _safe_text(raw.get("project_id") or result.get("project_id"), "未命名项目"))
+
+
+def _load_debug_result_items() -> List[Dict[str, object]]:
+    if not DEBUG_EVAL_DIR.exists():
+        return []
+
+    items: List[Dict[str, object]] = []
+    json_files = sorted(
+        DEBUG_EVAL_DIR.glob("EVAL_*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+    for json_file in json_files:
+        try:
+            raw = json.loads(json_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        if not isinstance(raw, dict):
+            continue
+
+        result = raw.get("result") if isinstance(raw.get("result"), dict) else raw
+        project_id = _safe_text(raw.get("project_id") or result.get("project_id") if isinstance(result, dict) else None, json_file.stem.removeprefix("EVAL_"))
+        project_name = _safe_text(raw.get("project_name") or result.get("project_name") if isinstance(result, dict) else None, project_id)
+        project_title = _resolve_project_title(raw, result if isinstance(result, dict) else {}, project_name)
+        evaluation_id = _safe_text(raw.get("evaluation_id") or result.get("evaluation_id") if isinstance(result, dict) else None, json_file.stem)
+        overall_score = None
+        grade = None
+        chat_ready = None
+        partial = None
+
+        if isinstance(result, dict):
+            overall_score = result.get("overall_score")
+            grade = result.get("grade")
+            chat_ready = result.get("chat_ready")
+            partial = result.get("partial")
+
+        html_file = json_file.with_suffix(".html")
+        debug_html_file = json_file.with_suffix(".debug.html")
+        preview_file = html_file if html_file.exists() else debug_html_file
+
+        items.append(
+            {
+                "id": json_file.stem,
+                "title": project_title,
+                "project_id": project_id,
+                "evaluation_id": evaluation_id,
+                "project_name": project_title,
+                "overall_score": overall_score,
+                "grade": grade,
+                "chat_ready": chat_ready,
+                "partial": partial,
+                "json_url": f"/debug-eval/{json_file.name}",
+                "html_url": f"/debug-eval/{preview_file.name}" if preview_file.exists() else "",
+                "debug_html_url": f"/debug-eval/{debug_html_file.name}" if debug_html_file.exists() else "",
+                "summary": f"{_safe_text(overall_score)} 分 · {_safe_text(grade)}",
+                "source_file": json_file.name,
+                "updated_at": json_file.stat().st_mtime,
+            }
+        )
+
+    return items
+
+
+@router.get("/debug-results")
+async def list_debug_results():
+    """列出 debug_eval 下可直接浏览的测试结果。"""
+    items = _load_debug_result_items()
+    return {
+        "results": items,
+        "default_id": items[0]["id"] if items else "",
+        "debug_eval_dir": str(DEBUG_EVAL_DIR),
+    }
 
 
 def get_agent() -> EvaluationAgent:

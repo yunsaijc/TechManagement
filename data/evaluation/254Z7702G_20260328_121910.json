@@ -1,0 +1,181 @@
+{
+  "project_id": "254Z7702G",
+  "project_name": "5e8836fc476344b382794452deef9061.docx",
+  "overall_score": 5.0,
+  "grade": "D",
+  "dimension_scores": [
+    {
+      "dimension": "feasibility",
+      "dimension_name": "技术可行性",
+      "score": 5.0,
+      "weight": 0.15,
+      "weighted_score": 0.75,
+      "confidence": 0.3,
+      "opinion": "未找到技术路线相关内容，无法进行有效评估",
+      "issues": [
+        "缺少技术路线或研究方案章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "innovation",
+      "dimension_name": "创新性",
+      "score": 5.0,
+      "weight": 0.15,
+      "weighted_score": 0.75,
+      "confidence": 0.3,
+      "opinion": "未找到创新点相关内容，无法进行有效评估",
+      "issues": [
+        "缺少创新点或研究内容章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "team",
+      "dimension_name": "团队能力",
+      "score": 5.0,
+      "weight": 0.1,
+      "weighted_score": 0.5,
+      "confidence": 0.3,
+      "opinion": "未找到团队相关内容，无法进行有效评估",
+      "issues": [
+        "缺少项目团队或人员分工章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "outcome",
+      "dimension_name": "预期成果",
+      "score": 5.0,
+      "weight": 0.12,
+      "weighted_score": 0.6,
+      "confidence": 0.3,
+      "opinion": "未找到预期成果相关内容，无法进行有效评估",
+      "issues": [
+        "缺少预期成果或考核指标章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "social_benefit",
+      "dimension_name": "社会效益",
+      "score": 5.0,
+      "weight": 0.1,
+      "weighted_score": 0.5,
+      "confidence": 0.3,
+      "opinion": "未找到社会效益相关内容，无法进行有效评估",
+      "issues": [
+        "缺少预期效益或社会效益章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "economic_benefit",
+      "dimension_name": "经济效益",
+      "score": 5.0,
+      "weight": 0.1,
+      "weighted_score": 0.5,
+      "confidence": 0.3,
+      "opinion": "未找到经济效益相关内容，无法进行有效评估",
+      "issues": [
+        "缺少预期效益或经济效益章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "risk_control",
+      "dimension_name": "风险控制",
+      "score": 5.0,
+      "weight": 0.08,
+      "weighted_score": 0.4,
+      "confidence": 0.3,
+      "opinion": "未找到风险控制相关内容，无法进行有效评估",
+      "issues": [
+        "缺少风险分析或风险控制章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "schedule",
+      "dimension_name": "进度合理性",
+      "score": 5.0,
+      "weight": 0.1,
+      "weighted_score": 0.5,
+      "confidence": 0.3,
+      "opinion": "未找到进度安排相关内容，无法进行有效评估",
+      "issues": [
+        "缺少进度安排或实施计划章节"
+      ],
+      "highlights": [],
+      "items": []
+    },
+    {
+      "dimension": "compliance",
+      "dimension_name": "合规性",
+      "score": 5.0,
+      "weight": 0.1,
+      "weighted_score": 0.5,
+      "confidence": 0.3,
+      "opinion": "未找到合规性相关内容，无法进行有效评估",
+      "issues": [
+        "缺少政策依据或经费预算章节"
+      ],
+      "highlights": [],
+      "items": []
+    }
+  ],
+  "summary": "本项目综合评分5.0分，等级评定为D级（较差）。在技术可行性、创新性、团队能力、预期成果、社会效益、经济效益、风险控制、进度合理性、合规性等方面存在明显不足，需要重点关注。",
+  "recommendations": [
+    "【技术可行性】缺少技术路线或研究方案章节",
+    "【创新性】缺少创新点或研究内容章节",
+    "【团队能力】缺少项目团队或人员分工章节",
+    "【预期成果】缺少预期成果或考核指标章节",
+    "【社会效益】缺少预期效益或社会效益章节",
+    "【经济效益】缺少预期效益或经济效益章节",
+    "【风险控制】缺少风险分析或风险控制章节",
+    "【进度合理性】缺少进度安排或实施计划章节",
+    "【合规性】缺少政策依据或经费预算章节"
+  ],
+  "evaluation_id": "EVAL_254Z7702G_20260328121910741268",
+  "highlights": {
+    "research_goals": [
+      "[表格行1] 本项目拟深入阐明负载万古霉素壳聚糖硫酸钙（VCS-CS）抑制细菌生物膜的作用机制，明确其干扰icaADBC通路、抑制胞外聚合物基质（ESP）时空响应并协同宿主免疫阻断生物膜的效应",
+      "具体实施计划如下： 2025年3月-2025年9月 材料制备、表征及基础抗菌性能评价：采用共沉淀法等优化工艺制备VCSCS复合材料，系统优化万古霉素负载量、壳聚糖分子量及硫酸钙比例，获得理化性能稳定的载药体系",
+      "利用SEM、TEM、XRD、FTIR及TGA等技术表征材料的微观结构、物相组成、化学键合及热稳定性"
+    ],
+    "innovations": [
+      "2026年3月-2026年9月 VCSCS协同宿主免疫阻断生物膜机制研究及体内验证",
+      "建立细菌生物膜与免疫细胞（RAW264.7细胞）共培养模型，评估VCSCS对免疫细胞吞噬功能、ROS/NO产生及炎症因子（TNF-α、IL-1β、IL-6、IL-10）分泌的影响，明确VCSCS通过改变生物膜结构促进免疫细胞识别与杀伤的机制",
+      "构建动物生物膜感染模型（C57BL/6小鼠），通过单细胞测序技术、组织病理学染色及免疫荧光标记等方法，验证VCSCS在体内抑制生物膜形成、降低感染负荷及调控宿主免疫反应的综合效应"
+    ],
+    "technical_route": []
+  },
+  "industry_fit": null,
+  "benchmark": null,
+  "evidence": [
+    {
+      "source": "document",
+      "file": "5e8836fc476344b382794452deef9061.docx",
+      "page": 2,
+      "snippet": "[表格行3] 河北医科大学第一医院 | 中国 | 石家庄市-裕华区 | 河北省石家庄市东岗路89号 | 医疗机构（非企业） | 贾蓓 | 18633889097\n二、项目实施的主要内容任务\n[表格行1] 本项目旨在系统阐明负载万古霉素的壳聚糖硫酸钙（VCSCS）复合材料抑制金黄色葡萄球菌等细菌生物膜（BF）的创新机制，核心是揭示其如何通过干扰 icaADBC"
+    },
+    {
+      "source": "document",
+      "file": "5e8836fc476344b382794452deef9061.docx",
+      "page": 2,
+      "snippet": "2026年3月-2026年9月 VCSCS协同宿主免疫阻断生物膜机制研究及体内验证。建立细菌生物膜与免疫细胞（RAW264.7细胞）共培养模型，评估VCSCS对免疫细胞吞噬功能、ROS/NO产生及炎症因子（TNF-α、IL-1β、IL-6、IL-10）分泌的影响，明确VCSCS通过改变生物膜结构促进免疫细胞识别与杀伤的机制。构建动物生物膜感染模型（C57BL"
+    }
+  ],
+  "chat_ready": false,
+  "partial": false,
+  "errors": [],
+  "created_at": "2026-03-28 12:19:10.742350",
+  "model_version": null
+}

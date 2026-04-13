@@ -32,6 +32,10 @@ class PerfCheckService:
             declaration_file_type=declaration_file_type,
             task_file=task_file,
             task_file_type=task_file_type,
+            strict_mode=strict_mode,
+            enable_llm_enhancement=enable_llm_enhancement,
+            enable_table_vision_extraction=enable_table_vision_extraction,
+            enable_llm_entailment=enable_llm_entailment,
             on_progress=on_progress,
             **kwargs
         )
@@ -54,6 +58,9 @@ class PerfCheckService:
             project_id=project_id,
             declaration_text=declaration_text,
             task_text=task_text,
+            strict_mode=strict_mode,
+            enable_llm_enhancement=enable_llm_enhancement,
+            enable_llm_entailment=enable_llm_entailment,
             on_progress=on_progress,
             **kwargs
         )

@@ -25,6 +25,9 @@ class PerfCheckAgent:
         project_id: str,
         declaration_text: str,
         task_text: str,
+        strict_mode: bool = True,
+        enable_llm_enhancement: bool = False,
+        enable_llm_entailment: bool = True,
         on_progress: Optional[Callable[[float, str, str], None]] = None,
         **kwargs
     ) -> PerfCheckResult:
@@ -32,8 +35,8 @@ class PerfCheckAgent:
         if on_progress:
             on_progress(0.05, "extract", "开始结构化抽取（申报书/任务书，并行）")
         apply_schema, task_schema = await asyncio.gather(
-            self.parser.extract_schema_from_text(declaration_text),
-            self.parser.extract_schema_from_text(task_text),
+            self.parser.extract_schema_from_text(declaration_text, source_file_type="text"),
+            self.parser.extract_schema_from_text(task_text, source_file_type="text"),
         )
         
         return await self._execute_detection(project_id, apply_schema, task_schema, on_progress=on_progress)
@@ -45,6 +48,10 @@ class PerfCheckAgent:
         declaration_file_type: str,
         task_file: bytes,
         task_file_type: str,
+        strict_mode: bool = True,
+        enable_llm_enhancement: bool = False,
+        enable_table_vision_extraction: bool = True,
+        enable_llm_entailment: bool = True,
         on_progress: Optional[Callable[[float, str, str], None]] = None,
         **kwargs
     ) -> PerfCheckResult:
@@ -52,8 +59,8 @@ class PerfCheckAgent:
         if on_progress:
             on_progress(0.05, "parse", "解析申报书/任务书文件（并行）")
         apply_schema, task_schema = await asyncio.gather(
-            self.parser.parse_to_schema(declaration_file, declaration_file_type),
-            self.parser.parse_to_schema(task_file, task_file_type),
+            self.parser.parse_to_schema(declaration_file, declaration_file_type, enable_table_vision_extraction=enable_table_vision_extraction),
+            self.parser.parse_to_schema(task_file, task_file_type, enable_table_vision_extraction=enable_table_vision_extraction),
         )
         
         return await self._execute_detection(project_id, apply_schema, task_schema, on_progress=on_progress)
@@ -67,6 +74,18 @@ class PerfCheckAgent:
     ) -> PerfCheckResult:
         """执行核心差异检测逻辑"""
         task_id = str(uuid.uuid4())[:8]
+        warnings: list[str] = []
+        apply_targets = apply_schema.performance_targets or []
+        task_targets = task_schema.performance_targets or []
+        if len(apply_targets) == 0:
+            warnings.append("申报书未解析到绩效指标（可能为表格未识别/扫描件质量较差/章节标题不规范）")
+        if len(task_targets) == 0:
+            warnings.append("任务书未解析到绩效指标（可能为表格未识别/扫描件质量较差/章节标题不规范）")
+        if 0 < len(apply_targets) <= 2:
+            warnings.append(f"申报书解析到的绩效指标数量较少（{len(apply_targets)} 条），建议优先上传可复制的 DOCX 或开启表格识别")
+        if 0 < len(task_targets) <= 2:
+            warnings.append(f"任务书解析到的绩效指标数量较少（{len(task_targets)} 条），建议优先上传可复制的 DOCX 或开启表格识别")
+
         if on_progress:
             on_progress(0.40, "detect", "开始差异检测（指标/内容/预算）")
         
@@ -91,12 +110,20 @@ class PerfCheckAgent:
             other_risks=other_risks,
             unit_budget_risks=unit_budget_risks,
             summary=summary,
-            warnings=[]
+            warnings=warnings
         )
 
     def _generate_summary(self, m_risks, c_risks, b_risks) -> str:
         """生成核验结论概要"""
-        content_level = str(getattr(c_risks[0], "risk_level", "")).upper() if c_risks else ""
+        content_level = ""
+        if c_risks:
+            levels = {str(getattr(x, "risk_level", "")).upper() for x in c_risks}
+            if "RED" in levels:
+                content_level = "RED"
+            elif "YELLOW" in levels:
+                content_level = "YELLOW"
+            elif "GREEN" in levels:
+                content_level = "GREEN"
         red_counts = len([r for r in m_risks if r.risk_level == "RED"]) + \
                      len([r for r in c_risks if r.risk_level == "RED"]) + \
                      len([r for r in b_risks if r.risk_level == "RED"])

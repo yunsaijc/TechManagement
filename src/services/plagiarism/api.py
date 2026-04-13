@@ -1,16 +1,30 @@
 """查重服务 API 路由"""
 import json
+import os
+import re
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from src.common.models import ApiResponse
 from src.services.plagiarism.agent import PlagiarismAgent
 from src.services.plagiarism.config import get_section_config, get_all_doc_types
 from src.services.plagiarism.section_extractor import SectionExtractor
+from src.services.plagiarism.mammoth_report_builder import MammothPlagiarismReportBuilder
 
 router = APIRouter()
+_REPORT_DIR = Path(os.getenv("PLAGIARISM_REPORT_DIR", "debug_plagiarism/reports"))
+_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+_REPORT_INDEX: dict[str, Path] = {}
+
+
+def _safe_report_id(report_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_\\-]+", report_id or ""):
+        raise HTTPException(status_code=400, detail="report_id 无效")
+    return report_id
 
 
 class PlagiarismRequest(BaseModel):
@@ -22,6 +36,7 @@ class PlagiarismRequest(BaseModel):
 
 @router.post("")
 async def check_plagiarism(
+    request: Request,
     files: List[UploadFile] = File(...),
     threshold: float = Form(0.5),
     threshold_high: float = Form(0.8),
@@ -29,6 +44,7 @@ async def check_plagiarism(
     doc_type: str = Form("default"),
     section_config: Optional[str] = Form(None),
     debug: bool = Form(False),
+    include_report: bool = Form(True),
 ) -> ApiResponse[dict]:
     """查重接口
     
@@ -105,9 +121,42 @@ async def check_plagiarism(
         threshold_medium=threshold_medium,
         section_config=config,
         debug=debug,
+        capture_debug_output=include_report,
     )
     
     result = await agent.check(file_data_list, file_paths=file_paths)
+
+    report_id = None
+    report_url = None
+    if include_report and agent.last_debug_output:
+        report_id = result.id
+        report_json = _REPORT_DIR / f"{report_id}.json"
+        report_html = _REPORT_DIR / f"{report_id}.html"
+        try:
+            report_json.write_text(json.dumps(agent.last_debug_output, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            def _is_docx(doc_id: str) -> bool:
+                return str(doc_id or "").lower().endswith(".docx")
+
+            primary_doc = agent.last_primary_doc_id or (agent.last_debug_doc_ids[0] if agent.last_debug_doc_ids else "")
+            primary_path = file_paths.get(primary_doc) if _is_docx(primary_doc) else None
+            source_path = None
+            for doc_id in agent.last_debug_doc_ids:
+                if doc_id != primary_doc and _is_docx(doc_id) and doc_id in file_paths:
+                    source_path = file_paths[doc_id]
+                    break
+
+            MammothPlagiarismReportBuilder().build_from_debug_file(
+                report_json,
+                report_html,
+                primary_docx_path=primary_path,
+                source_docx_path=source_path,
+            )
+            _REPORT_INDEX[report_id] = report_html
+            report_url = f"{str(request.base_url).rstrip('/')}/api/v1/plagiarism/report/{report_id}"
+        except Exception:
+            report_id = None
+            report_url = None
     
     # 清理临时文件
     import os
@@ -126,8 +175,19 @@ async def check_plagiarism(
             "medium_similarity": result.medium_similarity,
             "low_similarity": result.low_similarity,
             "processing_time": round(result.processing_time, 2),
+            "report_id": report_id,
+            "report_url": report_url,
         },
     )
+
+
+@router.get("/report/{report_id}", response_class=HTMLResponse)
+async def get_report(report_id: str) -> HTMLResponse:
+    rid = _safe_report_id(report_id)
+    path = _REPORT_INDEX.get(rid) or (_REPORT_DIR / f"{rid}.html")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="报告不存在或已被清理")
+    return HTMLResponse(content=path.read_text(encoding="utf-8"))
 
 
 @router.get("/types")

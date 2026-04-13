@@ -50,6 +50,21 @@ from src.common.models.perfcheck import (
     OtherInfoComparison,
     UnitBudgetComparison,
 )
+from src.common.models.logicon import (
+    ConflictSeverity,
+    ConflictCategory,
+    DocSpan,
+    ExtractedEntity,
+    GraphEdge,
+    DocumentGraph,
+    ConflictItem,
+    GraphStats,
+    RuleInfo,
+    RuleConfigSnapshot,
+    LogicOnResult,
+    LogicOnTextRequest,
+    LogicOnTask,
+)
 
 
 __all__ = [
@@ -127,4 +142,7 @@ __all__ = [
     "GraphStats",
     "RuleInfo",
     "RuleConfigSnapshot",
+    "LogicOnResult",
+    "LogicOnTextRequest",
+    "LogicOnTask",
 ]

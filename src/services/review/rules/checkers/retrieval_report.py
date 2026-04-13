@@ -34,7 +34,7 @@ class RetrievalReportCompletenessRule(BaseRule):
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.WARNING,
-                message="未提供论文列表元数据，无法执行检索报告完整性检查（请提供 papers）",
+                message='未提供论文列表元数据（papers），无法判断是否缺少论文检索报告。请在“补充信息”里提供，例如：{"papers":["论文1标题","论文2标题","论文3标题","论文4标题","论文5标题","论文6标题"]}',
                 evidence={
                     "papers": papers,
                 },
@@ -87,9 +87,51 @@ class RetrievalReportCompletenessRule(BaseRule):
                 evidence={"error": str(e)},
             )
 
-        # 找出缺少检索报告的论文
-        missing_papers = [p for p in papers if p not in extracted_papers]
-        extra_papers = [p for p in extracted_papers if p not in papers]
+        import re
+        def _simplify(s: str) -> str:
+            x = str(s or "").strip()
+            x = re.sub(r"^\s*(?:\d+(?:\.\d+)*-)?(?:论文-)?", "", x)
+            x = re.sub(r"^\s*(?:\(?（?\s*\d+\s*\)?）?)\s*", "", x)
+            x = re.sub(r"[\s\u3000·•，,。；;:：()（）\[\]【】<>《》\\/_\-~—–]+", "", x)
+            return x.casefold()
+        def _match(a: str, b: str) -> bool:
+            sa = _simplify(a)
+            sb = _simplify(b)
+            if not sa or not sb:
+                return False
+            if sa == sb:
+                return True
+            if len(sa) >= 10 and sa in sb:
+                return True
+            if len(sb) >= 10 and sb in sa:
+                return True
+            return False
+        matched_indices = set()
+        for i, p in enumerate(papers or []):
+            for j, q in enumerate(extracted_papers or []):
+                if j in matched_indices:
+                    continue
+                if _match(p, q):
+                    matched_indices.add(j)
+                    break
+        missing_papers = []
+        for p in papers or []:
+            found = False
+            for j, q in enumerate(extracted_papers or []):
+                if _match(p, q):
+                    found = True
+                    break
+            if not found:
+                missing_papers.append(p)
+        extra_papers = []
+        for q in extracted_papers or []:
+            found = False
+            for p in papers or []:
+                if _match(p, q):
+                    found = True
+                    break
+            if not found:
+                extra_papers.append(q)
 
         if not missing_papers and not extra_papers:
             return CheckResult(
@@ -104,11 +146,18 @@ class RetrievalReportCompletenessRule(BaseRule):
                 },
             )
 
+        def _truncate_list(xs, limit=5):
+            arr = [str(x).strip() for x in xs if str(x).strip()]
+            if len(arr) > limit:
+                return arr[:limit] + [f"…（共 {len(arr)} 篇）"]
+            return arr
         messages = []
         if missing_papers:
-            messages.append(f"缺少 {len(missing_papers)} 篇论文的检索报告: {', '.join(missing_papers)}")
+            msgs = _truncate_list(missing_papers)
+            messages.append(f"缺少 {len(missing_papers)} 篇论文的检索报告: {', '.join(msgs)}")
         if extra_papers:
-            messages.append(f"检索报告中包含 {len(extra_papers)} 篇不在项目中的论文: {', '.join(extra_papers)}")
+            msgs = _truncate_list(extra_papers)
+            messages.append(f"检索报告中包含 {len(extra_papers)} 篇不在项目中的论文: {', '.join(msgs)}")
 
         return CheckResult(
             item=self.name,
