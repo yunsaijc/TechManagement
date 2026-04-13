@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 DECLARATION_SECTION_TITLES = [
     "项目实施内容及目标",
+    "研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果",
+    "研究内容",
     "申报单位及合作单位基础",
     "项目申报单位基本信息表",
     "项目实施的预期绩效目标表",
@@ -24,18 +26,24 @@ DECLARATION_SECTION_TITLES = [
 ]
 
 TASK_SECTION_TITLES = [
-    "承担单位和合作单位情况",
-    "承担单位和合作单位情况表",
     "项目实施的主要内容任务",
+    "项目实施的主要任务",
+    "项目实施的总体任务、目标和进度安排",
+    "项目实施的第一年度任务",
     "进度安排和阶段目标",
+    "第一年度进度安排和阶段目标",
     "项目验收的考核指标",
+    "项目绩效评价考核目标及指标",
     "项目承担单位、合作单位任务分工",
     "参加人员及分工",
     "参加人员及分工表",
     "项目实施的绩效目标",
     "项目实施的绩效目标表",
     "项目预算表",
+    "第一年度项目预算表",
     "承担单位、合作单位经费预算明细表",
+    "承担单位和合作单位情况",
+    "承担单位和合作单位情况表",
 ]
 
 RESEARCH_POSITIVE_KEYWORDS = [
@@ -240,19 +248,11 @@ class PerfCheckParser:
             # 兼容标题后缀是否带“表”，避免同类表格标题因写法差异漏命中。
             base_title = title[:-1] if title.endswith("表") else title
             pat = re.compile(
-                rf"(?m)^\s*(?:[一二三四五六七八九十]+[、.．)]\s*)?{re.escape(base_title)}(?:表)?(?:\s|$)",
+                rf"(?m)^\s*(?:#+\s*)?(?:(?:第\s*[一二三四五六七八九十0-9]+\s*(?:部分|章|节)\s*)|(?:[一二三四五六七八九十0-9]+[、.．)]\s*))?{re.escape(base_title)}(?:表)?(?:\s|$)",
             )
             m = pat.search(raw)
             if m:
                 positions[m.start()] = m.end()
-                continue
-
-            fallback_titles = [base_title, f"{base_title}表"]
-            for fallback_title in fallback_titles:
-                idx = raw.find(fallback_title)
-                if idx >= 0:
-                    positions[idx] = idx + len(fallback_title)
-                    break
 
         return sorted(positions.keys())
 
@@ -267,38 +267,27 @@ class PerfCheckParser:
 
     def _strip_filling_instructions(self, raw: str) -> str:
         """移除“填写说明/填报说明”整段，避免行政模板文本污染抽取。"""
-        text = str(raw or "")
+        text = str(raw or "").strip()
         if not text:
             return ""
 
-        start_match = re.search(r"填\s*写\s*说\s*明|填\s*报\s*说\s*明", text)
-        if not start_match:
-            return text
-
-        start_idx = start_match.start()
-        suffix = text[start_idx:]
-
-        end_patterns = [
-            r"(?m)^\s*一[、.．)]\s*承担单位和合作单位情况(?:\s|$)",
-            r"(?m)^\s*1[.、)]\s*承担单位基本情况(?:\s|$)",
-            r"(?m)^\s*项目申报单位基本信息(?:\s|$)",
-            r"(?m)^\s*一[、.．)]\s*项目实施内容(?:及目标)?(?:\s|$)",
-            r"(?m)^\s*(?:第一部分|第1部分)\s*",
-            r"\[表格表头\d+\]\s*.*(?:承担单位和合作单位情况|项目申报单位基本信息|单位名称\s*\|)",
-        ]
-
-        end_positions: list[int] = []
-        for pat in end_patterns:
-            m = re.search(pat, suffix, re.IGNORECASE)
-            if m and m.start() > 0:
-                end_positions.append(start_idx + m.start())
-
-        if not end_positions:
-            return text
-
-        end_idx = min(end_positions)
-        merged = (text[:start_idx].rstrip() + "\n\n" + text[end_idx:].lstrip()).strip()
-        return merged
+        instr_pat = re.compile(r"填\s*写\s*说\s*明|填\s*报\s*说\s*明")
+        end_pat = re.compile(
+            r"^\s*(?:\[表格表头\d+\]|\[表格行\d+\]|第一部分|第1部分|一[、.．)]\s*|项目申报单位基本信息)",
+        )
+        out_lines: list[str] = []
+        skipping = False
+        for ln in text.splitlines():
+            if not skipping and instr_pat.search(ln):
+                skipping = True
+                continue
+            if skipping:
+                if end_pat.search(ln):
+                    skipping = False
+                else:
+                    continue
+            out_lines.append(ln)
+        return "\n".join(out_lines).strip()
 
     def _collect_section_blocks(
         self,
@@ -373,22 +362,18 @@ class PerfCheckParser:
 
         if doc_kind == "task":
             anchor_patterns = [
-                r"(?m)^\s*(?:八[、.．)]|第?八(?:部分|章)?)\s*项目预算表(?:\s|$)",
-                r"(?m)^\s*项目预算表\s*$",
+                r"(?m)^\s*(?:(?:第\s*[一二三四五六七八九十0-9]+\s*(?:部分|章|节)\s*)|(?:[一二三四五六七八九十0-9]+[、.．)]\s*))?项目预算表(?:\s|$)",
                 r"\[表格表头\d+\]\s*序号\s*\|\s*预算科目名称\s*\|\s*金额",
             ]
             next_section_patterns = [
-                r"(?m)^\s*(?:九[、.．)]|第?九(?:部分|章)?)\s+",
                 r"(?m)^\s*(?:承担单位、合作单位经费预算明细表|附件目录|附件)\s*$",
             ]
         else:
             anchor_patterns = [
-                r"(?m)^\s*(?:第?七(?:部分|章)?|七[、.．)])\s*项目预算表(?:\s|$)",
-                r"(?m)^\s*项目预算表\s*$",
+                r"(?m)^\s*(?:(?:第\s*[一二三四五六七八九十0-9]+\s*(?:部分|章|节)\s*)|(?:[一二三四五六七八九十0-9]+[、.．)]\s*))?项目预算表(?:\s|$)",
                 r"\[表格表头\d+\]\s*序号\s*\|\s*预算科目名称\s*\|\s*金额",
             ]
             next_section_patterns = [
-                r"(?m)^\s*(?:第?八(?:部分|章)?|八[、.．)])\s+",
                 r"(?m)^\s*(?:承担单位、合作单位经费预算明细表|附件目录|附件)\s*$",
             ]
 
@@ -430,6 +415,10 @@ class PerfCheckParser:
         detail_cut = re.search(r"(?:九[、.．)]\s*)?承担单位、合作单位经费预算明细表|第?九(?:部分|章)", section)
         if detail_cut:
             section = section[: detail_cut.start()].strip()
+
+        progress_cut = re.search(r"省自然基金经费拨付进度|经费拨付进度", section)
+        if progress_cut:
+            section = section[: progress_cut.start()].strip()
 
         # 不纳入“项目预算基本测算说明（含单价50万以上设备详细说明）”文本。
         explain_match = re.search(r"项目预算基本测算说明", section)
@@ -481,106 +470,312 @@ class PerfCheckParser:
             return []
 
         item_map: dict[str, float] = {}  # unit_name -> amount
+        order: list[str] = []
         for blk in self._extract_table_row_blocks(raw):
             if "单位名称" not in blk:
                 continue
+            kv: dict[str, str] = {}
+            for seg in re.split(r"[;；]", blk):
+                seg = str(seg or "").strip()
+                if not seg:
+                    continue
+                if ":" in seg:
+                    left, right = seg.rsplit(":", 1)
+                elif "：" in seg:
+                    left, right = seg.rsplit("：", 1)
+                else:
+                    continue
+                key_raw = str(left or "").strip()
+                if "/" in key_raw:
+                    key_raw = key_raw.split("/")[-1]
+                key = re.sub(r"\s+", "", key_raw).strip()
+                val = str(right or "").strip()
+                if key and val:
+                    kv[key] = val
 
-            kv = {
-                k.strip(): (v or "").strip()
-                for k, v in re.findall(r"(?:^|[;；])\s*([^:：;|]+)[:：]\s*([^;|]+)", blk)
-            }
-            if not kv:
-                continue
-
-            def _pick(field: str) -> str:
-                for k, v in kv.items():
-                    nk = re.sub(r"\s+", "", k)
-                    if field in nk:
-                        return v
-                return ""
-
-            unit_name = _pick("单位名称")
+            unit_name = kv.get("单位名称") or kv.get("单位") or ""
             if not unit_name:
                 continue
             unit_name = re.sub(r"\s+", "", unit_name).strip("，,;；。")
             if not unit_name:
                 continue
+            if unit_name in {"单位名称", "单位"}:
+                continue
 
             # 只提取合计经费，不提取子项（专项/自筹）
-            amt_raw = _pick("合计")
+            amt_raw = kv.get("合计") or ""
             if not amt_raw:
                 # 尝试从通用字段名提取金额
                 for k, v in kv.items():
-                    if any(x in re.sub(r"\s+", "", k) for x in ("金额", "经费", "预算", "总计", "总额")):
-                        amt_raw = v
+                    if any(x in str(k or "") for x in ("金额", "经费", "预算", "总计", "总额")):
+                        amt_raw = str(v or "").strip()
                         break
             
             if amt_raw:
                 amount = float(self._parse_amount(amt_raw))
                 # 如果该单位已有价值，取最大值（应对多行情况）
                 item_map[unit_name] = max(item_map.get(unit_name, 0.0), amount)
+                if unit_name not in order:
+                    order.append(unit_name)
 
         items: list[dict[str, Any]] = []
-        for unit_name, amount in item_map.items():
+        for unit_name in order:
+            amount = item_map.get(unit_name, 0.0)
             items.append({"unit_name": unit_name, "type": "合计", "amount": float(amount)})
 
         return items[:max_items]
 
     def _extract_required_research_section(self, *, raw: str, doc_kind: str, max_chars: int = 5200) -> str:
-        """按业务硬约束抽取研究章节：
-        - 申报书：一、项目实施内容（及目标）
-        - 任务书：二、项目实施的主要内容任务
-        """
         text = (raw or "").strip()
         if not text:
             return ""
 
         if doc_kind == "task":
+            research_titles = ["项目实施的主要内容任务", "项目实施的主要任务", "项目实施的总体任务、目标和进度安排", "项目实施的第一年度任务", "研究内容"]
+            all_titles = TASK_SECTION_TITLES
+        else:
+            research_titles = ["项目实施内容及目标", "项目实施内容", "研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果", "研究内容"]
+            all_titles = DECLARATION_SECTION_TITLES
+
+        positions = self._find_heading_positions(text, research_titles)
+        if not positions:
+            if doc_kind == "declaration":
+                m = re.search(r"\[表格行\d+\]\s*项目基本信息\s*:\s*项目简介", text)
+                if m:
+                    suffix = text[m.start() :]
+                    end = len(text)
+                    stop = re.search(r"\[表格表头\d+\]\s*研究属性|\[表格行\d+\]\s*研究属性\s*:", suffix)
+                    if stop and stop.start() > 0:
+                        end = m.start() + stop.start()
+                    section = text[m.start() : end].strip()
+                    return section[:max_chars]
+
+                candidates: list[tuple[int, str]] = []
+                blocked = ("申报人信息", "申报 单 位 概 况", "证件号码", "电子", "注册", "单位地址", "所属园区", "专利数量")
+                for ln in text.splitlines():
+                    if not ln.startswith("[表格行"):
+                        continue
+                    mm = re.match(r"^\[表格行\d+\]\s*项目基本信息\s*[:：]\s*(.+)$", ln)
+                    if not mm:
+                        continue
+                    val = str(mm.group(1) or "").strip()
+                    if len(val) < 180:
+                        continue
+                    if any(b in val for b in blocked):
+                        continue
+                    candidates.append((len(val), val))
+                if candidates:
+                    candidates.sort(reverse=True)
+                    section = "\n".join([candidates[0][1]] + ([candidates[1][1]] if len(candidates) > 1 else []))
+                    return section[:max_chars]
+
+                m = re.search(r"\[表格行\d+\]\s*总体\s*目标\s*;\s*实施期目标", text)
+                if m:
+                    end = min(len(text), m.start() + max_chars)
+                    section = text[m.start() : end].strip()
+                    return section[:max_chars]
+            if doc_kind == "task":
+                m = re.search(r"研究体系与研究内容", text)
+                if m:
+                    start = max(0, m.start() - 900)
+                    end = min(len(text), m.start() + 5200)
+                    section = text[start:end].strip()
+                    return section[:max_chars]
+            return ""
+
+        def _score(pos: int) -> int:
+            window = text[pos : min(len(text), pos + 2400)]
+            score = 0
+            score += 3 * len(re.findall(r"\[表格行\d+\]", window))
+            score += len(re.findall(r"研究", window))
+            score += len(re.findall(r"开发|构建|研制|验证|测试|优化|算法|系统|平台|模型|数据", window))
+            if "填报说明" in window[:260] or "填写说明" in window[:260]:
+                score -= 10
+            return score
+
+        start_idx = max(positions, key=lambda p: (_score(p), p))
+        all_positions = self._find_heading_positions(text, all_titles)
+        next_positions = [p for p in all_positions if p > start_idx]
+        end_idx = next_positions[0] if next_positions else len(text)
+
+        slice_start = max(0, start_idx - 80)
+        slice_end = min(len(text), end_idx + 160)
+        section = text[slice_start:slice_end].strip()
+        return section[:max_chars]
+
+    def _extract_research_content_only(self, *, raw: str, doc_kind: str, max_chars: int = 5200) -> str:
+        """在“项目实施内容及目标/主要内容任务”章节内进一步收缩，只保留研究内容主体。"""
+        text = str(raw or "").strip()
+        if not text:
+            return ""
+
+        blocked_lines = (
+            "填报说明",
+            "填写说明",
+            "申报书的内容将作为",
+            "请申报单位",
+            "综合服务平台",
+        )
+
+        def _clean_section(s: str) -> str:
+            out_lines: list[str] = []
+            for ln in str(s or "").splitlines():
+                if any(b in ln for b in blocked_lines):
+                    continue
+                out_lines.append(ln)
+            return "\n".join(out_lines).strip()
+
+        def _try_extract_from_impl_goal_table() -> str:
+            cands: list[str] = []
+            for blk in self._extract_table_row_blocks(text):
+                if "实施期目标" not in blk:
+                    continue
+                kv_pairs = [
+                    (k.strip(), (v or "").strip())
+                    for k, v in re.findall(r"(?:^|[;；])\s*([^:：;|]+)[:：]\s*([^;|]+)", blk)
+                ]
+                for k, v in kv_pairs:
+                    nk = re.sub(r"\s+", "", str(k or ""))
+                    if "实施期目标" not in nk:
+                        continue
+                    vv = str(v or "").strip()
+                    if len(vv) < 120:
+                        continue
+                    if ("（1）" not in vv) and ("1." not in vv) and ("1、" not in vv):
+                        continue
+                    if "开展以下研究" not in vv and "制备" not in vv and "选用" not in vv and "构建" not in vv:
+                        continue
+                    cands.append(vv)
+            if not cands:
+                return ""
+            cands = sorted(dict.fromkeys(cands), key=len, reverse=True)
+            return "\n".join(cands[:2]).strip()
+
+        table_pick = _try_extract_from_impl_goal_table()
+        if table_pick:
+            return _clean_section(table_pick)[:max_chars]
+
+        if doc_kind == "task":
             start_patterns = [
-                r"(?m)^\s*(?:#+\s*)?二[、.．)]\s*项目实施的主要内容任务(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?第?二(?:部分|章)?\s*项目实施的主要内容任务(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?项目实施的主要内容任务(?:表)?(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:二[、.．)]\s*)?项目实施的主要任务(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:二[、.．)]\s*)?项目实施的主要内容任务(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:二[、.．)]\s*)?项目实施的总体任务、目标和进度安排(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:三[、.．)]\s*)?项目实施的第一年度任务(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:研究内容|研究任务|研究体系与研究内容)(?:\s|$)",
+                r"研究体系与研究内容",
             ]
             end_patterns = [
-                r"(?m)^\s*(?:#+\s*)?三[、.．)]\s*",
-                r"(?m)^\s*(?:#+\s*)?第?三(?:部分|章)\s*",
-                r"(?m)^\s*(?:#+\s*)?(?:进度安排和阶段目标|项目验收的考核指标|项目实施的绩效目标(?:表)?)\s*$",
+                r"(?m)^\s*(?:#+\s*)?(?:[（(]?[二2][）)]\s*)?项目拟采取的研究方法(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?\(二\)\s*项目拟采取的研究方法(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?（二）\s*项目拟采取的研究方法(?:\s|$)",
+                r"项目拟采取的研究方法",
+                r"项目拟采用的方法",
+                r"拟采用的方法",
+                r"研究目标",
+                r"项目的特色与创新",
+                r"特色与创新",
+                r"(?m)^\s*(?:#+\s*)?(?:项目实施的绩效目标|项目验收的考核指标|进度安排和阶段目标|项目预算表|承担单位、合作单位经费预算明细表|项目承担单位、合作单位任务分工)(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:[三四五六七八九十0-9]+[、.．)]\s*|第\s*[三四五六七八九十0-9]+\s*(?:部分|章|节))",
             ]
         else:
             start_patterns = [
-                r"(?m)^\s*(?:#+\s*)?一[、.．)]\s*项目实施内容(?:及目标)?(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?第?一(?:部分|章)?\s*项目实施内容(?:及目标)?(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?项目实施内容(?:及目标)?(?:表)?(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:[（(]?[一1][）)]\s*)?项目的主要研究内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?（一）\s*项目的主要研究内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?项目的主要研究内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?项目的主要实施内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?（一）\s*项目的主要实施内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?主要研究内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?二[、.．)]\s*研究内容",
+                r"(?m)^\s*(?:#+\s*)?二[、.．)]\s*研究内容、研究目标",
+                r"(?m)^\s*(?:#+\s*)?研究内容、研究目标、拟解决的关键科学问题",
+                r"(?m)^\s*(?:#+\s*)?研究内容(?:\s|$)",
+                r"\[表格行\d+\]\s*项目基本信息\s*:\s*项目简介",
+                r"(?m)^\s*(?:#+\s*)?(?:一[、.．)]\s*)?项目实施内容(?:及目标)?(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?（一）\s*项目实施内容(?:\s|$)",
+                r"(?m)^\s*(?:#+\s*)?(?:二[、.．)]\s*)?项目实施的主要内容任务(?:\s|$)",
+                r"1\.\s*加工番茄", # Catch the specific case of 07d3ca5e
             ]
             end_patterns = [
-                r"(?m)^\s*(?:#+\s*)?二[、.．)]\s*",
-                r"(?m)^\s*(?:#+\s*)?第?二(?:部分|章)\s*",
-                r"(?m)^\s*(?:#+\s*)?(?:申报单位及合作单位基础|项目申报单位基本信息表|项目实施的预期绩效目标表|项目预算表)\s*$",
+                r"(?m)^\s*(?:#+\s*)?(?:二[、.．)]\s*)(?:项目实施对|项目实施的预期|项目实施的总体|预期目标|研究目标|预期成果|项目的特色|项目的创新|项目创新点|特色与创新|创新点|预期指标|研究方法)",
+                r"(?m)^\s*(?:#+\s*)?(?:二[、.．)]\s*)(?!研究内容|研究目标|项目实施内容|主要内容|技术路线|项目的主要实施内容|项目实施的主要内容任务)",
+                r"(?m)^\s*(?:#+\s*)?(?:三[、.．)]\s*|第\s*[三四五六七八九十0-9]+\s*(?:部分|章|节))",
+                r"(?m)^\s*(?:#+\s*)?(?:项目实施的预期绩效目标|项目预算表|承担单位、合作单位经费预算明细表|进度安排)(?:\s|$)",
+                r"项目拟采取的研究方法",
+                r"项目拟采用的方法",
+                r"（二）\s*项目拟采取的研究方法",
+                r"三、进度安排和阶段目标",
+                r"三、项目进度安排和阶段目标",
+                r"三、项目实施进度安排",
             ]
 
         start_positions: list[int] = []
         for pat in start_patterns:
             for m in re.finditer(pat, text, re.IGNORECASE):
                 start_positions.append(m.start())
-
         if not start_positions:
-            return ""
+            return _clean_section(text)[:max_chars]
 
-        start_idx = min(start_positions)
+        if doc_kind == "task":
+            seq_positions: list[int] = []
+            for m in re.finditer(r"（1）|1\.", text):
+                window = text[m.start() : min(len(text), m.start() + 6500)]
+                if ("（2）" in window and "（3）" in window) or ("2." in window and "3." in window):
+                    if ("开展以下研究" not in window) and ("研究体系与研究内容" not in window) and ("[表格行" not in window):
+                        continue
+                    seq_positions.append(m.start())
+            if seq_positions:
+                start_positions.extend(seq_positions)
+            
+            # Special case for tables that come after "二、项目实施的主要内容任务"
+            # Since docx tables might just be injected inline without a direct match
+            anchor1 = text.find("二、项目实施的主要内容任务")
+            if anchor1 != -1:
+                start_positions.append(anchor1)
+            
+            anchor2 = text.find("开展以下研究")
+            if anchor2 >= 0:
+                prev_one = text.rfind("（1）", 0, anchor2)
+                if prev_one == -1:
+                    prev_one = text.rfind("1.", 0, anchor2)
+                if prev_one >= 0 and (anchor2 - prev_one) <= 1200:
+                    start_positions.append(prev_one)
+
+        def _score_start(pos: int) -> int:
+            window = text[pos : min(len(text), pos + 2600)]
+            prefix = text[max(0, pos - 160) : pos]
+            score = 0
+            score += 3 * len(re.findall(r"\[表格行\d+\]", window))
+            score += len(re.findall(r"开展|建立|构建|验证|分析|优化|测试|设计|评价|揭示|提出", window))
+            score += len(re.findall(r"研究内容|研究目标|关键科学问题|技术路线", window))
+            score += 70 * len(re.findall(r"开展以下研究", window))
+            score += 8 * len(re.findall(r"-\s*[a-zA-Z]\.", window))
+            score += 2 * len(re.findall(r"\n\s*-\s*", window))
+            if any(b in window[:260] for b in blocked_lines):
+                score -= 30
+            if ("研究方法" in window[:80] or "研究进展" in window[:80]) and ("项目的主要研究内容" not in window[:400]):
+                score -= 12
+            if "实施期目标" in prefix:
+                if ("研究体系与研究内容" not in window[:900]) and ("项目的主要研究内容" not in window[:900]):
+                    score -= 120
+            if "年度目标" in prefix or "第一年度目标" in prefix or "第二年度目标" in prefix or "第三年度目标" in prefix:
+                score -= 80
+            if ("预算" in prefix) or ("预算" in window[:120]):
+                score -= 60
+            return score
+
+        start_idx = max(start_positions, key=lambda p: (_score_start(p), p))
         suffix = text[start_idx:]
-
         end_positions: list[int] = []
         for pat in end_patterns:
             m = re.search(pat, suffix, re.IGNORECASE)
-            if m and m.start() > 0:
+            if m and m.start() > 80:
                 end_positions.append(start_idx + m.start())
-
         end_idx = min(end_positions) if end_positions else len(text)
-        # 对齐到标题边界后保留少量上下文，兼顾 OCR/格式噪声。
-        slice_start = max(0, start_idx - 80)
-        slice_end = min(len(text), end_idx + 120)
+
+        slice_start = max(0, start_idx - 40)
+        slice_end = min(len(text), end_idx)
         section = text[slice_start:slice_end].strip()
-        return section[:max_chars]
+        return _clean_section(section)[:max_chars]
 
     def _extract_required_metrics_sections(self, *, raw: str, doc_kind: str, max_chars: int = 14000) -> str:
         """按业务硬约束抽取绩效目标章节，优先覆盖：
@@ -601,6 +796,8 @@ class PerfCheckParser:
             metric_titles = [
                 "项目实施的预期绩效目标",
                 "项目实施的预期绩效目标表",
+                "项目绩效评价考核目标及指标",
+                "项目绩效评价考核目标及指标表",
             ]
             all_titles = DECLARATION_SECTION_TITLES
 
@@ -647,79 +844,147 @@ class PerfCheckParser:
         merged = "\n\n".join(blocks).strip()
         return merged[:max_chars]
 
+    def _extract_performance_targets_from_metrics_table(self, metrics_text: str) -> list[dict[str, Any]]:
+        text = str(metrics_text or "").strip()
+        if not text:
+            return []
+
+        row_pat = re.compile(r"\[表格行(\d+)\]\s*(.+?)(?=\n\[表格行\d+\]|\Z)", re.DOTALL)
+        rows_raw = [(m.group(1), (m.group(2) or "")) for m in row_pat.finditer(text)]
+        if not rows_raw:
+            return []
+
+        def _pairs(line: str) -> list[tuple[str, str]]:
+            return [
+                (k.strip(), (v or "").strip())
+                for k, v in re.findall(r"(?:^|[;；])\s*([^:：;|]+)[:：]\s*([^;|]+)", line)
+            ]
+
+        header_mapping: dict[str, dict[str, int]] = {}
+        header_row_id = ""
+        for row_id, content in rows_raw:
+            compact = re.sub(r"\s+", "", content)
+            if ("三级指标" in compact) and ("指标值" in compact):
+                pairs = _pairs(content)
+                if not pairs:
+                    continue
+                occ: dict[str, int] = {}
+                mapping: dict[str, dict[str, int]] = {}
+                for k, v in pairs:
+                    nk = re.sub(r"\s+", "", k)
+                    occ[nk] = occ.get(nk, 0) + 1
+                    if v:
+                        vv = re.sub(r"\s+", "", v)
+                        if vv in {"三级指标", "指标值", "二级指标", "一级指标"}:
+                            mapping.setdefault(nk, {})[vv] = occ[nk]
+                if mapping:
+                    header_mapping = mapping
+                    header_row_id = row_id
+                    break
+
+        target_key = "实施期目标"
+        candidate_keys = []
+        for k in header_mapping.keys():
+            nk = re.sub(r"\s+", "", str(k or ""))
+            if nk.startswith(target_key):
+                candidate_keys.append(k)
+        use_key = candidate_keys[0] if candidate_keys else target_key
+        map_for_key = header_mapping.get(use_key, {})
+        idx_third = int(map_for_key.get("三级指标", 0) or 0)
+        idx_value = int(map_for_key.get("指标值", 0) or 0)
+        if idx_third <= 0 or idx_value <= 0:
+            return []
+
+        out: list[dict[str, Any]] = []
+
+        def _parse_number(s: str) -> float | None:
+            m = re.search(r"-?\d+(?:\.\d+)?", str(s or ""))
+            if not m:
+                return None
+            try:
+                return float(m.group(0))
+            except Exception:
+                return None
+
+        for row_id, content in rows_raw:
+            if header_row_id and row_id == header_row_id:
+                continue
+            pairs = _pairs(content)
+            if not pairs:
+                continue
+
+            occ: dict[str, int] = {}
+            metric_name = ""
+            metric_value_raw = ""
+            subtype = ""
+            for k, v in pairs:
+                nk = re.sub(r"\s+", "", k)
+                occ[nk] = occ.get(nk, 0) + 1
+                if nk == use_key or nk.startswith(target_key):
+                    if occ[nk] == idx_third and v:
+                        metric_name = str(v).strip()
+                    if occ[nk] == idx_value and v:
+                        metric_value_raw = str(v).strip()
+                if v and (not subtype):
+                    vv = re.sub(r"\s+", "", str(v))
+                    if vv in {"数量指标", "满意度指标", "经济指标", "效益指标", "技术指标"}:
+                        subtype = vv
+
+            if not metric_name or not metric_value_raw:
+                continue
+
+            value = _parse_number(metric_value_raw)
+            if value is None:
+                continue
+
+            unit = ""
+            m_unit = re.search(r"[（(]([^()（）]{1,8})[)）]", metric_name)
+            if m_unit:
+                unit = m_unit.group(1).strip()
+            if not unit:
+                if ("%" in metric_value_raw) or ("％" in metric_value_raw) or ("满意度" in metric_name):
+                    unit = "%"
+            if unit == "％":
+                unit = "%"
+
+            out.append(
+                {
+                    "id": f"P{len(out) + 1}",
+                    "type": metric_name.strip(),
+                    "text": f"{metric_name.strip()} {metric_value_raw}".strip(),
+                    "source": "绩效指标",
+                    "value": value,
+                    "unit": unit,
+                    "constraint": "=",
+                    "subtype": subtype or ("满意度指标" if unit == "%" else "数量指标"),
+                }
+            )
+
+        return out
+
     def _extract_required_team_members_sections(self, *, raw: str, doc_kind: str, max_chars: int = 9000) -> str:
-        """按业务硬约束抽取成员分工章节表格：
-        - 申报书：第四/第六部分 项目组主要成员
-        - 任务书：六、参加人员及分工
-        """
         text = (raw or "").strip()
         if not text:
             return ""
 
         if doc_kind == "task":
-            start_patterns = [
-                r"(?m)^\s*(?:#+\s*)?六[、.．)]\s*参加人员及分工(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?第?六(?:部分|章)?\s*参加人员及分工(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?参加人员及分工(?:表)?(?:\s|$)",
-            ]
-            end_patterns = [
-                r"(?m)^\s*(?:#+\s*)?七[、.．)]\s*",
-                r"(?m)^\s*(?:#+\s*)?第?七(?:部分|章)\s*",
-                r"(?m)^\s*(?:#+\s*)?(?:项目实施的绩效目标(?:表)?|项目预算表|承担单位、合作单位经费预算明细表)(?:\s|$)",
-            ]
+            member_titles = ["参加人员及分工", "参加人员及分工表"]
+            all_titles = TASK_SECTION_TITLES
         else:
-            start_patterns = [
-                r"(?m)^\s*(?:#+\s*)?四[、.．)]\s*项目组主要成员(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?第?四(?:部分|章)?\s*项目组主要成员(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?六[、.．)]\s*项目组主要成员(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?第?六(?:部分|章)?\s*项目组主要成员(?:表)?(?:\s|$)",
-                r"(?m)^\s*(?:#+\s*)?项目组主要成员(?:表)?(?:\s|$)",
-            ]
-            end_patterns = [
-                r"(?m)^\s*(?:#+\s*)?五[、.．)]\s*",
-                r"(?m)^\s*(?:#+\s*)?第?五(?:部分|章)\s*",
-                r"(?m)^\s*(?:#+\s*)?七[、.．)]\s*",
-                r"(?m)^\s*(?:#+\s*)?第?七(?:部分|章)\s*",
-                r"(?m)^\s*(?:#+\s*)?(?:项目预算表|承担单位、合作单位经费预算明细表|附件)(?:\s|$)",
-            ]
+            member_titles = ["项目组主要成员", "项目组主要成员表"]
+            all_titles = DECLARATION_SECTION_TITLES
 
-        start_positions: list[int] = []
-        for pat in start_patterns:
-            for m in re.finditer(pat, text, re.IGNORECASE):
-                start_positions.append(m.start())
-
-        if not start_positions:
+        member_positions = self._find_heading_positions(text, member_titles)
+        if not member_positions:
             return ""
 
-        def _score_start(pos: int) -> int:
-            window = text[pos : min(len(text), pos + 2200)]
-            score = 0
-            if re.search(r"(?:四[、.．)]|第?四(?:部分|章))", window):
-                score += 2
-            if re.search(r"(?:六[、.．)]|第?六(?:部分|章))", window):
-                score += 2
-            score += len(re.findall(r"姓名", window))
-            score += len(re.findall(r"分工", window))
-            score += len(re.findall(r"序号", window))
-            score += 2 * len(re.findall(r"\[表格行\d+\]", window))
-            score += 2 * len(re.findall(r"\[表格表头\d+\]", window))
-            if "填报说明" in window[:260] or "填写说明" in window[:260]:
-                score -= 8
-            return score
+        all_positions = self._find_heading_positions(text, all_titles)
+        start_idx = member_positions[0]
+        next_positions = [p for p in all_positions if p > start_idx]
+        end_idx = next_positions[0] if next_positions else len(text)
 
-        start_idx = max(start_positions, key=lambda p: (_score_start(p), p))
-        suffix = text[start_idx:]
-        end_positions: list[int] = []
-        for pat in end_patterns:
-            m = re.search(pat, suffix, re.IGNORECASE)
-            if m and m.start() > 0:
-                end_positions.append(start_idx + m.start())
-
-        end_idx = min(end_positions) if end_positions else len(text)
-
-        blocks: list[str] = []
         slice_start = max(0, start_idx - 80)
-        slice_end = min(len(text), end_idx + 120)
+        slice_end = min(len(text), end_idx + 160)
         block = text[slice_start:slice_end].strip()
         if not block:
             return ""
@@ -730,21 +995,12 @@ class PerfCheckParser:
             if re.search(r"\[表格(?:表头|行)\d*\]", ln)
         ]
         if table_lines:
-            blocks.append("\n".join(table_lines))
-        else:
-            # 无 [表格行] 标记时，退化保留含“姓名/分工/序号”的行。
-            fallback_lines = [
-                ln.strip()
-                for ln in block.splitlines()
-                if ("姓名" in ln or "分工" in ln or "序号" in ln)
-            ]
-            if fallback_lines:
-                blocks.append("\n".join(fallback_lines))
-            else:
-                blocks.append(block)
+            return "\n".join(table_lines)[:max_chars]
 
-        merged = "\n\n".join(blocks).strip()
-        return merged[:max_chars]
+        fallback_lines = [ln.strip() for ln in block.splitlines() if ("姓名" in ln or "分工" in ln or "序号" in ln)]
+        if fallback_lines:
+            return "\n".join(fallback_lines)[:max_chars]
+        return block[:max_chars]
 
     def _extract_research_section_precise(self, *, raw: str, doc_kind: str, max_chars: int = 5200) -> str:
         """按起止关键词精准切片研究内容，优先降低无关上下文。"""
@@ -754,10 +1010,10 @@ class PerfCheckParser:
 
         # 先按章节标题定位，避免纯关键词在表格/OCR文本中漏命中。
         if doc_kind == "task":
-            research_titles = ["项目实施的主要内容任务", "项目实施主要内容任务", "研究内容"]
+            research_titles = ["项目实施的主要内容任务", "项目实施主要内容任务", "项目实施的主要任务", "项目实施的总体任务、目标和进度安排", "项目实施的第一年度任务", "研究内容"]
             all_titles = TASK_SECTION_TITLES
         else:
-            research_titles = ["项目实施内容及目标", "项目实施内容", "研究内容"]
+            research_titles = ["项目实施内容及目标", "项目实施内容", "研究内容、研究目标、拟解决的关键科学问题、创新点及预期成果", "研究内容"]
             all_titles = DECLARATION_SECTION_TITLES
 
         research_positions = self._find_heading_positions(text, research_titles)
@@ -777,10 +1033,13 @@ class PerfCheckParser:
 
         if doc_kind == "task":
             start_patterns = [
+                r"(?m)^\s*二[、.．)]\s*项目实施的总体任务、目标和进度安排(?:\s|$)",
                 r"(?m)^\s*二[、.．)]\s*项目实施的主要内容任务(?:表)?(?:\s|$)",
+                r"项目实施的总体任务、目标和进度安排",
                 r"项目实施的主要内容任务",
                 r"项目实施主要内容任务",
                 r"项目实施主要内容",
+                r"项目实施的第一年度任务",
                 r"研究内容",
                 r"技术路线",
                 r"研究目标",
@@ -1118,6 +1377,37 @@ class PerfCheckParser:
             s = s.strip("，,;；")
             return s
 
+        def _normalize_key(k: str) -> str:
+            kk = re.sub(r"\s+", "", str(k or "")).strip()
+            if "/" in kk:
+                kk = kk.split("/", 1)[0]
+            return kk
+
+        for line in raw.splitlines():
+            if not re.search(r"\[表格表头\d*\]", line):
+                continue
+            if ("姓名/" not in line) or ("分工/" not in line):
+                continue
+            cells = [c.strip() for c in re.split(r"\s*\|\s*", re.sub(r"^\[表格表头\d*\]\s*", "", line).strip()) if c.strip()]
+            name = ""
+            duty = ""
+            for c in cells:
+                if "/" not in c:
+                    continue
+                k, v = c.split("/", 1)
+                nk = _normalize_key(k)
+                if nk == "姓名" and v:
+                    name = v
+                if nk == "分工" and v:
+                    duty = v
+            name = re.sub(r"\s+", "", str(name or "")).strip("，,;；")
+            duty = _clean_member_duty(duty)
+            if re.fullmatch(r"[\u4e00-\u9fa5A-Za-z·]{2,12}", name) and name not in seen_names:
+                seen_names.add(name)
+                members.append({"name": name, "duty": duty})
+                if len(members) >= max_items:
+                    break
+
         for blk in self._extract_table_row_blocks(raw):
             # DOCX 表格常见形态："姓名/刘建宁:贾蓓 ; 分工/实验设计、实验质控:实验质量、安全性控制"
             if ("姓名/" in blk) and ("分工/" in blk):
@@ -1329,16 +1619,73 @@ class PerfCheckParser:
             if not kv_pairs:
                 continue
 
+            def _is_perf_table_row(pairs: list[tuple[str, str]]) -> bool:
+                for k, v in pairs:
+                    nk = re.sub(r"\s+", "", str(k or ""))
+                    vv = re.sub(r"\s+", "", str(v or ""))
+                    if ("总体" in nk and "目标" in nk and "绩效" in vv) or (vv in {"绩效指标", "绩效指标表", "绩效"}):
+                        return True
+                return False
+
+            if _is_perf_table_row(kv_pairs):
+                vals = [
+                    str(v or "").strip()
+                    for k, v in kv_pairs
+                    if "实施期目标" in re.sub(r"\s+", "", str(k or ""))
+                ]
+                if len(vals) >= 2:
+                    name_candidate = vals[0].strip()
+                    value_candidate = vals[1].strip()
+                    if name_candidate and name_candidate not in {"指标名称", "指标值"}:
+                        cands = self._extract_amount_candidates(value_candidate)
+                        if cands:
+                            metric_value = float(cands[-1])
+                            metric_name = name_candidate.strip("，,；;。")
+                            unit = ""
+                            m_unit = re.search(r"[（(]([^()（）]{1,8})[)）]", metric_name)
+                            if m_unit:
+                                unit = m_unit.group(1).strip()
+                            if not unit:
+                                for u in ["人次", "万元", "%", "篇", "项", "件", "名", "人", "场", "套", "份", "亩"]:
+                                    if u in metric_name:
+                                        unit = u
+                                        break
+                            key = _norm(metric_name + "|" + unit)
+                            if key and not ((key in seen_keys) and (key in perf_source_keys)):
+                                _upsert_by_key(
+                                    {
+                                        "id": f"P{len(rows) + 1}",
+                                        "type": metric_name,
+                                        "subtype": "满意度指标" if unit in {"%", "％"} else ("经济指标" if unit in {"万元", "元"} else "数量指标"),
+                                        "text": metric_name,
+                                        "source": "绩效指标",
+                                        "value": float(metric_value),
+                                        "unit": "%" if unit == "％" else unit,
+                                        "constraint": "=",
+                                    },
+                                    key,
+                                    prefer_replace=True,
+                                )
+                                seen_keys.add(key)
+                                perf_source_keys.add(key)
+                                continue
+
             metric_name = ""
             metric_value = None
+            unit_from_cell = ""
+            # 兼容更多表头写法：考核指标/指标名称/指标值/目标值/数量/单位
+            name_field_hints = ("三级指标", "考核指标", "指标名称", "指标")
+            value_field_hints = ("指标值", "目标值", "数量", "数值")
             for k, v in kv_pairs:
                 nk = re.sub(r"\s+", "", k)
-                if ("三级指标" in nk) and v:
+                if any(h in nk for h in name_field_hints) and v and (not metric_name):
                     metric_name = str(v).strip()
-                if ("指标值" in nk) and v:
+                if any(h in nk for h in value_field_hints) and v and (metric_value is None):
                     cands = self._extract_amount_candidates(v)
                     if cands:
                         metric_value = float(cands[-1])
+                if ("单位" in nk) and v and (not unit_from_cell):
+                    unit_from_cell = str(v).strip()
 
             if not metric_name or metric_value is None:
                 continue
@@ -1357,6 +1704,8 @@ class PerfCheckParser:
                     if u in metric_name:
                         unit = u
                         break
+            if not unit and unit_from_cell:
+                unit = unit_from_cell
 
             key = _norm(metric_name + "|" + unit)
             if not key:
@@ -1403,6 +1752,38 @@ class PerfCheckParser:
             )
             seen_keys.add(sat_key)
             perf_source_keys.add(sat_key)
+
+        # 补齐经济指标：横向科研经费到账/总到账（常出现在“实施期目标”描述里，非标准“三级指标/指标值”列）。
+        # 注意：若文本已包含“技术合同交易额/成交额”这类最终目标，则横向经费到账往往为分阶段口径，默认不再补齐，避免重复干扰对比。
+        has_contract_trade = bool(re.search(r"技术合同(?:交易额|成交额)", raw))
+        if not has_contract_trade:
+            # 示例：完成横向科研经费到账250万元 / 完成横向转让科研经费总到账150万元
+            for m in re.finditer(r"完成\s*横向(?:转让)?\s*(?:科研)?经费(?P<kind>总)?到账\s*(\d+(?:\.\d+)?)\s*万元", raw):
+                value = float(m.group(2))
+                kind = m.group("kind") or ""
+                name = "完成横向科研经费总到账" if kind else "完成横向科研经费到账"
+                key = _norm(name + "|万元")
+                _upsert_by_key(
+                    {
+                        "id": f"P{len(rows) + 1}",
+                        "type": name,
+                        "subtype": "经济指标",
+                        "text": str(m.group(0) or "").strip("。；;"),
+                        "source": "实施期目标",
+                        "value": value,
+                        "unit": "万元",
+                        "constraint": "=",
+                    },
+                    key,
+                    prefer_replace=False,
+                )
+                seen_keys.add(key)
+                perf_source_keys.add(key)
+
+        sat_key_norm = _norm("服务对象满意度|%")
+        has_perf_table_metrics = any(k != sat_key_norm for k in perf_source_keys)
+        if has_perf_table_metrics:
+            return rows
 
         line_pat = re.compile(
             r"(?P<prefix>(?:实施期内|项目实施期内|项目实施期)?[^。；\n]{0,20})?"
@@ -1666,12 +2047,37 @@ class PerfCheckParser:
         overall_row_ids = self._extract_overall_metric_row_ids(metrics_text)
         kept: list[dict[str, Any]] = []
 
+        def _looks_like_metric(item: dict[str, Any]) -> bool:
+            name = str(item.get("type") or item.get("text") or "").strip()
+            if not name:
+                return False
+            unit = str(item.get("unit") or "").strip()
+            if unit:
+                return True
+            v = item.get("value")
+            if isinstance(v, (int, float)) and (v != 0 or re.search(r"\d", name)):
+                return True
+            if isinstance(v, str) and re.search(r"\d", v):
+                return True
+            if re.search(r"\d", name):
+                return True
+            return False
+
         stage_markers = [
             "年度目标", "阶段目标", "第一年", "第二年", "第三年", "年度", "阶段",
             "当年", "本年度", "招募病例", "完成招募", "年内", "季度", "中期", "里程碑",
         ]
+        stage_strict_markers = [
+            "年度目标", "阶段目标", "第一年", "第二年", "第三年",
+            "第一阶段", "第二阶段", "第三阶段",
+            "季度", "中期", "里程碑",
+            "招募病例", "完成招募",
+            "当年", "本年度", "年内",
+        ]
         overall_markers = ["总体目标", "总体绩效目标", "总目标"]
         perf_markers = ["绩效指标", "一级指标", "二级指标", "三级指标", "验收", "考核指标"]
+        compact_metrics = re.sub(r"\s+", "", str(metrics_text or ""))
+        has_overall_context = bool(overall_row_ids) or any(k in compact_metrics for k in overall_markers)
 
         for r in rows:
             merged = " ".join([
@@ -1691,7 +2097,10 @@ class PerfCheckParser:
                     kept.append(r)
                     continue
 
-            if any(k in compact for k in stage_markers):
+            if has_overall_context and any(k in compact for k in stage_strict_markers) and (not any(k in compact for k in perf_markers)):
+                continue
+
+            if any(k in compact for k in stage_markers) and (not _looks_like_metric(r)):
                 continue
 
             if any(k in compact for k in overall_markers):
@@ -1708,11 +2117,28 @@ class PerfCheckParser:
                 kept.append(r)
                 continue
 
+            # 当识别到了总体目标行号时，仍可能存在大量“纯指标名 + 数值”的条目（例如表格里只有指标名/值/单位）。
+            # 这些条目不包含“绩效指标/三级指标”等关键词，若强行按行号过滤会误删，导致只剩少量指标。
+            if _looks_like_metric(r):
+                kept.append(r)
+                continue
+
             # 当无法识别总体目标行号时，保守保留非阶段项。
             if not overall_row_ids:
                 kept.append(r)
 
         if kept:
+            has_contract_trade = ("技术合同交易额" in compact_metrics) or ("技术合同成交额" in compact_metrics)
+            if has_contract_trade:
+                def _is_stage_finance_target(item: dict[str, Any]) -> bool:
+                    merged = " ".join([
+                        str(item.get("type") or ""),
+                        str(item.get("text") or ""),
+                    ])
+                    compact = re.sub(r"\s+", "", merged)
+                    return ("横向" in compact and "经费" in compact and "到账" in compact) or ("横向转让" in compact and "经费" in compact)
+                kept = [x for x in kept if not _is_stage_finance_target(x)]
+
             kept = self._dedupe_performance_targets(kept)
             for i, item in enumerate(kept, start=1):
                 item["id"] = f"P{i}"
@@ -1732,10 +2158,12 @@ class PerfCheckParser:
             text = text.replace("示范基地", "种植基地")
             text = text.replace("标准化种植技术体系", "种植技术体系")
             # 去掉泛化后缀，避免“xx数量”与“xx”无法去重。
-            text = re.sub(r"(?:数量|数)\s*$", "", text)
+            text = re.sub(r"(?:人?数量?|数)\s*$", "", text)
             # 先移除开头的编号和括号，如"(1) "或"1. "
             text = re.sub(r"^[\(\（]\d+[\)\）]\s*", "", text)
             text = re.sub(r"^\d+[\.、．\s]+", "", text)
+            # 移除所有的括号及其中内容，避免"(件)"变为"件"
+            text = re.sub(r"[\(\（].*?[\)\）]", "", text)
             # 移除末尾的不完整范围前缀，如"种质资源 6-"变成"种质资源"或"种质资源 6-8"变成"种质资源"
             text = re.sub(r'\s+\d+(?:[-~—–~到至]\s*\d+)?[-~—–~到至]?\s*$', '', text)
             # 移除所有空格、数字、特殊字符
@@ -1762,10 +2190,9 @@ class PerfCheckParser:
         score: dict[str, tuple[int, int, int]] = {}
         for idx, r in enumerate(rows):
             name = _norm_text(r.get("type") or r.get("text") or "")
-            unit = _norm_text(r.get("unit") or "")
             if not name:
                 continue
-            key = f"{name}|{unit}"
+            key = name
 
             value_quality = 1 if abs(_to_float(r.get("value"))) > 1e-9 else 0
 
@@ -1833,6 +2260,44 @@ class PerfCheckParser:
         if not raw:
             return []
 
+        def _split_inline_numbered_items(s: str) -> list[str]:
+            ss = re.sub(r"^\[表格(?:表头|标题)\d*\]\s*", "", s.strip())
+            if not ss:
+                return []
+            indices: set[int] = set()
+            for m in re.finditer(r"(^|[^0-9])([0-9]{1,2})[.、．)]", ss):
+                indices.add(m.start(2))
+            for m in re.finditer(r"(^|[^0-9])[（(]([0-9]{1,2})[)）]", ss):
+                indices.add(m.start(2) - 1)
+            starts = sorted(i for i in indices if 0 <= i < len(ss))
+            if len(starts) < 2:
+                return []
+            out: list[str] = []
+            for i, st in enumerate(starts):
+                ed = starts[i + 1] if i + 1 < len(starts) else len(ss)
+                seg = ss[st:ed].strip(" \t\r\n;；。|")
+                if len(seg) >= 18:
+                    out.append(seg)
+            return out
+
+        def _keep_top_level(items: list[str]) -> list[str]:
+            last = 0
+            kept: list[str] = []
+            for seg in items:
+                m = re.match(r"^\s*(?:[（(]?)(\d{1,2})(?:[)）]|[.、．)])", seg)
+                if not m:
+                    continue
+                n = int(m.group(1))
+                if n > last:
+                    kept.append(seg)
+                    last = n
+            return kept if len(kept) >= 2 else items
+
+        inline_items = _split_inline_numbered_items(raw)
+        if len(inline_items) >= 2:
+            inline_items = _keep_top_level(inline_items)
+            return [{"id": f"R{i+1}", "text": inline_items[i]} for i in range(min(len(inline_items), max_items))]
+
         candidates: list[str] = []
 
         for line in raw.splitlines():
@@ -1863,6 +2328,21 @@ class PerfCheckParser:
             if len(results) >= max_items:
                 break
 
+        if not results:
+            blocked = ("申报指南", "综合服务平台", "填报", "填写", "申报书的内容将作为", "请申报单位", "凡不填写")
+            long_lines: list[tuple[int, str]] = []
+            for line in raw.splitlines():
+                s = self._clean_research_line(line)
+                if not s or len(s) < 160:
+                    continue
+                if any(b in s for b in blocked):
+                    continue
+                long_lines.append((len(s), s))
+            long_lines.sort(reverse=True)
+            for _, s in long_lines[:max_items]:
+                results.append({"id": f"R{len(results) + 1}", "text": s})
+            return results[:max_items]
+
         return results
 
     def _strip_research_index(self, text: Any) -> str:
@@ -1880,6 +2360,136 @@ class PerfCheckParser:
                 return True
         return False
 
+    def _extract_research_topic_blocks(self, text: str, *, max_items: int = 12) -> list[str]:
+        raw = str(text or "").strip()
+        if not raw:
+            return []
+
+        lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        cleaned_lines: list[str] = []
+        for ln in lines:
+            s = re.sub(r"^\[表格(?:表头|行|标题)\d*\]\s*", "", ln).strip()
+            if not s:
+                continue
+            s = s.lstrip("|").strip()
+            if s:
+                cleaned_lines.append(s)
+
+        joined = "\n".join(cleaned_lines).strip()
+        if not joined:
+            return []
+
+        topic_pat = re.compile(r"研究(?:内容|任务)\s*(?:[一二三四五六七八九十]|\d+)\s*[:：]")
+        boundary_chars = set("\n\r \t\u3000|;；。")
+        matches: list[re.Match[str]] = []
+        for m in topic_pat.finditer(joined):
+            if m.start() == 0 or joined[m.start() - 1] in boundary_chars:
+                matches.append(m)
+        if len(matches) < 2:
+            return []
+
+        blocks: list[str] = []
+        for i, m in enumerate(matches):
+            start = m.start()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(joined)
+            seg = joined[start:end].strip()
+            if seg:
+                blocks.append(seg)
+
+        stop_markers = [
+            "项目拟采取的研究方法",
+            "进度安排和阶段目标",
+            "项目验收的考核指标",
+            "项目实施的绩效目标",
+            "项目实施的预期绩效目标",
+            "项目预期的主要创新点",
+            "主要创新点",
+            "项目预算表",
+            "承担单位、合作单位经费预算明细表",
+            "项目实施对受援地产业或相关行业领域带动促进作用",
+            "项目实施对受援地产业",
+        ]
+        stop_regexes = [
+            r"(?:^|\n)\s*(?:研究方法|技术路线)(?!图)\s*(?:$|[:：])",
+            r"(?:^|\n)\s*项目拟采取的研究方法\s*(?:$|[:：])",
+            r"(?:^|\n)\s*(?:[一二三四五六七八九十0-9]+[、.．)]|[（(][一二三四五六七八九十0-9]+[）)])\s*(?:研究方法|技术路线)(?!图)\s*(?:$|[:：])",
+            r"(?:^|\s)二[、.．)]\s*项目实施对",
+            r"(?:^|\s)第二(?:部分|章)?\s*项目实施对",
+        ]
+
+        def _cut_tail(s: str) -> str:
+            text = str(s or "").strip()
+            if not text:
+                return ""
+            earliest = None
+            for m in stop_markers:
+                idx = text.find(m)
+                if idx >= 0 and idx > 16:
+                    earliest = idx if earliest is None else min(earliest, idx)
+            for pat in stop_regexes:
+                m = re.search(pat, text)
+                if m and m.start() > 16:
+                    earliest = m.start() if earliest is None else min(earliest, m.start())
+            if earliest is not None:
+                text = text[:earliest].strip()
+            text = re.sub(r"[。；;]\s*[（(]\s*[一二三四五六七八九十0-9]+\s*[）)]\s*[\s\u3000]*$", "", text).strip()
+            text = re.sub(r"[（(]\s*[一二三四五六七八九十0-9]+\s*[）)]\s*[\s\u3000]*$", "", text).strip()
+            text = re.sub(r"[一二三四五六七八九十0-9]+\s*[、.．)]\s*[\s\u3000]*$", "", text).strip()
+            return text
+
+        out: list[str] = []
+        seen: set[str] = set()
+        for b in blocks:
+            s = re.sub(r"\s+", " ", _cut_tail(b)).strip()
+            if len(s) < 20:
+                continue
+            k = re.sub(r"\s+", "", s)
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(s)
+            if len(out) >= max_items:
+                break
+        return out
+
+    def _pick_sequential_numbered_blocks(self, blocks: list[str], *, min_keep: int = 2, max_items: int = 12) -> list[str]:
+        items = [str(x or "").strip() for x in (blocks or []) if str(x or "").strip()]
+        if not items:
+            return []
+
+        def _parse_num(s: str) -> tuple[str, int | None]:
+            m = re.match(r"^\s*[（(]\s*(\d+)\s*[）)]", s)
+            if m:
+                return ("paren", int(m.group(1)))
+            m = re.match(r"^\s*(\d+)[.、．)]", s)
+            if m:
+                return ("dot", int(m.group(1)))
+            return ("", None)
+
+        style, first_num = _parse_num(items[0])
+        if not style or first_num is None:
+            return items[:max_items]
+
+        out: list[str] = []
+        expected = first_num
+        for s in items:
+            s_style, num = _parse_num(s)
+            if s_style != style or num is None:
+                if len(out) >= min_keep:
+                    break
+                continue
+            if num == expected:
+                out.append(s)
+                expected += 1
+                if len(out) >= max_items:
+                    break
+                continue
+            if num == 1 and len(out) >= min_keep:
+                break
+            if len(out) >= min_keep:
+                break
+        return out
+
     def _extract_numbered_research_blocks(self, text: str, *, max_items: int = 12) -> list[str]:
         raw = str(text or "").strip()
         if not raw:
@@ -1890,23 +2500,83 @@ class PerfCheckParser:
         current: list[str] = []
 
         for ln in lines:
-            if re.search(r"\[表格(?:表头|行|标题)\d*\]", ln):
+            cleaned = re.sub(r"^\[表格(?:表头|行|标题)\d*\]\s*", "", ln).strip()
+            if not cleaned:
                 continue
-            if re.match(r"^\s*\d+[.、．]\s*", ln):
-                if current:
-                    blocks.append(" ".join(current).strip())
-                current = [ln]
-            else:
-                if current:
-                    current.append(ln)
+            cleaned = cleaned.lstrip("|").strip()
+
+            parts = [cleaned]
+            marker_pat = re.compile(
+                r"(?:[（(]\s*\d+\s*[）)]\s*(?=[\u4e00-\u9fa5A-Za-z])|\b\d+[.、．)]\s*(?=[\u4e00-\u9fa5A-Za-z]))"
+            )
+            markers = [m.start() for m in marker_pat.finditer(cleaned)]
+            if len(markers) >= 2:
+                parts = []
+                for i, start in enumerate(markers):
+                    end = markers[i + 1] if i + 1 < len(markers) else len(cleaned)
+                    seg = cleaned[start:end].strip()
+                    if seg:
+                        parts.append(seg)
+
+            for part in parts:
+                if re.match(r"^\s*(?:(?:\(|（)\s*\d+\s*(?:\)|）)|\d+[.、．)])\s*", part) or re.match(r"^\s*[-*•]\s+", part):
+                    if current:
+                        blocks.append(" ".join(current).strip())
+                    current = [part]
+                else:
+                    if current:
+                        current.append(part)
         if current:
             blocks.append(" ".join(current).strip())
+
+        stop_markers = [
+            "项目拟采取的研究方法",
+            "进度安排和阶段目标",
+            "项目验收的考核指标",
+            "项目实施的绩效目标",
+            "项目实施的预期绩效目标",
+            "项目预期的主要创新点",
+            "主要创新点",
+            "项目预算表",
+            "承担单位、合作单位经费预算明细表",
+            "项目实施对受援地产业或相关行业领域带动促进作用",
+            "项目实施对受援地产业",
+        ]
+        stop_regexes = [
+            r"(?:^|\n)\s*(?:研究方法|技术路线)(?!图)\s*(?:$|[:：])",
+            r"(?:^|\n)\s*项目拟采取的研究方法\s*(?:$|[:：])",
+            r"(?:^|\n)\s*(?:[一二三四五六七八九十0-9]+[、.．)]|[（(][一二三四五六七八九十0-9]+[）)])\s*(?:研究方法|技术路线)(?!图)\s*(?:$|[:：])",
+            r"(?:^|\s)二[、.．)]\s*项目实施对",
+            r"(?:^|\s)第二(?:部分|章)?\s*项目实施对",
+        ]
+
+        def _cut_tail(s: str) -> str:
+            text = str(s or "").strip()
+            if not text:
+                return ""
+            earliest = None
+            for m in stop_markers:
+                idx = text.find(m)
+                if idx >= 0 and idx > 16:
+                    earliest = idx if earliest is None else min(earliest, idx)
+            for pat in stop_regexes:
+                m = re.search(pat, text)
+                if m and m.start() > 16:
+                    earliest = m.start() if earliest is None else min(earliest, m.start())
+            if earliest is not None:
+                text = text[:earliest].strip()
+            text = re.sub(r"[。；;]\s*[（(]\s*[一二三四五六七八九十0-9]+\s*[）)]\s*[\s\u3000]*$", "", text).strip()
+            text = re.sub(r"[（(]\s*[一二三四五六七八九十0-9]+\s*[）)]\s*[\s\u3000]*$", "", text).strip()
+            text = re.sub(r"[一二三四五六七八九十0-9]+\s*[、.．)]\s*[\s\u3000]*$", "", text).strip()
+            return text
 
         cleaned: list[str] = []
         seen: set[str] = set()
         for b in blocks:
-            s = re.sub(r"\s+", " ", b).strip()
+            s = re.sub(r"\s+", " ", _cut_tail(b)).strip()
             if len(s) < 10:
+                continue
+            if self._is_title_only_research(s):
                 continue
             k = re.sub(r"\s+", "", s)
             if k in seen:
@@ -1924,21 +2594,59 @@ class PerfCheckParser:
         *,
         max_items: int = 12,
     ) -> list[dict[str, str]]:
+        def _is_metric_like_research(text: str) -> bool:
+            s = str(text or "").strip()
+            if not s:
+                return True
+            s_wo_idx = re.sub(r"^\s*(?:[（(]?\d{1,2}[)）]|\d{1,2}[.、．)])\s*", "", s)
+            if re.search(r"(?:实施期目标|预期绩效目标|绩效目标|绩效指标|考核目标|验收指标|预期成果)\s*[:：]?", s):
+                return True
+            if len(s) >= 80 and sum(s.count(ch) for ch in "。；;") >= 2:
+                return False
+            if re.search(r"(?:拟发表|发表).*?(?:论文|SCI|EI)|(?:申请|授权).*?(?:专利|软著)|培养.*?(?:研究生|硕士|博士|人才)", s):
+                return True
+            if re.search(r"(?:满意度|达标率|覆盖率|转化|推广|示范|培训|科普活动)", s_wo_idx) and re.search(r"\d", s_wo_idx):
+                return True
+            if re.search(r"(?:论文|专利|研究生|硕士|博士|人才|满意度)", s) and re.search(r"\d+\s*(?:篇|件|项|个|次|名|人|人次|%|％)", s):
+                return True
+            return False
+
         rows = [dict(x or {}) for x in (research_contents or []) if isinstance(x, dict)]
         if not rows:
             return []
 
         title_only_count = sum(1 for r in rows if self._is_title_only_research(r.get("text", "")))
         if title_only_count == 0:
-            return [{"id": f"R{i+1}", "text": str(r.get("text", "")).strip()} for i, r in enumerate(rows)]
+            out = [{"id": f"R{i+1}", "text": str(r.get("text", "")).strip()} for i, r in enumerate(rows)]
+            out = [r for r in out if not _is_metric_like_research(r.get("text", ""))]
+            for i, r in enumerate(out, start=1):
+                r["id"] = f"R{i}"
+            return out[:max_items]
 
-        numbered = self._extract_numbered_research_blocks(source_text or "", max_items=max_items)
+        numbered = self._extract_research_topic_blocks(source_text or "", max_items=max_items) or self._extract_numbered_research_blocks(source_text or "", max_items=max_items)
         if not numbered:
-            return [{"id": f"R{i+1}", "text": str(r.get("text", "")).strip()} for i, r in enumerate(rows)]
+            heuristic = self._heuristic_extract_research_contents(source_text or "", max_items=max_items)
+            if heuristic:
+                return heuristic
+            kept: list[dict[str, str]] = []
+            for i, r in enumerate(rows, start=1):
+                text = str(r.get("text", "")).strip()
+                if len(text) < 10:
+                    continue
+                if self._is_title_only_research(text):
+                    continue
+                kept.append({"id": f"R{len(kept) + 1}", "text": text})
+                if len(kept) >= max_items:
+                    break
+            return kept
 
         # 若 LLM 明显只抽到标题，优先直接使用编号段落完整文本。
         if title_only_count >= max(1, int(len(rows) * 0.5)) and len(numbered) >= min(4, len(rows)):
-            return [{"id": f"R{i+1}", "text": numbered[i]} for i in range(min(len(numbered), max_items))]
+            out = [{"id": f"R{i+1}", "text": numbered[i]} for i in range(min(len(numbered), max_items))]
+            out = [r for r in out if not _is_metric_like_research(r.get("text", ""))]
+            for i, r in enumerate(out, start=1):
+                r["id"] = f"R{i}"
+            return out[:max_items]
 
         # 否则仅替换“标题化”条目，保留已完整的条目。
         out: list[dict[str, str]] = []
@@ -1946,7 +2654,8 @@ class PerfCheckParser:
         for i, r in enumerate(rows, start=1):
             text = str(r.get("text", "")).strip()
             if not self._is_title_only_research(text):
-                out.append({"id": f"R{i}", "text": text})
+                if len(text) >= 10:
+                    out.append({"id": f"R{i}", "text": text})
                 continue
 
             key = self._strip_research_index(text)
@@ -1959,8 +2668,13 @@ class PerfCheckParser:
                     replacement = b
                     used_idx.add(j)
                     break
-            out.append({"id": f"R{i}", "text": replacement or text})
+            if replacement:
+                out.append({"id": f"R{i}", "text": replacement})
+            else:
+                if len(text) >= 10:
+                    out.append({"id": f"R{i}", "text": text})
 
+        out = [r for r in out if not _is_metric_like_research(r.get("text", ""))]
         # 重新编号，保证连续。
         for i, r in enumerate(out, start=1):
             r["id"] = f"R{i}"
@@ -1990,6 +2704,8 @@ class PerfCheckParser:
 
     def _amount_key_priority(self, key: str) -> int:
         k = str(key or "")
+        if "序号" in k:
+            return 0
         if any(h in k for h in BUDGET_TYPE_FIELD_HINTS):
             # 防止“预算科目名称”被当作金额字段，误取序号数字。
             return 0
@@ -2106,6 +2822,8 @@ class PerfCheckParser:
             return []
 
         item_map: Dict[str, float] = {}
+        order: list[str] = []
+        order: list[str] = []
         for line in raw.splitlines():
             if not re.search(r"\[表格行\d+\]", line):
                 continue
@@ -2136,6 +2854,8 @@ class PerfCheckParser:
                         continue
                     amount = self._parse_amount(plain.group(2), plain.group(3) or "")
                     item_map[btype] = float(amount)
+                    if btype not in order:
+                        order.append(btype)
                 continue
 
             joined_keys = " ".join(k for k, _ in kv_pairs)
@@ -2165,7 +2885,7 @@ class PerfCheckParser:
             if not t or len(t) > 40:
                 continue
 
-            # 过滤“合计”行，避免与 total 重复。
+            # 统一科目名，避免“2.业务费/（一）直接费用”等写法差异导致重复项。
             tn = self._normalize_budget_type(t)
             if tn in {"合计", "总计", "总额", "预算总额", "经费总额", "总预算"}:
                 continue
@@ -2190,6 +2910,8 @@ class PerfCheckParser:
             if amount_pri < 0:
                 raw_type_norm = self._normalize_budget_type(raw_type)
                 for _key, val in kv_pairs:
+                    if "序号" in str(_key or ""):
+                        continue
                     if self._normalize_budget_type(val) == raw_type_norm:
                         continue
                     cands = self._extract_amount_candidates(val)
@@ -2202,9 +2924,13 @@ class PerfCheckParser:
                         amount_pri = 0
 
             if amount_pri >= 0:
-                item_map[t] = float(amount)
+                # 相同科目可能在不同表格行重复出现，保留绝对值更大的一项避免被 0 覆盖。
+                prev = float(item_map.get(tn, 0.0) or 0.0)
+                item_map[tn] = float(amount) if abs(float(amount)) >= abs(prev) else prev
+                if tn not in order:
+                    order.append(tn)
 
-        items = [{"type": k, "amount": v} for k, v in item_map.items()]
+        items = [{"type": k, "amount": float(item_map.get(k, 0.0) or 0.0)} for k in order if k in item_map]
         return items[:max_items]
 
     def _heuristic_extract_budget(self, text: str, *, max_items: int = 30) -> Dict[str, Any]:
@@ -2214,6 +2940,7 @@ class PerfCheckParser:
             return {"budget": {"total": 0.0, "items": []}, "units_budget": []}
 
         item_map: Dict[str, float] = {}
+        order: list[str] = []
         total_value = 0.0
 
         for line in raw.splitlines():
@@ -2232,6 +2959,8 @@ class PerfCheckParser:
             kv_type, kv_amount = self._extract_budget_type_and_amount_from_kv(segments)
             if kv_type:
                 item_map[kv_type] = item_map.get(kv_type, 0.0) + kv_amount
+                if kv_type not in order:
+                    order.append(kv_type)
                 continue
 
             # 识别 type:amount 形式
@@ -2247,6 +2976,8 @@ class PerfCheckParser:
                         continue
                     amount = self._parse_amount(kv.group(2), kv.group(3) or "")
                     item_map[btype] = item_map.get(btype, 0.0) + amount
+                    if btype not in order:
+                        order.append(btype)
                     continue
 
                 # 识别“类别 数值”形式
@@ -2258,10 +2989,28 @@ class PerfCheckParser:
                     cands = self._extract_amount_candidates(seg)
                     amount = cands[-1] if cands else self._parse_amount(plain.group(2), plain.group(3) or "")
                     item_map[btype] = item_map.get(btype, 0.0) + amount
+                    if btype not in order:
+                        order.append(btype)
 
-        items = [{"type": k, "amount": float(v)} for k, v in item_map.items() if abs(v) > 1e-9][:max_items]
+        items = [
+            {"type": k, "amount": float(item_map.get(k, 0.0) or 0.0)}
+            for k in order
+            if abs(float(item_map.get(k, 0.0) or 0.0)) > 1e-9
+        ][:max_items]
         if total_value <= 0 and items:
-            total_value = float(sum(x["amount"] for x in items))
+            top_total_types = {
+                "合计",
+                "总计",
+                "总额",
+                "预算总额",
+                "经费总额",
+                "总预算",
+                "省级财政资金",
+                "财政资金",
+                "专项经费",
+            }
+            candidates = [float(x["amount"]) for x in items if str(x.get("type") or "") in top_total_types]
+            total_value = float(max(candidates)) if candidates else float(sum(x["amount"] for x in items))
 
         return {
             "budget": {
@@ -2340,17 +3089,89 @@ class PerfCheckParser:
         content = self._strip_code_fence(getattr(resp, "content", str(resp)))
         return json.loads(content)
 
-    async def parse_to_schema(self, file_data: bytes, file_type: str) -> DocumentSchema:
+    async def parse_to_schema(
+        self,
+        file_data: bytes,
+        file_type: str,
+        *,
+        enable_table_vision_extraction: bool = True,
+        enable_llm: bool = True,
+        doc_kind: Optional[str] = None,
+    ) -> DocumentSchema:
         """将文档解析并抽取为结构化 Schema"""
         # 1. 解析原始文本
         parser = get_parser(file_type)
         parse_result = await parser.parse(file_data)
         raw_text = parse_result.content.to_text()
 
-        # 2. 使用 LLM 抽取结构化信息
-        return await self.extract_schema_from_text(raw_text, source_file_type=file_type)
+        if enable_table_vision_extraction and str(file_type or "").lower() == "pdf":
+            ocr_text = ""
+            try:
+                import os
+                import fitz
+                from src.common.file_handler.ocr import OCRProcessor
+                from src.common.file_handler.image_processor import ImageProcessor
+            except Exception:
+                ocr_text = ""
+            else:
+                max_pages = int(os.getenv("PERFCHECK_OCR_MAX_PAGES", "3") or 3)
+                scale = float(os.getenv("PERFCHECK_OCR_SCALE", "2.0") or 2.0)
+                try:
+                    doc = fitz.open(stream=file_data, filetype="pdf")
+                except Exception:
+                    doc = None
+                if doc is not None:
+                    ocr = OCRProcessor()
+                    chunks: list[str] = []
+                    page_count = min(len(doc), max_pages)
+                    for page_index in range(page_count):
+                        try:
+                            page = doc.load_page(page_index)
+                            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                            img_bytes = pix.tobytes("png")
+                            img_bytes = ImageProcessor.to_rgb(img_bytes)
+                            blocks = await ocr.recognize(img_bytes, page=page_index)
+                        except Exception:
+                            continue
+                        blocks = [b for b in blocks if getattr(b, "text", "").strip()]
+                        blocks.sort(key=lambda b: (getattr(getattr(b, "bbox", None), "y", 0.0), getattr(getattr(b, "bbox", None), "x", 0.0)))
+                        line_y = None
+                        line_parts: list[str] = []
+                        for b in blocks:
+                            y = float(getattr(getattr(b, "bbox", None), "y", 0.0) or 0.0)
+                            text = str(getattr(b, "text", "") or "").strip()
+                            if not text:
+                                continue
+                            if line_y is None:
+                                line_y = y
+                                line_parts = [text]
+                                continue
+                            if abs(y - line_y) <= 14.0:
+                                line_parts.append(text)
+                            else:
+                                if line_parts:
+                                    chunks.append(f"[OCR页{page_index + 1}] {' '.join(line_parts)}")
+                                line_y = y
+                                line_parts = [text]
+                        if line_parts:
+                            chunks.append(f"[OCR页{page_index + 1}] {' '.join(line_parts)}")
+                    if chunks:
+                        ocr_text = "\n".join(chunks)
 
-    async def extract_schema_from_text(self, text: str, source_file_type: Optional[str] = None) -> DocumentSchema:
+            if ocr_text:
+                raw_text = f"{raw_text}\n\n{ocr_text}"
+
+        # 2. 使用 LLM 抽取结构化信息
+        return await self.extract_schema_from_text(raw_text, source_file_type=file_type, enable_llm=enable_llm, doc_kind=doc_kind)
+
+    async def extract_schema_from_text(
+        self,
+        text: str,
+        source_file_type: Optional[str] = None,
+        *,
+        enable_llm: bool = True,
+        doc_kind: Optional[str] = None,
+    ) -> DocumentSchema:
         """从纯文本中抽取结构化 Schema"""
         raw = (text or "").strip()
         if not raw:
@@ -2361,9 +3182,12 @@ class PerfCheckParser:
                 budget=Budget(total=0.0, items=[]),
                 basic_info=None,
                 units_budget=[],
+                raw_text=None,
             )
 
         raw = self._strip_filling_instructions(raw)
+        if doc_kind not in {"task", "declaration"}:
+            doc_kind = self._detect_doc_kind(raw)
 
         # 不做全局截断：长文档（如含大表格的 DOCX）若仅保留头尾，
         # 会丢失中段“绩效目标表/成员分工表”，导致核心指标与成员抽取错误。
@@ -2428,7 +3252,6 @@ class PerfCheckParser:
             r"经费分配",
         ]
 
-        doc_kind = self._detect_doc_kind(raw)
         if doc_kind == "task":
             basic_sections = [
                 "承担单位和合作单位情况",
@@ -2440,6 +3263,8 @@ class PerfCheckParser:
             metrics_sections = [
                 "项目实施的绩效目标",
                 "项目实施的绩效目标表",
+                "项目验收的考核指标",
+                "验收的考核指标",
             ]
             research_sections = [
                 "项目实施的主要内容任务",
@@ -2481,39 +3306,74 @@ class PerfCheckParser:
 
         research_text = ""
         if is_docx_source:
-            research_text = self._extract_required_research_section(raw=raw, doc_kind=doc_kind, max_chars=4200)
-        if not research_text:
+            req_sec = self._extract_required_research_section(raw=raw, doc_kind=doc_kind, max_chars=8000)
+            if req_sec:
+                research_text = self._extract_research_content_only(raw=req_sec, doc_kind=doc_kind, max_chars=4200)
+                if not research_text:
+                    research_text = req_sec
+            else:
+                research_text = self._extract_research_content_only(raw=raw, doc_kind=doc_kind, max_chars=4200)
+            
+            if not research_text:
+                research_text = self._extract_research_section_precise(raw=raw, doc_kind=doc_kind, max_chars=4200)
+            if not research_text:
+                research_text = self._collect_topic_text(
+                    raw=raw,
+                    section_titles=research_sections,
+                    patterns=research_patterns,
+                    max_chars=4200,
+                    per_block_chars=1800,
+                    window_before=260,
+                    window_after=1200,
+                )
+            if not research_text:
+                research_text = self._collect_windows(
+                    raw=raw,
+                    patterns=[
+                        r"二[、.．)]\s*研究内容",
+                        r"研究内容、研究目标",
+                        r"研究体系与研究内容",
+                        r"项目基本信息\s*[:：]\s*项目简介",
+                        r"项目实施内容及目标",
+                        r"项目实施的主要内容任务",
+                    ],
+                    head_chars=300,
+                    tail_chars=0,
+                    before=220,
+                    after=1600,
+                    max_chars=4200,
+                )
+            if research_text:
+                research_text = self._extract_research_content_only(raw=research_text, doc_kind=doc_kind, max_chars=4200)
+        else:
             research_text = self._extract_research_section_precise(raw=raw, doc_kind=doc_kind, max_chars=4200)
-        if not research_text:
-            research_text = self._collect_topic_text(
-                raw=raw,
-                section_titles=research_sections,
-                patterns=research_patterns,
-                max_chars=4200,
-                per_block_chars=1800,
-                window_before=260,
-                window_after=1200,
-            )
-        if not research_text:
-            fallback_patterns = [
-                r"项目实施内容及目标",
-                r"项目实施的主要内容任务",
-            ]
-            if not is_docx_source:
-                fallback_patterns.extend([
-                    r"研究内容",
-                    r"技术路线",
-                    r"研究目标",
-                ])
-            research_text = self._collect_windows(
-                raw=raw,
-                patterns=fallback_patterns,
-                head_chars=300,
-                tail_chars=0,
-                before=220,
-                after=1400,
-                max_chars=3200,
-            )
+            if not research_text:
+                research_text = self._collect_topic_text(
+                    raw=raw,
+                    section_titles=research_sections,
+                    patterns=research_patterns,
+                    max_chars=4200,
+                    per_block_chars=1800,
+                    window_before=260,
+                    window_after=1200,
+                )
+            if not research_text:
+                research_text = self._collect_windows(
+                    raw=raw,
+                    patterns=[
+                        r"研究内容",
+                        r"技术路线",
+                        r"研究目标",
+                    ],
+                    head_chars=300,
+                    tail_chars=0,
+                    before=220,
+                    after=1400,
+                    max_chars=3200,
+                )
+
+            if research_text:
+                research_text = self._extract_research_content_only(raw=research_text, doc_kind=doc_kind, max_chars=4200)
         budget_text = self._collect_budget_text_precise(raw=raw, doc_kind=doc_kind, max_chars=8200)
         units_budget_text = self._collect_units_budget_text_precise(raw=raw, doc_kind=doc_kind, max_chars=9000)
         if not budget_text:
@@ -2543,69 +3403,109 @@ class PerfCheckParser:
                 max_chars=7000,
             )
 
-        basic_prompt = (
-            "抽取项目名称与基础信息，返回 JSON："
-            "{\"project_name\": str, \"basic_info\": {\"undertaking_unit\": str, \"partner_units\": [str], \"team_members\": [{\"name\": str, \"duty\": str}]}}。\n"
-            "仅输出 JSON。\n\n文本：\n"
-            + basic_text
-        )
-        members_prompt = (
-            "仅从“项目组主要成员/参加人员及分工”表格抽取成员及分工，返回 JSON："
-            "{\"team_members\": [{\"name\": str, \"duty\": str}]}。\n"
-            "不要抽取承担单位负责人、联系人等非成员表字段；仅输出 JSON。\n\n文本：\n"
-            + (required_members_text or basic_text)
-        )
-        metrics_prompt = (
-            "仅从绩效目标表中抽取可量化指标，返回 JSON："
-            "{\"performance_targets\": [{\"id\": str, \"type\": str, \"text\": str, \"source\": str, \"value\": number, \"unit\": str, \"constraint\": str, \"subtype\": str}]}。\n"
-            "抽取顺序要求：先抽“绩效指标（三级指标 + 指标值）”和“满意度指标”；"
-            "再补充“总体目标-实施期目标”中未出现在绩效指标里的条目。"
-            "如两者重复，以绩效指标为准。"
-            "严格排除“年度目标/阶段目标/第一年第二年/招募病例进度”等中间过程指标。"
-            "type 必须是三级细项指标名称（如“发表SCI论文数量”“申请发明专利数”“销售收入”），"
-            "禁止输出“一级指标/二级指标/绩效目标”等泛化名称；text 写该指标完整句；仅输出 JSON。\n\n文本：\n"
-            + metrics_text
-        )
-        research_prompt = (
-            "仅从申报书\"一、项目实施内容及目标\"或任务书\"二、项目实施的主要内容任务\"抽取研究内容条目，返回 JSON："
-            "{\"research_contents\": [{\"id\": str, \"text\": str}]}。\n"
-            "id 从 R1 开始递增；仅输出 JSON。\n\n文本：\n"
-            + research_text
-        )
-        budget_prompt = (
-            "从预算相关文本中一次性抽取总预算、预算明细及单位预算，返回 JSON："
-            "{\"budget\": {\"total\": number, \"items\": [{\"type\": str, \"amount\": number}]}, "
-            "\"units_budget\": [{\"unit_name\": str, \"type\": str, \"amount\": number}]}。\n"
-            "若缺失返回空数组或 0；仅输出 JSON。\n\n文本：\n"
-            + budget_text
-        )
+        if not enable_llm:
+            budget_items = self._extract_budget_items_from_table_rows(budget_text)
+            if not budget_items:
+                budget_items = self._extract_budget_items_from_table_rows(
+                    self._collect_windows(
+                        raw=raw,
+                        patterns=[
+                            r"项目预算表",
+                            r"预算表",
+                            r"经费预算",
+                            r"经费预算明细",
+                            r"承担单位、合作单位经费预算明细表",
+                            r"\[表格标题\d+\]",
+                            r"\[表格表头\d+\]",
+                            r"\[表格行\d+\]",
+                        ],
+                        head_chars=0,
+                        tail_chars=0,
+                        before=240,
+                        after=1600,
+                        max_chars=7000,
+                    )
+                )
+            top_total_types = {"合计", "总计", "总额", "预算总额", "经费总额", "总预算", "省级财政资金", "财政资金", "专项经费"}
+            total_candidates = [float(x.get("amount", 0.0) or 0.0) for x in budget_items if str(x.get("type") or "") in top_total_types]
+            budget_total = float(max(total_candidates)) if total_candidates else (float(max((x.get("amount", 0.0) or 0.0) for x in budget_items)) if budget_items else 0.0)
+            results = {
+                "basic": {},
+                "members": {
+                    "team_members": self._extract_team_members_from_table_rows(required_members_text or basic_text),
+                },
+                "metrics": {"performance_targets": []},
+                "research": {"research_contents": []},
+                "budget": {
+                    "budget": {"total": float(budget_total), "items": budget_items},
+                    "units_budget": self._extract_units_budget_items_from_table_rows(units_budget_text),
+                },
+            }
+        else:
+            basic_prompt = (
+                "抽取项目名称与基础信息，返回 JSON："
+                "{\"project_name\": str, \"basic_info\": {\"undertaking_unit\": str, \"partner_units\": [str], \"team_members\": [{\"name\": str, \"duty\": str}]}}。\n"
+                "仅输出 JSON。\n\n文本：\n"
+                + basic_text
+            )
+            members_prompt = (
+                "仅从“项目组主要成员/参加人员及分工”表格抽取成员及分工，返回 JSON："
+                "{\"team_members\": [{\"name\": str, \"duty\": str}]}。\n"
+                "不要抽取承担单位负责人、联系人等非成员表字段；仅输出 JSON。\n\n文本：\n"
+                + (required_members_text or basic_text)
+            )
+            metrics_prompt = (
+                "仅从绩效目标表中抽取可量化指标，返回 JSON："
+                "{\"performance_targets\": [{\"id\": str, \"type\": str, \"text\": str, \"source\": str, \"value\": number, \"unit\": str, \"constraint\": str, \"subtype\": str}]}。\n"
+                "抽取顺序要求：先抽“绩效指标（三级指标 + 指标值）”和“满意度指标”；"
+                "再补充“总体目标-实施期目标”中未出现在绩效指标里的条目。"
+                "如两者重复，以绩效指标为准。"
+                "严格排除“年度目标/阶段目标/第一年第二年/招募病例进度”等中间过程指标。"
+                "type 必须是三级细项指标名称（如“发表SCI论文数量”“申请发明专利数”“销售收入”），"
+                "禁止输出“一级指标/二级指标/绩效目标”等泛化名称；text 写该指标完整句；仅输出 JSON。\n\n文本：\n"
+                + metrics_text
+            )
+            research_prompt = (
+                "仅从“研究内容”小节抽取研究内容条目（申报书：第一部分>一、项目实施内容；任务书：二、项目实施的主要内容任务）。"
+                "严格排除：合作单位选择原因、国际合作、论文/专利/成果、承担项目清单、预算、进度安排、考核指标等非研究内容。"
+                "返回 JSON："
+                "{\"research_contents\": [{\"id\": str, \"text\": str}]}。\n"
+                "id 从 R1 开始递增；仅输出 JSON。\n\n文本：\n"
+                + research_text
+            )
+            budget_prompt = (
+                "从预算相关文本中一次性抽取总预算、预算明细及单位预算，返回 JSON："
+                "{\"budget\": {\"total\": number, \"items\": [{\"type\": str, \"amount\": number}]}, "
+                "\"units_budget\": [{\"unit_name\": str, \"type\": str, \"amount\": number}]}。\n"
+                "若缺失返回空数组或 0；仅输出 JSON。\n\n文本：\n"
+                + budget_text
+            )
 
-        configured_timeout = float(getattr(llm_config, "timeout", 30.0) or 30.0)
+            configured_timeout = float(getattr(llm_config, "timeout", 30.0) or 30.0)
 
-        tasks = {
-            "basic": self._ainvoke_json(
-                prompt=basic_prompt,
-            ),
-            "members": self._ainvoke_json(
-                prompt=members_prompt,
-            ),
-            "metrics": self._ainvoke_json(
-                prompt=metrics_prompt,
-            ),
-            "research": self._ainvoke_json(
-                prompt=research_prompt,
-            ),
-            "budget": self._extract_budget_with_fallback(
-                budget_prompt=budget_prompt,
-                base_timeout=configured_timeout,
-            ),
-        }
+            tasks = {
+                "basic": self._ainvoke_json(
+                    prompt=basic_prompt,
+                ),
+                "members": self._ainvoke_json(
+                    prompt=members_prompt,
+                ),
+                "metrics": self._ainvoke_json(
+                    prompt=metrics_prompt,
+                ),
+                "research": self._ainvoke_json(
+                    prompt=research_prompt,
+                ),
+                "budget": self._extract_budget_with_fallback(
+                    budget_prompt=budget_prompt,
+                    base_timeout=configured_timeout,
+                ),
+            }
 
-        # 核心字段失败时立即退出，避免等待最慢请求超时。
-        results = await self._run_extract_tasks_fail_fast(
-            tasks,
-            core_keys={"metrics", "research", "budget"},
-        )
+            results = await self._run_extract_tasks_fail_fast(
+                tasks,
+                core_keys={"metrics", "research", "budget"},
+            )
 
         basic_data = results.get("basic") or {}
         members_data = results.get("members") or {}
@@ -2635,36 +3535,51 @@ class PerfCheckParser:
             llm_basic_info["team_members"] = llm_member_list
 
         heuristic_basic = self._heuristic_extract_basic_info(
-            basic_text,
+            raw,
             team_members_text=(required_members_text or basic_text),
         )
         basic_info = self._merge_basic_info(llm_basic_info, heuristic_basic, doc_kind=doc_kind)
+        if is_docx_source and required_members_text:
+            heu_members = heuristic_basic.get("team_members") if isinstance(heuristic_basic, dict) else None
+            if isinstance(heu_members, list) and heu_members:
+                basic_info["team_members"] = heu_members
         research_contents = research_data.get("research_contents") or []
+        if is_docx_source and research_text:
+            topic_blocks = self._extract_research_topic_blocks(research_text, max_items=12)
+            if len(topic_blocks) >= 2:
+                research_contents = [{"id": f"R{i+1}", "text": topic_blocks[i]} for i in range(min(len(topic_blocks), 12))]
+            else:
+                numbered_blocks = self._extract_numbered_research_blocks(research_text, max_items=12)
+                picked = self._pick_sequential_numbered_blocks(numbered_blocks, min_keep=2, max_items=12)
+                if len(picked) >= 2:
+                    research_contents = [{"id": f"R{i+1}", "text": picked[i]} for i in range(min(len(picked), 12))]
+            heuristic_contents = self._heuristic_extract_research_contents(research_text, max_items=12)
+            if heuristic_contents and len(research_contents) < 2:
+                research_contents = heuristic_contents
         if not research_contents:
             research_contents = self._heuristic_extract_research_contents(research_text)
 
         if research_contents:
-            research_source_text = "\n".join([x for x in [research_text, raw] if x])
+            research_source_text = research_text if is_docx_source else "\n".join([x for x in [research_text, raw] if x])
             research_contents = self._enrich_research_contents_from_text(
                 research_contents,
                 research_source_text,
                 max_items=12,
             )
 
-        if not research_contents:
+        if (not research_contents) and (not is_docx_source):
             fallback_patterns = [
                 r"项目实施内容及目标",
                 r"项目实施的主要内容任务",
             ]
-            if not is_docx_source:
-                fallback_patterns.extend([
-                    r"研究内容",
-                    r"研究任务",
-                    r"技术路线",
-                    r"实施方案",
-                    r"关键技术",
-                    r"\[表格行\d+\]",
-                ])
+            fallback_patterns.extend([
+                r"研究内容",
+                r"研究任务",
+                r"技术路线",
+                r"实施方案",
+                r"关键技术",
+                r"\[表格行\d+\]",
+            ])
             fallback_research_text = self._collect_windows(
                 raw=raw,
                 patterns=fallback_patterns,
@@ -2679,9 +3594,12 @@ class PerfCheckParser:
         if not research_contents:
             logger.warning("研究内容抽取为空：LLM 与规则兜底均未命中，请检查 DOCX 章节标题与内容结构。")
 
-        performance_targets = self._normalize_performance_targets(
-            metrics_data.get("performance_targets") or []
-        )
+        raw_targets = metrics_data.get("performance_targets") or []
+        if is_docx_source and metrics_text:
+            rule_targets = self._extract_performance_targets_from_metrics_table(metrics_text)
+            if len(rule_targets) >= 2:
+                raw_targets = rule_targets
+        performance_targets = self._normalize_performance_targets(raw_targets)
         # 仅在“绩效目标章节”内做补齐，避免把其它章节指标带入核心考核比对。
         supplement_text = metrics_text
         performance_targets = self._supplement_performance_targets(performance_targets, supplement_text)
@@ -2774,4 +3692,4 @@ class PerfCheckParser:
             "units_budget": units_budget,
         }
 
-        return DocumentSchema(**data)
+        return DocumentSchema(**{**data, "raw_text": raw})

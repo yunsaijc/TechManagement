@@ -80,10 +80,13 @@ class WorkUnitConsistencyRule(BaseRule):
                 issues.append(f"工作单位'{work_unit}'与完成单位'{completion_unit}'不一致")
         
         # 检查4：盖章单位应与填写单位完全一致（印章文字必须等于填写单位）
-        if stamp_units and completion_unit:
-            for stamp_unit in stamp_units:
-                if stamp_unit and stamp_unit != completion_unit:
-                    issues.append(f"盖章单位'{stamp_unit}'与填写单位'{completion_unit}'不一致（印章文字应与填写单位完全一致）")
+        if completion_unit:
+            if not stamp_units:
+                issues.append(f"未找到完成单位'{completion_unit}'的印章（应盖完成单位公章）")
+            else:
+                if completion_unit not in stamp_units:
+                    stamp_text = "、".join([u for u in stamp_units if u]) or "-"
+                    issues.append(f"未找到完成单位'{completion_unit}'的印章（已检测到：{stamp_text}）")
         
         # 注意：印章可能盖的是完成单位公章，不是工作单位公章
         # 因此不检查印章与工作单位的一致性

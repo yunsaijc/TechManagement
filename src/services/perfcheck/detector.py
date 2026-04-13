@@ -108,6 +108,44 @@ class PerfCheckDetector:
         """绩效指标核验"""
         comparisons = []
         matched_task_ids = set()
+        class _PT:
+            def __init__(self, src):
+                self.id = getattr(src, "id", "")
+                self.type = getattr(src, "type", "")
+                self.subtype = getattr(src, "subtype", None)
+                self.text = getattr(src, "text", "")
+                self.value = getattr(src, "value", "")
+                self.unit = getattr(src, "unit", "")
+                self.source = getattr(src, "source", "")
+
+        unit_tokens = ["亩", "个", "篇", "项", "件", "人次", "人", "场", "套", "份", "%", "％", "万元", "元"]
+        def _split_metric_by_units(src: PerformanceTarget) -> List[PerformanceTarget]:
+            s = f"{getattr(src, 'type', '')} {getattr(src, 'text', '')}"
+            pairs = []
+            for m in re.finditer(r"(\d+(?:\.\d+)?)(?:\s*)([亩个篇项件人次人场套份%％万元元])", s):
+                num = m.group(1)
+                unit = m.group(2)
+                if unit not in unit_tokens:
+                    continue
+                pairs.append((num, unit))
+            if len(pairs) <= 1:
+                return [src]
+            outs: List[PerformanceTarget] = []
+            for i, (num, unit) in enumerate(pairs, start=1):
+                v = _PT(src)
+                v.id = f"{getattr(src, 'id', '')}-u{i}"
+                v.value = num
+                v.unit = unit
+                # 标记子类型以帮助区分（不影响展示的主类型）
+                if unit in {"亩"}:
+                    v.subtype = (getattr(src, "subtype", None) or "面积")
+                elif unit in {"个"}:
+                    v.subtype = (getattr(src, "subtype", None) or "数量")
+                outs.append(v)
+            return outs
+
+        apply_targets = [y for x in apply_targets for y in _split_metric_by_units(x)]
+        task_targets = [y for x in task_targets for y in _split_metric_by_units(x)]
 
         def _value_for_compare(v: Any) -> float:
             """将值统一为可比较数值：区间取上界，单值直接转 float。"""
@@ -229,15 +267,25 @@ class PerfCheckDetector:
                 text = text.replace("选育", "培育")
                 text = text.replace("示范基地", "种植基地")
                 text = text.replace("标准化种植技术体系", "种植技术体系")
+                # 指标同义项统一
+                text = text.replace("申请发明专利数", "申请发明专利")
+                text = text.replace("申请专利", "申请发明专利")
+                text = text.replace("制定标准数量", "制定标准")
+                text = text.replace("制定地方标准", "制定标准")
+                text = text.replace("发表论文数", "发表论文")
+                text = text.replace("发表论文数量", "发表论文")
 
                 text = re.sub(r"[\s\t\r\n\u3000·•，,。；;:：()（）\[\]【】<>《》\-_/\\]+", "", text)
                 return text
-
             parts = [
                 _normalize_metric_match_text(x.type or ""),
                 _normalize_metric_match_text(x.subtype or ""),
                 _normalize_metric_match_text(getattr(x, "text", "") or ""),
             ]
+            # 将单位作为匹配键的一部分，避免“亩/个”等跨单位误匹配
+            unit_part = str(getattr(x, "unit", "") or "").strip()
+            if unit_part:
+                parts.append(unit_part)
             return " ".join([p for p in parts if p])
 
         def key_for_refine(x: PerformanceTarget) -> str:
@@ -580,15 +628,37 @@ class PerfCheckDetector:
             ]
 
         item_results: List[Dict[str, Any]] = []
-        for a in apply_contents:
-            max_sim = 0.0
-            best_task_text = ""
-            a_norm = _normalize_content_text(a.text)
+        # 结合关键短语覆盖与文本相似度进行对齐；若数量接近，优先按序对齐
+        def _phrase_overlap_score(a_text: str, b_text: str) -> float:
+            a_ph = set(_extract_key_phrases(a_text))
+            if not a_ph:
+                return 0.0
+            b_norm = _normalize_content_text(b_text)
+            hit = sum(1 for ph in a_ph if _normalize_content_text(ph) in b_norm)
+            return hit / max(1, len(a_ph))
 
+        by_index_initial = (len(apply_contents) >= 2 and len(task_contents) >= 2 and abs(len(apply_contents) - len(task_contents)) <= 2)
+
+        for idx, a in enumerate(apply_contents):
+            a_norm = _normalize_content_text(a.text)
+            max_score = -1.0
+            best_task_text = ""
+
+            # 初始候选：按序对齐，避免完全依赖相似度误配
+            if by_index_initial and idx < len(task_contents):
+                cand_text = task_contents[idx].text
+                max_score = max(self._calculate_similarity(a.text, cand_text), _phrase_overlap_score(a.text, cand_text))
+                best_task_text = cand_text
+
+            # 遍历寻找更优候选：综合“相似度 + 关键短语覆盖”
             for t in task_contents:
                 sim_score = self._calculate_similarity(a.text, t.text)
-                if sim_score > max_sim:
-                    max_sim = sim_score
+                cov_score = _phrase_overlap_score(a.text, t.text)
+                score = max(sim_score, cov_score)
+                if cov_score >= 0.6:
+                    score = max(score, (cov_score * 0.75) + (sim_score * 0.25))
+                if score > max_score:
+                    max_score = score
                     best_task_text = t.text
 
             # 完全一致优先：避免 LLM 给出 0.9 这类“保守分”。
@@ -615,16 +685,24 @@ class PerfCheckDetector:
             # LLM 辅助覆盖率判断
             refinement = await self._refine_alignment(a.text, best_task_text)
             is_covered = refinement.get("is_match", False)
-            coverage_score = float(refinement.get("similarity", max_sim) or 0.0)
+            # 使用综合得分作为下限，避免覆盖率因文本很长被低估
+            combined_baseline = max_score if max_score >= 0 else 0.0
+            coverage_score = float(refinement.get("similarity", combined_baseline) or 0.0)
             coverage_score = max(0.0, min(1.0, coverage_score))
             if is_covered:
                 # 已覆盖时不低于规则相似度，避免 LLM 低估造成“已覆盖但仅 90%”的观感偏差。
-                coverage_score = max(coverage_score, float(max_sim))
+                coverage_score = max(coverage_score, float(combined_baseline))
 
             b_norm = _normalize_content_text(best_task_text)
             if a_norm and b_norm and a_norm == b_norm:
                 is_covered = True
                 coverage_score = 1.0
+
+            # 若关键短语覆盖很高，则直接认定覆盖并抬升得分
+            phrase_cov = _phrase_overlap_score(a.text, best_task_text)
+            if phrase_cov >= 0.8 and not is_covered:
+                is_covered = True
+                coverage_score = max(coverage_score, phrase_cov)
 
             if is_covered:
                 reason = "任务书为申报书具体化"
@@ -658,13 +736,16 @@ class PerfCheckDetector:
             global_reason = f"任务书仅覆盖部分申报书内容（{covered_items}/{total_items}），判定为“部分缩水”。"
 
         for item in item_results:
+            item_risk = "RED"
+            if item["is_covered"]:
+                item_risk = "GREEN" if float(item.get("coverage_score", 0.0) or 0.0) >= 0.85 else "YELLOW"
             comparisons.append(ContentComparison(
                 apply_id=item["apply_id"],
                 apply_text=item["apply_text"],
                 task_text=item.get("task_text", ""),
                 is_covered=item["is_covered"],
                 coverage_score=item["coverage_score"],
-                risk_level=global_risk,
+                risk_level=item_risk,
                 reason=item["reason"]
             ))
 
@@ -673,6 +754,88 @@ class PerfCheckDetector:
     def _check_budget(self, apply_budget: Any, task_budget: Any, threshold: float) -> List[BudgetComparison]:
         """预算变更核验"""
         risks = []
+
+        # 叶子科目优先，避免“直接费用/财政资金”等层级项与明细项同时比较造成误报。
+        leaf_priority = [
+            "设备费",
+            "业务费",
+            "劳务费",
+            "材料费",
+            "测试化验加工费",
+            "燃料动力费",
+            "差旅费",
+            "会议费",
+            "国际合作与交流费",
+            "出版/文献/信息传播/知识产权事务费",
+            "专家咨询费",
+            "管理费",
+            "其他支出",
+        ]
+        leaf_set = set(leaf_priority)
+        parent_buckets = {
+            "省级财政资金",
+            "自筹资金",
+            "财政资金",
+            "直接费用",
+            "间接费用",
+            "总计",
+            "合计",
+            "总额",
+            "预算总额",
+            "经费总额",
+            "总预算",
+        }
+
+        alias_map = {
+            "检验检测费": "测试化验加工费",
+            "测试费": "测试化验加工费",
+            "测试化验费": "测试化验加工费",
+            "测试化验加工费用": "测试化验加工费",
+            "出版文献信息传播知识产权事务费": "出版/文献/信息传播/知识产权事务费",
+            "出版文献信息传播费": "出版/文献/信息传播/知识产权事务费",
+            "知识产权事务费": "出版/文献/信息传播/知识产权事务费",
+            "国际合作交流费": "国际合作与交流费",
+        }
+
+        def _canonical_budget_type(name: Any) -> str:
+            s = str(name or "").strip()
+            if not s:
+                return ""
+
+            s = re.sub(r"\s+", "", s)
+            s = re.sub(r"^[（(]?[一二三四五六七八九十]+[)）、.．]", "", s)
+            s = re.sub(r"^\d+[、.．)]", "", s)
+            s = re.sub(r"^其中[:：]", "", s)
+            s = re.sub(r"^预算科目[:：]", "", s)
+            s = s.strip(":：;；|，,")
+
+            if s in alias_map:
+                return alias_map[s]
+            return s
+
+        def _aggregate_items(items: Any) -> tuple[dict[str, float], list[str]]:
+            merged: dict[str, float] = {}
+            order: list[str] = []
+            if not isinstance(items, list):
+                return merged, order
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                raw_type = item.get("type")
+                ctype = _canonical_budget_type(raw_type)
+                if not ctype:
+                    continue
+                amount = float(item.get("amount", 0.0) or 0.0)
+
+                # 同类多次出现时取绝对值更大的金额，避免 0/空行覆盖有效值。
+                prev = float(merged.get(ctype, 0.0) or 0.0)
+                merged[ctype] = amount if abs(amount) >= abs(prev) else prev
+
+                if ctype not in order:
+                    order.append(ctype)
+
+            return merged, order
 
         def _is_total_item_name(name: Any) -> bool:
             s = str(name or "").strip()
@@ -683,45 +846,60 @@ class PerfCheckDetector:
         total_t = float(getattr(task_budget, "total", 0.0) or 0.0)
 
         if total_a > 0 or total_t > 0:
-            total_delta = abs(total_t - total_a) / (total_a if total_a > 0 else 1.0)
+            total_diff = abs(total_t - total_a)
+            total_delta = total_diff / (total_a if total_a > 0 else 1.0)
             total_risk = "GREEN"
             total_reason = "项目预算总额一致"
-            if abs(total_a - total_t) > 1e-6:
+            if total_diff > 1e-6:
                 total_risk = "RED"
-                total_reason = "项目预算总额不一致"
+                total_reason = f"项目预算总额不一致（申报 {total_a:g} 万元，任务 {total_t:g} 万元，差额 {total_diff:g} 万元，差异率 {total_delta:.1%}）"
             risks.append(BudgetComparison(
                 type="预算总额",
                 apply_amount=total_a,
                 task_amount=total_t,
                 apply_ratio=1.0 if total_a > 0 else 0.0,
                 task_ratio=1.0 if total_t > 0 else 0.0,
-                ratio_delta=total_delta,
+                ratio_delta=0.0,
                 risk_level=total_risk,
                 reason=total_reason
             ))
         
-        # 按原表顺序比对：先申报书预算表顺序，再补任务书新增科目顺序。
-        apply_seq = [(item.type, float(item.amount or 0.0)) for item in getattr(apply_budget, "items", []) or []]
-        task_seq = [(item.type, float(item.amount or 0.0)) for item in getattr(task_budget, "items", []) or []]
+        apply_raw_items = [
+            {"type": getattr(item, "type", ""), "amount": float(getattr(item, "amount", 0.0) or 0.0)}
+            for item in (getattr(apply_budget, "items", []) or [])
+        ]
+        task_raw_items = [
+            {"type": getattr(item, "type", ""), "amount": float(getattr(item, "amount", 0.0) or 0.0)}
+            for item in (getattr(task_budget, "items", []) or [])
+        ]
 
-        # 已有“预算总额”时，不再重复比较预算科目中的“合计/总计”行。
+        apply_items, apply_order = _aggregate_items(apply_raw_items)
+        task_items, task_order = _aggregate_items(task_raw_items)
+
         if total_a > 0 or total_t > 0:
-            apply_seq = [(t, a) for t, a in apply_seq if not _is_total_item_name(t)]
-            task_seq = [(t, a) for t, a in task_seq if not _is_total_item_name(t)]
+            apply_items = {k: v for k, v in apply_items.items() if not _is_total_item_name(k) and k not in parent_buckets}
+            task_items = {k: v for k, v in task_items.items() if not _is_total_item_name(k) and k not in parent_buckets}
+            apply_order = [k for k in apply_order if k in apply_items]
+            task_order = [k for k in task_order if k in task_items]
 
-        apply_items = {t: a for t, a in apply_seq}
-        task_items = {t: a for t, a in task_seq}
-
-        ordered_types: list[str] = []
-        seen_types: set[str] = set()
-        for t, _a in apply_seq:
-            if t and t not in seen_types:
-                ordered_types.append(t)
-                seen_types.add(t)
-        for t, _a in task_seq:
-            if t and t not in seen_types:
-                ordered_types.append(t)
-                seen_types.add(t)
+        # 双方存在叶子科目时，仅比较叶子科目，避免层级项重复触发“金额不一致”。
+        apply_leaf = {k: v for k, v in apply_items.items() if k in leaf_set}
+        task_leaf = {k: v for k, v in task_items.items() if k in leaf_set}
+        if apply_leaf or task_leaf:
+            apply_items = apply_leaf
+            task_items = task_leaf
+            ordered_types = [k for k in leaf_priority if (k in apply_items or k in task_items)]
+        else:
+            ordered_types = []
+            seen_types: set[str] = set()
+            for t in apply_order:
+                if t and t not in seen_types:
+                    ordered_types.append(t)
+                    seen_types.add(t)
+            for t in task_order:
+                if t and t not in seen_types:
+                    ordered_types.append(t)
+                    seen_types.add(t)
 
         for btype in ordered_types:
             a_amt = apply_items.get(btype, 0.0)
@@ -816,6 +994,10 @@ class PerfCheckDetector:
                 s,
                 maxsplit=1,
             )[0]
+            # 去掉括号中的别名/说明，统一按主名比较
+            s = re.split(r"[（(]", s, maxsplit=1)[0]
+            # 去掉明显的句式噪声
+            s = re.sub(r"可以将.*$", "", s)
             s = s.strip("，,;；。()（）")
             if len(s) < 3:
                 return ""

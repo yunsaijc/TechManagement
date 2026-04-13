@@ -48,7 +48,7 @@ from src.services.grouping.storage.project_repo import ProjectRepository
 from src.common.database import get_xkfl_repo
 
 
-DEBUG_DIR = "/home/tdkx/workspace/tech/debug_grouping"
+DEBUG_DIR = "/home/tdkx/ljh/Tech/debug_grouping"
 os.makedirs(DEBUG_DIR, exist_ok=True)
 EMBEDDING_CACHE_FILE = os.path.join(DEBUG_DIR, "embedding_cache.pkl")
 
@@ -968,7 +968,9 @@ class GroupingAgent:
             target_keywords,
         )
 
-        subject_score = self._subject_similarity_between_projects(project, target_cluster[0])
+        code_a = project.ssxk1 or project.ssxk2 or ""
+        code_b = target_cluster[0].ssxk1 or target_cluster[0].ssxk2 or ""
+        subject_score = self._subject_similarity(code_a, code_b)
         return 0.80 * text_score + 0.10 * keyword_score + 0.10 * subject_score
 
     def _build_similarity_graph(
@@ -1007,11 +1009,15 @@ class GroupingAgent:
         edge_min_score = self._graph_edge_min_score()
 
         for src_idx, neighbors in enumerate(indices):
+            code_a = projects[src_idx].ssxk1 or projects[src_idx].ssxk2 or ""
             keywords_a = keyword_sets[src_idx]
             for rank, dst_idx in enumerate(neighbors):
                 if dst_idx == src_idx:
                     continue
                 cosine_sim = max(0.0, 1.0 - float(distances[src_idx][rank]))
+                code_b = projects[dst_idx].ssxk1 or projects[dst_idx].ssxk2 or ""
+                keyword_score = self._keyword_overlap_score(keywords_a, keyword_sets[dst_idx])
+                subject_score = self._subject_similarity(code_a, code_b)
                 keyword_score = self._keyword_overlap_score(keywords_a, keyword_sets[dst_idx])
                 subject_score = self._subject_similarity_between_projects(projects[src_idx], projects[dst_idx])
                 edge_score = 0.90 * cosine_sim + 0.06 * keyword_score + 0.04 * subject_score
@@ -1894,6 +1900,34 @@ class GroupingAgent:
             + metrics["subject_purity"] * 0.5
         )
 
+        avg_cnt = _safe_mean(counts)
+        too_large = [g for g in groups if g.count > max(1, self.max_per_group)]
+        too_small = [g for g in groups if g.count < max(1, round(avg_cnt * 0.5))]
+        missing_subject = [g for g in groups if not (g.subject_name or g.subject_code)]
+        delta_high = [g for g in groups if g.count > avg_cnt + 3]
+        delta_low = [g for g in groups if g.count < max(0, avg_cnt - 3)]
+
+        reminders: list[str] = []
+        qb = float(metrics.get("quantity_balance") or 0.0)
+        sp = float(metrics.get("subject_purity") or 0.0)
+        sc = float(metrics.get("split_correctness") or 0.0)
+
+        if qb and qb < 0.78:
+            reminders.append("组间项目数差异较大，建议重点复核项目数过多/过少的分组")
+        if sp and sp < 0.78:
+            reminders.append("部分分组学科聚合度偏低，建议抽查主题不明确或跨学科混杂的分组")
+        if sc and sc < 0.78:
+            reminders.append("分组拆分一致性偏低，建议核对学科编码异常项目是否被分到正确学科")
+
+        if too_large:
+            reminders.append(f"存在超过每组上限（{self.max_per_group}）的分组：{len(too_large)} 组")
+        if too_small:
+            reminders.append(f"存在项目数明显偏少的分组：{len(too_small)} 组")
+        if delta_high or delta_low:
+            reminders.append("部分分组项目数偏离平均值较大，建议人工抽查边界样本")
+        if missing_subject:
+            reminders.append(f"存在未能自动识别学科名称/编码的分组：{len(missing_subject)} 组")
+
         stats = GroupingStatistics(
             total_projects=len(projects),
             group_count=len(groups),
@@ -1902,7 +1936,7 @@ class GroupingAgent:
             quantity_balance=metrics["quantity_balance"],
             subject_purity=metrics["subject_purity"],
             split_correctness=metrics["split_correctness"],
-            audit_reminder=None,
+            audit_reminder="；".join(reminders) if reminders else "无需人工复审",
         )
 
         result = GroupingResult(
