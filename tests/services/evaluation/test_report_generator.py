@@ -1,8 +1,20 @@
 """评审报告生成器测试"""
+import json
 from pathlib import Path
+
+import fitz
 
 from src.services.evaluation.parsers import DocumentParser
 from src.services.evaluation.scorers.report_generator import ReportGenerator
+
+
+def _write_pdf(path: Path, text: str) -> None:
+    """写入简单 PDF，供报告构建测试使用"""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 96), text, fontsize=14)
+    doc.save(path)
+    doc.close()
 
 
 def _build_debug_payload(chat_ready: bool = True) -> dict:
@@ -73,7 +85,7 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
 
     assert 'id="report-document"' in html
     assert 'id="project-rail"' not in html
-    assert 'id="document-rail"' in html
+    assert 'id="document-rail"' not in html
     assert 'id="result-tabs"' in html
     assert 'data-tab-target="report-chat"' in html
     assert 'id="report-chat"' in html
@@ -122,7 +134,6 @@ def test_report_generator_chat_panel_allows_first_ask_when_chat_not_ready():
 
     html = generator.build_html(_build_debug_payload(chat_ready=False), debug_mode=False)
 
-    assert "可直接提问，系统会在首问时自动尝试构建索引" in html
     assert "busy || !evaluationId" in html
     assert "未构建聊天索引，无法发起实时问答" not in html
 
@@ -155,6 +166,49 @@ def test_report_generator_formal_html_exposes_document_jump_targets():
     assert "jumpToEvidence" in html
 
 
+def test_report_generator_formal_html_prefers_packet_viewer_when_available():
+    """存在 packet 资产时，正式报告应优先渲染统一材料 viewer"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["packet_assets"] = {
+        "viewer_file": "projects/demo-project/packet_viewer.html",
+        "packet_abs_path": "/tmp/demo-project/evaluation_packet.pdf",
+        "page_map": [
+            {
+                "source_file": "/tmp/demo.pdf",
+                "source_name": "demo.pdf",
+                "source_kind": "proposal",
+                "start_page": 1,
+                "end_page": 3,
+            }
+        ],
+    }
+    payload["result"]["evidence"] = [
+        {
+            "source": "结构化摘要",
+            "file": "demo.pdf",
+            "page": 2,
+            "snippet": "项目目标：建设智能化服务平台。",
+            "category": "goal",
+            "target": "建设智能化服务平台。",
+        }
+    ]
+    payload["result"]["highlights"] = {
+        "research_goals": ["建设智能化服务平台。"],
+        "innovations": [],
+        "technical_route": [],
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert 'id="packet-viewer-frame"' in html
+    assert 'src="projects/demo-project/packet_viewer.html"' in html
+    assert 'data-file="demo.pdf"' in html
+    assert 'data-packet-page="2"' in html
+    assert "const pageMap = [{" in html
+
+
 def test_report_generator_build_from_debug_file_recovers_missing_page_chunks(
     tmp_path: Path,
     monkeypatch,
@@ -173,8 +227,8 @@ def test_report_generator_build_from_debug_file_recovers_missing_page_chunks(
 
     debug_json = tmp_path / "demo.json"
     output_html = tmp_path / "demo.html"
-    debug_json.write_text(__import__("json").dumps(payload, ensure_ascii=False), encoding="utf-8")
-    (tmp_path / "demo.pdf").write_bytes(b"fake")
+    debug_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _write_pdf(tmp_path / "demo.pdf", "自动补齐的正文内容")
 
     async def fake_parse(self, file_path: str, source_name: str = ""):
         return {
@@ -202,8 +256,8 @@ def test_report_generator_build_from_debug_file_recovers_missing_page_chunks(
     html = output_html.read_text(encoding="utf-8")
     updated_json = debug_json.read_text(encoding="utf-8")
 
-    assert 'id="doc-page-3"' in html
-    assert "自动补齐的正文内容" in html
+    assert 'id="packet-viewer-frame"' in html
+    assert "自动补齐的正文内容" in updated_json
     assert '"page_chunks"' in updated_json
 
 
@@ -223,16 +277,13 @@ def test_report_generator_build_from_debug_file_injects_workspace_project_nav(
     }
     debug_json = tmp_path / "EVAL_demo-project.json"
     output_html = tmp_path / "EVAL_demo-project.html"
-    debug_json.write_text(__import__("json").dumps(payload, ensure_ascii=False), encoding="utf-8")
-    (tmp_path / "demo.pdf").write_bytes(b"fake")
+    debug_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _write_pdf(tmp_path / "demo.pdf", "项目目标：建设智能化服务平台。")
 
     other_payload = _build_debug_payload()
     other_payload["result"]["project_id"] = "another-project"
     other_payload["result"]["project_name"] = "另一个项目"
-    (tmp_path / "EVAL_another-project.json").write_text(
-        __import__("json").dumps(other_payload, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    (tmp_path / "EVAL_another-project.json").write_text(json.dumps(other_payload, ensure_ascii=False), encoding="utf-8")
 
     async def fake_parse(self, file_path: str, source_name: str = ""):
         return {
@@ -248,8 +299,38 @@ def test_report_generator_build_from_debug_file_injects_workspace_project_nav(
     assert 'id="project-rail"' in html
     assert "另一个项目" in html
     assert 'href="EVAL_another-project.html"' in html
-    assert 'id="document-rail"' in html
+    assert 'id="document-rail"' not in html
     assert 'id="report-chat"' in html
+
+
+def test_report_generator_build_from_debug_file_backfills_packet_assets(tmp_path: Path):
+    """旧 debug JSON 缺少 packet 资产时，应自动回源生成统一材料 viewer"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    pdf_path = tmp_path / "demo.pdf"
+    _write_pdf(pdf_path, "项目目标：建设智能化服务平台。")
+
+    payload["meta"] = {
+        "file_name": "demo.pdf",
+        "file_path": str(pdf_path),
+        "page_estimated": False,
+        "page_count": 1,
+    }
+
+    debug_json = tmp_path / "EVAL_demo-project.json"
+    output_html = tmp_path / "EVAL_demo-project.html"
+    debug_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    generator.build_from_debug_file(debug_json, output_html, debug_mode=False)
+
+    html = output_html.read_text(encoding="utf-8")
+    updated_json = debug_json.read_text(encoding="utf-8")
+
+    assert 'id="packet-viewer-frame"' in html
+    assert 'src="projects/demo-project/packet_viewer.html"' in html
+    assert '"packet_assets"' in updated_json
+    assert (tmp_path / "projects" / "demo-project" / "packet_viewer.html").exists()
 
 
 def test_report_generator_build_index_html_creates_multi_project_workspace():

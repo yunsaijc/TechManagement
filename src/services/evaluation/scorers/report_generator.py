@@ -13,7 +13,11 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+import fitz
+
 from src.services.evaluation.parsers import DocumentParser
+from src.services.evaluation.packet_builder import EvaluationPacketBuilder
+from src.services.evaluation.storage.project_repo import EvaluationProjectRepository
 
 
 class ReportGenerator:
@@ -74,6 +78,7 @@ class ReportGenerator:
                 current_stem=debug_json.stem,
             )
         updated = self._ensure_page_chunks(data)
+        updated = self._ensure_packet_assets(data, debug_json.parent) or updated
         if updated:
             debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
@@ -93,7 +98,7 @@ class ReportGenerator:
             if not isinstance(result, dict):
                 continue
             project_id = str(result.get("project_id") or payload.get("project_id") or path.stem)
-            project_name = str(
+            project_name = self._extract_project_name_from_payload(payload) or str(
                 result.get("project_name")
                 or payload.get("project_name")
                 or payload.get("source_name")
@@ -140,6 +145,72 @@ class ReportGenerator:
             data["meta"] = merged_meta
         return True
 
+    def _ensure_packet_assets(self, data: Dict[str, Any], debug_dir: Path) -> bool:
+        """兼容旧 debug JSON，缺少 packet 资产时尝试回源补齐"""
+        packet_assets = data.get("packet_assets")
+        if isinstance(packet_assets, dict):
+            viewer_file = str(packet_assets.get("viewer_file") or "").strip()
+            packet_file = str(packet_assets.get("packet_file") or "").strip()
+            if viewer_file and packet_file and (debug_dir / viewer_file).exists() and (debug_dir / packet_file).exists():
+                return False
+
+        meta = data.get("meta") or {}
+        if not isinstance(meta, dict):
+            return False
+        source_file = str(meta.get("file_path") or "").strip()
+        if not source_file or not os.path.exists(source_file):
+            return False
+
+        attachments = data.get("attachments")
+        if not isinstance(attachments, list):
+            attachments = []
+        result = data.get("result") or {}
+        if not isinstance(result, dict):
+            result = {}
+        project_id = str(data.get("project_id") or result.get("project_id") or "").strip()
+        if not attachments:
+            attachment_files = meta.get("attachment_files") or []
+            if isinstance(attachment_files, list) and attachment_files:
+                attachments = [
+                    {
+                        "file_ref": str(path),
+                        "file_name": Path(str(path)).name,
+                        "doc_kind": "",
+                    }
+                    for path in attachment_files
+                    if str(path).strip()
+                ]
+            elif project_id:
+                try:
+                    repo = EvaluationProjectRepository()
+                    attachment_files = repo.get_attachment_file_paths(project_id)
+                except Exception:
+                    attachment_files = []
+                attachments = [
+                    {
+                        "file_ref": str(path),
+                        "file_name": Path(str(path)).name,
+                        "doc_kind": "",
+                    }
+                    for path in attachment_files
+                    if str(path).strip()
+                ]
+            if attachments:
+                data["attachments"] = attachments
+
+        packet_builder = EvaluationPacketBuilder()
+        packet_assets = packet_builder.build(
+            output_dir=debug_dir,
+            project_id=project_id or "manual",
+            source_file=source_file,
+            source_name=str(data.get("source_name") or meta.get("file_name") or Path(source_file).name),
+            attachments=attachments,
+        )
+        if not packet_assets:
+            return False
+        data["packet_assets"] = packet_assets
+        return True
+
     def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
         result = data.get("result", {})
@@ -152,6 +223,7 @@ class ReportGenerator:
         benchmark = result.get("benchmark")
         sections = data.get("sections") or {}
         page_chunks = data.get("page_chunks") or []
+        packet_assets = data.get("packet_assets") or {}
         expert_qna = data.get("expert_qna") or []
         workspace_projects = data.get("_workspace_projects") or []
         evidence_map = self._build_evidence_map(evidence)
@@ -159,15 +231,14 @@ class ReportGenerator:
 
         score = result.get("overall_score", 0)
         grade = result.get("grade", "-")
-        title = result.get("project_name") or result.get("project_id") or "评审报告"
+        title = self._extract_project_name_from_payload(data) or result.get("project_name") or result.get("project_id") or "评审报告"
         score_class = self._score_class(score)
         report_title = "项目智能评审报告" if not debug_mode else "项目评审调试报告"
         left_tail = ""
         right_tail = ""
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
         project_nav = self._render_project_nav(workspace_projects, debug_mode)
-        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, debug_mode)
-        document_nav = self._render_document_nav(page_chunks, sections, debug_mode)
+        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode)
         layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
 
         if debug_mode:
@@ -243,7 +314,8 @@ class ReportGenerator:
       color: inherit;
     }}
     .page {{
-      max-width: 1480px;
+      max-width: 1760px;
+      width: 100%;
       margin: 0 auto;
       padding: 20px;
       height: 100vh;
@@ -354,7 +426,7 @@ class ReportGenerator:
       height: 100%;
     }}
     .workspace-layout {{
-      grid-template-columns: 190px 220px minmax(0, 1.2fr) minmax(400px, 0.92fr);
+      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
     }}
     .debug-layout {{
       grid-template-columns: minmax(0, 1fr) 360px;
@@ -366,8 +438,8 @@ class ReportGenerator:
       display: grid;
       gap: 18px;
       min-height: 0;
-      align-content: start;
-      overflow: auto;
+      height: 100%;
+      overflow: hidden;
       padding-right: 6px;
       max-height: 100%;
     }}
@@ -381,6 +453,7 @@ class ReportGenerator:
       padding-right: 0;
     }}
     .project-panel {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
     }}
@@ -438,6 +511,7 @@ class ReportGenerator:
       line-height: 1.6;
     }}
     .rail-panel {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
     }}
@@ -514,12 +588,14 @@ class ReportGenerator:
       flex-shrink: 0;
     }}
     .doc-panel {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
     }}
     .doc-panel-inner {{
+      height: 100%;
       min-height: 0;
       display: grid;
       grid-template-rows: minmax(0, 1fr);
@@ -531,6 +607,14 @@ class ReportGenerator:
       display: grid;
       gap: 14px;
       align-content: start;
+    }}
+    .packet-frame {{
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border: 0;
+      border-radius: 14px;
+      background: #dfe5ec;
     }}
     .doc-page {{
       border: 1px solid var(--line);
@@ -1009,8 +1093,13 @@ class ReportGenerator:
       line-height: 1.7;
     }}
     .result-shell {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
+    }}
+    .result-shell > .panel-inner {{
+      height: 100%;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
     }}
@@ -1129,7 +1218,6 @@ class ReportGenerator:
 
       <div class="{layout_class}">
         {project_nav}
-        {document_nav}
         <main class="main-stack">
           {document_panel}
           {left_tail}
@@ -1148,7 +1236,6 @@ class ReportGenerator:
                   <button type="button" class="result-tab" data-tab-target="report-qna">典型问答</button>
                   <button type="button" class="result-tab" data-tab-target="report-fit">指南贴合</button>
                   <button type="button" class="result-tab" data-tab-target="report-benchmark">技术摸底</button>
-                  <button type="button" class="result-tab" data-tab-target="report-evidence">证据链</button>
                 </div>
                 """}
               </div>
@@ -1157,44 +1244,18 @@ class ReportGenerator:
                   <section class="panel">
                     <div class="panel-inner">
                       <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-                      <div class="facts-grid">
-                        <div class="mini-card">
-                          <div class="label">结构化摘要</div>
-                          <div class="value">{"已生成" if highlights else "未生成"}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">专家问答</div>
-                          <div class="value">{"已生成" if expert_qna else "未生成"}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">聊天索引</div>
-                          <div class="value">{"已构建" if result.get("chat_ready") else "未构建"}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">建议条数</div>
-                          <div class="value">{len(recommendations)}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">证据总数</div>
-                          <div class="value">{len(evidence)}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">模型版本</div>
-                          <div class="value">{html.escape(str(result.get("model_version") or "-"))}</div>
-                        </div>
-                      </div>
                       <div class="highlight-grid">
                         <div class="highlight-card">
                           <div class="highlight-label">研究目标</div>
-                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
+                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
                         </div>
                         <div class="highlight-card">
                           <div class="highlight-label">创新点</div>
-                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
+                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
                         </div>
                         <div class="highlight-card">
                           <div class="highlight-label">技术路线</div>
-                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
+                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
                         </div>
                       </div>
                     </div>
@@ -1221,7 +1282,7 @@ class ReportGenerator:
                 <section class="result-panel" id="report-qna">
                   <section class="panel">
                     <div class="panel-inner">
-                      {self._render_expert_qna(expert_qna)}
+                      {self._render_expert_qna(expert_qna, packet_assets)}
                     </div>
                   </section>
                 </section>
@@ -1238,14 +1299,6 @@ class ReportGenerator:
                   <section class="panel">
                     <div class="panel-inner">
                       {self._render_benchmark(benchmark)}
-                    </div>
-                  </section>
-                </section>
-
-                <section class="result-panel" id="report-evidence">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      {self._render_evidence(evidence)}
                     </div>
                   </section>
                 </section>
@@ -1558,7 +1611,19 @@ class ReportGenerator:
             style.id = styleId;
             style.textContent = `
               .workspace-layout {{
-                grid-template-columns: 220px minmax(0, 1.2fr) minmax(400px, 0.92fr) !important;
+                grid-template-columns: minmax(0, 1.55fr) minmax(430px, 1.08fr) !important;
+              }}
+              .project-stack {{
+                display: none !important;
+              }}
+              .hero {{
+                display: none !important;
+              }}
+              .page {{
+                padding-top: 0 !important;
+              }}
+              .page-stack {{
+                grid-template-rows: minmax(0, 1fr) !important;
               }}
             `;
             doc.head.appendChild(style);
@@ -1676,11 +1741,28 @@ class ReportGenerator:
         self,
         page_chunks: List[Dict[str, Any]],
         meta: Dict[str, Any],
+        packet_assets: Dict[str, Any],
         debug_mode: bool,
     ) -> str:
         """渲染左侧正文阅读区"""
         if debug_mode:
             return ""
+
+        viewer_file = str(packet_assets.get("viewer_file") or "").strip() if isinstance(packet_assets, dict) else ""
+        if viewer_file:
+            return f"""
+            <section class="panel doc-panel" id="report-document">
+              <div class="panel-inner doc-panel-inner">
+                <iframe
+                  class="packet-frame"
+                  id="packet-viewer-frame"
+                  src="{html.escape(viewer_file)}"
+                  title="统一材料阅读区"
+                ></iframe>
+              </div>
+            </section>
+            {self._render_document_jump_script(packet_assets)}
+            """
 
         pages: Dict[int, List[Dict[str, Any]]] = {}
         for chunk in page_chunks:
@@ -1742,7 +1824,7 @@ class ReportGenerator:
             </div>
           </div>
         </section>
-        {self._render_document_jump_script()}
+        {self._render_document_jump_script(packet_assets)}
         """
 
     def _render_document_nav(
@@ -1880,6 +1962,8 @@ class ReportGenerator:
         self,
         page: Any,
         snippet: Any,
+        source_file: str = "",
+        packet_assets: Dict[str, Any] | None = None,
         label: str = "查看原文",
     ) -> str:
         """渲染统一的正文跳转入口"""
@@ -1889,20 +1973,35 @@ class ReportGenerator:
             page_no = 0
         if page_no <= 0:
             return ""
+        jump_payload = self._resolve_packet_jump_payload(
+            packet_assets or {},
+            source_file=source_file,
+            page=page_no,
+            snippet=str(snippet or ""),
+        )
+        packet_page = jump_payload.get("packet_page")
+        rects_json = html.escape(json.dumps(jump_payload.get("highlight_rects") or [], ensure_ascii=False))
         return (
             f'<a class="jump-link" href="#doc-page-{page_no}" '
             f'data-doc-jump="true" data-page="{page_no}" '
-            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}">'
+            f'data-file="{html.escape(str(source_file or ""))}" '
+            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}" '
+            f'data-highlight-text="{html.escape(str(snippet or ""))}" '
+            f'data-packet-page="{html.escape(str(packet_page or ""))}" '
+            f"data-highlight-rects='{rects_json}'>"
             f'{html.escape(label)} · 第 {page_no} 页</a>'
         )
 
-    def _render_document_jump_script(self) -> str:
+    def _render_document_jump_script(self, packet_assets: Dict[str, Any]) -> str:
         """正文跳转与片段高亮脚本"""
-        return """
+        packet_page_map_json = json.dumps(packet_assets.get("page_map") or [], ensure_ascii=False).replace("</", "<\\/")
+        template = """
         <script>
           (() => {
             const viewer = document.getElementById("doc-viewer");
-            if (!viewer) return;
+            const packetFrame = document.getElementById("packet-viewer-frame");
+            const pageMap = __PACKET_PAGE_MAP__;
+            if (!viewer && !packetFrame) return;
 
             const normalize = (value) => String(value || "")
               .replace(/\\s+/g, "")
@@ -1912,11 +2011,57 @@ class ReportGenerator:
             let activeTimer = null;
 
             const clearActiveState = () => {
+              if (!viewer) return;
               viewer.querySelectorAll(".doc-page.is-active").forEach((node) => node.classList.remove("is-active"));
               viewer.querySelectorAll(".doc-chunk.is-match").forEach((node) => node.classList.remove("is-match"));
             };
 
+            const resolvePacketPage = (fileName, page) => {
+              const targetPage = Number(page || 0);
+              if (!targetPage) return 0;
+              const normalizedFile = String(fileName || "").trim();
+              let matched = null;
+              if (normalizedFile) {
+                matched = pageMap.find((item) => {
+                  const sourceName = String(item.source_name || "");
+                  const sourceFile = String(item.source_file || "");
+                  return sourceName === normalizedFile || sourceFile.endsWith(`/${normalizedFile}`) || sourceFile.endsWith(`\\\\${normalizedFile}`);
+                });
+              }
+              if (!matched) {
+                matched = pageMap.find((item) => String(item.source_kind || "") === "proposal") || pageMap[0];
+              }
+              if (!matched) return targetPage;
+              const startPage = Number(matched.start_page || 0);
+              const endPage = Number(matched.end_page || startPage || 0);
+              if (!startPage) return targetPage;
+              if (!targetPage) return startPage;
+              return Math.min(startPage + targetPage - 1, endPage || startPage + targetPage - 1);
+            };
+
+            const postPacketJump = (page, highlightText, rects, fileName) => {
+              if (!packetFrame || !page) return;
+              const payload = {
+                type: "gotoPacketTarget",
+                page: Number(page || 0),
+                location_label: String(fileName || "统一材料"),
+                highlight_text: String(highlightText || ""),
+                highlight_rects: Array.isArray(rects) ? rects : [],
+              };
+              const send = () => {
+                try {
+                  packetFrame.contentWindow?.postMessage(payload, "*");
+                } catch (error) {
+                  console.warn("packet viewer postMessage failed", error);
+                }
+              };
+              window.setTimeout(send, 0);
+              window.setTimeout(send, 120);
+              window.setTimeout(send, 320);
+            };
+
             const jumpToEvidence = (page, snippet) => {
+              if (!viewer) return;
               const pageNode = viewer.querySelector(`.doc-page[data-page="${page}"]`);
               if (!pageNode) return;
 
@@ -1949,13 +2094,30 @@ class ReportGenerator:
               event.preventDefault();
               const page = Number(trigger.dataset.page || 0);
               if (!page) return;
+              if (packetFrame) {
+                let rects = [];
+                try {
+                  rects = JSON.parse(trigger.dataset.highlightRects || "[]");
+                } catch (error) {
+                  rects = [];
+                }
+                const packetPage = Number(trigger.dataset.packetPage || 0) || resolvePacketPage(trigger.dataset.file || "", page);
+                postPacketJump(
+                  packetPage,
+                  trigger.dataset.highlightText || "",
+                  rects,
+                  trigger.dataset.file || "",
+                );
+                return;
+              }
               jumpToEvidence(page, trigger.dataset.snippet || "");
             });
           })();
         </script>
         """
+        return template.replace("__PACKET_PAGE_MAP__", packet_page_map_json)
 
-    def _render_evidence(self, evidence: List[Dict[str, Any]]) -> str:
+    def _render_evidence(self, evidence: List[Dict[str, Any]], packet_assets: Dict[str, Any]) -> str:
         if not evidence:
             return '<div class="empty">暂无证据</div>'
 
@@ -1967,7 +2129,7 @@ class ReportGenerator:
                 "<div class=\"fold-body\">"
                 f"<div><strong>文件：</strong>{html.escape(str(item.get('file') or '-'))}</div>"
                 f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}</div>"
-                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'))}</div>"
+                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'), str(item.get('file') or ''), packet_assets)}</div>"
                 "</div>"
                 "</details>"
             )
@@ -2002,7 +2164,7 @@ class ReportGenerator:
             f"<li>{html.escape(str(item))}</li>" for item in items
         ) + "</ol>"
 
-    def _render_expert_qna(self, expert_qna: List[Dict[str, Any]]) -> str:
+    def _render_expert_qna(self, expert_qna: List[Dict[str, Any]], packet_assets: Dict[str, Any]) -> str:
         """渲染专家典型问答"""
         if not expert_qna:
             return '<div class="empty">当前未生成专家典型问答</div>'
@@ -2016,7 +2178,7 @@ class ReportGenerator:
                     f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
                     f"<div>文件：{html.escape(str(citation.get('file') or '-'))}</div>"
                     f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
-                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'))}</div>"
+                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'), str(citation.get('file') or ''), packet_assets)}</div>"
                     "</div>"
                 )
                 for citation in citations[:3]
@@ -2050,18 +2212,13 @@ class ReportGenerator:
             for question in suggestions[:6]
         )
 
-        ready_text = (
-            "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。"
-            if chat_ready
-            else "当前记录未预构建聊天索引。可直接提问，系统会在首问时自动尝试构建索引。"
-        )
         status_text = "等待提问" if evaluation_id else "缺少评审ID"
         submit_disabled = "" if evaluation_id else "disabled"
         textarea_disabled = "" if evaluation_id else "disabled"
-        toolbar_note = f"默认使用项目当前 API 端口 {default_api_base}；如果服务不在当前地址，可直接改这里。"
         escaped_eval_id = html.escape(evaluation_id)
         suggestions_block = suggestion_html or '<div class="chat-status">暂无可复用的典型问题。</div>'
         escaped_default_api_base = html.escape(default_api_base)
+        escaped_default_port = html.escape(default_port)
 
         return f"""
         <section class="result-panel" id="report-chat">
@@ -2072,13 +2229,9 @@ class ReportGenerator:
               id="chat-shell"
               data-evaluation-id="{escaped_eval_id}"
               data-chat-ready="{str(chat_ready).lower()}"
+              data-default-api-base="{escaped_default_api_base}"
+              data-default-port="{escaped_default_port}"
             >
-              <div class="chat-toolbar">
-                <label for="chat-api-base">API 地址</label>
-                <input id="chat-api-base" class="chat-input" type="text" value="{escaped_default_api_base}" placeholder="{escaped_default_api_base}" />
-                <div class="chat-status">{html.escape(toolbar_note)}</div>
-              </div>
-              <div class="chat-status">{html.escape(ready_text)}</div>
               <div class="chat-suggestions" id="chat-suggestions">
                 {suggestions_block}
               </div>
@@ -2111,7 +2264,6 @@ class ReportGenerator:
 
             const evaluationId = shell.dataset.evaluationId || "";
             const chatReady = shell.dataset.chatReady === "true";
-            const apiBaseInput = document.getElementById("chat-api-base");
             const thread = document.getElementById("chat-thread");
             const form = document.getElementById("chat-form");
             const questionInput = document.getElementById("chat-question");
@@ -2119,11 +2271,12 @@ class ReportGenerator:
             const statusNode = document.getElementById("chat-status");
             const suggestionButtons = Array.from(shell.querySelectorAll(".chat-suggestion"));
 
-            const configuredBase = "{escaped_default_api_base}";
+            const configuredBase = shell.dataset.defaultApiBase || "";
+            const configuredPort = shell.dataset.defaultPort || "";
 
             const detectDefaultBase = () => {{
               if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
-                if (window.location.port === "{html.escape(default_port)}") {{
+                if (window.location.port === configuredPort) {{
                   return window.location.origin;
                 }}
                 return configuredBase;
@@ -2131,7 +2284,7 @@ class ReportGenerator:
               return configuredBase;
             }};
 
-            apiBaseInput.value = detectDefaultBase();
+            const apiBase = detectDefaultBase();
 
             const escapeHtml = (value) => String(value || "")
               .replace(/&/g, "&amp;")
@@ -2167,7 +2320,9 @@ class ReportGenerator:
                           href="#doc-page-${{escapeHtml(citation.page || "-")}}"
                           data-doc-jump="true"
                           data-page="${{escapeHtml(citation.page || "")}}"
+                          data-file="${{escapeHtml(citation.file || "")}}"
                           data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
+                          data-highlight-text="${{escapeHtml(citation.snippet || "")}}"
                         >查看原文 · 第 ${{escapeHtml(citation.page || "-")}} 页</a>
                       </div>
                     </div>
@@ -2201,7 +2356,7 @@ class ReportGenerator:
               setBusy(true, "正在生成回答...");
 
               try {{
-                const response = await fetch(`${{normalizeBase(apiBaseInput.value)}}/api/v1/evaluation/chat/ask`, {{
+                const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/ask`, {{
                   method: "POST",
                   headers: {{
                     "Content-Type": "application/json",
@@ -2272,6 +2427,142 @@ class ReportGenerator:
         </script>
         """
 
+    def _resolve_packet_jump_payload(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        page: int,
+        snippet: str,
+    ) -> Dict[str, Any]:
+        """把原文件页码与片段映射到统一 packet 页与高亮框"""
+        packet_page = self._resolve_packet_page(packet_assets, source_file, page)
+        highlight_rects = self._resolve_packet_highlight_rects(packet_assets, packet_page, snippet)
+        return {
+            "packet_page": packet_page,
+            "highlight_rects": highlight_rects,
+        }
+
+    def _resolve_packet_page(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        page: int,
+    ) -> int:
+        """把原文件页码映射为 packet 页码"""
+        if not isinstance(packet_assets, dict):
+            return page
+        page_map = packet_assets.get("page_map") or []
+        if not isinstance(page_map, list):
+            return page
+
+        normalized_name = Path(str(source_file or "")).name
+        matched = None
+        for item in page_map:
+            if not isinstance(item, dict):
+                continue
+            source_name = Path(str(item.get("source_name") or "")).name
+            source_path_name = Path(str(item.get("source_file") or "")).name
+            if normalized_name and normalized_name in {source_name, source_path_name}:
+                matched = item
+                break
+        if matched is None:
+            matched = next((item for item in page_map if str(item.get("source_kind") or "") == "proposal"), None)
+        if not isinstance(matched, dict):
+            return page
+        start_page = int(matched.get("start_page", 0) or 0)
+        end_page = int(matched.get("end_page", start_page) or start_page)
+        if start_page <= 0:
+            return page
+        return min(start_page + max(page, 1) - 1, end_page if end_page >= start_page else start_page)
+
+    def _resolve_packet_highlight_rects(
+        self,
+        packet_assets: Dict[str, Any],
+        packet_page: int,
+        snippet: str,
+    ) -> List[Dict[str, float]]:
+        """在 packet 页内搜索片段并生成高亮框"""
+        if not isinstance(packet_assets, dict):
+            return []
+        packet_abs_path = str(packet_assets.get("packet_abs_path") or "").strip()
+        if not packet_abs_path or not os.path.exists(packet_abs_path) or packet_page <= 0:
+            return []
+        text = str(snippet or "").strip()
+        if not text:
+            return []
+        candidates = self._build_packet_highlight_candidates(text)
+        if not candidates:
+            return []
+
+        with fitz.open(packet_abs_path) as packet_doc:
+            if packet_page > packet_doc.page_count:
+                return []
+            page = packet_doc.load_page(packet_page - 1)
+            page_rect = page.rect
+            if page_rect.width <= 0 or page_rect.height <= 0:
+                return []
+            matched_rects = []
+            for candidate in candidates:
+                hits = page.search_for(candidate)
+                if hits:
+                    matched_rects.extend(hits[:6])
+                    if matched_rects:
+                        break
+        return self._merge_highlight_rects(matched_rects, page_rect) if matched_rects else []
+
+    def _build_packet_highlight_candidates(self, text: str) -> List[str]:
+        """为 packet 检索生成逐级降级候选文本"""
+        normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not normalized:
+            return []
+        candidates = [normalized]
+        compact = re.sub(r"\s+", "", normalized)
+        if len(compact) > 40:
+            candidates.append(compact[:80])
+        if len(normalized) > 60:
+            candidates.append(normalized[:60])
+            candidates.append(normalized[-60:])
+        return [item for index, item in enumerate(candidates) if item and item not in candidates[:index]]
+
+    def _merge_highlight_rects(
+        self,
+        rects: List[fitz.Rect],
+        page_rect: fitz.Rect,
+    ) -> List[Dict[str, float]]:
+        """把多个命中框合并成较稳定的高亮区域"""
+        if not rects or page_rect.width <= 0 or page_rect.height <= 0:
+            return []
+
+        sorted_rects = sorted(rects, key=lambda rect: (rect.y0, rect.x0))
+        merged: List[fitz.Rect] = []
+        vertical_gap = page_rect.height * 0.02
+        horizontal_gap = page_rect.width * 0.04
+
+        for rect in sorted_rects:
+            current = fitz.Rect(rect)
+            if not merged:
+                merged.append(current)
+                continue
+            previous = merged[-1]
+            same_line = abs(previous.y0 - current.y0) <= vertical_gap and current.x0 - previous.x1 <= horizontal_gap
+            overlap = current.intersects(previous)
+            if same_line or overlap:
+                previous.include_rect(current)
+            else:
+                merged.append(current)
+
+        result: List[Dict[str, float]] = []
+        for rect in merged[:6]:
+            result.append(
+                {
+                    "x": max(0.0, min(1.0, rect.x0 / page_rect.width)),
+                    "y": max(0.0, min(1.0, rect.y0 / page_rect.height)),
+                    "w": max(0.0, min(1.0, rect.width / page_rect.width)),
+                    "h": max(0.0, min(1.0, rect.height / page_rect.height)),
+                }
+            )
+        return result
+
     def _extract_project_name_from_payload(self, payload: Dict[str, Any]) -> str:
         """尽量从现有调试载荷中提取真实项目名称，避免 index 回退成文件名"""
         if not isinstance(payload, dict):
@@ -2324,6 +2615,7 @@ class ReportGenerator:
         items: List[Any],
         category: str,
         evidence_map: Dict[tuple[str, str], Dict[str, Any]],
+        packet_assets: Dict[str, Any],
         empty_text: str,
     ) -> str:
         """渲染带页码证据的划重点列表"""
@@ -2339,9 +2631,8 @@ class ReportGenerator:
                 page = evidence.get("page")
                 snippet = evidence.get("snippet") or ""
                 meta_html = (
-                    f'<div class="subtle">证据页：第 {html.escape(str(page))} 页</div>'
                     f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
-                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet)}</div>'
+                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet, str(evidence.get("file") or ""), packet_assets)}</div>'
                 )
             rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
         return "<ol class=\"list\">" + "".join(rows) + "</ol>"

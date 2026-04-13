@@ -1,6 +1,7 @@
 .env
 .vscode
 *cache
+.codex
 data
 
 # Python-generated files

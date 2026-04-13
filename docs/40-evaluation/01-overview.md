@@ -54,12 +54,12 @@
 ### 6. 审阅工作台
 
 - 正式 HTML 报告采用左右双栏：
-  - 左侧：正文阅读区
+  - 左侧：统一材料阅读区（正文优先，必要时合并附件）
   - 右侧：评审结果区
 - 右侧任何 `evidence/citation` 都应支持跳转到左侧对应页
 - 跳转后应尽量高亮对应 `snippet`，便于专家快速核验
-- 第一阶段优先基于 `page_chunks` 构建正文阅读区
-- 若后续接入 PDF 原文阅读器，应保持相同的证据跳转协议，不改变上层结果结构
+- 正式工作台优先使用 `packet PDF + page_map` 渲染左侧阅读区；若 packet 不可用，再回退到 `page_chunks` 分页正文视图
+- 无论左侧采用 packet 还是 `page_chunks`，上层结果结构与跳转协议保持一致
 
 ## API 与工具调用说明
 
@@ -97,6 +97,9 @@
 ### 正文联动所需字段
 
 - `page_chunks`
+- `packet_assets.packet_file`
+- `packet_assets.viewer_file`
+- `packet_assets.page_map`
 - `evidence[].page`
 - `evidence[].snippet`
 - `expert_qna[].citations[].page`
