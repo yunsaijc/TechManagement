@@ -295,11 +295,18 @@ class BatchReviewAgent:
         radial-gradient(circle at top left, rgba(15, 118, 110, 0.10), transparent 26%),
         linear-gradient(180deg, #f7fafc 0%, var(--bg) 180px);
       color: var(--text);
+      height: 100vh;
+      overflow: hidden;
     }}
     .page {{
-      max-width: 1960px;
+      width: min(1960px, 100%);
+      height: 100vh;
       margin: 0 auto;
       padding: 24px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+      overflow: hidden;
     }}
     .hero, .card {{
       background: var(--card);
@@ -309,7 +316,6 @@ class BatchReviewAgent:
     }}
     .hero {{
       padding: 14px 18px;
-      margin-bottom: 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -366,11 +372,13 @@ class BatchReviewAgent:
       display: grid;
       grid-template-columns: 260px minmax(0, 1.9fr) minmax(320px, 0.95fr);
       gap: 18px;
-      align-items: start;
+      align-items: stretch;
       min-width: 0;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
     }}
     .sidebar, .center-panel, .viewer-panel {{
-      min-height: 72vh;
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 18px;
@@ -378,11 +386,14 @@ class BatchReviewAgent:
       min-width: 0;
       max-width: 100%;
       box-sizing: border-box;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }}
     .sidebar {{
       padding: 18px 14px;
-      position: sticky;
-      top: 16px;
     }}
     .sidebar-head {{
       padding: 0 8px 12px;
@@ -404,7 +415,8 @@ class BatchReviewAgent:
       display: flex;
       flex-direction: column;
       gap: 10px;
-      max-height: calc(72vh - 84px);
+      flex: 1 1 auto;
+      min-height: 0;
       overflow: auto;
       padding-right: 2px;
     }}
@@ -588,17 +600,27 @@ class BatchReviewAgent:
       word-break: break-word;
     }}
     .center-panel {{
-      position: sticky;
-      top: 16px;
       padding: 18px 18px 16px;
+      overflow: hidden;
     }}
     .viewer-panel {{
       padding: 18px 18px 20px;
+    }}
+    #pdfPanel {{
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
     }}
     #rulesPanel {{
       min-width: 0;
       max-width: 100%;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
     }}
     .viewer-empty {{
       color: var(--muted);
@@ -640,8 +662,9 @@ class BatchReviewAgent:
       border: 1px solid var(--line);
       border-radius: 14px;
       background: #f8fafc;
-      min-height: 72vh;
-      height: 72vh;
+      min-height: 0;
+      height: 100%;
+      flex: 1 1 auto;
       overflow: hidden;
       display: flex;
       align-items: stretch;
@@ -677,11 +700,15 @@ class BatchReviewAgent:
       display: flex;
       flex-direction: column;
       gap: 0;
+      height: 100%;
+      min-height: 0;
     }}
     .pdf-only {{
       display: flex;
       flex-direction: column;
       position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
     }}
     .viewer-preview.hidden,
     .viewer-fallback.hidden,
@@ -872,14 +899,42 @@ class BatchReviewAgent:
       }}
     }}
     @media (max-width: 1080px) {{
+      body {{
+        height: auto;
+        overflow: auto;
+      }}
+      .page {{
+        height: auto;
+        overflow: visible;
+      }}
       .workspace {{
         grid-template-columns: 1fr;
+        height: auto;
+        overflow: visible;
       }}
-      .sidebar, .viewer-panel {{
-        position: static;
+      .sidebar, .center-panel, .viewer-panel {{
+        height: auto;
+        min-height: auto;
+        overflow: visible;
       }}
       .project-list {{
+        flex: initial;
+        min-height: auto;
         max-height: none;
+        overflow: visible;
+      }}
+      #rulesPanel {{
+        overflow: visible;
+        min-height: auto;
+      }}
+      #pdfPanel {{
+        height: auto;
+        min-height: 480px;
+        overflow: visible;
+      }}
+      .viewer-layout, .pdf-only, .viewer-preview {{
+        height: auto;
+        min-height: 480px;
       }}
     }}
   </style>
@@ -901,7 +956,6 @@ class BatchReviewAgent:
       <aside class="sidebar">
         <div class="sidebar-head">
           <h2 class="sidebar-title">项目列表</h2>
-          <div class="sidebar-subtitle">左侧切项目，中间查看材料，右侧查看规则结果。</div>
         </div>
         <div class="project-list" id="projectList"></div>
       </aside>
@@ -2328,6 +2382,18 @@ class BatchReviewAgent:
                         tab_label="规则说明",
                     )
                 ]
+            if expected_doc_kind and status == "passed":
+                matched = self._find_matching_attachment(attachments, expected_doc_kind)
+                if matched:
+                    return [
+                        self._build_attachment_target(
+                            target_id=f"{source_result.item}:{expected_doc_kind}:matched",
+                            attachment=matched,
+                            clip=self._build_attachment_clip(matched),
+                            preview_assets=preview_assets,
+                            packet_assets=packet_assets,
+                        )
+                    ]
             missing_doc_kinds = self._extract_missing_doc_kinds(source_result.evidence)
             if missing_doc_kinds:
                 target_doc_kinds = [expected_doc_kind] if expected_doc_kind and expected_doc_kind in missing_doc_kinds else missing_doc_kinds
@@ -2419,6 +2485,30 @@ class BatchReviewAgent:
             if targets:
                 return targets
 
+        if source_result.item == "leader_achievement_attachment_check":
+            matched_doc_kinds = []
+            if isinstance(getattr(source_result, "evidence", {}), dict):
+                matched_doc_kinds = [
+                    str(item).strip()
+                    for item in source_result.evidence.get("matched_doc_kinds", [])
+                    if str(item).strip()
+                ]
+            for index, attachment in enumerate(
+                self._find_matching_attachments(attachments, matched_doc_kinds, limit=3),
+                start=1,
+            ):
+                targets.append(
+                    self._build_attachment_target(
+                        target_id=f"{source_result.item}:{index}",
+                        attachment=attachment,
+                        clip=self._build_attachment_clip(attachment),
+                        preview_assets=preview_assets,
+                        packet_assets=packet_assets,
+                    )
+                )
+            if targets:
+                return targets
+
         clip = self._build_proposal_rule_clip(
             rule_item=str(source_result.item or ""),
             evidence=getattr(source_result, "evidence", {}),
@@ -2485,6 +2575,62 @@ class BatchReviewAgent:
             if isinstance(contains, list) and doc_kind in {str(value) for value in contains}:
                 return item
         return None
+
+    def _find_matching_attachments(
+        self,
+        attachments: List[Any],
+        doc_kinds: List[str],
+        limit: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """按类别顺序查找多个匹配附件"""
+        if not doc_kinds:
+            return []
+        normalized_doc_kinds = [str(item).strip() for item in doc_kinds if str(item).strip()]
+        if not normalized_doc_kinds:
+            return []
+        matched: List[Dict[str, Any]] = []
+        seen_files: set[str] = set()
+        target_doc_kinds = set(normalized_doc_kinds)
+        for doc_kind in normalized_doc_kinds:
+            for item in attachments:
+                if not isinstance(item, dict):
+                    continue
+                source_file = str(item.get("file_ref", "") or "")
+                if source_file and source_file in seen_files:
+                    continue
+                item_doc_kind = str(item.get("doc_kind", "")).strip()
+                details = item.get("classification_details", {})
+                contains = details.get("contains_doc_kinds", []) if isinstance(details, dict) else []
+                contains_doc_kinds = {str(value).strip() for value in contains if str(value).strip()}
+                if item_doc_kind == doc_kind or doc_kind in contains_doc_kinds:
+                    matched.append(item)
+                    if source_file:
+                        seen_files.add(source_file)
+                    if len(matched) >= max(1, limit):
+                        return matched
+            if len(matched) >= max(1, limit):
+                return matched
+
+        if matched:
+            return matched
+
+        for item in attachments:
+            if not isinstance(item, dict):
+                continue
+            source_file = str(item.get("file_ref", "") or "")
+            if source_file and source_file in seen_files:
+                continue
+            item_doc_kind = str(item.get("doc_kind", "")).strip()
+            details = item.get("classification_details", {})
+            contains = details.get("contains_doc_kinds", []) if isinstance(details, dict) else []
+            contains_doc_kinds = {str(value).strip() for value in contains if str(value).strip()}
+            if item_doc_kind in target_doc_kinds or contains_doc_kinds & target_doc_kinds:
+                matched.append(item)
+                if source_file:
+                    seen_files.add(source_file)
+                if len(matched) >= max(1, limit):
+                    break
+        return matched
 
     def _build_attachment_target(
         self,
@@ -2812,17 +2958,29 @@ class BatchReviewAgent:
             packet_page,
             packet_doc.page_count,
         )
-        best_page = self._select_best_packet_page_by_text(
+        budget_page = self._select_best_packet_page_by_text(
             packet_doc,
             page_numbers,
-            [forbidden_line, *forbidden_terms[:3], budget_anchor, "项目预算基本测算说明", "间接经费", "绩效支出"],
+            [budget_anchor, "项目预算基本测算说明", "经费来源"],
             packet_page,
         )
+        exact_terms = [forbidden_line, *forbidden_terms[:3], "间接经费", "绩效支出", "罚款", "捐款", "赞助", "投资", "偿还债务"]
+        exact_terms = [term for term in exact_terms if str(term or "").strip()]
+        if exact_terms:
+            page = packet_doc.load_page(budget_page - 1)
+            anchor_rect = self._find_precise_term_rect(page, exact_terms)
+            row_rect = self._expand_rect_to_row_band(page, anchor_rect) if anchor_rect else None
+            if row_rect:
+                return {
+                    "mode": "rect",
+                    "text": forbidden_line or forbidden_terms[0] or "预算禁列项",
+                    "rects": self._rects_to_payload([row_rect], page.rect, pad_x_ratio=0.014, pad_y_ratio=0.01),
+                    "page": budget_page,
+                }
+
+        best_page = budget_page
         page = packet_doc.load_page(best_page - 1)
-        row_rect = self._find_row_band_rect(
-            page,
-            [forbidden_line, *forbidden_terms[:3], budget_anchor, "项目预算基本测算说明", "间接经费", "绩效支出"],
-        )
+        row_rect = self._find_row_band_rect(page, [budget_anchor, "项目预算基本测算说明"])
         if not row_rect:
             return {"mode": "none", "text": forbidden_line or budget_anchor or clip, "rects": [], "page": best_page}
         return {
@@ -2935,6 +3093,28 @@ class BatchReviewAgent:
         if not anchor_rect:
             return None
         return self._expand_rect_to_row_band(page, anchor_rect)
+
+    def _find_precise_term_rect(self, page: fitz.Page, terms: List[str]) -> fitz.Rect | None:
+        """优先使用直接词命中，避免长文本片段误匹配到错误行"""
+        usable_terms = [str(term or "").strip() for term in terms if str(term or "").strip()]
+        if not usable_terms:
+            return None
+        for term in usable_terms:
+            hits = page.search_for(term)
+            if hits:
+                merged = self._union_rects(hits[:8])
+                if merged:
+                    return merged
+
+        line_items = self._extract_page_line_items(page)
+        for term in usable_terms:
+            normalized_term = self._normalize_packet_text(term)
+            if len(normalized_term) < 2:
+                continue
+            for item in line_items:
+                if normalized_term in item["normalized_text"]:
+                    return fitz.Rect(item["rect"])
+        return None
 
     def _find_best_anchor_rect(self, page: fitz.Page, anchor_terms: List[str]) -> fitz.Rect | None:
         """优先用行文本，再回退到 search_for，找到最稳定的锚点框"""
@@ -3419,6 +3599,15 @@ class BatchReviewAgent:
                 return self._compact_date_token(birth_date) or birth_date
             return self._extract_keyword_snippet(proposal_excerpt, "出生") or self._extract_keyword_snippet(proposal_excerpt, "负责人") or formatted
 
+        if rule_item == "execution_period_limit":
+            return (
+                self._extract_line_by_keyword(proposal_excerpt, "起 止 年 月")
+                or self._extract_line_by_keyword(proposal_excerpt, "起止年月")
+                or self._extract_keyword_snippet(proposal_excerpt, "起止年月")
+                or self._extract_keyword_snippet(proposal_excerpt, "执行期")
+                or formatted
+            )
+
         if rule_item == "funding_ratio_check":
             matched_line = self._find_budget_line_for_ratio(evidence, project_info_updates)
             if matched_line:
@@ -3432,12 +3621,12 @@ class BatchReviewAgent:
             return self._extract_keyword_snippet(proposal_excerpt, "绩效指标") or formatted
 
         if rule_item == "budget_forbidden_expense_check":
-            budget_anchor = self._find_budget_section_anchor(project_info_updates)
-            if budget_anchor:
-                return budget_anchor
             forbidden_line = self._find_first_forbidden_budget_line(evidence)
             if forbidden_line:
                 return forbidden_line
+            budget_anchor = self._find_budget_section_anchor(project_info_updates)
+            if budget_anchor:
+                return budget_anchor
             return self._extract_keyword_snippet(proposal_excerpt, "预算") or formatted
 
         if rule_item == "cooperation_region_check":
@@ -4201,6 +4390,16 @@ class BatchReviewAgent:
         start = max(0, index - radius)
         end = min(len(text), index + len(keyword) + radius)
         return text[start:end]
+
+    def _extract_line_by_keyword(self, text: str, keyword: str) -> str:
+        """提取包含关键词的整行"""
+        if not text or not keyword:
+            return ""
+        for raw_line in str(text).splitlines():
+            line = str(raw_line or "").strip()
+            if line and keyword in line:
+                return line
+        return ""
 
     def _doc_kind_label(self, doc_kind: str) -> str:
         """附件类别中文标签"""

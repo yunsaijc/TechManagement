@@ -122,13 +122,17 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - `EVAL_{project_id}.html`：正式审阅工作台
 - `EVAL_{project_id}.debug.html`：调试报告
 - `EVAL_{project_id}.json`：用于重建报告与正文联动的数据底座
+- `projects/{project_id}/evaluation_packet.pdf`：统一材料包
+- `projects/{project_id}/evaluation_packet.page_map.json`：原文件页码到 packet 页码映射
+- `projects/{project_id}/packet_viewer.html`：左侧阅读 iframe 使用的 packet viewer
 
 正式工作台最小要求：
 
-- 左侧正文阅读区基于 `page_chunks` 按页渲染
+- 左侧优先加载统一 `packet viewer`，把正文与附件合并到单一阅读面板
+- 若 packet 资产缺失，再回退到基于 `page_chunks` 的按页正文渲染
 - 右侧结果区展示评分、划重点、问答、证据
 - 任一 `evidence/citation` 点击后都能把左侧正文定位到对应页
-- 若 `snippet` 可匹配到正文片段，则需对命中块做临时高亮
+- 若 `snippet` 可匹配到 packet 或正文片段，则需对命中区域做临时高亮；匹配失败时至少完成页级跳转
 
 ## 异常与降级
 

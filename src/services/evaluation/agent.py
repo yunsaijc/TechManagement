@@ -41,6 +41,7 @@ from .config import EvaluationConfig, evaluation_config
 from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
+from .packet_builder import EvaluationPacketBuilder
 from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler
 from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
@@ -80,6 +81,7 @@ class EvaluationAgent:
         self.report_generator = ReportGenerator()
         self.storage = EvaluationStorage()
         self.project_repo = EvaluationProjectRepository()
+        self.packet_builder = EvaluationPacketBuilder()
 
         self.tool_gateway = ToolGateway()
         self.highlight_extractor = HighlightExtractor()
@@ -201,6 +203,9 @@ class EvaluationAgent:
         sections.setdefault("项目名称", project_info.get("xmmc", ""))
         sections.setdefault("项目简介", project_info.get("xmjj", ""))
         parsed["sections"] = sections
+        parsed_meta = parsed.get("meta") or {}
+        parsed_meta["attachment_files"] = self.project_repo.get_attachment_file_paths(request.project_id)
+        parsed["meta"] = parsed_meta
 
         return await self.evaluate(
             request=request,
@@ -646,6 +651,23 @@ class EvaluationAgent:
             evaluation_id=result.evaluation_id or stem,
             page_chunks=page_chunks,
         )
+        attachment_files = meta.get("attachment_files") or []
+        attachments = [
+            {
+                "file_ref": str(path),
+                "file_name": Path(str(path)).name,
+                "doc_kind": "",
+            }
+            for path in attachment_files
+            if str(path).strip()
+        ]
+        packet_assets = self.packet_builder.build(
+            output_dir=debug_dir,
+            project_id=result.project_id,
+            source_file=str(meta.get("file_path") or ""),
+            source_name=source_name or meta.get("file_name") or "",
+            attachments=attachments,
+        )
 
         debug_payload = {
             "evaluation_id": result.evaluation_id,
@@ -656,6 +678,8 @@ class EvaluationAgent:
             "section_names": list(sections.keys()),
             "sections": sections,
             "page_chunks": page_chunks,
+            "attachments": attachments,
+            "packet_assets": packet_assets,
             "expert_qna": expert_qna,
             "result": result.model_dump(mode="json"),
         }
