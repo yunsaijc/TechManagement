@@ -123,3 +123,22 @@ class EvaluationProjectRepository:
         """获取主申报文档路径"""
         paths = self.get_project_file_paths(project_id)
         return paths[0] if paths else None
+
+    def get_attachment_file_paths(self, project_id: str) -> List[str]:
+        """获取项目附件路径列表"""
+        project_info = self.get_project_info(project_id)
+        if not project_info:
+            return []
+        year = str(project_info.get("year") or "").strip()
+        if not year:
+            return []
+
+        attachment_dir = self.corpus_root / year / "sbsfj" / project_id
+        if not attachment_dir.exists() or not attachment_dir.is_dir():
+            return []
+
+        files: List[str] = []
+        for path in sorted(attachment_dir.rglob("*")):
+            if path.is_file():
+                files.append(str(path))
+        return files

@@ -6,15 +6,17 @@ import asyncio
 import inspect
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from src.common.llm import get_default_llm_client
 from src.common.models.evaluation import (
     BenchmarkResult,
     CheckResult,
     EvaluationChatAskResponse,
+    EvaluationCitationHighlightResponse,
     EvaluationError,
     GuideEvaluationRequest,
     GuideEvaluationResult,
@@ -41,6 +43,7 @@ from .config import EvaluationConfig, evaluation_config
 from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
+from .packet_builder import EvaluationPacketBuilder
 from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler
 from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
@@ -80,6 +83,7 @@ class EvaluationAgent:
         self.report_generator = ReportGenerator()
         self.storage = EvaluationStorage()
         self.project_repo = EvaluationProjectRepository()
+        self.packet_builder = EvaluationPacketBuilder()
 
         self.tool_gateway = ToolGateway()
         self.highlight_extractor = HighlightExtractor()
@@ -89,6 +93,12 @@ class EvaluationAgent:
         self.qa_agent = EvaluationQAAgent(llm=self.llm, indexer=self.chat_indexer)
         self.project_profiler = ProjectProfiler()
         self._task_semaphore = asyncio.Semaphore(max(1, self.config.concurrency))
+        self._chat_answer_cache: Dict[str, EvaluationChatAskResponse] = {}
+        self._chat_highlight_cache: Dict[str, EvaluationCitationHighlightResponse] = {}
+        self._evaluation_result_cache: Dict[str, EvaluationResult] = {}
+        self._chat_index_payload_cache: Dict[str, Dict[str, Any]] = {}
+        self._debug_payload_cache: Dict[str, Dict[str, Any]] = {}
+        self._packet_assets_cache: Dict[str, Dict[str, Any]] = {}
 
     def get_checker(
         self,
@@ -171,6 +181,7 @@ class EvaluationAgent:
         result.chat_ready = bool(module_outputs.get("chat_ready", False))
 
         await self.storage.save(result)
+        self._remember_evaluation_result(result)
         debug_task = self._save_debug_artifacts(
             result=result,
             sections=sections,
@@ -201,6 +212,9 @@ class EvaluationAgent:
         sections.setdefault("项目名称", project_info.get("xmmc", ""))
         sections.setdefault("项目简介", project_info.get("xmjj", ""))
         parsed["sections"] = sections
+        parsed_meta = parsed.get("meta") or {}
+        parsed_meta["attachment_files"] = self.project_repo.get_attachment_file_paths(request.project_id)
+        parsed["meta"] = parsed_meta
 
         return await self.evaluate(
             request=request,
@@ -265,20 +279,79 @@ class EvaluationAgent:
 
     async def ask(self, evaluation_id: str, question: str) -> EvaluationChatAskResponse:
         """基于历史评审记录进行问答"""
-        result = await self.storage.get_by_evaluation_id(evaluation_id)
+        _, index_payload = await self._prepare_chat_context(evaluation_id)
+
+        cache_key = self._build_chat_cache_key(evaluation_id, question)
+        cached = self._chat_answer_cache.get(cache_key)
+        if cached:
+            return cached
+
+        response = await self.qa_agent.ask(question=question, index_payload=index_payload)
+        self._remember_chat_answer(cache_key, response)
+        return response
+
+    async def ask_stream(self, evaluation_id: str, question: str) -> AsyncIterator[Dict[str, Any]]:
+        """基于历史评审记录流式返回问答结果"""
+        yield {"event": "status", "message": "正在定位评审记录"}
+        yield {"event": "status", "message": "正在准备聊天索引"}
+        _, index_payload = await self._prepare_chat_context(evaluation_id)
+
+        cache_key = self._build_chat_cache_key(evaluation_id, question)
+        cached = self._chat_answer_cache.get(cache_key)
+        if cached:
+            yield {"event": "status", "message": "命中历史回答缓存，正在返回结果"}
+            yield {"event": "delta", "text": cached.answer}
+            yield {
+                "event": "done",
+                "answer": cached.answer,
+                "citations": [citation.model_dump(mode="json") for citation in cached.citations],
+            }
+            return
+
+        async for event in self.qa_agent.ask_stream(question=question, index_payload=index_payload):
+            if event.get("event") == "done":
+                response = EvaluationChatAskResponse(
+                    answer=str(event.get("answer") or ""),
+                    citations=event.get("citations") or [],
+                )
+                self._remember_chat_answer(cache_key, response)
+            yield event
+
+    async def resolve_chat_citation_highlight(
+        self,
+        evaluation_id: str,
+        file: str,
+        page: int,
+        snippet: str,
+    ) -> EvaluationCitationHighlightResponse:
+        """按引用懒加载统一材料高亮"""
+        result = await self._get_cached_result(evaluation_id)
         if not result:
             raise ValueError(f"评审记录不存在: {evaluation_id}")
 
-        index_payload = await self.storage.load_chat_index(evaluation_id)
-        if not index_payload or not index_payload.get("chunk_count"):
-            rebuilt = await self._try_rebuild_chat_index(evaluation_id=evaluation_id, result=result)
-            if rebuilt:
-                index_payload = await self.storage.load_chat_index(evaluation_id)
+        cache_key = self._build_chat_highlight_cache_key(evaluation_id, file, page, snippet)
+        cached = self._chat_highlight_cache.get(cache_key)
+        if cached:
+            return cached
 
-        if not index_payload or not index_payload.get("chunk_count"):
-            raise ValueError("该评审记录未构建聊天索引，且无法自动重建。请重新评审并启用 enable_chat_index")
+        packet_assets = self._load_packet_assets(result.project_id)
+        if not isinstance(packet_assets, dict):
+            response = EvaluationCitationHighlightResponse(packet_page=0, highlight_rects=[])
+            self._remember_chat_highlight(cache_key, response)
+            return response
 
-        return await self.qa_agent.ask(question=question, index_payload=index_payload)
+        jump_payload = self.report_generator._resolve_packet_jump_payload(
+            packet_assets=packet_assets,
+            source_file=str(file or ""),
+            page=int(page or 0),
+            snippet=str(snippet or ""),
+        )
+        response = EvaluationCitationHighlightResponse(
+            packet_page=int(jump_payload.get("packet_page") or 0),
+            highlight_rects=jump_payload.get("highlight_rects") or [],
+        )
+        self._remember_chat_highlight(cache_key, response)
+        return response
 
     async def _try_rebuild_chat_index(self, evaluation_id: str, result: EvaluationResult) -> bool:
         """尝试基于调试产物或原始文档重建聊天索引"""
@@ -293,16 +366,25 @@ class EvaluationAgent:
         if not page_chunks:
             return False
 
-        payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+        payload = await self._ensure_chat_index_payload(
+            evaluation_id=evaluation_id,
+            page_chunks=page_chunks,
+            persist=True,
+        )
         if not payload.get("chunk_count"):
             return False
 
-        await self.storage.save_chat_index(evaluation_id=evaluation_id, payload=payload)
         await self.storage.set_chat_ready(evaluation_id=evaluation_id, chat_ready=True)
+        if result.evaluation_id:
+            result.chat_ready = True
+            self._remember_evaluation_result(result)
         return True
 
     def _load_debug_payload(self, project_id: str) -> Optional[Dict[str, Any]]:
         """读取项目对应的 debug_eval JSON"""
+        cached = self._debug_payload_cache.get(project_id)
+        if isinstance(cached, dict):
+            return cached
         debug_path = Path("debug_eval") / f"EVAL_{project_id}.json"
         if not debug_path.exists():
             return None
@@ -310,7 +392,10 @@ class EvaluationAgent:
             payload = json.loads(debug_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        self._remember_debug_payload(project_id, payload)
+        return payload
 
     def _extract_debug_page_chunks(
         self,
@@ -567,8 +652,11 @@ class EvaluationAgent:
         if not page_chunks:
             return {"chat_ready": False}
 
-        payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
-        await self.storage.save_chat_index(evaluation_id=evaluation_id, payload=payload)
+        payload = await self._ensure_chat_index_payload(
+            evaluation_id=evaluation_id,
+            page_chunks=page_chunks,
+            persist=True,
+        )
         return {"chat_ready": bool(payload.get("chunk_count", 0) > 0)}
 
     async def _safe_check(self, checker: BaseChecker, content: Dict[str, Any]) -> CheckResult:
@@ -646,6 +734,23 @@ class EvaluationAgent:
             evaluation_id=result.evaluation_id or stem,
             page_chunks=page_chunks,
         )
+        attachment_files = meta.get("attachment_files") or []
+        attachments = [
+            {
+                "file_ref": str(path),
+                "file_name": Path(str(path)).name,
+                "doc_kind": "",
+            }
+            for path in attachment_files
+            if str(path).strip()
+        ]
+        packet_assets = self.packet_builder.build(
+            output_dir=debug_dir,
+            project_id=result.project_id,
+            source_file=str(meta.get("file_path") or ""),
+            source_name=source_name or meta.get("file_name") or "",
+            attachments=attachments,
+        )
 
         debug_payload = {
             "evaluation_id": result.evaluation_id,
@@ -656,6 +761,8 @@ class EvaluationAgent:
             "section_names": list(sections.keys()),
             "sections": sections,
             "page_chunks": page_chunks,
+            "attachments": attachments,
+            "packet_assets": packet_assets,
             "expert_qna": expert_qna,
             "result": result.model_dump(mode="json"),
         }
@@ -663,6 +770,8 @@ class EvaluationAgent:
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(debug_payload, f, ensure_ascii=False, indent=2)
 
+        self._remember_debug_payload(result.project_id, debug_payload)
+        self._remember_packet_assets(result.project_id, packet_assets)
         self.report_generator.build_from_debug_file(json_path, html_path, debug_mode=False)
         self.report_generator.build_from_debug_file(json_path, debug_html_path, debug_mode=True)
         self._refresh_debug_index(debug_dir)
@@ -676,7 +785,11 @@ class EvaluationAgent:
         if not page_chunks:
             return []
 
-        index_payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+        index_payload = await self._ensure_chat_index_payload(
+            evaluation_id=evaluation_id,
+            page_chunks=page_chunks,
+            persist=False,
+        )
         if not index_payload.get("chunk_count"):
             return []
 
@@ -699,6 +812,78 @@ class EvaluationAgent:
             }
 
         return await asyncio.gather(*(ask_one(question) for question in self.EXPERT_QA_QUESTIONS))
+
+    async def _get_cached_result(self, evaluation_id: str) -> Optional[EvaluationResult]:
+        """优先从内存缓存读取评审结果，避免每次扫描结果目录"""
+        cached = self._evaluation_result_cache.get(evaluation_id)
+        if cached:
+            return cached
+
+        result = await self.storage.get_by_evaluation_id(evaluation_id)
+        if result:
+            self._remember_evaluation_result(result)
+        return result
+
+    async def _load_cached_chat_index(self, evaluation_id: str) -> Optional[Dict[str, Any]]:
+        """优先从内存缓存读取聊天索引"""
+        cached = self._chat_index_payload_cache.get(evaluation_id)
+        if isinstance(cached, dict) and cached.get("chunk_count"):
+            return cached
+
+        payload = await self.storage.load_chat_index(evaluation_id)
+        if isinstance(payload, dict):
+            self._remember_chat_index_payload(evaluation_id, payload)
+        return payload
+
+    async def _prepare_chat_context(
+        self,
+        evaluation_id: str,
+    ) -> tuple[EvaluationResult, Dict[str, Any]]:
+        """准备聊天所需的评审结果与聊天索引"""
+        result = await self._get_cached_result(evaluation_id)
+        if not result:
+            raise ValueError(f"评审记录不存在: {evaluation_id}")
+
+        index_payload = await self._load_cached_chat_index(evaluation_id)
+        if not index_payload or not index_payload.get("chunk_count"):
+            rebuilt = await self._try_rebuild_chat_index(evaluation_id=evaluation_id, result=result)
+            if rebuilt:
+                index_payload = await self._load_cached_chat_index(evaluation_id)
+
+        if not index_payload or not index_payload.get("chunk_count"):
+            raise ValueError("该评审记录未构建聊天索引，且无法自动重建。请重新评审并启用 enable_chat_index")
+
+        return result, index_payload
+
+    async def _ensure_chat_index_payload(
+        self,
+        evaluation_id: str,
+        page_chunks: List[Dict[str, Any]],
+        persist: bool,
+    ) -> Dict[str, Any]:
+        """确保聊天索引存在并在必要时落盘"""
+        cached = await self._load_cached_chat_index(evaluation_id)
+        if isinstance(cached, dict) and cached.get("chunk_count"):
+            return cached
+
+        payload = self.chat_indexer.build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+        self._remember_chat_index_payload(evaluation_id, payload)
+        if persist:
+            await self.storage.save_chat_index(evaluation_id=evaluation_id, payload=payload)
+        return payload
+
+    def _load_packet_assets(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """加载并缓存统一材料 packet 资产"""
+        cached = self._packet_assets_cache.get(project_id)
+        if isinstance(cached, dict):
+            return cached
+
+        debug_payload = self._load_debug_payload(project_id)
+        packet_assets = debug_payload.get("packet_assets") if isinstance(debug_payload, dict) else None
+        if isinstance(packet_assets, dict):
+            self._remember_packet_assets(project_id, packet_assets)
+            return packet_assets
+        return None
 
     def _refresh_debug_index(self, debug_dir: Path) -> None:
         """刷新 debug_eval 索引页"""
@@ -732,6 +917,71 @@ class EvaluationAgent:
 
         index_html = self.report_generator.build_index_html(records)
         (debug_dir / "index.html").write_text(index_html, encoding="utf-8")
+
+    def _build_chat_cache_key(self, evaluation_id: str, question: str) -> str:
+        """构造问答缓存键"""
+        normalized = re.sub(r"\s+", "", str(question or "")).strip().lower()
+        return f"{evaluation_id}::{normalized}"
+
+    def _build_chat_highlight_cache_key(
+        self,
+        evaluation_id: str,
+        file: str,
+        page: int,
+        snippet: str,
+    ) -> str:
+        """构造聊天引用高亮缓存键"""
+        normalized_snippet = re.sub(r"\s+", "", str(snippet or "")).strip()
+        return f"{evaluation_id}::{file}::{int(page or 0)}::{normalized_snippet[:120]}"
+
+    def _remember_chat_answer(self, cache_key: str, response: EvaluationChatAskResponse) -> None:
+        """写入问答缓存，限制缓存规模"""
+        self._chat_answer_cache[cache_key] = response
+        if len(self._chat_answer_cache) > 128:
+            oldest_key = next(iter(self._chat_answer_cache))
+            self._chat_answer_cache.pop(oldest_key, None)
+
+    def _remember_evaluation_result(self, result: EvaluationResult) -> None:
+        """写入评审结果缓存，避免重复扫描结果目录"""
+        evaluation_id = str(result.evaluation_id or "").strip()
+        if not evaluation_id:
+            return
+        self._evaluation_result_cache[evaluation_id] = result
+        if len(self._evaluation_result_cache) > 64:
+            oldest_key = next(iter(self._evaluation_result_cache))
+            self._evaluation_result_cache.pop(oldest_key, None)
+
+    def _remember_chat_index_payload(self, evaluation_id: str, payload: Dict[str, Any]) -> None:
+        """写入聊天索引缓存，避免重复加载 JSON"""
+        self._chat_index_payload_cache[evaluation_id] = payload
+        if len(self._chat_index_payload_cache) > 64:
+            oldest_key = next(iter(self._chat_index_payload_cache))
+            self._chat_index_payload_cache.pop(oldest_key, None)
+
+    def _remember_debug_payload(self, project_id: str, payload: Dict[str, Any]) -> None:
+        """写入调试载荷缓存，避免重复读取大 JSON"""
+        self._debug_payload_cache[project_id] = payload
+        if len(self._debug_payload_cache) > 32:
+            oldest_key = next(iter(self._debug_payload_cache))
+            self._debug_payload_cache.pop(oldest_key, None)
+
+    def _remember_packet_assets(self, project_id: str, payload: Dict[str, Any]) -> None:
+        """写入 packet 资产缓存，避免重复解析统一材料映射"""
+        self._packet_assets_cache[project_id] = payload
+        if len(self._packet_assets_cache) > 32:
+            oldest_key = next(iter(self._packet_assets_cache))
+            self._packet_assets_cache.pop(oldest_key, None)
+
+    def _remember_chat_highlight(
+        self,
+        cache_key: str,
+        response: EvaluationCitationHighlightResponse,
+    ) -> None:
+        """写入聊天高亮缓存，限制缓存规模"""
+        self._chat_highlight_cache[cache_key] = response
+        if len(self._chat_highlight_cache) > 512:
+            oldest_key = next(iter(self._chat_highlight_cache))
+            self._chat_highlight_cache.pop(oldest_key, None)
 
     def _build_module_error(self, module: str, exc: Exception) -> EvaluationError:
         """构建模块错误对象"""

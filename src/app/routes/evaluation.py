@@ -13,12 +13,15 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from src.common.models.evaluation import (
     BatchEvaluationRequest,
     BatchEvaluationResult,
     DimensionCheckItem,
     DimensionInfo,
+    EvaluationCitationHighlightRequest,
+    EvaluationCitationHighlightResponse,
     DimensionsResponse,
     EvaluationChatAskRequest,
     EvaluationChatAskResponse,
@@ -176,6 +179,9 @@ async def list_debug_results():
         "default_id": items[0]["id"] if items else "",
         "debug_eval_dir": str(DEBUG_EVAL_DIR),
     }
+def _encode_sse(event: str, payload: Dict[str, object]) -> str:
+    """编码 SSE 事件"""
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def get_agent() -> EvaluationAgent:
@@ -273,6 +279,52 @@ async def ask_question(request: EvaluationChatAskRequest):
         return await agent.ask(
             evaluation_id=request.evaluation_id,
             question=request.question,
+        )
+    except ValueError as e:
+        detail = str(e)
+        if detail.startswith("评审记录不存在"):
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=422, detail=detail)
+
+
+@router.post("/chat/ask-stream")
+async def ask_question_stream(request: EvaluationChatAskRequest):
+    """基于评审结果执行流式问答"""
+    agent = get_agent()
+
+    async def event_stream():
+        try:
+            async for event in agent.ask_stream(
+                evaluation_id=request.evaluation_id,
+                question=request.question,
+            ):
+                event_name = str(event.get("event") or "message")
+                payload = {key: value for key, value in event.items() if key != "event"}
+                yield _encode_sse(event_name, payload)
+        except ValueError as e:
+            detail = str(e)
+            yield _encode_sse("error", {"message": detail})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/chat/citation-highlight", response_model=EvaluationCitationHighlightResponse)
+async def resolve_chat_citation_highlight(request: EvaluationCitationHighlightRequest):
+    """按聊天引用懒加载统一材料高亮"""
+    agent = get_agent()
+    try:
+        return await agent.resolve_chat_citation_highlight(
+            evaluation_id=request.evaluation_id,
+            file=request.file,
+            page=request.page,
+            snippet=request.snippet,
         )
     except ValueError as e:
         detail = str(e)

@@ -13,7 +13,11 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
+import fitz
+
 from src.services.evaluation.parsers import DocumentParser
+from src.services.evaluation.packet_builder import EvaluationPacketBuilder
+from src.services.evaluation.storage.project_repo import EvaluationProjectRepository
 
 
 class ReportGenerator:
@@ -74,6 +78,7 @@ class ReportGenerator:
                 current_stem=debug_json.stem,
             )
         updated = self._ensure_page_chunks(data)
+        updated = self._ensure_packet_assets(data, debug_json.parent) or updated
         if updated:
             debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
@@ -93,7 +98,7 @@ class ReportGenerator:
             if not isinstance(result, dict):
                 continue
             project_id = str(result.get("project_id") or payload.get("project_id") or path.stem)
-            project_name = str(
+            project_name = self._extract_project_name_from_payload(payload) or str(
                 result.get("project_name")
                 or payload.get("project_name")
                 or payload.get("source_name")
@@ -140,6 +145,72 @@ class ReportGenerator:
             data["meta"] = merged_meta
         return True
 
+    def _ensure_packet_assets(self, data: Dict[str, Any], debug_dir: Path) -> bool:
+        """兼容旧 debug JSON，缺少 packet 资产时尝试回源补齐"""
+        packet_assets = data.get("packet_assets")
+        if isinstance(packet_assets, dict):
+            viewer_file = str(packet_assets.get("viewer_file") or "").strip()
+            packet_file = str(packet_assets.get("packet_file") or "").strip()
+            if viewer_file and packet_file and (debug_dir / viewer_file).exists() and (debug_dir / packet_file).exists():
+                return False
+
+        meta = data.get("meta") or {}
+        if not isinstance(meta, dict):
+            return False
+        source_file = str(meta.get("file_path") or "").strip()
+        if not source_file or not os.path.exists(source_file):
+            return False
+
+        attachments = data.get("attachments")
+        if not isinstance(attachments, list):
+            attachments = []
+        result = data.get("result") or {}
+        if not isinstance(result, dict):
+            result = {}
+        project_id = str(data.get("project_id") or result.get("project_id") or "").strip()
+        if not attachments:
+            attachment_files = meta.get("attachment_files") or []
+            if isinstance(attachment_files, list) and attachment_files:
+                attachments = [
+                    {
+                        "file_ref": str(path),
+                        "file_name": Path(str(path)).name,
+                        "doc_kind": "",
+                    }
+                    for path in attachment_files
+                    if str(path).strip()
+                ]
+            elif project_id:
+                try:
+                    repo = EvaluationProjectRepository()
+                    attachment_files = repo.get_attachment_file_paths(project_id)
+                except Exception:
+                    attachment_files = []
+                attachments = [
+                    {
+                        "file_ref": str(path),
+                        "file_name": Path(str(path)).name,
+                        "doc_kind": "",
+                    }
+                    for path in attachment_files
+                    if str(path).strip()
+                ]
+            if attachments:
+                data["attachments"] = attachments
+
+        packet_builder = EvaluationPacketBuilder()
+        packet_assets = packet_builder.build(
+            output_dir=debug_dir,
+            project_id=project_id or "manual",
+            source_file=source_file,
+            source_name=str(data.get("source_name") or meta.get("file_name") or Path(source_file).name),
+            attachments=attachments,
+        )
+        if not packet_assets:
+            return False
+        data["packet_assets"] = packet_assets
+        return True
+
     def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
         result = data.get("result", {})
@@ -152,6 +223,7 @@ class ReportGenerator:
         benchmark = result.get("benchmark")
         sections = data.get("sections") or {}
         page_chunks = data.get("page_chunks") or []
+        packet_assets = data.get("packet_assets") or {}
         expert_qna = data.get("expert_qna") or []
         workspace_projects = data.get("_workspace_projects") or []
         evidence_map = self._build_evidence_map(evidence)
@@ -159,15 +231,14 @@ class ReportGenerator:
 
         score = result.get("overall_score", 0)
         grade = result.get("grade", "-")
-        title = result.get("project_name") or result.get("project_id") or "评审报告"
+        title = self._extract_project_name_from_payload(data) or result.get("project_name") or result.get("project_id") or "评审报告"
         score_class = self._score_class(score)
         report_title = "项目智能评审报告" if not debug_mode else "项目评审调试报告"
         left_tail = ""
         right_tail = ""
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
         project_nav = self._render_project_nav(workspace_projects, debug_mode)
-        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, debug_mode)
-        document_nav = self._render_document_nav(page_chunks, sections, debug_mode)
+        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode)
         layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
 
         if debug_mode:
@@ -243,7 +314,8 @@ class ReportGenerator:
       color: inherit;
     }}
     .page {{
-      max-width: 1480px;
+      max-width: 1760px;
+      width: 100%;
       margin: 0 auto;
       padding: 20px;
       height: 100vh;
@@ -354,7 +426,7 @@ class ReportGenerator:
       height: 100%;
     }}
     .workspace-layout {{
-      grid-template-columns: 190px 220px minmax(0, 1.2fr) minmax(400px, 0.92fr);
+      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
     }}
     .debug-layout {{
       grid-template-columns: minmax(0, 1fr) 360px;
@@ -366,8 +438,8 @@ class ReportGenerator:
       display: grid;
       gap: 18px;
       min-height: 0;
-      align-content: start;
-      overflow: auto;
+      height: 100%;
+      overflow: hidden;
       padding-right: 6px;
       max-height: 100%;
     }}
@@ -381,6 +453,7 @@ class ReportGenerator:
       padding-right: 0;
     }}
     .project-panel {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
     }}
@@ -438,6 +511,7 @@ class ReportGenerator:
       line-height: 1.6;
     }}
     .rail-panel {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
     }}
@@ -514,12 +588,14 @@ class ReportGenerator:
       flex-shrink: 0;
     }}
     .doc-panel {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
     }}
     .doc-panel-inner {{
+      height: 100%;
       min-height: 0;
       display: grid;
       grid-template-rows: minmax(0, 1fr);
@@ -531,6 +607,39 @@ class ReportGenerator:
       display: grid;
       gap: 14px;
       align-content: start;
+    }}
+    .packet-frame {{
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border: 0;
+      border-radius: 14px;
+      background: #dfe5ec;
+    }}
+    .doc-toast {{
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translate(-50%, -10px);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(24, 34, 48, 0.88);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 3;
+      white-space: nowrap;
+      max-width: calc(100% - 32px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .doc-toast.show {{
+      opacity: 1;
+      transform: translate(-50%, 0);
     }}
     .doc-page {{
       border: 1px solid var(--line);
@@ -898,6 +1007,80 @@ class ReportGenerator:
       display: grid;
       gap: 14px;
     }}
+    .chat-progress {{
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fc 100%);
+      padding: 12px 14px;
+      display: grid;
+      gap: 10px;
+    }}
+    .chat-progress-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }}
+    .chat-progress-title {{
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    .chat-progress-status {{
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }}
+    .chat-progress-steps {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }}
+    .chat-progress-step {{
+      position: relative;
+      display: grid;
+      gap: 4px;
+      padding: 10px 10px 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.86);
+      color: var(--muted);
+      transition: all 160ms ease;
+    }}
+    .chat-progress-step::before {{
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 12px 0 0 12px;
+      background: transparent;
+    }}
+    .chat-progress-step.is-active {{
+      color: var(--ink);
+      border-color: #c8d7e6;
+      box-shadow: 0 10px 24px rgba(9, 30, 66, 0.06);
+    }}
+    .chat-progress-step.is-active::before {{
+      background: var(--brand);
+    }}
+    .chat-progress-step.is-done {{
+      color: var(--ink);
+      background: #fff;
+    }}
+    .chat-progress-step.is-done::before {{
+      background: #4c7f58;
+    }}
+    .chat-progress-step-label {{
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .chat-progress-step-detail {{
+      font-size: 11px;
+      line-height: 1.5;
+    }}
     .chat-toolbar {{
       display: grid;
       gap: 8px;
@@ -920,10 +1103,19 @@ class ReportGenerator:
     }}
     .chat-thread {{
       display: grid;
-      gap: 12px;
+      gap: 10px;
       max-height: 420px;
       overflow: auto;
       padding-right: 4px;
+    }}
+    .chat-empty {{
+      padding: 18px;
+      border: 1px dashed var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
     }}
     .chat-msg {{
       border: 1px solid var(--line);
@@ -949,18 +1141,117 @@ class ReportGenerator:
       white-space: pre-wrap;
       word-break: break-word;
     }}
-    .chat-citations {{
+    .chat-answer {{
       display: grid;
+      gap: 10px;
+    }}
+    .chat-answer-meta {{
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }}
+    .chat-answer-tag {{
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e8eff7;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }}
+    .chat-answer-summary {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .chat-answer-block {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      overflow: hidden;
+    }}
+    .chat-answer-block-primary {{
+      border-color: #c9d9ea;
+      box-shadow: 0 12px 28px rgba(9, 30, 66, 0.05);
+    }}
+    .chat-answer-head {{
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }}
+    .chat-answer-text {{
+      padding: 12px;
+      font-size: 14px;
+      line-height: 1.85;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }}
+    .chat-answer-block-primary .chat-answer-text {{
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.9;
+    }}
+    .chat-answer-list {{
+      margin: 0;
+      padding: 12px 16px 12px 30px;
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+      line-height: 1.85;
+    }}
+    .chat-followups {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }}
+    .chat-citations {{
+      display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       margin-top: 10px;
     }}
     .chat-citation {{
-      padding: 10px 12px;
-      border-radius: 12px;
-      background: #f5f8fb;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: #f8fbfe;
       border: 1px solid var(--line);
-      font-size: 13px;
-      line-height: 1.7;
+      font-size: 12px;
+      line-height: 1;
+    }}
+    .chat-citation-head {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }}
+    .chat-citation-page {{
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e8eef5;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+    }}
+    .chat-citation-label {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }}
+    .chat-citation-actions {{
+      display: inline-flex;
+      align-items: center;
     }}
     .chat-form {{
       display: grid;
@@ -983,6 +1274,7 @@ class ReportGenerator:
       flex-wrap: wrap;
     }}
     .chat-suggestion,
+    .chat-followup,
     .chat-submit {{
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -999,7 +1291,8 @@ class ReportGenerator:
       font-weight: 700;
     }}
     .chat-submit[disabled],
-    .chat-suggestion[disabled] {{
+    .chat-suggestion[disabled],
+    .chat-followup[disabled] {{
       opacity: 0.55;
       cursor: not-allowed;
     }}
@@ -1008,9 +1301,69 @@ class ReportGenerator:
       font-size: 13px;
       line-height: 1.7;
     }}
+    .chat-live {{
+      display: grid;
+      gap: 10px;
+    }}
+    .chat-live-head {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }}
+    .chat-live-title {{
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--brand);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }}
+    .chat-live-phase {{
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .chat-live-text {{
+      min-height: 48px;
+      font-size: 14px;
+      line-height: 1.85;
+      color: var(--ink);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }}
+    .chat-live-skeleton {{
+      display: grid;
+      gap: 8px;
+    }}
+    .chat-live-line {{
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #edf3f9 0%, #dfe9f3 45%, #edf3f9 100%);
+      background-size: 200% 100%;
+      animation: chat-shimmer 1.4s linear infinite;
+    }}
+    .chat-live-line.is-short {{
+      width: 56%;
+    }}
+    .chat-live-line.is-mid {{
+      width: 78%;
+    }}
+    @keyframes chat-shimmer {{
+      0% {{
+        background-position: 200% 0;
+      }}
+      100% {{
+        background-position: -200% 0;
+      }}
+    }}
     .result-shell {{
+      height: 100%;
       min-height: 0;
       overflow: hidden;
+    }}
+    .result-shell > .panel-inner {{
+      height: 100%;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
     }}
@@ -1098,6 +1451,9 @@ class ReportGenerator:
       .facts-grid {{
         grid-template-columns: 1fr;
       }}
+      .chat-progress-steps {{
+        grid-template-columns: 1fr 1fr;
+      }}
       .report-title {{
         font-size: 18px;
       }}
@@ -1129,7 +1485,6 @@ class ReportGenerator:
 
       <div class="{layout_class}">
         {project_nav}
-        {document_nav}
         <main class="main-stack">
           {document_panel}
           {left_tail}
@@ -1145,10 +1500,8 @@ class ReportGenerator:
                   <button type="button" class="result-tab is-active" data-tab-target="report-overview">评审结论</button>
                   <button type="button" class="result-tab" data-tab-target="report-dimensions">维度评分</button>
                   <button type="button" class="result-tab" data-tab-target="report-chat">专家聊天</button>
-                  <button type="button" class="result-tab" data-tab-target="report-qna">典型问答</button>
                   <button type="button" class="result-tab" data-tab-target="report-fit">指南贴合</button>
                   <button type="button" class="result-tab" data-tab-target="report-benchmark">技术摸底</button>
-                  <button type="button" class="result-tab" data-tab-target="report-evidence">证据链</button>
                 </div>
                 """}
               </div>
@@ -1157,44 +1510,18 @@ class ReportGenerator:
                   <section class="panel">
                     <div class="panel-inner">
                       <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-                      <div class="facts-grid">
-                        <div class="mini-card">
-                          <div class="label">结构化摘要</div>
-                          <div class="value">{"已生成" if highlights else "未生成"}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">专家问答</div>
-                          <div class="value">{"已生成" if expert_qna else "未生成"}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">聊天索引</div>
-                          <div class="value">{"已构建" if result.get("chat_ready") else "未构建"}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">建议条数</div>
-                          <div class="value">{len(recommendations)}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">证据总数</div>
-                          <div class="value">{len(evidence)}</div>
-                        </div>
-                        <div class="mini-card">
-                          <div class="label">模型版本</div>
-                          <div class="value">{html.escape(str(result.get("model_version") or "-"))}</div>
-                        </div>
-                      </div>
                       <div class="highlight-grid">
                         <div class="highlight-card">
                           <div class="highlight-label">研究目标</div>
-                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
+                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
                         </div>
                         <div class="highlight-card">
                           <div class="highlight-label">创新点</div>
-                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
+                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
                         </div>
                         <div class="highlight-card">
                           <div class="highlight-label">技术路线</div>
-                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
+                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
                         </div>
                       </div>
                     </div>
@@ -1218,14 +1545,6 @@ class ReportGenerator:
                     debug_mode=debug_mode,
                 )}
 
-                <section class="result-panel" id="report-qna">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      {self._render_expert_qna(expert_qna)}
-                    </div>
-                  </section>
-                </section>
-
                 <section class="result-panel" id="report-fit">
                   <section class="panel">
                     <div class="panel-inner">
@@ -1238,14 +1557,6 @@ class ReportGenerator:
                   <section class="panel">
                     <div class="panel-inner">
                       {self._render_benchmark(benchmark)}
-                    </div>
-                  </section>
-                </section>
-
-                <section class="result-panel" id="report-evidence">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      {self._render_evidence(evidence)}
                     </div>
                   </section>
                 </section>
@@ -1558,7 +1869,19 @@ class ReportGenerator:
             style.id = styleId;
             style.textContent = `
               .workspace-layout {{
-                grid-template-columns: 220px minmax(0, 1.2fr) minmax(400px, 0.92fr) !important;
+                grid-template-columns: minmax(0, 1.55fr) minmax(430px, 1.08fr) !important;
+              }}
+              .project-stack {{
+                display: none !important;
+              }}
+              .hero {{
+                display: none !important;
+              }}
+              .page {{
+                padding-top: 0 !important;
+              }}
+              .page-stack {{
+                grid-template-rows: minmax(0, 1fr) !important;
               }}
             `;
             doc.head.appendChild(style);
@@ -1676,11 +1999,29 @@ class ReportGenerator:
         self,
         page_chunks: List[Dict[str, Any]],
         meta: Dict[str, Any],
+        packet_assets: Dict[str, Any],
         debug_mode: bool,
     ) -> str:
         """渲染左侧正文阅读区"""
         if debug_mode:
             return ""
+
+        viewer_file = str(packet_assets.get("viewer_file") or "").strip() if isinstance(packet_assets, dict) else ""
+        if viewer_file:
+            return f"""
+            <section class="panel doc-panel" id="report-document">
+              <div class="panel-inner doc-panel-inner">
+                <div class="doc-toast" id="doc-toast"></div>
+                <iframe
+                  class="packet-frame"
+                  id="packet-viewer-frame"
+                  src="{html.escape(viewer_file)}"
+                  title="统一材料阅读区"
+                ></iframe>
+              </div>
+            </section>
+            {self._render_document_jump_script(packet_assets)}
+            """
 
         pages: Dict[int, List[Dict[str, Any]]] = {}
         for chunk in page_chunks:
@@ -1737,12 +2078,13 @@ class ReportGenerator:
         return f"""
         <section class="panel doc-panel" id="report-document">
           <div class="panel-inner doc-panel-inner">
+            <div class="doc-toast" id="doc-toast"></div>
             <div class="doc-viewer" id="doc-viewer">
               {body_html}
             </div>
           </div>
         </section>
-        {self._render_document_jump_script()}
+        {self._render_document_jump_script(packet_assets)}
         """
 
     def _render_document_nav(
@@ -1880,6 +2222,8 @@ class ReportGenerator:
         self,
         page: Any,
         snippet: Any,
+        source_file: str = "",
+        packet_assets: Dict[str, Any] | None = None,
         label: str = "查看原文",
     ) -> str:
         """渲染统一的正文跳转入口"""
@@ -1889,20 +2233,36 @@ class ReportGenerator:
             page_no = 0
         if page_no <= 0:
             return ""
+        jump_payload = self._resolve_packet_jump_payload(
+            packet_assets or {},
+            source_file=source_file,
+            page=page_no,
+            snippet=str(snippet or ""),
+        )
+        packet_page = jump_payload.get("packet_page")
+        rects_json = html.escape(json.dumps(jump_payload.get("highlight_rects") or [], ensure_ascii=False))
         return (
             f'<a class="jump-link" href="#doc-page-{page_no}" '
             f'data-doc-jump="true" data-page="{page_no}" '
-            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}">'
+            f'data-file="{html.escape(str(source_file or ""))}" '
+            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}" '
+            f'data-highlight-text="{html.escape(str(snippet or ""))}" '
+            f'data-packet-page="{html.escape(str(packet_page or ""))}" '
+            f"data-highlight-rects='{rects_json}'>"
             f'{html.escape(label)} · 第 {page_no} 页</a>'
         )
 
-    def _render_document_jump_script(self) -> str:
+    def _render_document_jump_script(self, packet_assets: Dict[str, Any]) -> str:
         """正文跳转与片段高亮脚本"""
-        return """
+        packet_page_map_json = json.dumps(packet_assets.get("page_map") or [], ensure_ascii=False).replace("</", "<\\/")
+        template = """
         <script>
           (() => {
             const viewer = document.getElementById("doc-viewer");
-            if (!viewer) return;
+            const packetFrame = document.getElementById("packet-viewer-frame");
+            const toast = document.getElementById("doc-toast");
+            const pageMap = __PACKET_PAGE_MAP__;
+            if (!viewer && !packetFrame) return;
 
             const normalize = (value) => String(value || "")
               .replace(/\\s+/g, "")
@@ -1910,15 +2270,79 @@ class ReportGenerator:
               .trim();
 
             let activeTimer = null;
+            let toastTimer = null;
+
+            const showDocumentToast = (message) => {
+              if (!toast) return;
+              if (toastTimer) window.clearTimeout(toastTimer);
+              toast.textContent = String(message || "");
+              toast.classList.add("show");
+              toastTimer = window.setTimeout(() => {
+                toast.classList.remove("show");
+                toast.textContent = "";
+              }, 1800);
+            };
 
             const clearActiveState = () => {
+              if (!viewer) return;
               viewer.querySelectorAll(".doc-page.is-active").forEach((node) => node.classList.remove("is-active"));
               viewer.querySelectorAll(".doc-chunk.is-match").forEach((node) => node.classList.remove("is-match"));
             };
 
+            const resolvePacketPage = (fileName, page) => {
+              const targetPage = Number(page || 0);
+              if (!targetPage) return 0;
+              const normalizedFile = String(fileName || "").trim();
+              let matched = null;
+              if (normalizedFile) {
+                matched = pageMap.find((item) => {
+                  const sourceName = String(item.source_name || "");
+                  const sourceFile = String(item.source_file || "");
+                  return sourceName === normalizedFile || sourceFile.endsWith(`/${normalizedFile}`) || sourceFile.endsWith(`\\\\${normalizedFile}`);
+                });
+              }
+              if (!matched) {
+                matched = pageMap.find((item) => String(item.source_kind || "") === "proposal") || pageMap[0];
+              }
+              if (!matched) return targetPage;
+              const startPage = Number(matched.start_page || 0);
+              const endPage = Number(matched.end_page || startPage || 0);
+              if (!startPage) return targetPage;
+              if (!targetPage) return startPage;
+              return Math.min(startPage + targetPage - 1, endPage || startPage + targetPage - 1);
+            };
+
+            const postPacketJump = (page, highlightText, rects, fileName) => {
+              if (!packetFrame || !page) return;
+              const payload = {
+                type: "gotoPacketTarget",
+                page: Number(page || 0),
+                location_label: String(fileName || "统一材料"),
+                highlight_text: String(highlightText || ""),
+                highlight_rects: Array.isArray(rects) ? rects : [],
+              };
+              if (!Array.isArray(rects) || !rects.length) {
+                showDocumentToast("未定位到精确片段，已跳转到对应页。");
+              }
+              const send = () => {
+                try {
+                  packetFrame.contentWindow?.postMessage(payload, "*");
+                } catch (error) {
+                  console.warn("packet viewer postMessage failed", error);
+                }
+              };
+              window.setTimeout(send, 0);
+              window.setTimeout(send, 120);
+              window.setTimeout(send, 320);
+            };
+
             const jumpToEvidence = (page, snippet) => {
+              if (!viewer) return false;
               const pageNode = viewer.querySelector(`.doc-page[data-page="${page}"]`);
-              if (!pageNode) return;
+              if (!pageNode) {
+                showDocumentToast("未找到对应正文页。");
+                return false;
+              }
 
               clearActiveState();
               pageNode.classList.add("is-active");
@@ -1935,27 +2359,55 @@ class ReportGenerator:
               const target = matchedChunk || pageNode;
               if (matchedChunk) matchedChunk.classList.add("is-match");
               target.scrollIntoView({ behavior: "smooth", block: "center" });
+              if (!matchedChunk) {
+                showDocumentToast("未定位到精确片段，已跳转到对应页。");
+              }
 
               if (activeTimer) window.clearTimeout(activeTimer);
               activeTimer = window.setTimeout(() => {
                 pageNode.classList.remove("is-active");
                 if (matchedChunk) matchedChunk.classList.remove("is-match");
               }, 3600);
+              return Boolean(matchedChunk);
             };
+
+            const handleJumpTrigger = (trigger) => {
+              if (!trigger) return;
+              const page = Number(trigger.dataset.page || 0);
+              if (!page) return;
+              if (packetFrame) {
+                let rects = [];
+                try {
+                  rects = JSON.parse(trigger.dataset.highlightRects || "[]");
+                } catch (error) {
+                  rects = [];
+                }
+                const packetPage = Number(trigger.dataset.packetPage || 0) || resolvePacketPage(trigger.dataset.file || "", page);
+                postPacketJump(
+                  packetPage,
+                  trigger.dataset.highlightText || "",
+                  rects,
+                  trigger.dataset.file || "",
+                );
+                return;
+              }
+              jumpToEvidence(page, trigger.dataset.snippet || "");
+            };
+
+            window.__evaluationJumpToTrigger = handleJumpTrigger;
 
             document.addEventListener("click", (event) => {
               const trigger = event.target.closest("[data-doc-jump]");
               if (!trigger) return;
               event.preventDefault();
-              const page = Number(trigger.dataset.page || 0);
-              if (!page) return;
-              jumpToEvidence(page, trigger.dataset.snippet || "");
+              handleJumpTrigger(trigger);
             });
           })();
         </script>
         """
+        return template.replace("__PACKET_PAGE_MAP__", packet_page_map_json)
 
-    def _render_evidence(self, evidence: List[Dict[str, Any]]) -> str:
+    def _render_evidence(self, evidence: List[Dict[str, Any]], packet_assets: Dict[str, Any]) -> str:
         if not evidence:
             return '<div class="empty">暂无证据</div>'
 
@@ -1967,7 +2419,7 @@ class ReportGenerator:
                 "<div class=\"fold-body\">"
                 f"<div><strong>文件：</strong>{html.escape(str(item.get('file') or '-'))}</div>"
                 f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}</div>"
-                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'))}</div>"
+                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'), str(item.get('file') or ''), packet_assets)}</div>"
                 "</div>"
                 "</details>"
             )
@@ -2002,7 +2454,7 @@ class ReportGenerator:
             f"<li>{html.escape(str(item))}</li>" for item in items
         ) + "</ol>"
 
-    def _render_expert_qna(self, expert_qna: List[Dict[str, Any]]) -> str:
+    def _render_expert_qna(self, expert_qna: List[Dict[str, Any]], packet_assets: Dict[str, Any]) -> str:
         """渲染专家典型问答"""
         if not expert_qna:
             return '<div class="empty">当前未生成专家典型问答</div>'
@@ -2016,7 +2468,7 @@ class ReportGenerator:
                     f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
                     f"<div>文件：{html.escape(str(citation.get('file') or '-'))}</div>"
                     f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
-                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'))}</div>"
+                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'), str(citation.get('file') or ''), packet_assets)}</div>"
                     "</div>"
                 )
                 for citation in citations[:3]
@@ -2050,18 +2502,13 @@ class ReportGenerator:
             for question in suggestions[:6]
         )
 
-        ready_text = (
-            "聊天索引已构建，可直接向申报书提问。回答会返回页码证据。"
-            if chat_ready
-            else "当前记录未预构建聊天索引。可直接提问，系统会在首问时自动尝试构建索引。"
-        )
         status_text = "等待提问" if evaluation_id else "缺少评审ID"
         submit_disabled = "" if evaluation_id else "disabled"
         textarea_disabled = "" if evaluation_id else "disabled"
-        toolbar_note = f"默认使用项目当前 API 端口 {default_api_base}；如果服务不在当前地址，可直接改这里。"
         escaped_eval_id = html.escape(evaluation_id)
         suggestions_block = suggestion_html or '<div class="chat-status">暂无可复用的典型问题。</div>'
         escaped_default_api_base = html.escape(default_api_base)
+        escaped_default_port = html.escape(default_port)
 
         return f"""
         <section class="result-panel" id="report-chat">
@@ -2072,21 +2519,38 @@ class ReportGenerator:
               id="chat-shell"
               data-evaluation-id="{escaped_eval_id}"
               data-chat-ready="{str(chat_ready).lower()}"
+              data-default-api-base="{escaped_default_api_base}"
+              data-default-port="{escaped_default_port}"
             >
-              <div class="chat-toolbar">
-                <label for="chat-api-base">API 地址</label>
-                <input id="chat-api-base" class="chat-input" type="text" value="{escaped_default_api_base}" placeholder="{escaped_default_api_base}" />
-                <div class="chat-status">{html.escape(toolbar_note)}</div>
+              <div class="chat-progress" id="chat-progress">
+                <div class="chat-progress-head">
+                  <div class="chat-progress-title">问答生成过程</div>
+                  <div class="chat-progress-status" id="chat-progress-status">等待提问</div>
+                </div>
+                <div class="chat-progress-steps" id="chat-progress-steps">
+                  <div class="chat-progress-step" data-step="context">
+                    <div class="chat-progress-step-label">上下文</div>
+                    <div class="chat-progress-step-detail">读取评审记录与索引</div>
+                  </div>
+                  <div class="chat-progress-step" data-step="retrieve">
+                    <div class="chat-progress-step-label">检索</div>
+                    <div class="chat-progress-step-detail">定位正文证据</div>
+                  </div>
+                  <div class="chat-progress-step" data-step="evidence">
+                    <div class="chat-progress-step-label">整理</div>
+                    <div class="chat-progress-step-detail">收敛依据与不足</div>
+                  </div>
+                  <div class="chat-progress-step" data-step="answer">
+                    <div class="chat-progress-step-label">回答</div>
+                    <div class="chat-progress-step-detail">生成专家结论</div>
+                  </div>
+                </div>
               </div>
-              <div class="chat-status">{html.escape(ready_text)}</div>
               <div class="chat-suggestions" id="chat-suggestions">
                 {suggestions_block}
               </div>
               <div class="chat-thread" id="chat-thread">
-                <div class="chat-msg chat-msg-assistant">
-                  <div class="chat-role">assistant</div>
-                  <div class="chat-body">直接问具体问题，例如：这个项目的研究目标是什么？这项工作目前进展到什么程度了？这项技术有可能落地或量产吗？我会返回页码证据。</div>
-                </div>
+                <div class="chat-empty" id="chat-empty">围绕研究目标、创新点、验证数据、进展与量产可行性直接提问。回答会附证据并支持联动原文。</div>
               </div>
               <form class="chat-form" id="chat-form">
                 <textarea
@@ -2111,19 +2575,21 @@ class ReportGenerator:
 
             const evaluationId = shell.dataset.evaluationId || "";
             const chatReady = shell.dataset.chatReady === "true";
-            const apiBaseInput = document.getElementById("chat-api-base");
             const thread = document.getElementById("chat-thread");
             const form = document.getElementById("chat-form");
             const questionInput = document.getElementById("chat-question");
             const submitButton = document.getElementById("chat-submit");
             const statusNode = document.getElementById("chat-status");
-            const suggestionButtons = Array.from(shell.querySelectorAll(".chat-suggestion"));
+            const progressStatusNode = document.getElementById("chat-progress-status");
+            const progressSteps = Array.from(shell.querySelectorAll(".chat-progress-step"));
+            const getSuggestionButtons = () => Array.from(shell.querySelectorAll(".chat-suggestion, .chat-followup"));
 
-            const configuredBase = "{escaped_default_api_base}";
+            const configuredBase = shell.dataset.defaultApiBase || "";
+            const configuredPort = shell.dataset.defaultPort || "";
 
             const detectDefaultBase = () => {{
               if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
-                if (window.location.port === "{html.escape(default_port)}") {{
+                if (window.location.port === configuredPort) {{
                   return window.location.origin;
                 }}
                 return configuredBase;
@@ -2131,7 +2597,7 @@ class ReportGenerator:
               return configuredBase;
             }};
 
-            apiBaseInput.value = detectDefaultBase();
+            const apiBase = detectDefaultBase();
 
             const escapeHtml = (value) => String(value || "")
               .replace(/&/g, "&amp;")
@@ -2143,47 +2609,401 @@ class ReportGenerator:
             const setBusy = (busy, text) => {{
               if (submitButton) submitButton.disabled = busy || !evaluationId;
               if (questionInput) questionInput.disabled = busy || !evaluationId;
-              suggestionButtons.forEach((button) => {{
+              getSuggestionButtons().forEach((button) => {{
                 button.disabled = busy || !evaluationId;
               }});
               if (statusNode) {{
                 statusNode.textContent = text || (busy ? "正在生成回答..." : "等待提问");
               }}
+              if (progressStatusNode) {{
+                progressStatusNode.textContent = text || (busy ? "正在生成回答..." : "等待提问");
+              }}
             }};
 
-            const appendMessage = (role, text, citations = []) => {{
-              const wrapper = document.createElement("div");
-              wrapper.className = `chat-msg ${{role === "user" ? "chat-msg-user" : "chat-msg-assistant"}}`;
+            const getProgressStepKey = (message) => {{
+              const text = String(message || "");
+              if (text.includes("评审记录") || text.includes("聊天索引")) return "context";
+              if (text.includes("识别问题类型") || text.includes("检索")) return "retrieve";
+              if (text.includes("整理证据") || text.includes("规则化回答")) return "evidence";
+              if (text.includes("模型") || text.includes("回答")) return "answer";
+              return "";
+            }};
 
-              const citationHtml = citations.length
-                ? `<div class="chat-citations">${{citations.map((citation) => `
-                    <div class="chat-citation">
-                      <div>页码：第 ${{escapeHtml(citation.page || "-")}} 页</div>
-                      <div>文件：${{escapeHtml(citation.file || "-")}}</div>
-                      <div>片段：${{escapeHtml(citation.snippet || "-")}}</div>
-                      <div class="jump-link-row">
-                        <a
-                          class="jump-link"
-                          href="#doc-page-${{escapeHtml(citation.page || "-")}}"
-                          data-doc-jump="true"
-                          data-page="${{escapeHtml(citation.page || "")}}"
-                          data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
-                        >查看原文 · 第 ${{escapeHtml(citation.page || "-")}} 页</a>
-                      </div>
-                    </div>
-                  `).join("")}}</div>`
+            const setProgressState = (activeKey = "", message = "") => {{
+              const stepOrder = ["context", "retrieve", "evidence", "answer"];
+              const activeIndex = stepOrder.indexOf(activeKey);
+              progressSteps.forEach((node, index) => {{
+                const done = activeIndex > index;
+                const active = activeIndex === index;
+                node.classList.toggle("is-done", done);
+                node.classList.toggle("is-active", active);
+              }});
+              if (!activeKey) {{
+                progressSteps.forEach((node) => {{
+                  node.classList.remove("is-done", "is-active");
+                }});
+              }}
+              if (progressStatusNode) {{
+                progressStatusNode.textContent = message || (activeKey ? "处理中" : "等待提问");
+              }}
+            }};
+
+            const removeEmptyState = () => {{
+              document.getElementById("chat-empty")?.remove();
+            }};
+
+            const escapeRegExp = (value) => String(value || "").replace(/[][.*+?^${{}}()|\\\\]/g, "\\\\$&");
+
+            const detectQuestionTag = (question) => {{
+              const text = String(question || "");
+              if (text.includes("研究目标") || text.includes("项目目标") || text.includes("总体目标")) return "研究目标";
+              if (text.includes("创新点") || text.includes("创新")) return "创新点";
+              if (text.includes("验证") || text.includes("数据") || text.includes("测试")) return "验证数据";
+              if (text.includes("量产") || text.includes("产业化") || text.includes("转化")) return "量产判断";
+              if (text.includes("进展") || text.includes("阶段") || text.includes("进度")) return "进展程度";
+              if (text.includes("成果") || text.includes("效益")) return "成果效益";
+              return "综合判断";
+            }};
+
+            const getQuestionKeywords = (question) => {{
+              const text = String(question || "");
+              const keywords = [];
+              const add = (values) => values.forEach((value) => {{
+                if (value && !keywords.includes(value)) keywords.push(value);
+              }});
+              if (text.includes("研究目标") || text.includes("项目目标") || text.includes("总体目标")) add(["目标", "建设", "研究"]);
+              if (text.includes("创新点") || text.includes("创新")) add(["创新", "技术", "模式"]);
+              if (text.includes("验证") || text.includes("数据") || text.includes("测试")) add(["验证", "数据", "试验", "测试", "样本", "指标"]);
+              if (text.includes("量产") || text.includes("产业化") || text.includes("转化")) add(["量产", "产业化", "转化", "中试", "产线"]);
+              if (text.includes("进展") || text.includes("阶段") || text.includes("进度")) add(["进展", "阶段", "完成", "计划"]);
+              if (text.includes("成果") || text.includes("效益")) add(["成果", "效益", "指标", "产出"]);
+              return keywords.slice(0, 6);
+            }};
+
+            const highlightText = (text, question) => {{
+              let result = escapeHtml(text || "-");
+              const keywords = getQuestionKeywords(question);
+              keywords.forEach((keyword) => {{
+                if (!keyword) return;
+                const pattern = new RegExp(`(${{escapeRegExp(keyword)}})`, "g");
+                result = result.replace(pattern, "<mark>$1</mark>");
+              }});
+              return result;
+            }};
+
+            const parseStructuredAnswer = (text) => {{
+              const normalized = String(text || "").replace(/\\r/g, "").trim();
+              if (!normalized) return null;
+              const conclusionMatch = normalized.match(/结论：([\\s\\S]*?)(?=\\n依据：|\\n不足：|$)/);
+              const basisMatch = normalized.match(/依据：([\\s\\S]*?)(?=\\n不足：|$)/);
+              const gapMatch = normalized.match(/不足：([\\s\\S]*)$/);
+              if (!conclusionMatch && !basisMatch && !gapMatch) return null;
+              const basisItems = (basisMatch?.[1] || "")
+                .split(/\\n(?=\\d+[.、]|[-•])/)
+                .map((item) => item.replace(/^\\s*(\\d+[.、]|[-•])\\s*/, "").trim())
+                .filter(Boolean);
+              return {{
+                conclusion: (conclusionMatch?.[1] || "").trim(),
+                basisItems,
+                gap: (gapMatch?.[1] || "").trim(),
+              }};
+            }};
+
+            const buildFollowUps = (question) => {{
+              const text = String(question || "");
+              if (text.includes("研究目标") || text.includes("项目目标") || text.includes("总体目标")) {{
+                return ["这些目标有验证数据支撑吗？", "当前进展到什么程度了？", "目标里哪些是量化指标？"];
+              }}
+              if (text.includes("创新点") || text.includes("创新")) {{
+                return ["这些创新点有验证数据吗？", "这些创新目前做到什么程度了？", "哪些创新更接近实际转化？"];
+              }}
+              if (text.includes("验证") || text.includes("数据") || text.includes("测试")) {{
+                return ["这些验证是已完成还是计划开展？", "验证数据对应哪一页最关键？", "这些结果足以支持量产判断吗？"];
+              }}
+              if (text.includes("量产") || text.includes("产业化") || text.includes("转化")) {{
+                return ["缺少哪些证据才能判断可以量产？", "当前更像示范应用还是产业化？", "文档里有中试或产线信息吗？"];
+              }}
+              return ["这项工作目前进展到什么程度了？", "申报书里有验证数据吗？", "这项技术有可能量产吗？"];
+            }};
+
+            const buildCitationHtml = (citations = [], question = "") => {{
+              if (!citations.length) return "";
+              return `<div class="chat-citations">${{citations.map((citation, index) => `
+                <div class="chat-citation">
+                  <div class="chat-citation-head">
+                    <div class="chat-citation-label">证据 ${{index + 1}}</div>
+                    <div class="chat-citation-page">第 ${{escapeHtml(citation.page || "-")}} 页</div>
+                  </div>
+                  <div class="chat-citation-actions">
+                    <a
+                      class="jump-link"
+                      href="#doc-page-${{escapeHtml(citation.page || "-")}}"
+                      data-doc-jump="true"
+                      data-chat-citation="true"
+                      data-evaluation-id="${{escapeHtml(evaluationId)}}"
+                      data-page="${{escapeHtml(citation.page || "")}}"
+                      data-file="${{escapeHtml(citation.file || "")}}"
+                      data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
+                      data-highlight-text="${{escapeHtml(citation.snippet || "")}}"
+                      data-packet-page="${{escapeHtml(citation.packet_page || "")}}"
+                      data-highlight-rects='${{escapeHtml(JSON.stringify(citation.highlight_rects || []))}}'
+                    >查看原文</a>
+                  </div>
+                </div>
+              `).join("")}}</div>`;
+            }};
+
+            const buildMessageHtml = (role, text, citations = [], followUps = [], question = "") => {{
+              const parsed = role === "assistant" ? parseStructuredAnswer(text) : null;
+              const citationHtml = buildCitationHtml(citations, question);
+              const followUpHtml = followUps.length
+                ? `<div class="chat-followups">${{followUps.map((item) => `<button type="button" class="chat-followup" data-question="${{escapeHtml(item)}}">${{escapeHtml(item)}}</button>`).join("")}}</div>`
                 : "";
 
-              wrapper.innerHTML = `
+              if (parsed) {{
+                const tag = detectQuestionTag(question);
+                const basisHtml = parsed.basisItems.length
+                  ? `<ol class="chat-answer-list">${{parsed.basisItems.map((item) => `<li>${{escapeHtml(item)}}</li>`).join("")}}</ol>`
+                  : `<div class="chat-answer-text">${{escapeHtml(text)}}</div>`;
+                const gapHtml = parsed.gap
+                  ? `<section class="chat-answer-block"><div class="chat-answer-head">不足</div><div class="chat-answer-text">${{escapeHtml(parsed.gap)}}</div></section>`
+                  : "";
+                return `
+                  <div class="chat-role">${{escapeHtml(role)}}</div>
+                  <div class="chat-answer">
+                    <div class="chat-answer-meta">
+                      <div class="chat-answer-tag">${{escapeHtml(tag)}}</div>
+                      <div class="chat-answer-summary">依据 ${{parsed.basisItems.length || 1}} 条 · 证据 ${{citations.length}}</div>
+                    </div>
+                    <section class="chat-answer-block chat-answer-block-primary">
+                      <div class="chat-answer-head">结论</div>
+                      <div class="chat-answer-text">${{escapeHtml(parsed.conclusion || text)}}</div>
+                    </section>
+                    <section class="chat-answer-block">
+                      <div class="chat-answer-head">依据</div>
+                      ${{basisHtml}}
+                    </section>
+                    ${{gapHtml}}
+                  </div>
+                  ${{citationHtml}}
+                  ${{followUpHtml}}
+                `;
+              }}
+              return `
                 <div class="chat-role">${{escapeHtml(role)}}</div>
                 <div class="chat-body">${{escapeHtml(text)}}</div>
                 ${{citationHtml}}
+                ${{followUpHtml}}
+              `;
+            }};
+
+            const appendMessage = (role, text, citations = [], followUps = [], question = "") => {{
+              removeEmptyState();
+              const wrapper = document.createElement("div");
+              wrapper.className = `chat-msg ${{role === "user" ? "chat-msg-user" : "chat-msg-assistant"}}`;
+              wrapper.innerHTML = buildMessageHtml(role, text, citations, followUps, question);
+              thread.appendChild(wrapper);
+              thread.scrollTop = thread.scrollHeight;
+              return wrapper;
+            }};
+
+            const createStreamingAssistantMessage = () => {{
+              removeEmptyState();
+              const wrapper = document.createElement("div");
+              wrapper.className = "chat-msg chat-msg-assistant";
+              wrapper.innerHTML = `
+                <div class="chat-role">assistant</div>
+                <div class="chat-live">
+                  <div class="chat-live-head">
+                    <div class="chat-live-title">回答生成中</div>
+                    <div class="chat-live-phase">正在生成回答...</div>
+                  </div>
+                  <div class="chat-live-text"></div>
+                  <div class="chat-live-skeleton">
+                    <div class="chat-live-line"></div>
+                    <div class="chat-live-line is-mid"></div>
+                    <div class="chat-live-line is-short"></div>
+                  </div>
+                </div>
               `;
               thread.appendChild(wrapper);
               thread.scrollTop = thread.scrollHeight;
+              const bodyNode = wrapper.querySelector(".chat-live-text");
+              const phaseNode = wrapper.querySelector(".chat-live-phase");
+              const skeletonNode = wrapper.querySelector(".chat-live-skeleton");
+              let currentText = "";
+              let phaseText = "正在生成回答...";
+              return {{
+                setPhase(text) {{
+                  phaseText = String(text || "").trim() || phaseText;
+                  if (phaseNode) phaseNode.textContent = phaseText;
+                  if (bodyNode && !currentText) bodyNode.textContent = phaseText;
+                  thread.scrollTop = thread.scrollHeight;
+                }},
+                update(delta) {{
+                  currentText += String(delta || "");
+                  if (bodyNode) {{
+                    bodyNode.textContent = currentText || phaseText;
+                  }}
+                  if (skeletonNode && currentText.trim()) skeletonNode.style.display = "none";
+                  thread.scrollTop = thread.scrollHeight;
+                }},
+                finalize(text, citations = [], followUps = [], question = "") {{
+                  currentText = String(text || "");
+                  wrapper.innerHTML = buildMessageHtml("assistant", currentText || "未返回回答", citations, followUps, question);
+                  thread.scrollTop = thread.scrollHeight;
+                }},
+                hasContent() {{
+                  return Boolean(currentText.trim());
+                }},
+                getText() {{
+                  return currentText;
+                }},
+                getPhase() {{
+                  return phaseText;
+                }},
+              }};
             }};
 
             const normalizeBase = (value) => String(value || "").trim().replace(/\\/+$/, "");
+
+            const fetchCitationHighlight = async (trigger) => {{
+              const payload = {{
+                evaluation_id: trigger.dataset.evaluationId || evaluationId,
+                file: trigger.dataset.file || "",
+                page: Number(trigger.dataset.page || 0),
+                snippet: trigger.dataset.highlightText || "",
+              }};
+              const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/citation-highlight`, {{
+                method: "POST",
+                headers: {{
+                  "Content-Type": "application/json",
+                }},
+                body: JSON.stringify(payload),
+              }});
+              const data = await response.json().catch(() => ({{ detail: "高亮补全响应不可解析" }}));
+              if (!response.ok) {{
+                throw new Error(data.detail || `请求失败：${{response.status}}`);
+              }}
+              if (data.packet_page) {{
+                trigger.dataset.packetPage = String(data.packet_page);
+              }}
+              if (Array.isArray(data.highlight_rects)) {{
+                trigger.dataset.highlightRects = JSON.stringify(data.highlight_rects);
+              }}
+            }};
+
+            const requestChatAnswer = async (text) => {{
+              const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/ask`, {{
+                method: "POST",
+                headers: {{
+                  "Content-Type": "application/json",
+                }},
+                body: JSON.stringify({{
+                  evaluation_id: evaluationId,
+                  question: text,
+                }}),
+              }});
+
+              const payload = await response.json().catch(() => ({{ detail: "服务返回了不可解析响应，请检查 API 地址是否指向正文评审服务" }}));
+              if (!response.ok) {{
+                throw new Error(payload.detail || `请求失败：${{response.status}}`);
+              }}
+              return payload;
+            }};
+
+            const parseSseFrame = (frame) => {{
+              const lines = String(frame || "").split(/\\r?\\n/);
+              let eventName = "message";
+              const dataLines = [];
+              lines.forEach((line) => {{
+                if (!line) return;
+                if (line.startsWith("event:")) {{
+                  eventName = line.slice(6).trim() || "message";
+                  return;
+                }}
+                if (line.startsWith("data:")) {{
+                  dataLines.push(line.slice(5).trim());
+                }}
+              }});
+              const rawData = dataLines.join("\\n");
+              let payload = {{}};
+              if (rawData) {{
+                payload = JSON.parse(rawData);
+              }}
+              return {{ eventName, payload }};
+            }};
+
+            const requestChatAnswerStream = async (text, streamMessage) => {{
+              const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/ask-stream`, {{
+                method: "POST",
+                headers: {{
+                  "Content-Type": "application/json",
+                }},
+                body: JSON.stringify({{
+                  evaluation_id: evaluationId,
+                  question: text,
+                }}),
+              }});
+
+              if (!response.ok) {{
+                const payload = await response.json().catch(() => ({{ detail: "流式接口返回了不可解析响应" }}));
+                throw new Error(payload.detail || `请求失败：${{response.status}}`);
+              }}
+              if (!response.body || typeof response.body.getReader !== "function") {{
+                throw new Error("当前环境不支持流式响应");
+              }}
+
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder("utf-8");
+              let buffer = "";
+              let answer = "";
+              let citations = [];
+              let completed = false;
+
+              while (true) {{
+                const {{ value, done }} = await reader.read();
+                buffer += decoder.decode(value || new Uint8Array(), {{ stream: !done }});
+                const frames = buffer.split("\\n\\n");
+                buffer = frames.pop() || "";
+
+                for (const frame of frames) {{
+                  if (!frame.trim()) continue;
+                  const {{ eventName, payload }} = parseSseFrame(frame);
+                  if (eventName === "status") {{
+                    const message = String(payload.message || "正在处理中");
+                    setBusy(true, message);
+                    streamMessage.setPhase(message);
+                    setProgressState(getProgressStepKey(message), message);
+                    continue;
+                  }}
+                  if (eventName === "delta") {{
+                    const delta = String(payload.text || "");
+                    answer += delta;
+                    streamMessage.update(delta);
+                    continue;
+                  }}
+                  if (eventName === "done") {{
+                    answer = String(payload.answer || answer || "");
+                    citations = Array.isArray(payload.citations) ? payload.citations : [];
+                    completed = true;
+                    continue;
+                  }}
+                  if (eventName === "error") {{
+                    throw new Error(payload.message || "流式问答失败");
+                  }}
+                }}
+
+                if (done) {{
+                  break;
+                }}
+              }}
+
+              if (!completed) {{
+                throw new Error("流式响应提前结束");
+              }}
+              return {{ answer, citations }};
+            }};
 
             const askQuestion = async (question) => {{
               const text = String(question || "").trim();
@@ -2199,28 +3019,36 @@ class ReportGenerator:
               appendMessage("user", text);
               questionInput.value = "";
               setBusy(true, "正在生成回答...");
+              setProgressState("context", "正在定位本次问答上下文");
+              const streamMessage = createStreamingAssistantMessage();
 
               try {{
-                const response = await fetch(`${{normalizeBase(apiBaseInput.value)}}/api/v1/evaluation/chat/ask`, {{
-                  method: "POST",
-                  headers: {{
-                    "Content-Type": "application/json",
-                  }},
-                  body: JSON.stringify({{
-                    evaluation_id: evaluationId,
-                    question: text,
-                  }}),
-                }});
-
-                const payload = await response.json().catch(() => ({{ detail: "服务返回了不可解析响应，请检查 API 地址是否指向正文评审服务" }}));
-                if (!response.ok) {{
-                  throw new Error(payload.detail || `请求失败：${{response.status}}`);
+                let payload;
+                try {{
+                  payload = await requestChatAnswerStream(text, streamMessage);
+                }} catch (streamError) {{
+                  if (streamMessage.hasContent()) {{
+                    throw streamError;
+                  }}
+                  payload = await requestChatAnswer(text);
                 }}
 
-                appendMessage("assistant", payload.answer || "未返回回答", Array.isArray(payload.citations) ? payload.citations : []);
+                streamMessage.finalize(
+                  payload.answer || "未返回回答",
+                  Array.isArray(payload.citations) ? payload.citations : [],
+                  buildFollowUps(text),
+                  text,
+                );
+                setProgressState("", "本次回答已生成");
                 setBusy(false, "回答已生成");
               }} catch (error) {{
-                appendMessage("assistant", `调用失败：${{error.message || "未知错误"}}`);
+                const partial = streamMessage.getText();
+                if (partial) {{
+                  streamMessage.finalize(`${{partial}}\\n\\n流式中断，请重试。`, [], [], text);
+                }} else {{
+                  streamMessage.finalize(`调用失败：${{error.message || streamMessage.getPhase() || "未知错误"}}`, [], [], text);
+                }}
+                setProgressState("", "调用失败");
                 setBusy(false, "调用失败");
               }}
             }};
@@ -2230,12 +3058,34 @@ class ReportGenerator:
               await askQuestion(questionInput.value);
             }});
 
-            suggestionButtons.forEach((button) => {{
-              button.addEventListener("click", async () => {{
-                await askQuestion(button.dataset.question || "");
-              }});
+            shell.addEventListener("click", async (event) => {{
+              const button = event.target.closest(".chat-suggestion, .chat-followup");
+              if (button) {{
+                await askQuestion(button.dataset.question || button.textContent || "");
+                return;
+              }}
+
+              const trigger = event.target.closest("[data-chat-citation]");
+              if (!trigger) return;
+              event.preventDefault();
+              event.stopPropagation();
+              let rects = [];
+              try {{
+                rects = JSON.parse(trigger.dataset.highlightRects || "[]");
+              }} catch (error) {{
+                rects = [];
+              }}
+              if (!rects.length && trigger.dataset.evaluationId) {{
+                try {{
+                  await fetchCitationHighlight(trigger);
+                }} catch (error) {{
+                  console.warn("citation highlight fetch failed", error);
+                }}
+              }}
+              window.__evaluationJumpToTrigger?.(trigger);
             }});
 
+            setProgressState("", chatReady ? "等待提问" : "可直接提问（首次会自动建索引）");
             setBusy(false, chatReady ? "等待提问" : "可直接提问（首次会自动建索引）");
           }})();
         </script>
@@ -2271,6 +3121,493 @@ class ReportGenerator:
           })();
         </script>
         """
+
+    def _resolve_packet_jump_payload(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        page: int,
+        snippet: str,
+    ) -> Dict[str, Any]:
+        """把原文件页码与片段映射到统一 packet 页与高亮框"""
+        packet_page = self._resolve_packet_page(packet_assets, source_file, page)
+        highlight_payload = self._resolve_packet_highlight_payload(
+            packet_assets,
+            packet_page,
+            snippet,
+            source_file=source_file,
+        )
+        return {
+            "packet_page": highlight_payload.get("page") or packet_page,
+            "highlight_rects": highlight_payload.get("rects") or [],
+        }
+
+    def _resolve_packet_page(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        page: int,
+    ) -> int:
+        """把原文件页码映射为 packet 页码"""
+        if not isinstance(packet_assets, dict):
+            return page
+        page_map = packet_assets.get("page_map") or []
+        if not isinstance(page_map, list):
+            return page
+
+        exact_match = None
+        proposal_match = None
+        for item in page_map:
+            if not isinstance(item, dict):
+                continue
+            item_source = str(item.get("source_file") or "")
+            if self._packet_source_matches(source_file, item):
+                exact_match = item
+                break
+            if self._is_same_proposal_family(source_file, item_source) and str(item.get("source_kind") or "") == "proposal":
+                proposal_match = proposal_match or item
+        matched = exact_match or proposal_match
+        if matched is None:
+            matched = next((item for item in page_map if str(item.get("source_kind") or "") == "proposal"), None)
+        if not isinstance(matched, dict):
+            return page
+        start_page = int(matched.get("start_page", 0) or 0)
+        end_page = int(matched.get("end_page", start_page) or start_page)
+        if start_page <= 0:
+            return page
+        return min(start_page + max(page, 1) - 1, end_page if end_page >= start_page else start_page)
+
+    def _resolve_packet_highlight_payload(
+        self,
+        packet_assets: Dict[str, Any],
+        packet_page: int,
+        snippet: str,
+        source_file: str = "",
+    ) -> Dict[str, Any]:
+        """在 packet 中搜索最可能的片段位置并生成高亮框"""
+        if not isinstance(packet_assets, dict):
+            return {"page": packet_page, "rects": []}
+        packet_abs_path = str(packet_assets.get("packet_abs_path") or "").strip()
+        if not packet_abs_path or not os.path.exists(packet_abs_path) or packet_page <= 0:
+            return {"page": packet_page, "rects": []}
+        text = self._condense_highlight_text(snippet)
+        if not text:
+            return {"page": packet_page, "rects": []}
+        candidates = self._build_packet_highlight_candidates(text)
+        if not candidates:
+            return {"page": packet_page, "rects": []}
+
+        with fitz.open(packet_abs_path) as packet_doc:
+            if packet_page > packet_doc.page_count:
+                return {"page": packet_page, "rects": []}
+            primary_pages, fallback_pages = self._build_packet_search_pages(
+                packet_assets,
+                source_file,
+                packet_page,
+                packet_doc.page_count,
+            )
+            matched_page, _, rects = self._search_packet_pages_highlights(
+                packet_doc,
+                primary_pages,
+                candidates,
+                packet_page,
+            )
+            if not rects and fallback_pages:
+                matched_page, _, rects = self._search_packet_pages_highlights(
+                    packet_doc,
+                    fallback_pages,
+                    candidates,
+                    packet_page,
+                )
+            if rects:
+                return {"page": matched_page or packet_page, "rects": rects}
+
+            line_page, line_rects = self._search_packet_pages_line_rects(
+                packet_doc,
+                primary_pages,
+                candidates,
+            )
+            if not line_rects and fallback_pages:
+                line_page, line_rects = self._search_packet_pages_line_rects(
+                    packet_doc,
+                    fallback_pages,
+                    candidates,
+                )
+            if line_rects:
+                return {"page": line_page or packet_page, "rects": line_rects}
+        return {"page": packet_page, "rects": []}
+
+    def _build_packet_highlight_candidates(self, text: str) -> List[str]:
+        """为 packet 检索生成逐级降级候选文本"""
+        normalized = str(text or "").strip()
+        if not normalized:
+            return []
+
+        candidates: List[str] = []
+        for line in re.split(r"[\n\r]+", normalized):
+            stripped = line.strip(" -:：;；,.，。|")
+            if stripped:
+                candidates.append(stripped)
+            for part in re.split(r"[|｜]", stripped):
+                part = part.strip(" -:：;；,.，。")
+                if part:
+                    candidates.append(part)
+
+        for token in re.split(r"[\s,，。;；:：/\\()（）_-]+", normalized):
+            token = token.strip(" -|")
+            compact = re.sub(r"\s+", "", token)
+            if re.search(r"[\u4e00-\u9fff]", compact):
+                if len(compact) >= 4:
+                    candidates.append(compact)
+                    candidates.extend(self._build_chinese_fragment_candidates(compact))
+            elif len(compact) >= 6:
+                candidates.append(compact)
+
+        deduped: List[str] = []
+        seen = set()
+        for candidate in sorted(candidates, key=len, reverse=True):
+            compact = re.sub(r"\s+", "", candidate)
+            if len(compact) < 4:
+                continue
+            key = compact[:120]
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate[:120])
+            if len(deduped) >= 12:
+                break
+        return deduped
+
+    def _build_chinese_fragment_candidates(self, text: str) -> List[str]:
+        """为长中文串补充可搜索片段，适配 PDF 断行场景"""
+        compact = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", str(text or ""))
+        if len(compact) < 8:
+            return []
+        fragments: List[str] = []
+        for window in (12, 10, 8, 6):
+            if len(compact) < window:
+                continue
+            fragments.append(compact[:window])
+            fragments.append(compact[-window:])
+            for start in range(0, len(compact) - window + 1, max(1, window // 2)):
+                fragments.append(compact[start:start + window])
+        return fragments[:24]
+
+    def _build_packet_search_pages(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        packet_page: int,
+        packet_page_count: int,
+    ) -> tuple[List[int], List[int]]:
+        """构造 packet 搜索页范围：先搜附近页，再扩到源文件对应页段"""
+        primary_pages: List[int] = []
+        fallback_pages: List[int] = []
+        primary_seen = set()
+        fallback_seen = set()
+
+        def append_primary(page_number: int) -> None:
+            if 1 <= page_number <= packet_page_count and page_number not in primary_seen:
+                primary_seen.add(page_number)
+                primary_pages.append(page_number)
+
+        def append_fallback(page_number: int) -> None:
+            if 1 <= page_number <= packet_page_count and page_number not in primary_seen and page_number not in fallback_seen:
+                fallback_seen.add(page_number)
+                fallback_pages.append(page_number)
+
+        append_primary(packet_page)
+        for offset in range(1, 3):
+            append_primary(packet_page - offset)
+            append_primary(packet_page + offset)
+
+        page_range = self._resolve_source_packet_range(packet_assets, source_file)
+        if page_range:
+            start_page, end_page = page_range
+            if start_page > end_page:
+                start_page, end_page = end_page, start_page
+            for page_number in range(start_page, min(end_page, packet_page_count) + 1):
+                append_fallback(page_number)
+        return primary_pages, fallback_pages
+
+    def _resolve_source_packet_range(self, packet_assets: Dict[str, Any], source_file: str) -> tuple[int, int] | None:
+        """读取 source_file 在 packet 中对应的页范围"""
+        if not isinstance(packet_assets, dict):
+            return None
+        page_map = packet_assets.get("page_map", [])
+        if not isinstance(page_map, list):
+            return None
+        exact_match = None
+        proposal_match = None
+        for item in page_map:
+            if not isinstance(item, dict):
+                continue
+            item_source = str(item.get("source_file") or "")
+            if self._packet_source_matches(source_file, item):
+                exact_match = item
+                break
+            if self._is_same_proposal_family(source_file, item_source) and str(item.get("source_kind") or "") == "proposal":
+                proposal_match = proposal_match or item
+        matched = exact_match or proposal_match
+        if not isinstance(matched, dict):
+            return None
+        start_page = matched.get("start_page")
+        end_page = matched.get("end_page")
+        if isinstance(start_page, int) and isinstance(end_page, int) and start_page > 0 and end_page > 0:
+            return start_page, end_page
+        if isinstance(start_page, int) and start_page > 0:
+            return start_page, start_page
+        return None
+
+    def _search_packet_pages_highlights(
+        self,
+        packet_doc: fitz.Document,
+        page_numbers: List[int],
+        candidates: List[str],
+        preferred_page: int,
+    ) -> tuple[int | None, str, List[Dict[str, float]]]:
+        """在多个 packet 页中查找最优文本高亮页"""
+        best_page: int | None = None
+        best_text = ""
+        best_rects: List[Dict[str, float]] = []
+        best_score = -10**9
+        best_order = 10**9
+
+        normalized_candidates = [candidate for candidate in candidates if str(candidate).strip()]
+        for page_number in page_numbers:
+            if page_number <= 0 or page_number > packet_doc.page_count:
+                continue
+            page = packet_doc.load_page(page_number - 1)
+            page_rect = page.rect
+            if page_rect.width <= 0 or page_rect.height <= 0:
+                continue
+            matched_candidate = ""
+            matched_rects: List[Dict[str, float]] = []
+            matched_score = -10**9
+            for candidate in normalized_candidates:
+                search_hits = page.search_for(candidate)
+                if search_hits:
+                    rect_payload = self._merge_highlight_rects(search_hits[:6], page_rect)
+                    if not rect_payload:
+                        continue
+                    area_penalty = sum(float(item.get("w", 0)) * float(item.get("h", 0)) for item in rect_payload)
+                    candidate_score = (
+                        len(re.sub(r"\s+", "", candidate)) * 100
+                        - len(rect_payload) * 20
+                        - int(area_penalty * 10000)
+                    )
+                    if candidate_score > matched_score:
+                        matched_score = candidate_score
+                        matched_candidate = candidate
+                        matched_rects = rect_payload
+            if not matched_rects:
+                continue
+
+            score = matched_score - abs(page_number - preferred_page) * 450
+            page_order = page_numbers.index(page_number)
+            if score > best_score or (score == best_score and page_order < best_order):
+                best_score = score
+                best_order = page_order
+                best_page = page_number
+                best_text = matched_candidate
+                best_rects = matched_rects
+        return best_page, best_text, best_rects
+
+    def _condense_highlight_text(self, snippet: str, max_len: int = 180) -> str:
+        """压缩片段文本，避免长段导致高亮漂移"""
+        text = re.sub(r"\s+", " ", str(snippet or "")).strip()
+        if len(text) <= max_len:
+            return text
+        return text[:max_len].rstrip() + "..."
+
+    def _search_packet_pages_line_rects(
+        self,
+        packet_doc: fitz.Document,
+        page_numbers: List[int],
+        candidates: List[str],
+    ) -> tuple[int | None, List[Dict[str, float]]]:
+        """当 search_for 失败时，退化为行级近似匹配"""
+        best_page: int | None = None
+        best_rects: List[Dict[str, float]] = []
+        best_score = 0
+        for page_number in page_numbers:
+            if page_number <= 0 or page_number > packet_doc.page_count:
+                continue
+            page = packet_doc.load_page(page_number - 1)
+            page_rect = page.rect
+            if page_rect.width <= 0 or page_rect.height <= 0:
+                continue
+            line_rect, score = self._find_line_rect_by_candidates(page, candidates)
+            if line_rect is None or score <= best_score:
+                continue
+            best_page = page_number
+            best_score = score
+            best_rects = self._merge_highlight_rects([line_rect], page_rect)
+        return best_page, best_rects
+
+    def _find_line_rect_by_candidates(self, page: fitz.Page, candidates: List[str]) -> tuple[fitz.Rect | None, int]:
+        """按行文本近似匹配候选片段"""
+        line_items = self._extract_page_line_items(page)
+        if not line_items:
+            return None, 0
+        best_rect = None
+        best_score = 0
+        for candidate in candidates:
+            normalized_candidate = self._normalize_packet_text(candidate)
+            if len(normalized_candidate) < 4:
+                continue
+            for item in line_items:
+                normalized_line = item["normalized_text"]
+                if not normalized_line:
+                    continue
+                if normalized_candidate in normalized_line or normalized_line in normalized_candidate:
+                    score = min(len(normalized_candidate), len(normalized_line)) * 100
+                else:
+                    score = self._shared_substring_score(normalized_candidate, normalized_line) * 100
+                if score > best_score:
+                    best_score = score
+                    best_rect = fitz.Rect(item["rect"])
+        if best_score < 600:
+            return None, 0
+        return best_rect, best_score
+
+    def _extract_page_line_items(self, page: fitz.Page) -> List[Dict[str, Any]]:
+        """按行聚合页面文本"""
+        words = page.get_text("words")
+        grouped: Dict[tuple[int, int], List[Any]] = {}
+        for word in words:
+            if len(word) < 8:
+                continue
+            key = (int(word[5]), int(word[6]))
+            grouped.setdefault(key, []).append(word)
+        items: List[Dict[str, Any]] = []
+        for entries in grouped.values():
+            ordered = sorted(entries, key=lambda item: (item[1], item[0]))
+            text = "".join(str(item[4]) for item in ordered).strip()
+            if not text:
+                continue
+            rects = [fitz.Rect(item[:4]) for item in ordered]
+            merged = self._union_rects(rects)
+            if not merged:
+                continue
+            items.append(
+                {
+                    "text": text,
+                    "normalized_text": self._normalize_packet_text(text),
+                    "rect": merged,
+                }
+            )
+        return sorted(items, key=lambda item: (item["rect"].y0, item["rect"].x0))
+
+    def _normalize_packet_text(self, value: Any) -> str:
+        """归一化 packet 文本，便于页级/行级匹配"""
+        text = str(value or "")
+        return re.sub(r"\s+", "", text)
+
+    def _union_rects(self, rects: List[fitz.Rect]) -> fitz.Rect | None:
+        """合并多个 rect"""
+        valid = [fitz.Rect(rect) for rect in rects if rect is not None]
+        if not valid:
+            return None
+        merged = fitz.Rect(valid[0])
+        for rect in valid[1:]:
+            merged |= rect
+        return merged
+
+    def _shared_substring_score(self, left: str, right: str) -> int:
+        """粗略评估两个文本的最大公共子串长度"""
+        best = 0
+        max_window = min(24, len(left), len(right))
+        min_window = 6
+        for window in range(max_window, min_window - 1, -1):
+            for start in range(0, len(left) - window + 1):
+                snippet = left[start:start + window]
+                if snippet and snippet in right:
+                    return window
+        return best
+
+    def _is_same_proposal_family(self, left: str, right: str) -> bool:
+        """判断两个路径是否指向同一项目的申报书不同格式"""
+        left_path = Path(str(left or ""))
+        right_path = Path(str(right or ""))
+        if not left_path.name or not right_path.name:
+            return False
+        if left_path.parent != right_path.parent:
+            return False
+        return left_path.stem == right_path.stem
+
+    def _packet_source_matches(self, source_file: str, item: Dict[str, Any]) -> bool:
+        """判断引用文件是否命中 packet 映射项，兼容仅传文件名的情况"""
+        source_value = str(source_file or "").strip()
+        if not source_value:
+            return False
+        item_source = str(item.get("source_file") or "").strip()
+        item_name = str(item.get("source_name") or "").strip()
+        source_name = Path(source_value).name
+        if item_source == source_value:
+            return True
+        if item_name and item_name == source_name:
+            return True
+        if item_source and Path(item_source).name == source_name:
+            return True
+        return False
+
+    def _merge_highlight_rects(
+        self,
+        rects: List[fitz.Rect],
+        page_rect: fitz.Rect,
+    ) -> List[Dict[str, float]]:
+        """把多个命中框合并成较稳定的高亮区域"""
+        if not rects or page_rect.width <= 0 or page_rect.height <= 0:
+            return []
+
+        sorted_rects = sorted(rects, key=lambda rect: (rect.y0, rect.x0))
+        merged: List[fitz.Rect] = []
+        vertical_gap = page_rect.height * 0.02
+        horizontal_gap = page_rect.width * 0.04
+
+        for rect in sorted_rects:
+            current = fitz.Rect(rect)
+            if not merged:
+                merged.append(current)
+                continue
+            last = merged[-1]
+            same_band = (
+                abs(current.y0 - last.y0) <= vertical_gap
+                or abs(current.y1 - last.y1) <= vertical_gap
+                or current.intersects(last)
+            )
+            close_horizontally = current.x0 <= last.x1 + horizontal_gap
+            close_vertically = current.y0 <= last.y1 + vertical_gap
+            if same_band and close_horizontally and close_vertically:
+                merged[-1] = fitz.Rect(
+                    min(last.x0, current.x0),
+                    min(last.y0, current.y0),
+                    max(last.x1, current.x1),
+                    max(last.y1, current.y1),
+                )
+            else:
+                merged.append(current)
+
+        result: List[Dict[str, float]] = []
+        pad_x = page_rect.width * 0.012
+        pad_y = page_rect.height * 0.008
+        for rect in merged[:4]:
+            expanded = fitz.Rect(
+                max(page_rect.x0, rect.x0 - pad_x),
+                max(page_rect.y0, rect.y0 - pad_y),
+                min(page_rect.x1, rect.x1 + pad_x),
+                min(page_rect.y1, rect.y1 + pad_y),
+            )
+            result.append(
+                {
+                    "x": round(max(0.0, min(1.0, expanded.x0 / page_rect.width)), 6),
+                    "y": round(max(0.0, min(1.0, expanded.y0 / page_rect.height)), 6),
+                    "w": round(max(0.0, min(1.0, expanded.width / page_rect.width)), 6),
+                    "h": round(max(0.0, min(1.0, expanded.height / page_rect.height)), 6),
+                }
+            )
+        return result
 
     def _extract_project_name_from_payload(self, payload: Dict[str, Any]) -> str:
         """尽量从现有调试载荷中提取真实项目名称，避免 index 回退成文件名"""
@@ -2324,6 +3661,7 @@ class ReportGenerator:
         items: List[Any],
         category: str,
         evidence_map: Dict[tuple[str, str], Dict[str, Any]],
+        packet_assets: Dict[str, Any],
         empty_text: str,
     ) -> str:
         """渲染带页码证据的划重点列表"""
@@ -2339,9 +3677,8 @@ class ReportGenerator:
                 page = evidence.get("page")
                 snippet = evidence.get("snippet") or ""
                 meta_html = (
-                    f'<div class="subtle">证据页：第 {html.escape(str(page))} 页</div>'
                     f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
-                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet)}</div>'
+                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet, str(evidence.get("file") or ""), packet_assets)}</div>'
                 )
             rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
         return "<ol class=\"list\">" + "".join(rows) + "</ol>"
