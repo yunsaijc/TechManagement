@@ -20,6 +20,9 @@ debug_*
 # model
 yolo*
 
+#test data
+tests/
+
 # test data / artifacts
 tests/**
 !tests/**/

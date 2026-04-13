@@ -48,6 +48,7 @@ class ReviewAgent:
         document_type: str,
         check_items: Optional[List[str]] = None,
         enable_llm_analysis: bool = False,
+        review_id: Optional[str] = None,
         **kwargs,
     ) -> ReviewResult:
         """执行审查
@@ -130,7 +131,8 @@ class ReviewAgent:
             suggestions = self._generate_suggestions(all_results)
 
         result = ReviewResult(
-            id=f"review_{int(time.time() * 1000)}",
+            id=review_id or f"review_{int(time.time() * 1000)}",
+            status="done",
             document_type=document_type,
             document_type_raw=self._last_raw_type,
             results=all_results,

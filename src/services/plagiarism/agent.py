@@ -69,6 +69,7 @@ class PlagiarismAgent:
         threshold_medium: float = 0.5,
         section_config: Optional[Dict] = None,
         debug: bool = False,
+        capture_debug_output: bool = False,
     ):
         """
         初始化查重 Agent
@@ -491,6 +492,25 @@ class PlagiarismAgent:
         print(f"[Plagiarism] 查重完成: {result.total_pairs} 对, 高相似度 {len(result.high_similarity)} 对")
 
         # 6. 保存 debug 信息
+        if (self.debug or self.capture_debug_output) and primary_doc_id:
+            output = self.result_aggregator.format_debug_output(
+                similarities,
+                processed_texts,
+                primary_doc_id,
+                template_filter=self.template_filter,
+            )
+            output["documents"] = processed_texts
+            if self.primary_scope_info:
+                output["primary_scope"] = self.primary_scope_info
+            if excluded_ranges:
+                output["excluded_ranges"] = {
+                    doc_id: [{"start": r.start, "end": r.end, "reason": r.reason} for r in ranges]
+                    for doc_id, ranges in excluded_ranges.items()
+                }
+            self.last_debug_output = output
+            self.last_debug_doc_ids = list(doc_ids)
+            self.last_primary_doc_id = primary_doc_id
+
         if self.debug and primary_doc_id:
             # 合并上传的 doc_ids 和召回的 doc_ids 用于保存
             all_involved_doc_ids = list(uploaded_doc_ids)

@@ -277,9 +277,35 @@ class ResultAggregator:
             template_segments.extend(rejected_segments)
 
             # 计算有效重复字符数（排除模板）
-            effective_chars = sum(len(m.text) for m in effective_segments)
-            total_chars = sum(len(m.text) for m in r.duplicate_segments)
-            effective_similarity = effective_chars / r.total_chars if r.total_chars > 0 else 0
+            total_chars = int(r.total_chars or 0)
+
+            def _union_len(matches: List[Match]) -> int:
+                spans = sorted(
+                    [
+                        (int(m.start_pos or 0), int(m.end_pos or 0))
+                        for m in (matches or [])
+                        if int(m.end_pos or 0) > int(m.start_pos or 0)
+                    ],
+                    key=lambda x: x[0],
+                )
+                if not spans:
+                    return 0
+                cur_s, cur_e = spans[0]
+                merged: list[tuple[int, int]] = []
+                for s, e in spans[1:]:
+                    if s <= cur_e:
+                        cur_e = max(cur_e, e)
+                    else:
+                        merged.append((cur_s, cur_e))
+                        cur_s, cur_e = s, e
+                merged.append((cur_s, cur_e))
+                return sum(e - s for s, e in merged)
+
+            effective_chars = _union_len(effective_segments)
+            template_chars = _union_len(template_segments)
+            total_duplicate_chars = _union_len(effective_segments + template_segments)
+            similarity = total_duplicate_chars / total_chars if total_chars > 0 else 0
+            effective_similarity = effective_chars / total_chars if total_chars > 0 else 0
 
             pair_filter_reason = self._get_pair_filter_reason(
                 effective_segments=effective_segments,
@@ -307,12 +333,12 @@ class ResultAggregator:
             result_dict = {
                 "doc_a": r.doc_a,
                 "doc_b": r.doc_b,
-                "similarity": round(r.similarity, 4),  # 总重复率
+                "similarity": round(similarity, 4),  # 总重复率（按主文档区间并集计算，避免重叠片段重复计数）
                 "effective_similarity": round(effective_similarity, 4),  # 有效重复率
                 "type": r.type,
-                "total_chars": r.total_chars,
+                "total_chars": total_chars,
                 "effective_chars": effective_chars,  # 有效重复字符
-                "template_chars": total_chars - effective_chars if total_chars > 0 else 0,  # 模板重复字符
+                "template_chars": template_chars,  # 模板重复字符（按并集区间计算）
                 "duplicate_segments": formatted_effective_segments,
                 "template_segments": formatted_template_segments,
                 "report_groups": self._build_report_groups(formatted_effective_segments),

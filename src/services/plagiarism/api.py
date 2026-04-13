@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -9,7 +10,8 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from src.common.models import ApiResponse
@@ -23,6 +25,7 @@ from src.services.plagiarism.config import (
     get_section_config,
 )
 from src.services.plagiarism.section_extractor import SectionExtractor
+from src.services.plagiarism.mammoth_report_builder import MammothPlagiarismReportBuilder
 
 router = APIRouter()
 _CORPUS_REFRESH_STATUS_PATH = Path("data/plagiarism/corpus_refresh_status.json")
@@ -216,6 +219,7 @@ def _resolve_project_doc(
 
 @router.post("")
 async def check_plagiarism(
+    request: Request,
     files: List[UploadFile] = File(...),
     use_corpus: bool = Form(True),
     corpus_id: Optional[str] = Form(None),
@@ -225,6 +229,7 @@ async def check_plagiarism(
     doc_type: str = Form("default"),
     section_config: Optional[str] = Form(None),
     debug: bool = Form(False),
+    include_report: bool = Form(True),
 ) -> ApiResponse[dict]:
     """查重接口
     
@@ -317,6 +322,7 @@ async def check_plagiarism(
         threshold_medium=threshold_medium,
         section_config=config,
         debug=debug,
+        capture_debug_output=include_report,
     )
     
     result = await agent.check(file_data_list, file_paths=file_paths, use_corpus=use_corpus)
