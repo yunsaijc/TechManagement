@@ -71,37 +71,35 @@ docs/
 │   ├── 04-document-parser.md       # 文档解析方案
 │   └── 05-api.md                  # API 接口文档
 │
-├── 70-overview/                     # 🧭 研判与推演总览
-│   ├── 01-overview.md              # 总体定位
-│   ├── 02-scope.md                 # 范围与边界
-│   ├── 03-terms.md                 # 核心术语
-│   ├── 04-state-variables.md       # 状态变量清单
-│   ├── 05-policy-actions.md        # 政策动作清单
-│   ├── 06-outcomes.md              # 结果变量清单
-│   └── 07-implementation-sequencing.md # 实施顺序
-│
-├── 70-trend/                        # 📡 趋势预判
-│   ├── 01-overview.md              # 能力总览
-│   ├── 02-entities-and-metrics.md  # 对象与指标
-│   ├── 03-analysis-pipeline.md     # 分析链路
-│   ├── 04-outputs-and-api.md       # 输出与接口
-│   ├── 05-data-schema.md           # 数据 Schema
-│   └── 06-topic-time-panel-design.md # 核心表设计
-│
-├── 70-simulation/                   # 🧪 沙盘推演
-│   ├── 01-overview.md              # 能力总览
-│   ├── 02-policy-model.md          # 政策模型
-│   ├── 03-scenario-engine.md       # 场景引擎
-│   ├── 04-outputs-and-api.md       # 输出与接口
-│   ├── 05-data-schema.md           # 数据 Schema
-│   └── 06-baseline-and-scenario-design.md # 基线与场景设计
-│
-├── 70-sandbox/                      # 🧱 旧原型探索
-│   ├── 01-neo4j-gds-step1.md
-│   ├── 02-hotspot-migration-step2.md
-│   ├── 03-macro-insight-step3.md
-│   ├── 04-briefing-orchestrator-step4.md
-│   └── 05-graph-rag-step5.md
+├── 70-sandbox/                      # 🧭 研判、推演与原型
+│   ├── overview/                   # 顶层设计
+│   │   ├── 01-overview.md
+│   │   ├── 02-scope.md
+│   │   ├── 03-terms.md
+│   │   ├── 04-state-variables.md
+│   │   ├── 05-policy-actions.md
+│   │   ├── 06-outcomes.md
+│   │   └── 07-implementation-sequencing.md
+│   ├── trend/                      # 📡 趋势预判
+│   │   ├── 01-overview.md
+│   │   ├── 02-entities-and-metrics.md
+│   │   ├── 03-analysis-pipeline.md
+│   │   ├── 04-outputs-and-api.md
+│   │   ├── 05-data-schema.md
+│   │   └── 06-topic-time-panel-design.md
+│   ├── simulation/                 # 🧪 沙盘推演
+│   │   ├── 01-overview.md
+│   │   ├── 02-policy-model.md
+│   │   ├── 03-scenario-engine.md
+│   │   ├── 04-outputs-and-api.md
+│   │   ├── 05-data-schema.md
+│   │   └── 06-baseline-and-scenario-design.md
+│   └── archive/                    # 🧱 历史原型材料
+│       ├── 01-neo4j-gds-step1.md
+│       ├── 02-hotspot-migration-step2.md
+│       ├── 03-macro-insight-step3.md
+│       ├── 04-briefing-orchestrator-step4.md
+│       └── 05-graph-rag-step5.md
 
 ```
 
@@ -154,37 +152,11 @@ docs/
 │   ├── 04-document-parser.md
 │   └── 05-api.md
 │
-├── 70-overview/         ← 研判与推演顶层设计
-│   ├── 01-overview.md
-│   ├── 02-scope.md
-│   ├── 03-terms.md
-│   ├── 04-state-variables.md
-│   ├── 05-policy-actions.md
-│   ├── 06-outcomes.md
-│   └── 07-implementation-sequencing.md
-│
-├── 70-trend/            ← 趋势预判
-│   ├── 01-overview.md
-│   ├── 02-entities-and-metrics.md
-│   ├── 03-analysis-pipeline.md
-│   ├── 04-outputs-and-api.md
-│   ├── 05-data-schema.md
-│   └── 06-topic-time-panel-design.md
-│
-├── 70-simulation/       ← 沙盘推演
-│   ├── 01-overview.md
-│   ├── 02-policy-model.md
-│   ├── 03-scenario-engine.md
-│   ├── 04-outputs-and-api.md
-│   ├── 05-data-schema.md
-│   └── 06-baseline-and-scenario-design.md
-│
-├── 70-sandbox/          ← 历史原型材料
-│   ├── 01-neo4j-gds-step1.md
-│   ├── 02-hotspot-migration-step2.md
-│   ├── 03-macro-insight-step3.md
-│   ├── 04-briefing-orchestrator-step4.md
-│   └── 05-graph-rag-step5.md
+├── 70-sandbox/          ← 研判、推演与原型统一目录
+│   ├── overview/        ← 研判与推演顶层设计
+│   ├── trend/           ← 趋势预判
+│   ├── simulation/      ← 沙盘推演
+│   └── archive/         ← 历史原型材料
 ```
 
 ## 服务依赖关系
@@ -222,15 +194,15 @@ docs/
 - [智能分组与专家匹配服务 →](30-grouping/01-overview.md)
 - [正文评审服务 →](40-evaluation/01-overview.md)
 - [绩效核验服务 →](50-perfcheck/01-overview.md)
-- [研判与推演总览 →](70-overview/01-overview.md)
-- [状态变量清单 →](70-overview/04-state-variables.md)
-- [政策动作清单 →](70-overview/05-policy-actions.md)
-- [结果变量清单 →](70-overview/06-outcomes.md)
-- [实施顺序 →](70-overview/07-implementation-sequencing.md)
-- [趋势预判总览 →](70-trend/01-overview.md)
-- [趋势预判数据 Schema →](70-trend/05-data-schema.md)
-- [topic_time_panel 设计 →](70-trend/06-topic-time-panel-design.md)
-- [沙盘推演总览 →](70-simulation/01-overview.md)
-- [沙盘推演数据 Schema →](70-simulation/05-data-schema.md)
-- [baseline 与 scenario 设计 →](70-simulation/06-baseline-and-scenario-design.md)
-- [旧原型探索 →](70-sandbox/01-neo4j-gds-step1.md)
+- [研判与推演总览 →](70-sandbox/overview/01-overview.md)
+- [状态变量清单 →](70-sandbox/overview/04-state-variables.md)
+- [政策动作清单 →](70-sandbox/overview/05-policy-actions.md)
+- [结果变量清单 →](70-sandbox/overview/06-outcomes.md)
+- [实施顺序 →](70-sandbox/overview/07-implementation-sequencing.md)
+- [趋势预判总览 →](70-sandbox/trend/01-overview.md)
+- [趋势预判数据 Schema →](70-sandbox/trend/05-data-schema.md)
+- [topic_time_panel 设计 →](70-sandbox/trend/06-topic-time-panel-design.md)
+- [沙盘推演总览 →](70-sandbox/simulation/01-overview.md)
+- [沙盘推演数据 Schema →](70-sandbox/simulation/05-data-schema.md)
+- [baseline 与 scenario 设计 →](70-sandbox/simulation/06-baseline-and-scenario-design.md)
+- [旧原型探索 →](70-sandbox/archive/01-neo4j-gds-step1.md)
