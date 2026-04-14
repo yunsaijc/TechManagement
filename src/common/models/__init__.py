@@ -81,6 +81,18 @@ from src.common.models.logicon import (
     LogicOnTextRequest,
     LogicOnTask,
 )
+from src.common.models.simulation import (
+    BaselineTopicState,
+    BaselineSnapshot,
+    PolicyShock,
+    ScenarioDefinition,
+    SimulationComparison,
+    SimulationComparisonTopic,
+    SimulationExplanation,
+    SimulationTopicImpact,
+    SimulationTopicExplanation,
+    SimulationResult,
+)
 
 
 __all__ = [
@@ -175,4 +187,15 @@ __all__ = [
     "LogicOnResult",
     "LogicOnTextRequest",
     "LogicOnTask",
+    # 沙盘推演模型
+    "BaselineTopicState",
+    "BaselineSnapshot",
+    "PolicyShock",
+    "ScenarioDefinition",
+    "SimulationComparisonTopic",
+    "SimulationComparison",
+    "SimulationTopicExplanation",
+    "SimulationExplanation",
+    "SimulationTopicImpact",
+    "SimulationResult",
 ]
