@@ -43,6 +43,16 @@ def compare_result(result: SimulationResult) -> SimulationComparison:
         metadata={
             "sourceRunId": result.run_id,
             "engine": result.metadata.get("engine"),
+            "metricSemantics": {
+                "application_count": "申报项目数",
+                "funded_count": "立项项目数",
+                "funding_amount": "合同专项经费",
+                "score_proxy": "评审强度代理值",
+                "collaboration_density": "协作密度",
+                "topic_centrality": "主题中心性",
+                "migration_strength": "热点迁移强度",
+                "proxy_risk": "风险代理值",
+            },
         },
     )
 

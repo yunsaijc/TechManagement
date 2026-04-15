@@ -23,12 +23,12 @@ def explain_result(result: SimulationResult) -> SimulationExplanation:
     topics = [_explain_topic(item) for item in ordered[:5]]
 
     summary = [
-        f"共推演 {len(result.impacts)} 个主题，场景 {result.scenario_id} 基于项目库与图谱状态变量完成结构推演。",
+        f"共推演 {len(result.impacts)} 个主题，场景 {result.scenario_id} 基于项目申报、评审、立项合同与图谱状态完成结构推演。",
         (
             "平均变化: "
             f"申报数 {with_sign(_avg_delta(result, 'delta_application_count'))}, "
             f"立项数 {with_sign(_avg_delta(result, 'delta_funded_count'))}, "
-            f"经费 {with_sign(_avg_delta(result, 'delta_funding_amount'))}, "
+            f"合同经费 {with_sign(_avg_delta(result, 'delta_funding_amount'))}, "
             f"协作密度 {with_sign(_avg_delta(result, 'delta_collaboration_density'))}, "
             f"风险代理 {with_sign(_avg_delta(result, 'delta_proxy_risk'))}."
         ),
@@ -69,9 +69,9 @@ def _explain_topic(item) -> SimulationTopicExplanation:
         reasons.append(f"立项数减少 {abs(item.delta_funded_count)}")
 
     if item.delta_funding_amount > 0:
-        reasons.append(f"立项经费增加 {item.delta_funding_amount:.3f}")
+        reasons.append(f"合同专项经费增加 {item.delta_funding_amount:.3f}")
     elif item.delta_funding_amount < 0:
-        reasons.append(f"立项经费减少 {abs(item.delta_funding_amount):.3f}")
+        reasons.append(f"合同专项经费减少 {abs(item.delta_funding_amount):.3f}")
 
     if item.delta_collaboration_density > 0:
         reasons.append(f"协作密度提升 {item.delta_collaboration_density:.3f}")
@@ -108,7 +108,7 @@ def _build_headline(item) -> str:
     if item.delta_proxy_risk > 0.03 and (item.delta_funded_count < 0 or item.delta_application_count < 0):
         return "项目支持承压且风险代理上升"
     if item.delta_funded_count > 0 and item.delta_funding_amount > 0 and item.delta_proxy_risk <= 0:
-        return "项目支持增强且风险代理可控"
+        return "立项支持与合同经费同步增强"
     if item.delta_collaboration_density > 0 and item.delta_migration_strength > 0:
         return "协作与热点迁移同步增强"
     if item.delta_application_count < 0 and item.delta_topic_centrality < 0:
@@ -118,9 +118,9 @@ def _build_headline(item) -> str:
 
 def _build_action_hint(item) -> str:
     if item.delta_proxy_risk > 0.03:
-        return "优先做风险缓释，并复核该主题的配额和资助节奏。"
+        return "优先做风险缓释，并复核该主题的立项节奏与合同经费安排。"
     if item.delta_funding_amount > 0 and item.delta_funded_count > 0:
-        return "可继续维持支持力度，观察是否形成稳定的立项优势。"
+        return "可继续维持支持力度，观察是否形成稳定的立项和合同落地优势。"
     if item.delta_collaboration_density > 0.04:
         return "建议进一步放大跨单位协作机制，巩固网络效应。"
     return "建议继续监测下一时间窗的项目与图谱状态变化。"

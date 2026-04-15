@@ -22,6 +22,7 @@ def run_scenario(
 
     result = run_policy_simulation(resolved_baseline, scenario)
     if persist:
+        repository.save_scenario_definition(scenario)
         repository.save_scenario_result(result)
     return result
 

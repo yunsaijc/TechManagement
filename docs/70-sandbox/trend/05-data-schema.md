@@ -2,12 +2,13 @@
 
 ## 一、目标
 
-趋势预判层不再预设一堆训练表和标签表，而是先建立两张能够稳定支撑分析的核心结构：
+趋势预判层不再预设一堆训练表和标签表，而是先建立三张能够稳定支撑分析的核心结构：
 
 1. `topic_time_panel`
 2. `topic_migration_edges`
+3. `topic_external_signals`
 
-这两张表足够支撑 snapshot、signals、migration 和 ranking。
+前两张承担内部状态，第三张承担外部信息信号。
 
 ## 二、核心表一：topic_time_panel
 
@@ -81,7 +82,41 @@
 
 表达热点迁移网络，而不是承载所有图计算结果。
 
-## 四、派生结果结构
+## 四、外部信号表：topic_external_signals
+
+### 1. 表定义
+
+表命名：
+
+- `topic_external_signals`
+
+主键建议：
+
+- `topic_id`
+- `year`
+- `signal_source`
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `topic_id` | string | 主题标识 |
+| `year` | int | 时间窗 |
+| `signal_source` | string | 来源，如 policy/news/paper/patent/industry |
+| `signal_strength` | float | 归一化后信号强度 |
+| `signal_direction` | string | 正向/负向/中性 |
+| `evidence_count` | int | 证据条数 |
+| `evidence_refs` | json/string | 证据引用或摘要 |
+| `data_quality_flags` | array/string | 数据质量标记 |
+
+### 2. 角色
+
+`topic_external_signals` 不承担主状态统计，只承担两个职责：
+
+1. 为 ranking 提供外部环境权重
+2. 为 explanation 提供外部证据
+
+## 五、派生结果结构
 
 趋势预判的派生结果不必先落为复杂训练表，但应有统一输出合同。
 
@@ -107,8 +142,9 @@
 - `score`
 - `basis`
 
-## 五、设计原则
+## 六、设计原则
 
 1. 先把可解释的状态表做实，再谈更复杂的预测
 2. 只保留当前数据源能稳定支撑的核心字段
 3. 所有缺失和口径问题都必须外显到 `data_quality_flags`
+4. 外部信息不直接改写主状态，只能作为补充信号和解释证据

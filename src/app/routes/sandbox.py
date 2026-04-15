@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -18,8 +23,11 @@ from src.services.sandbox.simulation.facade import (
     load_latest_scenario_result,
     run_scenario,
 )
+from src.services.sandbox.simulation.debug_html import render_debug_html
+from src.services.sandbox.simulation.debug_payload import build_debug_payload
 
 router = APIRouter()
+SIMULATION_DEBUG_DIR = Path("debug_sandbox/simulation")
 
 
 class LeadershipForecastRequest(BaseModel):
@@ -71,6 +79,23 @@ class SimulationScenarioRequest(BaseModel):
     baselineId: str
     forecastWindow: str
     policyShocks: list[SimulationPolicyShockInput] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+
+
+class SimulationScenarioComposeRequest(BaseModel):
+    baselineId: str | None = None
+    scenarioId: str | None = None
+    forecastWindow: str | None = None
+    topicId: str
+    shockType: str = "funding_boost"
+    intensity: float = Field(default=0.6, ge=0.0, le=1.0)
+    coverage: float = Field(default=0.8, ge=0.0, le=1.0)
+    lag: int = Field(default=0, ge=0)
+    enableSpillover: bool = True
+    propagationStrength: float = Field(default=0.45, ge=0.0, le=1.0)
+    minSimilarity: float = Field(default=0.35, ge=0.0, le=1.0)
+    maxNeighbors: int = Field(default=12, ge=0)
     tags: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
 
@@ -127,6 +152,172 @@ def _build_scenario_definition(payload: SimulationScenarioRequest) -> ScenarioDe
         tags=payload.tags,
         assumptions=payload.assumptions,
     )
+
+
+def _build_composed_scenario_definition(
+    payload: SimulationScenarioComposeRequest,
+    *,
+    baseline_id: str,
+    forecast_window: str,
+) -> ScenarioDefinition:
+    shock_id = f"shock_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    scenario_id = payload.scenarioId or f"scenario_builder_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    tags = payload.tags or ["builder", "interactive"]
+    assumptions = payload.assumptions or ["interactive_builder_generated_policy_shock"]
+    parameters: dict[str, object] = {
+        "enable_spillover": payload.enableSpillover,
+    }
+    if payload.enableSpillover:
+        parameters.update(
+            {
+                "propagation_strength": payload.propagationStrength,
+                "min_similarity": payload.minSimilarity,
+                "max_neighbors": payload.maxNeighbors,
+            }
+        )
+
+    return ScenarioDefinition(
+        scenario_id=scenario_id,
+        baseline_id=baseline_id,
+        forecast_window=forecast_window,
+        policy_shocks=[
+            PolicyShock(
+                shock_id=shock_id,
+                shock_type=payload.shockType,
+                target_topics=[payload.topicId],
+                intensity=payload.intensity,
+                coverage=payload.coverage,
+                lag=payload.lag,
+                parameters=parameters,
+            )
+        ],
+        tags=tags,
+        assumptions=assumptions,
+    )
+
+
+def _build_debug_meta(*, source: str, title: str) -> dict[str, str]:
+    return {
+        "source": source,
+        "title": title,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _save_simulation_debug_artifacts(
+    *,
+    artifact_name: str,
+    payload: dict[str, Any],
+    title: str,
+) -> dict[str, str]:
+    SIMULATION_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    json_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.json"
+    html_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.html"
+
+    with json_path.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+
+    html_path.write_text(render_debug_html(payload, title=title), encoding="utf-8")
+
+    return {
+        "debug_json_path": str(json_path.resolve()),
+        "debug_json_url": f"/debug-sandbox/simulation/{json_path.name}",
+        "debug_html_path": str(html_path.resolve()),
+        "debug_html_url": f"/debug-sandbox/simulation/{html_path.name}",
+    }
+
+
+def _get_simulation_debug_artifacts(artifact_name: str) -> dict[str, str]:
+    json_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.json"
+    html_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.html"
+
+    payload: dict[str, str] = {}
+    if json_path.exists():
+        payload["debug_json_path"] = str(json_path.resolve())
+        payload["debug_json_url"] = f"/debug-sandbox/simulation/{json_path.name}"
+    if html_path.exists():
+        payload["debug_html_path"] = str(html_path.resolve())
+        payload["debug_html_url"] = f"/debug-sandbox/simulation/{html_path.name}"
+    return payload
+
+
+def _build_baseline_debug_payload(
+    *,
+    snapshot,
+    source: str,
+    title: str,
+) -> dict[str, Any]:
+    payload = build_debug_payload(baseline=snapshot)
+    payload["meta"] = _build_debug_meta(source=source, title=title)
+    return payload
+
+
+def _build_scenario_debug_payload(
+    *,
+    source: str,
+    title: str,
+    baseline=None,
+    scenario: ScenarioDefinition | None = None,
+    result=None,
+    comparison=None,
+    explanation=None,
+) -> dict[str, Any]:
+    payload = build_debug_payload(
+        baseline=baseline,
+        result=result,
+        comparison=comparison,
+        explanation=explanation,
+    )
+    if scenario is not None:
+        payload["scenario"] = scenario.model_dump(mode="json")
+    payload["meta"] = _build_debug_meta(source=source, title=title)
+    return payload
+
+
+def _match_latest_baseline(result) -> object | None:
+    baseline = load_latest_baseline_snapshot()
+    if baseline is None:
+        return None
+    if baseline.baseline_id != result.baseline_id:
+        return None
+    return baseline
+
+
+def _build_scenario_response(
+    *,
+    source: str,
+    title: str,
+    scenario: ScenarioDefinition,
+    result,
+    baseline=None,
+) -> dict[str, object]:
+    resolved_baseline = baseline or _match_latest_baseline(result)
+    comparison = compare_result(result)
+    explanation = explain_result(result)
+    debug_payload = _build_scenario_debug_payload(
+        baseline=resolved_baseline,
+        scenario=scenario,
+        result=result,
+        comparison=comparison,
+        explanation=explanation,
+        source=source,
+        title=title,
+    )
+    debug_artifacts = _save_simulation_debug_artifacts(
+        artifact_name="scenario_latest",
+        payload=debug_payload,
+        title=title,
+    )
+    return {
+        "status": "ok",
+        "source": source,
+        "baseline": resolved_baseline.model_dump() if resolved_baseline is not None else None,
+        "scenario": scenario.model_dump(),
+        "result": result.model_dump(),
+        "comparison": comparison.model_dump(),
+        "explanation": explanation.model_dump(),
+        **debug_artifacts,
+    }
 
 
 @router.get("/health")
@@ -235,6 +426,7 @@ async def get_latest_simulation_baseline() -> dict[str, object]:
         "status": "ok",
         "source": "latest_baseline_snapshot",
         "baseline": snapshot.model_dump(),
+        **_get_simulation_debug_artifacts("baseline_latest"),
     }
 
 
@@ -250,11 +442,22 @@ async def run_simulation_baseline(payload: SimulationBaselineRequest) -> dict[st
         assumptions=payload.assumptions,
         metadata=payload.metadata,
     )
+    debug_payload = _build_baseline_debug_payload(
+        snapshot=snapshot,
+        source="create_baseline_snapshot",
+        title="Sandbox Simulation Baseline Debug",
+    )
+    debug_artifacts = _save_simulation_debug_artifacts(
+        artifact_name="baseline_latest",
+        payload=debug_payload,
+        title="Sandbox Simulation Baseline Debug",
+    )
 
     return {
         "status": "ok",
         "source": "create_baseline_snapshot",
         "baseline": snapshot.model_dump(),
+        **debug_artifacts,
     }
 
 
@@ -271,11 +474,24 @@ async def build_simulation_baseline(payload: SimulationBaselineBuildRequest) -> 
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    debug_artifacts: dict[str, str] = {}
+    if payload.persist:
+        debug_payload = _build_baseline_debug_payload(
+            snapshot=snapshot,
+            source="build_baseline_snapshot_from_sources",
+            title="Sandbox Simulation Baseline Debug",
+        )
+        debug_artifacts = _save_simulation_debug_artifacts(
+            artifact_name="baseline_latest",
+            payload=debug_payload,
+            title="Sandbox Simulation Baseline Debug",
+        )
 
     return {
         "status": "ok",
         "source": "build_baseline_snapshot_from_sources",
         "baseline": snapshot.model_dump(),
+        **debug_artifacts,
     }
 
 
@@ -311,12 +527,32 @@ async def run_simulation(payload: SimulationRunRequest) -> dict[str, object]:
         "baseline": baseline.model_dump(),
         "result": result.model_dump(),
     }
+    comparison = None
     if payload.includeComparison:
         comparison = await run_in_threadpool(compare_result, result)
         response["comparison"] = comparison.model_dump()
+    explanation = None
     if payload.includeExplanation:
         explanation = await run_in_threadpool(explain_result, result)
         response["explanation"] = explanation.model_dump()
+    if payload.persist:
+        scenario = _build_scenario_definition(payload.scenario)
+        debug_payload = _build_scenario_debug_payload(
+            baseline=baseline,
+            scenario=scenario,
+            result=result,
+            comparison=comparison,
+            explanation=explanation,
+            source="run_simulation",
+            title="Sandbox Simulation Scenario Debug",
+        )
+        response.update(
+            _save_simulation_debug_artifacts(
+                artifact_name="scenario_latest",
+                payload=debug_payload,
+                title="Sandbox Simulation Scenario Debug",
+            )
+        )
     return response
 
 
@@ -330,6 +566,7 @@ async def get_latest_simulation_scenario() -> dict[str, object]:
         "status": "ok",
         "source": "latest_scenario_result",
         "result": result.model_dump(),
+        **_get_simulation_debug_artifacts("scenario_latest"),
     }
 
 
@@ -372,8 +609,47 @@ async def run_simulation_scenario(payload: SimulationScenarioRequest) -> dict[st
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return {
-        "status": "ok",
-        "source": "run_scenario",
-        "result": result.model_dump(),
-    }
+    return await run_in_threadpool(
+        _build_scenario_response,
+        source="run_scenario",
+        title="Sandbox Simulation Scenario Debug",
+        scenario=scenario,
+        result=result,
+    )
+
+
+@router.post("/simulation/scenario/compose")
+async def compose_simulation_scenario(payload: SimulationScenarioComposeRequest) -> dict[str, object]:
+    """用领导可选控件快速拼装一个 scenario，并直接执行推演。"""
+    baseline = await run_in_threadpool(load_latest_baseline_snapshot)
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="尚未生成 baseline snapshot，无法编排方案")
+
+    baseline_id = payload.baselineId or baseline.baseline_id
+    if baseline_id != baseline.baseline_id:
+        raise HTTPException(status_code=400, detail="baselineId 与当前最新 baseline 不一致")
+
+    forecast_window = payload.forecastWindow or baseline.forecast_window
+    scenario = _build_composed_scenario_definition(
+        payload,
+        baseline_id=baseline_id,
+        forecast_window=forecast_window,
+    )
+
+    try:
+        result = await run_in_threadpool(
+            run_scenario,
+            scenario=scenario,
+            baseline=baseline,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return await run_in_threadpool(
+        _build_scenario_response,
+        source="compose_simulation_scenario",
+        title="Sandbox Simulation Scenario Debug",
+        scenario=scenario,
+        result=result,
+        baseline=baseline,
+    )

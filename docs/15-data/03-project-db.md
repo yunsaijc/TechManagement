@@ -26,10 +26,14 @@
 | 表名 | 用途 |
 |------|------|
 | Ht_Xmxx | 项目信息补充（投资、经费等） |
+| Ht_Jbxx | 合同基本信息 |
+| Ht_Jfgs | 合同经费概算 |
+| Ht_XMLXXX | 立项信息 |
 | Sb_Jbxx | 申报书基本信息 |
+| Sb_Jfgs | 申报经费概算 |
 | Sb_Sbzt | 申报状态、审核状态 |
 | Sb_Jj | 项目简介（xmjj） |
-| PGPS_XMPSXX | 项目评审信息 |
+| PS_XMPSXX | 项目评审信息 |
 
 ### 2. 学科分类
 
@@ -128,7 +132,52 @@
 
 **注意**：专家学科代码使用与项目相同的 `sys_xkfl` 分类体系。
 
-### PGPS_XMPSXX - 项目评审信息
+### Sb_Jfgs - 申报经费概算
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | int | 主键 |
+| yskmbh | int | 预算科目编号 |
+| zxjf | float | 专项经费 |
+| zcjf | float | 自筹经费 |
+| ptjf | float | 配套经费 |
+| onlysign | varchar(64) | 与 `Sb_Jbxx.id` 关联 |
+
+### Ht_Jbxx - 合同基本信息
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | varchar(64) | 主键 |
+| xmmc | nvarchar(1000) | 项目名称 |
+| xmbh | varchar(64) | 项目编号 |
+| onlysign | varchar(64) | 与 `Sb_Jbxx.id` 关联 |
+| htxmlxid | varchar(64) | 立项信息表id |
+
+### Ht_Jfgs - 合同经费概算
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | int | 主键 |
+| yskmbh | int | 预算科目编号 |
+| zxjf | numeric | 专项经费 |
+| zcjf | numeric | 自筹经费 |
+| ptjf | float | 配套经费 |
+| onlysign | varchar(64) | 与 `Ht_Jbxx.id` 关联 |
+
+### Ht_XMLXXX - 立项信息
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | int | 主键 |
+| XMBH | varchar(64) | 项目ID |
+| SFLX | int | 是否立项 |
+| LXBH | varchar(50) | 立项项目编号 |
+| LXJF | numeric | 立项经费 |
+| jybkz | numeric | 总拨款 |
+| ybk | numeric | 已拨款 |
+| bk | numeric | 未拨款 |
+
+### PS_XMPSXX - 项目评审信息
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -209,9 +258,11 @@
 ```
 项目申报 (Sb_Jbxx)
         ├── 1:1 → 申报状态 (Sb_Sbzt)      [通过 Sb_Sbzt.onlysign = Sb_Jbxx.id]
-        └── 1:1 → 评审信息 (PGPS_XMPSXX)  [通过项目编号关联]
-                 ├── 评审组: PSZBH → PS_WLPS_ZJDL
-                 └── 专家: ZJBH → zjk_jbxx
+        ├── 1:N → 申报经费概算 (Sb_Jfgs)  [通过 Sb_Jfgs.onlysign = Sb_Jbxx.id]
+        ├── 1:1 → 评审信息 (PS_XMPSXX)   [通过 PS_XMPSXX.XMBH = Sb_Jbxx.id]
+        ├── 1:1 → 立项信息 (Ht_XMLXXX)   [通过 Ht_XMLXXX.XMBH = Sb_Jbxx.id]
+        └── 1:1 → 合同基本信息 (Ht_Jbxx) [通过 Ht_Jbxx.onlysign = Sb_Jbxx.id]
+                 └── 1:N → 合同经费概算 (Ht_Jfgs) [通过 Ht_Jfgs.onlysign = Ht_Jbxx.id]
 ```
 
 ---
