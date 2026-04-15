@@ -20,7 +20,7 @@
 
 ```text
 topic_time_panel
-  -> trend snapshot / forecast
+  -> trend snapshot / ranking
   -> baseline_snapshot
 ```
 
@@ -47,9 +47,10 @@ topic_time_panel
 
 baseline 至少应包含：
 
-- 规模状态
-- 能力状态
-- 成效状态
+- 项目规模状态
+- 评审与立项状态
+- 合同经费状态
+- 图谱结构状态
 - 风险状态
 
 最低字段集合建议：
@@ -57,12 +58,13 @@ baseline 至少应包含：
 - `application_count`
 - `funded_count`
 - `funding_amount`
-- `talent_headcount`
-- `talent_quality_index`
-- `collaboration_strength_index`
-- `output_efficiency`
-- `conversion_rate`
-- `risk_score`
+- `score_proxy`
+- `collaboration_density`
+- `topic_centrality`
+- `migration_strength`
+- `proxy_risk`
+
+外部信息不写入 baseline 主状态，而应在 scenario 侧以 `external_shock` 或 `external_constraint` 挂载。
 
 ## 四、scenario 设计
 
@@ -73,7 +75,8 @@ baseline 至少应包含：
 1. 基于哪个 baseline
 2. 做了哪些动作
 3. 这些动作有哪些约束
-4. 用哪些指标评价结果
+4. 存在哪些外生冲击
+5. 用哪些指标评价结果
 
 ### 2. 最小结构
 
@@ -82,6 +85,7 @@ baseline 至少应包含：
   "baseline_id": "baseline_2026_y",
   "scenario_name": "priority_shift_a",
   "instruments": [],
+  "external_shocks": [],
   "constraints": {},
   "evaluation_targets": []
 }
@@ -100,7 +104,17 @@ baseline 至少应包含：
 - 现实政策很少是单动作
 - 需要支持“单独动作”和“组合动作”对比
 
-## 六、仿真窗口
+## 六、外生冲击在 scenario 中的组织方式
+
+建议：
+
+- 外部政策导向变化作为 `policy_shock`
+- 新闻/舆情事件作为 `event_shock`
+- 产业变化作为 `industry_shock`
+
+这些冲击不直接改变 baseline，而是在 rollout 时改变参数、约束或解释权重。
+
+## 七、仿真窗口
 
 每个 scenario 还必须定义推演窗口：
 
@@ -115,7 +129,7 @@ baseline 至少应包含：
 - 单年度干预
 - 未来 1-2 个窗口的比较
 
-## 七、结果记录设计
+## 八、结果记录设计
 
 建议最少沉淀三类结果：
 
@@ -133,12 +147,14 @@ baseline 至少应包含：
 
 记录每个主题在不同窗口下的结果：
 
-- `baseline_topic_share`
-- `counterfactual_topic_share`
-- `baseline_conversion_rate`
-- `counterfactual_conversion_rate`
-- `baseline_risk_score`
-- `counterfactual_risk_score`
+- `baseline_application_count`
+- `projected_application_count`
+- `baseline_funded_count`
+- `projected_funded_count`
+- `baseline_funding_amount`
+- `projected_funding_amount`
+- `baseline_proxy_risk`
+- `projected_proxy_risk`
 
 ### 3. explanation-level
 
@@ -149,13 +165,13 @@ baseline 至少应包含：
 - 哪些结果主要来自数据估计
 - 哪些结果主要来自结构假设
 
-## 八、第一版推荐场景
+## 九、当前推荐场景
 
 第一版不要追求全政策空间覆盖，建议只做以下 3 类：
 
 1. `quota_adjustment`
 2. `topic_priority_shift`
-3. `talent_support`
+3. `collaboration_incentive`
 
 原因：
 
@@ -163,7 +179,7 @@ baseline 至少应包含：
 - 容易落到 `topic × time_window` 状态空间
 - 更适合作为结构仿真的第一批动作
 
-## 九、停损线
+## 十、停损线
 
 如果以下任一条件不满足，scenario 引擎应限制功能而不是硬算：
 

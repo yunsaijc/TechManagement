@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,8 +62,14 @@ def build_baseline_snapshot_from_sources(
     if end_year < start_year:
         raise RuntimeError("end_year 不能小于 start_year")
 
+    project_load_started = time.perf_counter()
     project_rows = _load_project_topic_aggregates(start_year=start_year, end_year=end_year)
+    project_load_seconds = round(time.perf_counter() - project_load_started, 3)
+
+    graph_load_started = time.perf_counter()
     graph_rows = _load_graph_topic_aggregates(start_year=start_year, end_year=end_year)
+    graph_load_seconds = round(time.perf_counter() - graph_load_started, 3)
+
     topics = _merge_topic_aggregates(project_rows, graph_rows)
     if not topics:
         raise RuntimeError("未从项目库和图谱中构建出任何 topic baseline")
@@ -74,6 +81,9 @@ def build_baseline_snapshot_from_sources(
         assumptions=[
             "baseline_from_project_db_and_neo4j_graph",
             "topic_priority=guide_name_then_department_office",
+            "review_score_from_ps_xmpsxx",
+            "funded_flag_from_ht_xmlxxx_or_contract_presence",
+            "funding_amount_from_ht_jfgs_fallback_ht_xmlxxx",
             "proxy_risk_is_derived_from_observed_project_graph_metrics",
         ],
         metadata={
@@ -82,6 +92,8 @@ def build_baseline_snapshot_from_sources(
             "projectTopicCount": len(project_rows),
             "graphTopicCount": len(graph_rows),
             "topicCount": len(topics),
+            "projectLoadSeconds": project_load_seconds,
+            "graphLoadSeconds": graph_load_seconds,
         },
         persist=persist,
     )
@@ -96,36 +108,108 @@ def _load_project_topic_aggregates(
     start_year: int,
     end_year: int,
 ) -> list[ProjectTopicAggregate]:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parents[4] / ".env")
     from src.common.database.connection import project_execute
 
     sql = """
-        SELECT
-            COALESCE(
-                NULLIF(LTRIM(RTRIM(zn.name)), ''),
-                NULLIF(LTRIM(RTRIM(b.zxmc)), ''),
-                NULLIF(LTRIM(RTRIM(b.zndm)), '')
-            ) AS topic_label,
-            COUNT(1) AS application_count,
-            SUM(CASE WHEN ISNUMERIC(ps.SFLX) = 1 AND CAST(ps.SFLX AS INT) = 1 THEN 1 ELSE 0 END) AS funded_count,
-            SUM(CASE WHEN ISNUMERIC(ps.LXJF) = 1 THEN CAST(ps.LXJF AS FLOAT) ELSE 0 END) AS funding_amount,
-            AVG(
+        WITH reviewed_projects AS (
+            SELECT
+                b.id AS project_id,
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(zn.name)), ''),
+                    NULLIF(LTRIM(RTRIM(zx.name)), ''),
+                    NULLIF(LTRIM(RTRIM(b.zxmc)), ''),
+                    NULLIF(LTRIM(RTRIM(b.zndm)), '')
+                ) AS topic_label
+            FROM Sb_Jbxx b
+            INNER JOIN Sb_Sbzt sbzt ON sbzt.onlysign = b.id
+            LEFT JOIN sys_guide zx ON zx.id = b.zxmc
+            LEFT JOIN sys_guide zn ON zn.id = b.zndm
+            WHERE sbzt.gkAudit = '1'
+              AND ISNUMERIC(b.year) = 1
+              AND CAST(b.year AS INT) >= ?
+              AND CAST(b.year AS INT) <= ?
+        ),
+        review_scores AS (
+            SELECT
+                ps.XMBH AS project_id,
+                AVG(
+                    CASE
+                        WHEN ISNUMERIC(ps.FSFS) = 1 THEN CAST(ps.FSFS AS FLOAT)
+                        WHEN ISNUMERIC(ps.WPFS) = 1 THEN CAST(ps.WPFS AS FLOAT)
+                        ELSE NULL
+                    END
+                ) AS score_proxy
+            FROM PS_XMPSXX ps
+            GROUP BY ps.XMBH
+        ),
+        proposal_budget AS (
+            SELECT
+                sbjf.onlysign AS project_id,
+                SUM(CASE WHEN ISNUMERIC(sbjf.zxjf) = 1 THEN CAST(sbjf.zxjf AS FLOAT) ELSE 0 END) AS requested_funding_amount
+            FROM Sb_Jfgs sbjf
+            WHERE (
+                ISNUMERIC(CAST(sbjf.yskmbh AS VARCHAR(32))) = 1
+                AND CAST(sbjf.yskmbh AS INT) = 1
+            )
+            GROUP BY sbjf.onlysign
+        ),
+        contract_budget AS (
+            SELECT
+                htxx.onlysign AS project_id,
+                MAX(CASE WHEN NULLIF(LTRIM(RTRIM(htxx.xmbh)), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_contract_number,
+                SUM(CASE WHEN ISNUMERIC(htjf.zxjf) = 1 THEN CAST(htjf.zxjf AS FLOAT) ELSE 0 END) AS final_funding_amount
+            FROM Ht_Jbxx htxx
+            LEFT JOIN Ht_Jfgs htjf
+                ON htjf.onlysign = htxx.id
+               AND (
+                    ISNUMERIC(CAST(htjf.yskmbh AS VARCHAR(32))) = 1
+                    AND CAST(htjf.yskmbh AS INT) = 1
+               )
+            GROUP BY htxx.onlysign
+        ),
+        award_status AS (
+            SELECT
+                lx.XMBH AS project_id,
+                MAX(CASE WHEN ISNUMERIC(CAST(lx.SFLX AS VARCHAR(32))) = 1 AND CAST(lx.SFLX AS INT) = 1 THEN 1 ELSE 0 END) AS funded_flag,
+                MAX(CASE WHEN NULLIF(LTRIM(RTRIM(lx.LXBH)), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_award_number,
+                MAX(CASE WHEN ISNUMERIC(lx.LXJF) = 1 THEN CAST(lx.LXJF AS FLOAT) ELSE 0 END) AS award_funding_amount
+            FROM Ht_XMLXXX lx
+            GROUP BY lx.XMBH
+        ),
+        project_metrics AS (
+            SELECT
+                rp.topic_label,
+                rp.project_id,
                 CASE
-                    WHEN ISNUMERIC(ps.FSFS) = 1 THEN CAST(ps.FSFS AS FLOAT)
-                    WHEN ISNUMERIC(ps.WPFS) = 1 THEN CAST(ps.WPFS AS FLOAT)
-                    ELSE NULL
-                END
-            ) AS score_proxy
-        FROM Sb_Jbxx b
-        LEFT JOIN PGPS_XMPSXX ps ON ps.XMBH = b.id
-        LEFT JOIN sys_guide zn ON zn.id = b.zndm
-        WHERE ISNUMERIC(b.year) = 1
-          AND CAST(b.year AS INT) >= ?
-          AND CAST(b.year AS INT) <= ?
-        GROUP BY COALESCE(
-            NULLIF(LTRIM(RTRIM(zn.name)), ''),
-            NULLIF(LTRIM(RTRIM(b.zxmc)), ''),
-            NULLIF(LTRIM(RTRIM(b.zndm)), '')
+                    WHEN COALESCE(award.funded_flag, 0) = 1 THEN 1
+                    WHEN COALESCE(contract.has_contract_number, 0) = 1 THEN 1
+                    WHEN COALESCE(award.has_award_number, 0) = 1 THEN 1
+                    ELSE 0
+                END AS funded_flag,
+                CASE
+                    WHEN COALESCE(contract.final_funding_amount, 0) > 0 THEN contract.final_funding_amount
+                    WHEN COALESCE(award.award_funding_amount, 0) > 0 THEN award.award_funding_amount
+                    ELSE 0.0
+                END AS funding_amount,
+                COALESCE(review.score_proxy, NULL) AS score_proxy,
+                COALESCE(proposal.requested_funding_amount, 0.0) AS requested_funding_amount
+            FROM reviewed_projects rp
+            LEFT JOIN review_scores review ON review.project_id = rp.project_id
+            LEFT JOIN proposal_budget proposal ON proposal.project_id = rp.project_id
+            LEFT JOIN contract_budget contract ON contract.project_id = rp.project_id
+            LEFT JOIN award_status award ON award.project_id = rp.project_id
         )
+        SELECT
+            topic_label,
+            COUNT(1) AS application_count,
+            SUM(funded_flag) AS funded_count,
+            SUM(funding_amount) AS funding_amount,
+            AVG(score_proxy) AS score_proxy
+        FROM project_metrics
+        GROUP BY topic_label
     """
     rows = project_execute(sql, (start_year, end_year))
     aggregates: list[ProjectTopicAggregate] = []
@@ -159,6 +243,11 @@ def _load_graph_topic_aggregates(
     user = _getenv_required("NEO4J_USER", "neo4j")
     password = _getenv_required("NEO4J_PASSWORD")
     database = _getenv_required("NEO4J_DATABASE", "neo4j")
+    topic_label_expr = _project_topic_label_expr("p")
+    topic_key_expr = _project_topic_key_expr("p")
+    year_expr = _project_year_expr("p")
+    person_topic_label_expr = _project_topic_label_expr("project")
+    person_year_expr = _project_year_expr("project")
 
     driver = GraphDatabase.driver(uri, auth=(user, password))
     try:
@@ -166,22 +255,31 @@ def _load_graph_topic_aggregates(
             collaboration = {
                 row["topic_key"]: row
                 for row in session.run(
-                    """
-                    MATCH (person:Person)-[u:undertakes]->(p:Project)
+                    f"""
+                    MATCH (p:Project)
                     WITH
-                        coalesce(p.guideName, p.department, p.office) AS topic_label,
-                        coalesce(toInteger(p.year_norm), toInteger(substring(toString(p.period), 0, 4))) AS year,
+                        p,
+                        {topic_label_expr} AS topic_label,
+                        {topic_key_expr} AS topic_key,
+                        {year_expr} AS year
+                    WHERE topic_label IS NOT NULL AND topic_key IS NOT NULL
+                      AND year >= $start_year AND year <= $end_year
+                    OPTIONAL MATCH (person:Person)-[u:undertakes]->(p)
+                    WITH
+                        topic_label,
+                        topic_key,
+                        year,
                         count(u) AS undertakes_edges,
                         count(DISTINCT person) AS person_count,
                         count(DISTINCT p) AS project_count
-                    WHERE topic_label IS NOT NULL AND year >= $start_year AND year <= $end_year
                     WITH
+                        topic_key,
                         topic_label,
                         sum(undertakes_edges) AS undertakes_edges,
                         sum(person_count) AS person_count,
                         sum(project_count) AS project_count
                     RETURN
-                        toLower(trim(topic_label)) AS topic_key,
+                        topic_key,
                         topic_label,
                         CASE
                             WHEN person_count * project_count = 0 THEN 0.0
@@ -194,18 +292,29 @@ def _load_graph_topic_aggregates(
             centrality = {
                 row["topic_key"]: row
                 for row in session.run(
-                    """
+                    f"""
                     MATCH (p:Project)
+                    WITH
+                        p,
+                        {topic_label_expr} AS topic_label,
+                        {topic_key_expr} AS topic_key,
+                        {year_expr} AS year
+                    WHERE topic_label IS NOT NULL AND topic_key IS NOT NULL
+                      AND year >= $start_year AND year <= $end_year
                     OPTIONAL MATCH (p)-[:funded_by]->(f:`Fund/Program`)
                     WITH
-                        coalesce(p.guideName, p.department, p.office) AS topic_label,
-                        coalesce(toInteger(p.year_norm), toInteger(substring(toString(p.period), 0, 4))) AS year,
+                        topic_key,
+                        topic_label,
+                        year,
                         count(DISTINCT p) AS project_count,
                         count(DISTINCT f) AS fund_count
-                    WHERE topic_label IS NOT NULL AND year >= $start_year AND year <= $end_year
-                    WITH topic_label, sum(project_count) AS project_count, sum(fund_count) AS fund_count
+                    WITH
+                        topic_key,
+                        topic_label,
+                        sum(project_count) AS project_count,
+                        sum(fund_count) AS fund_count
                     RETURN
-                        toLower(trim(topic_label)) AS topic_key,
+                        topic_key,
                         topic_label,
                         CASE
                             WHEN project_count = 0 THEN 0.0
@@ -215,48 +324,62 @@ def _load_graph_topic_aggregates(
                     {"start_year": start_year, "end_year": end_year},
                 )
             }
-            migration = {
-                row["topic_key"]: row
-                for row in session.run(
-                    """
-                    MATCH (person:Person)-[:undertakes]->(p1:Project)
-                    WITH
-                        person,
-                        coalesce(p1.guideName, p1.department, p1.office) AS topic_label,
-                        coalesce(toInteger(p1.year_norm), toInteger(substring(toString(p1.period), 0, 4))) AS year
-                    WHERE topic_label IS NOT NULL AND year >= $start_year AND year <= $end_year
-                    MATCH (person)-[:undertakes]->(p2:Project)
-                    WITH
-                        topic_label,
-                        year,
-                        person,
-                        collect(
-                            DISTINCT CASE
-                                WHEN coalesce(toInteger(p2.year_norm), toInteger(substring(toString(p2.period), 0, 4))) IN [year - 1, year + 1]
-                                THEN coalesce(p2.guideName, p2.department, p2.office)
-                                ELSE NULL
-                            END
-                        ) AS related_topics
-                    WITH
-                        topic_label,
-                        count(DISTINCT person) AS person_count,
-                        count(
-                            DISTINCT CASE
-                                WHEN any(item IN related_topics WHERE item IS NOT NULL AND item <> topic_label) THEN person
-                                ELSE NULL
-                            END
-                        ) AS migrating_person_count
-                    RETURN
-                        toLower(trim(topic_label)) AS topic_key,
-                        topic_label,
-                        CASE
-                            WHEN person_count = 0 THEN 0.0
-                            ELSE toFloat(migrating_person_count) / toFloat(person_count)
-                        END AS migration_strength
-                    """,
-                    {"start_year": start_year, "end_year": end_year},
-                )
-            }
+            migration = {}
+            if start_year < end_year:
+                migration = {
+                    row["topic_key"]: row
+                    for row in session.run(
+                        f"""
+                        MATCH (person:Person)-[:undertakes]->(project:Project)
+                        WITH
+                            person,
+                            {person_topic_label_expr} AS topic_label,
+                            {person_year_expr} AS year
+                        WHERE topic_label IS NOT NULL
+                          AND year >= $start_year AND year <= $end_year
+                        WITH
+                            person,
+                            year,
+                            collect(DISTINCT topic_label) AS topics
+                        WITH
+                            person,
+                            collect({{year: year, topics: topics}}) AS yearly_topic_sets
+                        UNWIND yearly_topic_sets AS current
+                        UNWIND current.topics AS topic_label
+                        WITH
+                            person,
+                            topic_label,
+                            toLower(trim(topic_label)) AS topic_key,
+                            [
+                                item IN yearly_topic_sets
+                                WHERE abs(item.year - current.year) = 1
+                            ] AS adjacent_year_sets
+                        WITH
+                            person,
+                            topic_label,
+                            topic_key,
+                            any(
+                                item IN adjacent_year_sets
+                                WHERE any(adjacent_topic IN item.topics WHERE adjacent_topic <> topic_label)
+                            ) AS migrated
+                        WITH
+                            topic_key,
+                            topic_label,
+                            count(DISTINCT person) AS person_count,
+                            count(DISTINCT CASE WHEN migrated THEN person ELSE NULL END) AS migrating_person_count
+                        RETURN
+                            topic_key,
+                            topic_label,
+                            person_count,
+                            migrating_person_count,
+                            CASE
+                                WHEN person_count = 0 THEN 0.0
+                                ELSE toFloat(migrating_person_count) / toFloat(person_count)
+                            END AS migration_strength
+                        """,
+                        {"start_year": start_year, "end_year": end_year},
+                    )
+                }
     finally:
         driver.close()
 
@@ -347,6 +470,21 @@ def _derive_proxy_risk(
 
 def _format_window(start_year: int, end_year: int) -> str:
     return str(start_year) if start_year == end_year else f"{start_year}-{end_year}"
+
+
+def _project_topic_label_expr(node_alias: str) -> str:
+    return f"coalesce({node_alias}.guideName, {node_alias}.department, {node_alias}.office)"
+
+
+def _project_topic_key_expr(node_alias: str) -> str:
+    return f"toLower(trim({_project_topic_label_expr(node_alias)}))"
+
+
+def _project_year_expr(node_alias: str) -> str:
+    return (
+        f"coalesce(toInteger({node_alias}.year_norm), "
+        f"toInteger(substring(toString({node_alias}.period), 0, 4)))"
+    )
 
 
 def _normalize_topic_key(value: str) -> str:

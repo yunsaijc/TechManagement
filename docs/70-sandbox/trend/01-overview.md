@@ -10,12 +10,13 @@
 
 ## 二、核心思路
 
-趋势预判只做四件事：
+趋势预判只做五件事：
 
 1. 建立主题状态面板
 2. 检测状态变化信号
 3. 提取主题迁移关系
 4. 输出趋势与风险排序
+5. 结合外部信息增强解释
 
 对应的数据主线是：
 
@@ -24,6 +25,12 @@
   -> topic_time_panel
   -> signals / migration / ranking
   -> baseline world
+```
+
+```text
+政策文本 / 新闻舆情 / 论文专利 / 产业信息
+  -> topic_external_signals
+  -> ranking / explanation
 ```
 
 ## 三、核心问题
@@ -50,6 +57,7 @@
 2. `signal_detect`
 3. `migration_extract`
 4. `trend_rank`
+5. `external_signal_fuse`
 
 ## 六、与其他模块的关系
 

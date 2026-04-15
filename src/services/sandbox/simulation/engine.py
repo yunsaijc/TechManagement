@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypeAlias
 
 from src.common.models.simulation import (
     BaselineSnapshot,
@@ -66,12 +67,22 @@ DEFAULT_RULES: dict[str, dict[str, float]] = {
     },
 }
 
+ShockApplication: TypeAlias = tuple[PolicyShock, float]
+
 
 def run_policy_simulation(
     baseline: BaselineSnapshot,
     scenario: ScenarioDefinition,
 ) -> SimulationResult:
-    impacts = [_simulate_topic(topic, scenario.policy_shocks, scenario.forecast_window) for topic in baseline.topics]
+    shock_applications = _build_shock_applications(baseline.topics, scenario.policy_shocks)
+    impacts = [
+        _simulate_topic(
+            topic,
+            shock_applications.get(topic.topic_id, []),
+            scenario.forecast_window,
+        )
+        for topic in baseline.topics
+    ]
     impacts.sort(
         key=lambda item: abs(item.delta_funding_amount)
         + abs(item.delta_funded_count)
@@ -90,15 +101,75 @@ def run_policy_simulation(
         metadata={
             "engine": "native_policy_simulation_v2_project_graph",
             "shockCount": len(scenario.policy_shocks),
+            "spilloverEnabledShockCount": sum(1 for shock in scenario.policy_shocks if _spillover_enabled(shock)),
             "topicCount": len(baseline.topics),
+            "impactedTopicCount": sum(1 for item in impacts if _impact_signal(item) > 0.0),
             "scenarioTags": list(scenario.tags),
         },
     )
 
 
+def _build_shock_applications(
+    topics: list[BaselineTopicState],
+    shocks: list[PolicyShock],
+) -> dict[str, list[ShockApplication]]:
+    topic_by_id = {topic.topic_id: topic for topic in topics}
+    applications: dict[str, list[ShockApplication]] = {topic.topic_id: [] for topic in topics}
+
+    for shock in shocks:
+        base_strength = _shock_strength(shock)
+        if base_strength <= 0.0:
+            continue
+
+        if shock.target_topics:
+            target_ids = [topic_id for topic_id in shock.target_topics if topic_id in topic_by_id]
+        else:
+            target_ids = [topic.topic_id for topic in topics]
+
+        if not target_ids:
+            continue
+
+        for topic_id in target_ids:
+            applications[topic_id].append((shock, base_strength))
+
+        if not _spillover_enabled(shock) or not shock.target_topics:
+            continue
+
+        propagation_strength = _shock_parameter_float(shock, "propagation_strength", 0.35)
+        min_similarity = _shock_parameter_float(shock, "min_similarity", 0.55)
+        max_neighbors = max(0, int(_shock_parameter_float(shock, "max_neighbors", 8)))
+        if propagation_strength <= 0.0 or max_neighbors == 0:
+            continue
+
+        spillover_scores: dict[str, float] = {}
+        direct_ids = set(target_ids)
+        for target_id in target_ids:
+            source = topic_by_id[target_id]
+            for candidate in topics:
+                if candidate.topic_id in direct_ids:
+                    continue
+                similarity = _topic_similarity(source, candidate)
+                if similarity < min_similarity:
+                    continue
+                spillover_strength = base_strength * propagation_strength * similarity
+                current = spillover_scores.get(candidate.topic_id, 0.0)
+                if spillover_strength > current:
+                    spillover_scores[candidate.topic_id] = spillover_strength
+
+        for topic_id, spillover_strength in sorted(
+            spillover_scores.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )[:max_neighbors]:
+            if spillover_strength > 0.0:
+                applications[topic_id].append((shock, spillover_strength))
+
+    return applications
+
+
 def _simulate_topic(
     topic: BaselineTopicState,
-    shocks: list[PolicyShock],
+    shock_applications: list[ShockApplication],
     forecast_window: str,
 ) -> SimulationTopicImpact:
     application_count = float(topic.application_count)
@@ -111,10 +182,7 @@ def _simulate_topic(
     proxy_risk = topic.proxy_risk
     applied_shocks: list[str] = []
 
-    for shock in shocks:
-        if shock.target_topics and topic.topic_id not in shock.target_topics:
-            continue
-
+    for shock, strength in shock_applications:
         rules = DEFAULT_RULES.get(
             shock.shock_type,
             {
@@ -128,8 +196,6 @@ def _simulate_topic(
                 "proxy_risk": 0.0,
             },
         )
-        lag_factor = max(0.35, 1.0 - 0.15 * shock.lag)
-        strength = shock.intensity * shock.coverage * lag_factor
 
         application_count += topic.application_count * rules["application_count"] * strength
         funded_count += max(topic.funded_count, 1) * rules["funded_count"] * strength
@@ -188,7 +254,84 @@ def _merge_assumptions(
     assumptions = list(baseline.assumptions)
     assumptions.extend(scenario.assumptions)
     assumptions.append("project_graph_policy_shocks_apply_with_lag_discount")
+    if any(_spillover_enabled(shock) for shock in scenario.policy_shocks):
+        assumptions.append("project_graph_policy_shocks_apply_similarity_spillover")
     return assumptions
+
+
+def _impact_signal(item: SimulationTopicImpact) -> float:
+    return (
+        abs(item.delta_application_count)
+        + abs(item.delta_funded_count)
+        + abs(item.delta_funding_amount)
+        + abs(item.delta_topic_centrality)
+        + abs(item.delta_migration_strength)
+        + abs(item.delta_proxy_risk)
+    )
+
+
+def _shock_strength(shock: PolicyShock) -> float:
+    lag_factor = max(0.35, 1.0 - 0.15 * shock.lag)
+    return shock.intensity * shock.coverage * lag_factor
+
+
+def _spillover_enabled(shock: PolicyShock) -> bool:
+    return bool(shock.parameters.get("enable_spillover", False))
+
+
+def _shock_parameter_float(shock: PolicyShock, key: str, default: float) -> float:
+    value = shock.parameters.get(key, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _topic_similarity(source: BaselineTopicState, candidate: BaselineTopicState) -> float:
+    code_similarity = _topic_code_similarity(source.topic_id, candidate.topic_id)
+    graph_similarity = _mean(
+        [
+            1.0 - abs(source.collaboration_density - candidate.collaboration_density),
+            1.0 - abs(source.topic_centrality - candidate.topic_centrality),
+            1.0 - abs(source.migration_strength - candidate.migration_strength),
+            1.0 - abs(source.proxy_risk - candidate.proxy_risk),
+        ]
+    )
+    score_similarity = _score_similarity(source.score_proxy, candidate.score_proxy)
+    return max(0.0, min(1.0, 0.35 * code_similarity + 0.50 * graph_similarity + 0.15 * score_similarity))
+
+
+def _topic_code_similarity(source_topic_id: str, candidate_topic_id: str) -> float:
+    source_code = _topic_code(source_topic_id)
+    candidate_code = _topic_code(candidate_topic_id)
+    if not source_code or not candidate_code:
+        return 0.0
+
+    max_len = min(len(source_code), len(candidate_code))
+    prefix_len = 0
+    for index in range(max_len):
+        if source_code[index] != candidate_code[index]:
+            break
+        prefix_len += 1
+    return prefix_len / max_len if max_len else 0.0
+
+
+def _topic_code(topic_id: str) -> str:
+    head = str(topic_id).split("-", 1)[0]
+    digits = "".join(ch for ch in head if ch.isdigit())
+    return digits
+
+
+def _score_similarity(source: float | None, candidate: float | None) -> float:
+    if source is None or candidate is None:
+        return 0.5
+    return max(0.0, 1.0 - abs(source - candidate) / 30.0)
+
+
+def _mean(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
 
 
 def _score_or_zero(value: float | None) -> float:

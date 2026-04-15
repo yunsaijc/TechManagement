@@ -4,12 +4,13 @@
 
 沙盘推演层需要的不是单次请求参数，而是一套可审计、可复算、可比较的场景数据结构。
 
-第一版建议固定为四类：
+当前方案建议固定为五类：
 
 1. `baseline snapshot`
 2. `policy instrument`
 3. `scenario definition`
 4. `simulation result`
+5. `external shock`
 
 ## 二、Baseline Snapshot
 
@@ -29,15 +30,14 @@
 | `baseline_id` | string | 基线版本标识 |
 | `topic_id` | string | 主题标识 |
 | `time_window` | string | 基线所属时间窗 |
-| `application_count` | float | 基线申报数 |
-| `funded_count` | float | 基线立项数 |
-| `funding_amount` | float | 基线资助额 |
-| `talent_headcount` | float | 基线人才规模 |
-| `talent_quality_index` | float | 基线人才质量 |
-| `collaboration_strength_index` | float | 基线协作强度 |
-| `output_efficiency` | float | 基线产出效率 |
-| `conversion_rate` | float | 基线转化率 |
-| `risk_score` | float | 基线风险得分 |
+| `application_count` | float | 基线申报项目数 |
+| `funded_count` | float | 基线立项项目数 |
+| `funding_amount` | float | 基线合同专项经费 |
+| `score_proxy` | float | 基线评审强度代理值 |
+| `collaboration_density` | float | 基线协作密度 |
+| `topic_centrality` | float | 基线主题中心性 |
+| `migration_strength` | float | 基线热点迁移强度 |
+| `proxy_risk` | float | 基线风险代理值 |
 
 ## 三、Policy Instrument
 
@@ -98,6 +98,27 @@
 | `priority_order` | int | 执行顺序 |
 | `enabled` | bool | 是否启用 |
 
+### 3. scenario_external_shocks
+
+该表用于表达场景包含的外生冲击或外部约束。
+
+主键建议：
+
+- `scenario_id`
+- `shock_id`
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `scenario_id` | string | 场景标识 |
+| `shock_id` | string | 冲击标识 |
+| `shock_type` | string | 冲击类型，如 policy/news/industry |
+| `target_scope_json` | json | 作用主题或范围 |
+| `strength` | float | 冲击强度 |
+| `direction` | string | 正向/负向 |
+| `evidence_json` | json | 外部证据 |
+
 ## 五、Simulation Result
 
 ### 1. simulation_run
@@ -133,14 +154,16 @@
 | `run_id` | string | 运行标识 |
 | `topic_id` | string | 主题标识 |
 | `forecast_window` | string | 推演窗口 |
-| `baseline_topic_share` | float | 基线占比 |
-| `counterfactual_topic_share` | float | 反事实占比 |
-| `baseline_conversion_rate` | float | 基线转化率 |
-| `counterfactual_conversion_rate` | float | 反事实转化率 |
-| `baseline_risk_score` | float | 基线风险 |
-| `counterfactual_risk_score` | float | 反事实风险 |
-| `delta_output_efficiency` | float | 产出效率变化 |
-| `delta_talent_quality_index` | float | 人才质量变化 |
+| `baseline_application_count` | float | 基线申报项目数 |
+| `projected_application_count` | float | 反事实申报项目数 |
+| `baseline_funded_count` | float | 基线立项项目数 |
+| `projected_funded_count` | float | 反事实立项项目数 |
+| `baseline_funding_amount` | float | 基线合同专项经费 |
+| `projected_funding_amount` | float | 反事实合同专项经费 |
+| `baseline_score_proxy` | float | 基线评审强度代理值 |
+| `projected_score_proxy` | float | 反事实评审强度代理值 |
+| `baseline_proxy_risk` | float | 基线风险代理 |
+| `projected_proxy_risk` | float | 反事实风险代理 |
 
 ### 3. simulation_explanation
 
@@ -161,7 +184,23 @@
 | `weight` | float | 路径贡献强度 |
 | `evidence_json` | json | 证据与假设 |
 
-## 六、请求 Payload 建议
+## 六、External Shock
+
+### 1. external_shock
+
+外生冲击不是内部状态变量，而是作用于 scenario 的外部条件。
+
+建议字段：
+
+- `shock_id`
+- `shock_type`
+- `window`
+- `target_scope_json`
+- `strength`
+- `direction`
+- `evidence_json`
+
+## 七、请求 Payload 建议
 
 推演 API 的请求体建议直接围绕 `scenario_definition` 组织，而不是裸传一堆临时字段。
 
@@ -177,13 +216,19 @@
 }
 ```
 
-## 七、第一版建议
+## 八、设计原则
 
-第一版先落地以下四张表即可：
+1. baseline 只保存内部真实状态
+2. 外部信息通过 `external_shock` 或 `scenario_external_shocks` 进入场景
+3. 外部冲击必须附带证据，不允许只写主观判断
+
+## 九、当前建议
+
+当前实现先落地以下四张结构即可：
 
 1. `baseline_snapshot`
 2. `policy_instrument`
 3. `scenario_definition`
 4. `simulation_topic_result`
 
-有了这四张表，场景创建、运行记录和结果对比就都能稳定沉淀下来。
+有了这些结构，场景创建、运行记录、外生冲击挂载和结果对比就都能稳定沉淀下来。

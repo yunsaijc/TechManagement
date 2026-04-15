@@ -71,9 +71,10 @@ topic_type = guide
 | `Sb_Jbxx` | `zndm` | `topic_id_raw` | 指南代码 |
 | `Sb_Jbxx` | `zxmc` | `topic_name_raw` | 专项名称 |
 | `Sb_Jbxx` | `year` | `year` | 年度 |
-| `PGPS_XMPSXX` | `SFLX` | `funded_count` | 立项结果聚合来源 |
-| `PGPS_XMPSXX` | `LXJF` | `funding_amount` | 经费聚合来源 |
-| `PGPS_XMPSXX` | `WPFS / FSFS` | `score_proxy` | 评审强度代理值 |
+| `PS_XMPSXX` | `WPFS / FSFS` | `score_proxy` | 评审强度代理值 |
+| `Sb_Jfgs` | `zxjf / zcjf` | `requested_funding_amount` | 申报阶段经费概算 |
+| `Ht_XMLXXX` | `SFLX / LXBH` | `funded_flag / award_project_no` | 立项状态与立项编号 |
+| `Ht_Jfgs` | `zxjf / zcjf` | `funding_amount / self_raised_amount` | 合同阶段最终经费 |
 
 ### 2. 图谱库映射
 
@@ -92,6 +93,21 @@ Neo4j `Project` 节点优先利用以下字段：
 - `topic_centrality`
 - `migration_strength`
 
+### 3. 外部信息映射
+
+外部信息不直接进入 `topic_time_panel` 主字段，而是通过独立信号层接入。
+
+推荐来源包括：
+
+| 来源类型 | 建议输出字段 | 作用 |
+|---|---|---|
+| 政策文本 | `policy_signal_strength` | 识别政策导向变化 |
+| 新闻舆情 | `news_heat` | 识别短中期热点波动 |
+| 论文/专利 | `paper_heat / patent_heat` | 识别学术与技术热度 |
+| 产业信息 | `industry_signal_strength` | 识别产业拉动与外部约束 |
+
+这些字段应沉淀到 `topic_external_signals`，再用于 ranking 和 explanation。
+
 ## 五、生成流程
 
 建议生成链路如下：
@@ -102,8 +118,9 @@ Step A: 读取项目库和图谱原始数据
   -> Step C: 统一 topic_id / topic_name
   -> Step D: 按 topic × year 聚合项目指标
   -> Step E: 按 topic × year 聚合图谱指标
-  -> Step F: 合并为 topic_time_panel
-  -> Step G: 打上 data_quality_flags
+  -> Step F: 生成外部 topic signals
+  -> Step G: 合并为 topic_time_panel
+  -> Step H: 打上 data_quality_flags
 ```
 
 ## 六、字段分组
@@ -135,6 +152,8 @@ Step A: 读取项目库和图谱原始数据
 ### 5. 质量字段
 
 - `data_quality_flags`
+
+外部信息字段不进入本表主体，而通过 `topic_external_signals` 与本表并行存在。
 
 ## 七、校验规则
 
