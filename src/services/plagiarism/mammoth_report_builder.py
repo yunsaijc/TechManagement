@@ -951,7 +951,7 @@ class MammothPlagiarismReportBuilder:
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}">
                 <div class="nav-header">#{display_idx} {template_badge} {source_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
-                <small>相似度: {similarity:.2f} | {source_info}</small>
+                <small>相似度 {similarity:.2f} · {source_info}</small>
             </button>''')
 
         return "".join(cards) if cards else '<p class="empty">未定位到可高亮的重复片段</p>'
@@ -1176,15 +1176,100 @@ class MammothPlagiarismReportBuilder:
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>查重可视化报告 - {html.escape(primary_doc)}</title>
   <style>
+    {mammoth_styles}
+
+    :root {{
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }}
+
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f5f7fb; color: #1f2937; }}
+    body {{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }}
     .page {{ height: 100vh; display: flex; flex-direction: column; }}
-    .toolbar {{ position: sticky; top: 0; z-index: 20; background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 14px 18px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
-    .title {{ font-size: 18px; font-weight: 700; }}
-    .meta {{ display: flex; gap: 10px; flex-wrap: wrap; }}
-    .pill {{ background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 6px 10px; font-size: 12px; }}
-    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; }}
-    .sidebar {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; overflow: auto; }}
+
+    .toolbar {{
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }}
+
+    .title {{ font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }}
+    .sub {{ margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }}
+    .toolbar-actions {{ display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }}
+
+    .btn {{
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }}
+    .btn:hover {{ border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }}
+    .btn.primary {{ background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }}
+    .btn.danger {{ background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }}
+    .btn:disabled {{ opacity: 0.55; cursor: not-allowed; }}
+    .btn:focus {{ outline: none; }}
+
+    .meta {{ display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }}
+    .pill {{ background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }}
+    .pill.warn {{ background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }}
+    .pill.muted {{ background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }}
+
+    .stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }}
+    .stat-card {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }}
+    .stat-label {{ font-size: 12px; color: var(--muted); font-weight: 800; }}
+    .stat-value {{ margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }}
+
+    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; }}
+    .sidebar {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }}
+    .sidebar-top {{ padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }}
+    .nav-title {{ font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }}
+    .nav-counter {{ font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }}
+    .nav-search {{ width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }}
+    .nav-search:focus {{ border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }}
+    .filters {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }}
+    .chip {{ border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }}
+    .chip.active {{ background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }}
+
+    .nav-list {{ padding: 10px; overflow: auto; min-height: 0; }}
+    .nav-item {{ width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }}
+    .nav-item:hover {{ border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }}
+    .nav-item.active {{ border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }}
+    .nav-item.hidden {{ display: none; }}
+    .nav-header {{ font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+    .nav-text {{ color: #334155; line-height: 1.55; margin-bottom: 6px; }}
+    .nav-item small {{ display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }}
+
+    .template-badge {{ background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }}
+    .locate-badge {{ font-size: 10px; padding: 2px 6px; border-radius: 6px; }}
+    .locate-badge.ok {{ background: var(--ok); color: #fff; }}
+    .locate-badge.partial {{ background: var(--accent); color: #fff; }}
+    .locate-badge.miss {{ background: #94a3b8; color: #fff; }}
+
     .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }}
     .panel {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }}
     .panel-header {{ padding: 12px 14px; border-bottom: 1px solid #e5e7eb; font-weight: 700; display: flex; justify-content: space-between; gap: 8px; background: #f8fafc; }}
@@ -1232,22 +1317,42 @@ class MammothPlagiarismReportBuilder:
         <div style="font-size: 13px; color: #6b7280; margin-top: 4px;">左侧主文档：{html.escape(primary_doc)} ｜ 右侧来源片段：{source_doc_count} 个文档</div>
         <div class="stats">{stats}</div>
       </div>
-      <div class="meta">
-        <div class="pill">有效重复段：{effective_count}</div>
-        <div class="pill">已高亮：{matched_count}</div>
-        <div class="pill">未定位：{unmatched_count}</div>
-        <div class="pill">模板段：{template_count}</div>
-        <div class="pill">有效字符：{effective_chars}</div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：{effective_count}</div>
+          <div class="pill">模板片段：{template_count}</div>
+          <div class="pill muted">未定位：{unmatched_count}</div>
+          <div class="pill">有效字数：{effective_chars}</div>
+        </div>
       </div>
     </div>
     <div class="main">
       <aside class="sidebar">
-        <div class="nav-title">重复片段导航</div>
-        {match_cards}
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          {match_cards}
+        </div>
       </aside>
       <section class="content">
         <div class="panel">
-          <div class="panel-header"><span>Primary</span><span>{html.escape(primary_doc)}</span></div>
+          <div class="panel-header"><span>主文档</span><span>{html.escape(primary_doc)}</span></div>
           <div id="primary-panel" class="panel-body">
             {left_html}
           </div>
@@ -1262,12 +1367,9 @@ class MammothPlagiarismReportBuilder:
     </div>
   </div>
   <script>
-    // 高亮交互功能
     (function() {{
-      // 存储所有高亮元素的位置信息
       const highlightMap = new Map();
       
-      // 初始化：收集所有高亮元素的位置
       function initHighlights() {{
         document.querySelectorAll('.hit[data-match-id]').forEach(el => {{
           const matchId = el.dataset.matchId;
@@ -1278,21 +1380,19 @@ class MammothPlagiarismReportBuilder:
         }});
       }}
       
+      let currentMatchId = null;
+
       const activateMatch = (matchId) => {{
-        // 清除所有激活状态
         document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
         
-        // 激活当前匹配的高亮元素
         const hits = highlightMap.get(matchId) || [];
         hits.forEach(el => el.classList.add('active'));
         
-        // 激活导航项
         const navItem = document.querySelector(`.nav-item[data-match-id="${{matchId}}"]`);
         if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
         
-        // 左右两侧分别滚动到首个匹配片段。
-        // 一个 match_id 现在可能被拆成多个 fragment，不能再假设 hits[0]/hits[1] 分别对应左右两侧。
         if (hits.length > 0) {{
           const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
           const sourceHit = hits.find(el => el.dataset.side === 'source');
@@ -1305,15 +1405,74 @@ class MammothPlagiarismReportBuilder:
             sourceHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
           }}
         }}
+
+        refreshCounter();
       }};
+
+      function getVisibleNavItems() {{
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }}
+
+      function refreshCounter() {{
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {{
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }}
+        const text = total > 0 ? `${{idx >= 0 ? idx + 1 : 0}}/${{total}}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }}
+
+      function applyNavFilter() {{
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {{
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        }});
+        const items = getVisibleNavItems();
+        if (items.length) {{
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {{
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }}
+        }}
+        refreshCounter();
+      }}
       
-      // 初始化
       initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {{
+        activateMatch(first.dataset.matchId);
+      }}
       
-      // 绑定点击事件 - 使用事件委托
       document.addEventListener('click', (e) => {{
         const hit = e.target.closest('.hit');
         const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
         
         if (hit) {{
           e.preventDefault();
@@ -1321,8 +1480,48 @@ class MammothPlagiarismReportBuilder:
         }} else if (navItem) {{
           e.preventDefault();
           activateMatch(navItem.dataset.matchId);
+        }} else if (chip) {{
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        }} else if (btnPrev || btnNext) {{
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {{
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }}
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {{
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          }} else {{
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }}
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        }} else if (btnTop) {{
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {{
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }}
+          window.scrollTo({{ top: 0, behavior: 'smooth' }});
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({{ top: 0, behavior: 'smooth' }});
+          if (sp) sp.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
       }});
+
+      const input = document.getElementById('nav-search');
+      if (input) {{
+        input.addEventListener('input', () => applyNavFilter());
+      }}
     }})();
   </script>
 </body>

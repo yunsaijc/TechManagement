@@ -1,12 +1,14 @@
 """绩效核验 API 路由"""
 import asyncio
 from datetime import datetime
+import hashlib
 import json
 import logging
 import os
 import re
 import uuid
 from typing import Dict, Optional, Tuple
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -25,9 +27,16 @@ os.makedirs(DEBUG_DIR, exist_ok=True)
 # 生产环境应使用持久化存储
 _results: Dict[str, PerfCheckResult] = {}
 _tasks: Dict[str, PerfCheckTask] = {}
+_cache_index: Dict[str, Dict[str, object]] = {}
+_task_to_cache_key: Dict[str, str] = {}
+
+_CACHE_TTL_SECONDS = int(os.getenv("PERFCHECK_CACHE_TTL_SECONDS", str(7 * 24 * 60 * 60)))
+_CACHE_MAX_ENTRIES = int(os.getenv("PERFCHECK_CACHE_MAX_ENTRIES", "500"))
 
 _DEFAULT_DECLARATION_PDF = "/home/tdkx/ljh/Tech/tests/申报书/5e8836fc476344b382794452deef9061.pdf"
 _DEFAULT_TASK_PDF = "/home/tdkx/ljh/Tech/tests/任务书/5e8836fc476344b382794452deef9061.pdf"
+_DEFAULT_PROJECT_ID = "default_project"
+_FIXED_BATCH_DIR = Path("/home/tdkx/ljh/Tech/debug_perfcheck/debug/batch_perfcheck_20260403_100019")
 
 
 class PerfCheckDefaultRequest(BaseModel):
@@ -37,6 +46,15 @@ class PerfCheckDefaultRequest(BaseModel):
     enable_llm_enhancement: bool = False
     enable_table_vision_extraction: bool = True
     enable_llm_entailment: bool = True
+
+
+class FixedPerfCheckResultInfo(BaseModel):
+    project_id: str
+    task_id: str = ""
+    summary: str = ""
+    result_path: str = ""
+    report_path: str = ""
+    updated_at: float = 0.0
 
 
 
@@ -51,6 +69,11 @@ def _make_task(*, task_id: str, project_id: str) -> PerfCheckTask:
         summary="",
         result=None,
     )
+
+
+def _normalize_project_id(project_id: Optional[str]) -> str:
+    text = str(project_id or "").strip()
+    return text or _DEFAULT_PROJECT_ID
 
 
 def _update_task(
@@ -119,9 +142,13 @@ async def _run_compare_text_task(task_id: str, request: PerfCheckRequest) -> Non
             enable_llm_entailment=request.enable_llm_entailment,
             on_progress=on_progress,
         )
-        _results[result.task_id] = result
+        old_id = result.task_id
+        result.task_id = task_id
+        _results[task_id] = result
+        if old_id and old_id != task_id:
+            _results[old_id] = result
         try:
-            _save_debug_result(result)
+            _save_debug_result(result, debug_task_id=task_id)
         except Exception as e:
             result.warnings.append(f"调试结果保存失败: {str(e)}")
         _update_task(
@@ -139,6 +166,9 @@ async def _run_compare_text_task(task_id: str, request: PerfCheckRequest) -> Non
         current = _tasks.get(task_id)
         p = float(getattr(current, "progress", 0.0) or 0.0)
         _update_task(task_id, state="failed", progress=min(p, 0.99), stage="error", error_code=code, message=msg)
+        cache_key = _task_to_cache_key.pop(task_id, None)
+        if cache_key:
+            _cache_index.pop(cache_key, None)
 
 
 async def _run_compare_files_task(
@@ -176,10 +206,15 @@ async def _run_compare_files_task(
             enable_llm_entailment=enable_llm_entailment,
             on_progress=on_progress,
         )
-        _results[result.task_id] = result
+        old_id = result.task_id
+        result.task_id = task_id
+        _results[task_id] = result
+        if old_id and old_id != task_id:
+            _results[old_id] = result
         try:
             _save_debug_result(
                 result,
+                debug_task_id=task_id,
                 declaration_filename=dec_filename,
                 task_filename=task_filename,
             )
@@ -200,6 +235,9 @@ async def _run_compare_files_task(
         current = _tasks.get(task_id)
         p = float(getattr(current, "progress", 0.0) or 0.0)
         _update_task(task_id, state="failed", progress=min(p, 0.99), stage="error", error_code=code, message=msg)
+        cache_key = _task_to_cache_key.pop(task_id, None)
+        if cache_key:
+            _cache_index.pop(cache_key, None)
 
 
 def _safe_stem(name: str) -> str:
@@ -211,6 +249,7 @@ def _safe_stem(name: str) -> str:
 def _save_debug_result(
     result: PerfCheckResult,
     *,
+    debug_task_id: Optional[str] = None,
     declaration_filename: str = "",
     task_filename: str = "",
 ) -> None:
@@ -233,12 +272,184 @@ def _save_debug_result(
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(markdown)
 
+    if debug_task_id:
+        stable_json_path = os.path.join(DEBUG_DIR, f"task_{debug_task_id}.json")
+        stable_md_path = os.path.join(DEBUG_DIR, f"task_{debug_task_id}.md")
+        with open(stable_json_path, "w", encoding="utf-8") as f:
+            json.dump(result.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
+        with open(stable_md_path, "w", encoding="utf-8") as f:
+            f.write(markdown)
+
+
+def _load_debug_result(task_id: str) -> Optional[PerfCheckResult]:
+    path = os.path.join(DEBUG_DIR, f"task_{task_id}.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return PerfCheckResult(**data)
+    except Exception:
+        return None
+
+
+def _load_fixed_batch_latest_result() -> Optional[PerfCheckResult]:
+    if not _FIXED_BATCH_DIR.exists() or not _FIXED_BATCH_DIR.is_dir():
+        return None
+
+    candidates = []
+    for entry in _FIXED_BATCH_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        result_file = entry / "result.json"
+        if result_file.exists() and result_file.is_file():
+            candidates.append((result_file.stat().st_mtime, result_file))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    for _, result_file in candidates:
+        try:
+            with open(result_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            return PerfCheckResult(**payload)
+        except Exception:
+            continue
+    return None
+
+
+def _load_fixed_batch_result_infos() -> list[FixedPerfCheckResultInfo]:
+    if not _FIXED_BATCH_DIR.exists() or not _FIXED_BATCH_DIR.is_dir():
+        return []
+
+    items: list[tuple[float, FixedPerfCheckResultInfo]] = []
+    for entry in _FIXED_BATCH_DIR.iterdir():
+        if not entry.is_dir():
+            continue
+        result_file = entry / "result.json"
+        if not result_file.exists() or not result_file.is_file():
+            continue
+        try:
+            with open(result_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            info = FixedPerfCheckResultInfo(
+                project_id=str(payload.get("project_id") or entry.name),
+                task_id=str(payload.get("task_id") or ""),
+                summary=str(payload.get("summary") or ""),
+                result_path=str(result_file),
+                report_path=str(entry / "report.md"),
+                updated_at=result_file.stat().st_mtime,
+            )
+            items.append((info.updated_at, info))
+        except Exception:
+            continue
+
+    items.sort(key=lambda item: item[0], reverse=True)
+    return [info for _, info in items]
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _make_cache_key_files(
+    *,
+    project_id: str,
+    declaration_bytes: bytes,
+    declaration_type: str,
+    task_bytes: bytes,
+    task_type: str,
+    budget_shift_threshold: float,
+    strict_mode: bool,
+    enable_llm_enhancement: bool,
+    enable_table_vision_extraction: bool,
+    enable_llm_entailment: bool,
+) -> str:
+    payload = {
+        "cache_version": 3,
+        "kind": "compare_files",
+        "project_id": project_id or "",
+        "declaration_sha256": _sha256_bytes(declaration_bytes),
+        "declaration_type": declaration_type or "",
+        "task_sha256": _sha256_bytes(task_bytes),
+        "task_type": task_type or "",
+        "budget_shift_threshold": float(budget_shift_threshold),
+        "strict_mode": bool(strict_mode),
+        "enable_llm_enhancement": bool(enable_llm_enhancement),
+        "enable_table_vision_extraction": bool(enable_table_vision_extraction),
+        "enable_llm_entailment": bool(enable_llm_entailment),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _make_cache_key_text(
+    *,
+    project_id: str,
+    declaration_text: str,
+    task_text: str,
+    budget_shift_threshold: float,
+    strict_mode: bool,
+    enable_llm_enhancement: bool,
+    enable_llm_entailment: bool,
+) -> str:
+    payload = {
+        "cache_version": 3,
+        "kind": "compare_text",
+        "project_id": project_id or "",
+        "declaration_sha256": hashlib.sha256((declaration_text or "").encode("utf-8")).hexdigest(),
+        "task_sha256": hashlib.sha256((task_text or "").encode("utf-8")).hexdigest(),
+        "budget_shift_threshold": float(budget_shift_threshold),
+        "strict_mode": bool(strict_mode),
+        "enable_llm_enhancement": bool(enable_llm_enhancement),
+        "enable_llm_entailment": bool(enable_llm_entailment),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _purge_cache() -> None:
+    now = datetime.now().timestamp()
+    expired = []
+    for k, v in _cache_index.items():
+        saved_at = float(v.get("saved_at", 0.0) or 0.0)
+        if saved_at <= 0 or (now - saved_at) > float(_CACHE_TTL_SECONDS):
+            expired.append(k)
+    for k in expired:
+        _cache_index.pop(k, None)
+    if len(_cache_index) <= _CACHE_MAX_ENTRIES:
+        return
+    items = sorted(_cache_index.items(), key=lambda kv: float(kv[1].get("saved_at", 0.0) or 0.0))
+    for k, _ in items[: max(0, len(items) - _CACHE_MAX_ENTRIES)]:
+        _cache_index.pop(k, None)
+
+
+def _get_task_or_result(task_id: str) -> Optional[PerfCheckTask]:
+    task = _tasks.get(task_id)
+    if task is not None:
+        return task
+    result = _results.get(task_id)
+    if result is None:
+        return None
+    task = PerfCheckTask(
+        task_id=result.task_id,
+        project_id=result.project_id,
+        state="finished",
+        progress=1.0,
+        stage="done",
+        message="核验完成",
+        summary=result.summary,
+        result=result,
+    )
+    _tasks[task_id] = task
+    return task
+
 
 @router.post("/compare", response_model=ApiResponse[PerfCheckResult])
 async def compare_files(
     declaration_file: UploadFile = File(...),
     task_file: UploadFile = File(...),
-    project_id: str = Form(...),
+    project_id: Optional[str] = Form(None),
     budget_shift_threshold: float = Form(0.10),
     strict_mode: bool = Form(True),
     enable_llm_enhancement: bool = Form(False),
@@ -254,10 +465,11 @@ async def compare_files(
 
         dec_type = declaration_file.filename.rsplit(".", 1)[-1].lower()
         task_type = task_file.filename.rsplit(".", 1)[-1].lower()
+        normalized_project_id = _normalize_project_id(project_id)
 
         service = get_perfcheck_service()
         result = await service.compare_files(
-            project_id=project_id,
+            project_id=normalized_project_id,
             declaration_file=dec_bytes,
             declaration_file_type=dec_type,
             task_file=task_bytes,
@@ -296,7 +508,7 @@ async def compare_files(
 async def compare_files_async(
     declaration_file: UploadFile = File(...),
     task_file: UploadFile = File(...),
-    project_id: str = Form(...),
+    project_id: Optional[str] = Form(None),
     budget_shift_threshold: float = Form(0.10),
     strict_mode: bool = Form(True),
     enable_llm_enhancement: bool = Form(False),
@@ -304,6 +516,7 @@ async def compare_files_async(
     enable_llm_entailment: bool = Form(True),
 ) -> ApiResponse[PerfCheckTask]:
     try:
+        _purge_cache()
         dec_bytes = await declaration_file.read()
         task_bytes = await task_file.read()
         if not dec_bytes or not task_bytes:
@@ -311,15 +524,38 @@ async def compare_files_async(
 
         dec_type = declaration_file.filename.rsplit(".", 1)[-1].lower()
         task_type = task_file.filename.rsplit(".", 1)[-1].lower()
+        normalized_project_id = _normalize_project_id(project_id)
+
+        cache_key = _make_cache_key_files(
+            project_id=normalized_project_id,
+            declaration_bytes=dec_bytes,
+            declaration_type=dec_type,
+            task_bytes=task_bytes,
+            task_type=task_type,
+            budget_shift_threshold=budget_shift_threshold,
+            strict_mode=strict_mode,
+            enable_llm_enhancement=enable_llm_enhancement,
+            enable_table_vision_extraction=enable_table_vision_extraction,
+            enable_llm_entailment=enable_llm_entailment,
+        )
+        cached = _cache_index.get(cache_key)
+        if cached and isinstance(cached.get("task_id"), str):
+            cached_task_id = str(cached["task_id"])
+            task = _get_task_or_result(cached_task_id)
+            if task is not None and getattr(task, "state", "") != "failed":
+                return ApiResponse(status=ResponseStatus.SUCCESS, data=task, code=200, message="命中缓存任务")
+            _cache_index.pop(cache_key, None)
 
         task_id = uuid.uuid4().hex[:12]
-        task = _make_task(task_id=task_id, project_id=project_id)
+        task = _make_task(task_id=task_id, project_id=normalized_project_id)
         _tasks[task_id] = task
+        _task_to_cache_key[task_id] = cache_key
+        _cache_index[cache_key] = {"task_id": task_id, "saved_at": datetime.now().timestamp()}
 
         asyncio.create_task(
             _run_compare_files_task(
                 task_id,
-                project_id=project_id,
+            project_id=normalized_project_id,
                 dec_bytes=dec_bytes,
                 dec_type=dec_type,
                 dec_filename=declaration_file.filename or "declaration",
@@ -417,13 +653,71 @@ async def compare_default_async(request: PerfCheckDefaultRequest) -> ApiResponse
 @router.post("/compare-text-async", response_model=ApiResponse[PerfCheckTask])
 async def compare_text_async(request: PerfCheckRequest) -> ApiResponse[PerfCheckTask]:
     try:
+        _purge_cache()
+        cache_key = _make_cache_key_text(
+            project_id=_normalize_project_id(request.project_id),
+            declaration_text=request.declaration_text or "",
+            task_text=request.task_text or "",
+            budget_shift_threshold=request.budget_shift_threshold,
+            strict_mode=request.strict_mode,
+            enable_llm_enhancement=request.enable_llm_enhancement,
+            enable_llm_entailment=request.enable_llm_entailment,
+        )
+        cached = _cache_index.get(cache_key)
+        if cached and isinstance(cached.get("task_id"), str):
+            cached_task_id = str(cached["task_id"])
+            task = _get_task_or_result(cached_task_id)
+            if task is not None and getattr(task, "state", "") != "failed":
+                return ApiResponse(status=ResponseStatus.SUCCESS, data=task, code=200, message="命中缓存任务")
+            _cache_index.pop(cache_key, None)
+
         task_id = uuid.uuid4().hex[:12]
         task = _make_task(task_id=task_id, project_id=request.project_id)
         _tasks[task_id] = task
+        _task_to_cache_key[task_id] = cache_key
+        _cache_index[cache_key] = {"task_id": task_id, "saved_at": datetime.now().timestamp()}
         asyncio.create_task(_run_compare_text_task(task_id, request))
         return ApiResponse(status=ResponseStatus.SUCCESS, data=task, code=200, message="任务已提交")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"任务提交失败: {str(e)}")
+
+
+@router.get("/debug-fixed-result", response_model=ApiResponse[PerfCheckResult])
+async def get_debug_fixed_result() -> ApiResponse[PerfCheckResult]:
+    """读取固定批次目录中的最新核验结果（用于前端直接展示）。"""
+    result = _load_fixed_batch_latest_result()
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"固定批次结果不存在或解析失败: {_FIXED_BATCH_DIR}")
+    return ApiResponse(status=ResponseStatus.SUCCESS, data=result, code=200, message="已加载固定批次核验结果")
+
+
+@router.get("/debug-fixed-results", response_model=ApiResponse[list[FixedPerfCheckResultInfo]])
+async def get_debug_fixed_results() -> ApiResponse[list[FixedPerfCheckResultInfo]]:
+    """读取固定批次目录下的所有核验结果清单。"""
+    results = _load_fixed_batch_result_infos()
+    if not results:
+        raise HTTPException(status_code=404, detail=f"固定批次结果不存在或解析失败: {_FIXED_BATCH_DIR}")
+    return ApiResponse(status=ResponseStatus.SUCCESS, data=results, code=200, message="已加载固定批次结果清单")
+
+
+@router.get("/debug-fixed-result/by-project", response_model=ApiResponse[PerfCheckResult])
+async def get_debug_fixed_result_by_project(project_id: str) -> ApiResponse[PerfCheckResult]:
+    """按 project_id 读取固定批次中的核验结果。"""
+    normalized = str(project_id or "").strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="project_id 不能为空")
+
+    result_file = _FIXED_BATCH_DIR / normalized / "result.json"
+    if not result_file.exists() or not result_file.is_file():
+        raise HTTPException(status_code=404, detail=f"固定批次结果不存在: {normalized}")
+
+    try:
+        with open(result_file, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        result = PerfCheckResult(**payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"结果解析失败: {str(e)}")
+    return ApiResponse(status=ResponseStatus.SUCCESS, data=result, code=200, message="已加载固定批次核验结果")
 
 
 @router.get("/{task_id}", response_model=ApiResponse[PerfCheckTask])
@@ -448,6 +742,22 @@ async def get_task(task_id: str) -> ApiResponse[PerfCheckTask]:
         _tasks[task_id] = task
         return ApiResponse(status=ResponseStatus.SUCCESS, data=task, code=200)
 
+    loaded = _load_debug_result(task_id)
+    if loaded is not None:
+        task = PerfCheckTask(
+            task_id=loaded.task_id,
+            project_id=loaded.project_id,
+            state="finished",
+            progress=1.0,
+            stage="done",
+            message="核验完成",
+            summary=loaded.summary,
+            result=loaded,
+        )
+        _results[task_id] = loaded
+        _tasks[task_id] = task
+        return ApiResponse(status=ResponseStatus.SUCCESS, data=task, code=200)
+
     raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
 
 
@@ -456,7 +766,11 @@ async def get_report(task_id: str, format: str = "markdown") -> ApiResponse[str]
     """获取核验报告。"""
     result = _results.get(task_id)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
+        loaded = _load_debug_result(task_id)
+        if loaded is None:
+            raise HTTPException(status_code=404, detail=f"任务 {task_id} 不存在")
+        result = loaded
+        _results[task_id] = result
 
     if format not in {"markdown", "json"}:
         raise HTTPException(status_code=400, detail="仅支持 format=markdown 或 format=json")

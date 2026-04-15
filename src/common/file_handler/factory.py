@@ -1,7 +1,5 @@
 """文件解析器工厂函数"""
 from src.common.file_handler.base import BaseFileParser
-from src.common.file_handler.pdf_parser import PDFParser
-from src.common.file_handler.docx_parser import DOCXParser
 
 
 def get_parser(file_type: str) -> BaseFileParser:
@@ -13,16 +11,16 @@ def get_parser(file_type: str) -> BaseFileParser:
     Returns:
         对应的解析器实例
     """
-    parsers = {
-        "pdf": PDFParser,
-        "docx": DOCXParser,
-    }
+    ft = file_type.lower()
+    if ft == "pdf":
+        from src.common.file_handler.pdf_parser import PDFParser
 
-    parser_class = parsers.get(file_type.lower())
-    if not parser_class:
-        raise ValueError(f"Unsupported file type: {file_type}")
+        return PDFParser()
+    if ft == "docx":
+        from src.common.file_handler.docx_parser import DOCXParser
 
-    return parser_class()
+        return DOCXParser()
+    raise ValueError(f"Unsupported file type: {file_type}")
 
 
 def detect_file_type(filename: str) -> str:

@@ -44,4 +44,5 @@ class ImageMatch:
     reason: str
     query_page: int
     source_page: int
+    embedding_score: Optional[float] = None
     debug_note: Optional[str] = None

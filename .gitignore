@@ -1,6 +1,7 @@
 .env
 .vscode
 *cache
+.codex
 data
 
 # Python-generated files
@@ -19,6 +20,9 @@ debug_*
 
 # model
 yolo*
+
+#test data
+tests/
 
 # test data / artifacts
 tests/**

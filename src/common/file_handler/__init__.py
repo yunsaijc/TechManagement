@@ -4,10 +4,22 @@
 """
 from .base import BaseFileParser, ParseResult
 from .factory import get_parser, detect_file_type
-from .image_processor import ImageProcessor
 from .ocr import OCRProcessor
-from .pdf_parser import PDFParser
-from .docx_parser import DOCXParser
+
+try:
+    from .image_processor import ImageProcessor
+except Exception:
+    ImageProcessor = None
+
+try:
+    from .pdf_parser import PDFParser
+except Exception:
+    PDFParser = None
+
+try:
+    from .docx_parser import DOCXParser
+except Exception:
+    DOCXParser = None
 
 __all__ = [
     "BaseFileParser",

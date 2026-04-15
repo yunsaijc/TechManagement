@@ -47,7 +47,7 @@ def _lightweight_fp(fp: RuntimeImageFingerprint) -> RuntimeImageFingerprint:
 def _verify_query_candidates_task(
     query_asset: ImageAsset,
     query_fp: RuntimeImageFingerprint,
-    source_items: List[Tuple[ImageAsset, RuntimeImageFingerprint]],
+    source_items: List[Tuple[ImageAsset, RuntimeImageFingerprint, float | None]],
     include_low: bool,
     top_k_final: int,
     matcher_cfg: Dict[str, float],
@@ -61,12 +61,13 @@ def _verify_query_candidates_task(
         )
     )
     matches: List[ImageMatch] = []
-    for source_asset, source_fp in source_items:
+    for source_asset, source_fp, embedding_score in source_items:
         m = matcher.compare(
             query_asset=query_asset,
             source_asset=source_asset,
             query_fp=query_fp,
             source_fp=source_fp,
+            embedding_score=embedding_score,
         )
         if m is None:
             continue
@@ -108,6 +109,7 @@ class ImagePlagiarismAgent:
         debug_output_dir: Path | None = None,
         debug_output_html: Path | None = None,
         max_pair_checks: int = 120000,
+        document_labels: Dict[str, str] | None = None,
     ) -> Dict:
         assets_by_doc: Dict[str, List[ImageAsset]] = {}
         warnings: List[Dict] = []
@@ -205,14 +207,20 @@ class ImagePlagiarismAgent:
             out_dir = debug_output_dir or IMAGE_PLAGIARISM_DEBUG_ROOT
             output_html = debug_output_html or (out_dir / "plagiarism_image_report.html")
             image_bytes_map: Dict[str, bytes] = {}
+            primary_documents: Dict[str, Tuple[str, bytes]] = {}
             for assets in assets_by_doc.values():
                 for asset in assets:
                     image_bytes_map[asset.image_id] = asset.image_bytes
+            for doc_id, file_name, file_data in files:
+                primary_documents[doc_id] = (file_name, file_data)
             report_path = self.report_builder.build(
                 title="图片查重报告",
                 matches=final_matches,
                 output_html_path=output_html,
                 image_bytes_map=image_bytes_map,
+                primary_documents=primary_documents,
+                document_labels=document_labels
+                or {doc_id: Path(file_name).stem for doc_id, file_name, _ in files},
             )
 
         return {
@@ -239,6 +247,7 @@ class ImagePlagiarismAgent:
         max_pair_checks: int = 120000,
         verify_workers: int = 0,
         verify_backend: str = "auto",
+        document_labels: Dict[str, str] | None = None,
     ) -> Dict:
         assets_by_doc: Dict[str, List[ImageAsset]] = {}
         warnings: List[Dict] = []
@@ -266,19 +275,26 @@ class ImagePlagiarismAgent:
         hard_stop = False
         exact_hit_count = 0
         coarse_candidate_total = 0
-        verify_jobs: List[Tuple[ImageAsset, RuntimeImageFingerprint, List[Tuple[ImageAsset, RuntimeImageFingerprint]]]] = []
-
-        for doc_id, assets in assets_by_doc.items():
-            if hard_stop:
-                break
+        verify_jobs: List[
+            Tuple[ImageAsset, RuntimeImageFingerprint, List[Tuple[ImageAsset, RuntimeImageFingerprint, float | None]]]
+        ] = []
+        embedding_candidates = 0
+        embedding_hits = 0
+        query_assets: List[ImageAsset] = []
+        for assets in assets_by_doc.values():
             for asset in assets:
-                if hard_stop:
-                    break
+                if asset.image_id in runtime_fp:
+                    query_assets.append(asset)
+        query_embeddings = corpus_manager.batch_embed_query_assets(query_assets)
+
+        coarse_by_query: List[Tuple[ImageAsset, RuntimeImageFingerprint, Dict]] = []
+        unique_source_entries: Dict[str, Dict] = {}
+        for doc_id, assets in assets_by_doc.items():
+            for asset in assets:
                 fp = runtime_fp.get(asset.image_id)
                 if fp is None:
                     continue
-                query_asset = _lightweight_asset(asset)
-                retrieval = corpus_manager.retrieve_candidates_for_query_image(
+                coarse = corpus_manager.retrieve_coarse_candidates_for_query_image(
                     query_asset=asset,
                     query_fp=fp,
                     hash_hamming_max=hash_hamming_max,
@@ -286,31 +302,56 @@ class ImagePlagiarismAgent:
                     top_k_final=top_k_final,
                     exclude_doc_id=doc_id,
                 )
-                coarse_candidate_total += int(retrieval.get("coarse_candidates", 0) or 0)
-
-                exact_matches = retrieval.get("exact_matches", [])
+                coarse_candidate_total += int(coarse.get("coarse_candidates", 0) or 0)
+                exact_matches = coarse.get("exact_matches", [])
                 if exact_matches:
                     exact_hit_count += 1
                     matches.extend(exact_matches)
                     continue
-
-                verify_candidates = list(retrieval.get("verify_candidates", []))
-                if not verify_candidates:
+                shortlisted = list(coarse.get("shortlisted", []))
+                if not shortlisted:
                     continue
+                coarse_by_query.append((_lightweight_asset(asset), fp, coarse))
+                if asset.image_id not in query_embeddings:
+                    continue
+                rerank_limit = min(len(shortlisted), max(1, top_k_coarse))
+                embedding_candidates += min(rerank_limit, 24)
+                for _, entry in shortlisted[: min(rerank_limit, 24)]:
+                    image_id = str(entry.get("image_id", ""))
+                    if image_id:
+                        unique_source_entries.setdefault(image_id, entry)
 
-                remain = max_pair_checks - pair_checks
-                if remain <= 0:
-                    warnings.append({"warning": "max_pair_checks_reached", "max_pair_checks": max_pair_checks})
-                    hard_stop = True
-                    break
-                if len(verify_candidates) > remain:
-                    verify_candidates = verify_candidates[:remain]
-                    warnings.append({"warning": "max_pair_checks_reached", "max_pair_checks": max_pair_checks})
-                    hard_stop = True
-                pair_checks += len(verify_candidates)
-                verify_jobs.append((query_asset, fp, verify_candidates))
-                if hard_stop:
-                    break
+        source_embeddings = corpus_manager.ensure_embeddings_for_entries(list(unique_source_entries.values()))
+
+        for query_asset, fp, coarse in coarse_by_query:
+            retrieval = corpus_manager.retrieve_candidates_for_query_image(
+                query_asset=query_asset,
+                query_fp=fp,
+                hash_hamming_max=hash_hamming_max,
+                top_k_coarse=top_k_coarse,
+                top_k_final=top_k_final,
+                exclude_doc_id=query_asset.doc_id,
+                query_embedding=query_embeddings.get(query_asset.image_id),
+                source_embeddings=source_embeddings,
+            )
+            embedding_hits += int(retrieval.get("embedding_hits", 0) or 0)
+            verify_candidates = list(retrieval.get("verify_candidates", []))
+            if not verify_candidates:
+                continue
+
+            remain = max_pair_checks - pair_checks
+            if remain <= 0:
+                warnings.append({"warning": "max_pair_checks_reached", "max_pair_checks": max_pair_checks})
+                hard_stop = True
+                break
+            if len(verify_candidates) > remain:
+                verify_candidates = verify_candidates[:remain]
+                warnings.append({"warning": "max_pair_checks_reached", "max_pair_checks": max_pair_checks})
+                hard_stop = True
+            pair_checks += len(verify_candidates)
+            verify_jobs.append((query_asset, fp, verify_candidates))
+            if hard_stop:
+                break
 
         verify_t0 = time.time()
         if verify_jobs:
@@ -375,9 +416,12 @@ class ImagePlagiarismAgent:
             out_dir = debug_output_dir or IMAGE_PLAGIARISM_DEBUG_ROOT
             output_html = debug_output_html or (out_dir / "plagiarism_image_report.html")
             image_bytes_map: Dict[str, bytes] = {}
+            primary_documents: Dict[str, Tuple[str, bytes]] = {}
             for assets in assets_by_doc.values():
                 for asset in assets:
                     image_bytes_map[asset.image_id] = asset.image_bytes
+            for doc_id, file_name, file_data in files:
+                primary_documents[doc_id] = (file_name, file_data)
             for item in final_matches:
                 if item.source_image_id in image_bytes_map:
                     continue
@@ -389,6 +433,9 @@ class ImagePlagiarismAgent:
                 matches=final_matches,
                 output_html_path=output_html,
                 image_bytes_map=image_bytes_map,
+                primary_documents=primary_documents,
+                document_labels=document_labels
+                or {doc_id: Path(file_name).stem for doc_id, file_name, _ in files},
             )
 
         return {
@@ -397,6 +444,8 @@ class ImagePlagiarismAgent:
             "fingerprinted_images": len(runtime_fp),
             "pair_checks": pair_checks,
             "coarse_candidates": coarse_candidate_total,
+            "embedding_candidates": embedding_candidates,
+            "embedding_hits": embedding_hits,
             "exact_hit_queries": exact_hit_count,
             "verify_jobs": len(verify_jobs),
             "verify_backend": self._resolve_verify_backend(verify_backend),

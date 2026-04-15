@@ -1,6 +1,12 @@
 """Configuration for isolated image plagiarism subsystem."""
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+_env_path = Path(__file__).parent.parent.parent.parent / ".env"
+load_dotenv(_env_path)
 
 IMAGE_PLAGIARISM_DEBUG_ROOT = Path("debug_plagiarism/image")
 IMAGE_PLAGIARISM_DATA_ROOT = Path("data/plagiarism_image")
@@ -37,3 +43,32 @@ IMAGE_BUILD_FEATURE_WORKERS = 2
 IMAGE_BUILD_CPU_QUOTA = "50%"
 IMAGE_BUILD_MEMORY_MAX = "2G"
 IMAGE_BUILD_IO_WEIGHT = "50"
+
+# Bailian multimodal embedding rerank. Keep it bounded: source embeddings are
+# generated lazily only for coarse candidates and cached in SQLite.
+IMAGE_EMBEDDING_API_KEY = (
+    os.getenv("PLAGIARISM_IMAGE_EMBEDDING_API_KEY")
+    or os.getenv("DASHSCOPE_API_KEY")
+    or os.getenv("EMBEDDING_API_KEY")
+    or ""
+)
+IMAGE_EMBEDDING_BASE_URL = os.getenv(
+    "PLAGIARISM_IMAGE_EMBEDDING_BASE_URL",
+    "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding",
+)
+IMAGE_EMBEDDING_MODEL = os.getenv(
+    "PLAGIARISM_IMAGE_EMBEDDING_MODEL",
+    "tongyi-embedding-vision-plus-2026-03-06",
+)
+IMAGE_EMBEDDING_DIMENSION = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_DIMENSION", "512"))
+IMAGE_EMBEDDING_RES_LEVEL = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_RES_LEVEL", "1"))
+IMAGE_EMBEDDING_BATCH_SIZE = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_BATCH_SIZE", "8"))
+IMAGE_EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_TIMEOUT_SECONDS", "60"))
+IMAGE_EMBEDDING_MAX_SIDE = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_MAX_SIDE", "768"))
+IMAGE_EMBEDDING_JPEG_QUALITY = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_JPEG_QUALITY", "85"))
+IMAGE_EMBEDDING_RERANK_ENABLED = os.getenv("PLAGIARISM_IMAGE_EMBEDDING_ENABLED", "1").lower() not in {"0", "false", "no"}
+IMAGE_EMBEDDING_TOP_K = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_TOP_K", "24"))
+IMAGE_EMBEDDING_VERIFY_TOP_K = int(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_VERIFY_TOP_K", "4"))
+IMAGE_EMBEDDING_MIN_SCORE = float(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_MIN_SCORE", "0.72"))
+IMAGE_EMBEDDING_HIGH_SCORE = float(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_HIGH_SCORE", "0.90"))
+IMAGE_EMBEDDING_MEDIUM_SCORE = float(os.getenv("PLAGIARISM_IMAGE_EMBEDDING_MEDIUM_SCORE", "0.82"))

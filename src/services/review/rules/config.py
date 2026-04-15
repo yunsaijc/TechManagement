@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
     "retrieval_report": {
         "labels": ["检索报告"],
-        "rules": ["stamp_check", "signature_check", "prerequisite", "retrieval_report_completeness"],
+        "rules": ["stamp", "signature", "prerequisite", "retrieval_report_completeness"],
         "llm_rules": [],
         "llm_extract_fields": [],
     },
@@ -21,31 +21,31 @@ DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "acceptance_report": {
         "labels": ["验收报告"],
-        "rules": ["stamp_check", "signature_check", "prerequisite"],
+        "rules": ["stamp", "signature", "prerequisite"],
         "llm_rules": [],
         "llm_extract_fields": [],
     },
     "patent_certificate": {
         "labels": ["专利证书"],
-        "rules": ["signature_check", "stamp_check"],
+        "rules": ["signature", "stamp"],
         "llm_rules": [],
         "llm_extract_fields": ["专利号", "发明人", "专利权人"],
     },
     "award_certificate": {
         "labels": ["奖励证书"],
-        "rules": ["signature_check", "stamp_check"],
+        "rules": ["signature", "stamp"],
         "llm_rules": [],
         "llm_extract_fields": [],
     },
     "award_contributor": {
         "labels": ["奖励-主要完成人情况表", "主要完成人情况表"],
-        "rules": ["signature_check", "stamp_check", "work_unit_consistency"],
+        "rules": ["signature", "stamp", "work_unit_consistency"],
         "llm_rules": ["signature_name_consistency"],
         "llm_extract_fields": ["姓名", "工作单位", "完成单位", "技术职称", "学历"],
     },
     "unknown": {
         "labels": ["未知"],
-        "rules": ["signature_check", "stamp_check"],
+        "rules": ["signature", "stamp"],
         "llm_rules": [],
         "llm_extract_fields": [],
     },

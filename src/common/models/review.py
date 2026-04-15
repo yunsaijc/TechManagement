@@ -26,6 +26,7 @@ class CheckResult(BaseModel):
 class ReviewResult(BaseModel):
     """审查结果"""
     id: str = Field(..., description="审查ID")
+    status: str = Field(default="done", description="处理状态：processing/done/failed")
     document_type: str = Field(..., description="文档类型")
     document_type_raw: str = Field(default="", description="LLM 原始分类结果")
     results: List[CheckResult] = Field(default_factory=list, description="检查结果列表")
