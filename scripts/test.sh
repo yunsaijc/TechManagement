@@ -90,3 +90,51 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/evaluation/by-guide' \
       "enable_chat_index": true,
       "concurrency": 3
     }'
+
+
+# 70-sandbox
+
+# simulation - 构建 2024 baseline
+curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/baseline/build' \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "baselineId": "baseline_real_2024",
+      "startYear": 2024,
+      "endYear": 2024,
+      "persist": true
+    }'
+
+# simulation - 查看最新 baseline
+curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/baseline/latest'
+
+# simulation - 跑一个最小 scenario
+curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario' \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "scenarioId": "scenario_real_debug",
+      "baselineId": "baseline_real_2024",
+      "forecastWindow": "2024",
+      "tags": ["debug", "real-data"],
+      "assumptions": ["single_target_policy_shock_for_debug_validation"],
+      "policyShocks": [
+        {
+          "shockId": "shock_real_debug",
+          "shockType": "funding_boost",
+          "targetTopics": ["1010101-面上项目"],
+          "intensity": 0.6,
+          "coverage": 0.8,
+          "lag": 0,
+          "parameters": {
+            "enable_spillover": true,
+            "propagation_strength": 0.45,
+            "min_similarity": 0.35,
+            "max_neighbors": 12
+          }
+        }
+      ]
+    }'
+
+# simulation - 查看最新 scenario / compare / explain
+curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/latest'
+curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/latest/compare'
+curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/latest/explain'

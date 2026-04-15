@@ -44,7 +44,10 @@ app.add_middleware(
 async def add_no_cache_for_frontend_html(request, call_next):
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/frontend") and (path == "/frontend" or path.endswith(".html")):
+    if (
+        path.startswith("/frontend")
+        or path.startswith("/debug-sandbox")
+    ) and (path in {"/frontend", "/debug-sandbox"} or path.endswith(".html")):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -53,6 +56,7 @@ async def add_no_cache_for_frontend_html(request, call_next):
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 DEBUG_EVAL_DIR = Path(__file__).parent.parent.parent / "debug_eval"
+DEBUG_SANDBOX_DIR = Path(__file__).parent.parent.parent / "debug_sandbox"
 
 # 注册路由
 app.include_router(review.router, prefix="/api/v1/review", tags=["形式审查"])
@@ -72,6 +76,9 @@ if SERVE_FRONTEND_DIR.exists():
 
 if DEBUG_EVAL_DIR.exists():
     app.mount("/debug-eval", StaticFiles(directory=DEBUG_EVAL_DIR, html=True), name="debug-eval")
+
+DEBUG_SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/debug-sandbox", StaticFiles(directory=DEBUG_SANDBOX_DIR, html=True), name="debug-sandbox")
 
 
 @app.get("/", include_in_schema=False)
