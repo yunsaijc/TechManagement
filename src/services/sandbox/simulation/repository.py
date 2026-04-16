@@ -158,6 +158,11 @@ def _save_debug_bundle(
     html_title: str,
 ) -> dict[str, str]:
     json_path.parent.mkdir(parents=True, exist_ok=True)
+    payload.setdefault("meta", {})
+    payload["meta"]["debug_json_path"] = str(json_path.resolve())
+    payload["meta"]["debug_json_url"] = f"/debug-sandbox/{json_path.relative_to(DEBUG_ROOT).as_posix()}"
+    payload["meta"]["debug_html_path"] = str(html_path.resolve())
+    payload["meta"]["debug_html_url"] = f"/debug-sandbox/{html_path.relative_to(DEBUG_ROOT).as_posix()}"
     with json_path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
 

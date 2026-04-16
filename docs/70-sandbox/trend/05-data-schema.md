@@ -1,150 +1,341 @@
 # 趋势预判数据 Schema
 
-## 一、目标
+## 一、设计原则
 
-趋势预判层不再预设一堆训练表和标签表，而是先建立三张能够稳定支撑分析的核心结构：
+趋势模块的数据 Schema 不能再围绕单一 `topic_time_panel` 展开。
 
-1. `topic_time_panel`
-2. `topic_migration_edges`
-3. `topic_external_signals`
+正确做法是：
 
-前两张承担内部状态，第三张承担外部信息信号。
+- 先建立事实层
+- 再建立关系层
+- 再建立统计层
+- 最后补充辅助信号层和输出层
 
-## 二、核心表一：topic_time_panel
+其中：
 
-### 1. 主表定义
+- 项目库 + 图谱 是主数据底座
+- 外部信息是辅助信号层，不是主数据层
 
-主表命名：
+## 二、事实层 Schema
 
-- `topic_time_panel`
+事实层负责保存真实业务事件。
 
-主键：
+### 1. `fact_project`
 
-- `topic_id`
-- `year`
+项目主事实表，锚定 `Sb_Jbxx.id`。
+
+主要来源：
+
+- `Sb_Jbxx`
+- `Sb_Sbzt`
 
 建议字段：
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `topic_id` | string | 主题唯一标识 |
-| `topic_name` | string | 主题名称 |
-| `topic_type` | string | 主题口径类型 |
-| `topic_source` | string | 主题来源口径 |
-| `year` | int | 自然年 |
-| `application_count` | float | 申报数量 |
-| `funded_count` | float | 立项数量 |
-| `funding_amount` | float | 资助金额 |
-| `score_proxy` | float | 评审强度代理值 |
-| `collaboration_density` | float | 协作密度 |
-| `topic_centrality` | float | 主题中心性 |
-| `migration_strength` | float | 主题迁移强度 |
-| `data_quality_flags` | array/string | 数据质量标记 |
+| 字段 | 说明 |
+|---|---|
+| `project_id` | 项目主键 |
+| `application_year` | 申报年份 |
+| `project_name` | 项目名称 |
+| `guide_code_raw` | 原始指南代码 |
+| `guide_name_raw` | 原始指南名称 |
+| `program_name_raw` | 原始专项名称 |
+| `status_flags` | 申报状态与公开状态 |
 
-### 2. 角色
+### 2. `fact_review`
 
-`topic_time_panel` 是趋势预判的分析底座，承担 3 个角色：
+评审事实表，对应评审过程与结果。
 
-1. 当前状态快照
-2. 同比变化计算基础
-3. 排序与信号提取基础
+主要来源：
 
-## 三、核心表二：topic_migration_edges
+- `PS_XMPSXX`
 
-### 1. 边表定义
+建议字段：
 
-边表命名：
+| 字段 | 说明 |
+|---|---|
+| `project_id` | 项目主键 |
+| `review_year` | 评审发生年份 |
+| `review_stage_flags` | 网评/复审/终评等阶段标记 |
+| `review_score_raw` | 原始评分 |
+| `review_rank_raw` | 原始排名 |
+| `review_score_proxy` | 标准化评分代理 |
 
-- `topic_migration_edges`
+### 3. `fact_requested_funding`
 
-主键建议：
+申报阶段经费事实表。
+
+主要来源：
+
+- `Sb_Jfgs`
+
+建议字段：
+
+| 字段 | 说明 |
+|---|---|
+| `project_id` | 项目主键 |
+| `requested_special_funding` | 申报专项经费 |
+| `requested_self_funding` | 申报自筹经费 |
+
+### 4. `fact_award_contract`
+
+立项与合同事实表。
+
+主要来源：
+
+- `Ht_XMLXXX`
+- `Ht_Jbxx`
+- `Ht_Jfgs`
+
+建议字段：
+
+| 字段 | 说明 |
+|---|---|
+| `project_id` | 项目主键 |
+| `award_project_no` | 立项项目编号 |
+| `funded_flag` | 是否进入立项/合同 |
+| `award_year` | 立项年份 |
+| `contract_year` | 合同年份 |
+| `contract_special_funding` | 合同专项经费 |
+| `contract_self_funding` | 合同自筹经费 |
+
+说明：
+
+- 当前趋势模块的强支撑事实主要到合同层。
+- 验收、转化等后续事实不能在此处假装已经完整存在。
+
+## 三、关系层 Schema
+
+关系层用于表达结构，而不是表达事件结果。
+
+### 1. `rel_project_topic`
+
+用于将项目映射到统一主题口径。
+
+建议字段：
+
+- `project_id`
+- `topic_id`
+- `topic_name`
+- `topic_source`
+- `mapping_confidence`
+- `mapping_flags`
+
+### 2. `rel_project_institution`
+
+用于表达项目与机构关系。
+
+建议字段：
+
+- `project_id`
+- `institution_id`
+- `institution_name`
+- `institution_role`
+- `source_system`
+
+### 3. `rel_project_person`
+
+用于表达项目与人员关系。
+
+建议字段：
+
+- `project_id`
+- `person_id`
+- `person_name`
+- `person_role`
+- `source_system`
+
+### 4. `rel_topic_topic`
+
+用于表达主题之间的共现、相邻和迁移关系。
+
+建议字段：
 
 - `source_topic_id`
 - `target_topic_id`
-- `from_year`
-- `to_year`
+- `relation_type`
+- `window`
+- `weight`
+- `evidence_count`
+- `evidence_type`
+
+### 5. `rel_institution_institution`
+
+用于表达机构协作关系。
 
 建议字段：
 
-| 字段 | 类型 | 说明 |
+- `source_institution_id`
+- `target_institution_id`
+- `window`
+- `collaboration_weight`
+- `evidence_count`
+
+说明：
+
+- 关系层中的很多权重来自图谱或派生计算，应明确标注代理属性。
+
+## 四、统计层 Schema
+
+统计层是趋势模块的主要工作层。
+
+### 1. `mart_topic_year_state`
+
+这是 `topic × year` 分析宽表。
+
+它的地位是“主分析 mart”，不是业务本体。
+
+建议字段：
+
+| 字段 | 说明 | 数据属性 |
 |---|---|---|
-| `source_topic_id` | string | 来源主题 |
-| `target_topic_id` | string | 目标主题 |
-| `from_year` | int | 起始年份 |
-| `to_year` | int | 目标年份 |
-| `flow_strength` | float | 迁移流强度 |
-| `evidence_count` | int | 支撑该边的证据量 |
-| `data_quality_flags` | array/string | 数据质量标记 |
+| `topic_id` | 主题标识 | 观测+映射 |
+| `topic_name` | 主题名称 | 观测+映射 |
+| `year` | 自然年 | 观测 |
+| `application_count` | 申报项目数 | 观测聚合 |
+| `requested_special_funding` | 申报专项经费 | 观测聚合 |
+| `funded_count` | 立项项目数 | 观测聚合 |
+| `contract_special_funding` | 合同专项经费 | 观测聚合 |
+| `avg_award_size` | 平均立项/合同规模 | 观测聚合 |
+| `active_institution_count` | 活跃机构数 | 观测聚合 |
+| `active_person_count` | 活跃人员数 | 部分观测 |
+| `organization_concentration` | 机构集中度 | 观测聚合 |
+| `institution_entry_share` | 新进入机构占比 | 观测聚合 |
+| `person_entry_share` | 新进入人员占比 | 部分观测 |
+| `review_score_proxy` | 评审强度代理 | 代理 |
+| `topic_centrality` | 主题中心性 | 代理 |
+| `collaboration_density` | 协作密度 | 代理 |
+| `migration_inflow` | 迁入强度 | 代理 |
+| `migration_outflow` | 迁出强度 | 代理 |
+| `data_quality_flags` | 数据质量标记 | 元数据 |
 
-### 2. 角色
+### 2. `mart_topic_institution_year_state`
 
-`topic_migration_edges` 只做一件事：
+用于看机构格局和集中度变化。
 
-表达热点迁移网络，而不是承载所有图计算结果。
-
-## 四、外部信号表：topic_external_signals
-
-### 1. 表定义
-
-表命名：
-
-- `topic_external_signals`
-
-主键建议：
+建议字段：
 
 - `topic_id`
+- `institution_id`
 - `year`
-- `signal_source`
+- `project_count`
+- `funded_count`
+- `contract_special_funding`
+- `institution_share`
+- `entry_flag`
 
-建议字段：
+### 3. `mart_topic_person_year_state`
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `topic_id` | string | 主题标识 |
-| `year` | int | 时间窗 |
-| `signal_source` | string | 来源，如 policy/news/paper/patent/industry |
-| `signal_strength` | float | 归一化后信号强度 |
-| `signal_direction` | string | 正向/负向/中性 |
-| `evidence_count` | int | 证据条数 |
-| `evidence_refs` | json/string | 证据引用或摘要 |
-| `data_quality_flags` | array/string | 数据质量标记 |
-
-### 2. 角色
-
-`topic_external_signals` 不承担主状态统计，只承担两个职责：
-
-1. 为 ranking 提供外部环境权重
-2. 为 explanation 提供外部证据
-
-## 五、派生结果结构
-
-趋势预判的派生结果不必先落为复杂训练表，但应有统一输出合同。
-
-### 1. signal record
+用于看人才活跃和接续信号。
 
 建议字段：
 
 - `topic_id`
+- `person_id`
 - `year`
+- `project_count`
+- `funded_project_count`
+- `bridge_score`
+- `entry_flag`
+- `exit_flag`
+
+### 4. `mart_project_cohort_outcome`
+
+用于将同一申报批次作为 cohort 观察。
+
+建议字段：
+
+- `application_year`
+- `topic_id`
+- `project_count`
+- `funded_count`
+- `contracted_count`
+- `requested_special_funding`
+- `contract_special_funding`
+
+### 5. `mart_portfolio_year_state`
+
+用于领导视角的全局组合状态。
+
+建议字段：
+
+- `year`
+- `topic_count`
+- `total_application_count`
+- `total_funded_count`
+- `total_contract_special_funding`
+- `high_attention_topic_count`
+- `high_risk_topic_count`
+
+## 五、辅助信号层 Schema
+
+外部信息不进入主事实层和主统计层，而进入独立辅助信号层。
+
+### 1. `aux_topic_external_signal`
+
+建议字段：
+
+| 字段 | 说明 |
+|---|---|
+| `topic_id` | 主题标识 |
+| `year` | 时间窗 |
+| `signal_source` | 来源类型，如 policy/news/paper/patent/industry |
+| `signal_label` | 信号标签 |
+| `signal_strength` | 归一化强度 |
+| `evidence_ref` | 来源引用 |
+| `coverage_note` | 覆盖说明 |
+| `confidence_note` | 可信度说明 |
+
+作用边界：
+
+- 只用于解释增强、排序校正、风险提示
+- 不用于覆盖业务主事实
+
+## 六、输出层 Schema
+
+输出层保存结构化结果，供接口和领导页面消费。
+
+### 1. `out_trend_signal`
+
+建议字段：
+
+- `signal_id`
+- `topic_id`
 - `signal_type`
-- `metric_basis`
+- `window`
 - `direction`
 - `strength`
-- `evidence`
+- `basis_metrics`
+- `evidence_type`
 
-### 2. ranking record
+### 2. `out_trend_forecast`
 
 建议字段：
 
 - `topic_id`
-- `year`
-- `ranking_type`
-- `score`
-- `basis`
+- `forecast_window`
+- `baseline_direction`
+- `attention_level`
+- `supporting_signal_ids`
+- `uncertainty_note`
 
-## 六、设计原则
+### 3. `out_trend_risk`
 
-1. 先把可解释的状态表做实，再谈更复杂的预测
-2. 只保留当前数据源能稳定支撑的核心字段
-3. 所有缺失和口径问题都必须外显到 `data_quality_flags`
-4. 外部信息不直接改写主状态，只能作为补充信号和解释证据
+建议字段：
+
+- `topic_id`
+- `risk_type`
+- `risk_level`
+- `trigger_signal_ids`
+- `mechanism_summary`
+- `evidence_boundary`
+
+## 七、Schema 设计结论
+
+趋势模块的数据 Schema 必须体现以下口径：
+
+1. `topic × year` 只是统计 mart，不是业务本体
+2. 项目库和图谱共同组成主底座
+3. 外部信息只能作为辅助信号层
+4. 所有预测与风险结论都必须回溯到事实层和关系层
+
+这样，趋势模块才真正是在构建 `baseline world forecast`，而不是围绕一张宽表做演示。

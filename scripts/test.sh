@@ -94,13 +94,12 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/evaluation/by-guide' \
 
 # 70-sandbox
 
-# simulation - 构建 2024 baseline
+# simulation - 构建 2020 至最新年份 baseline
 curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/baseline/build' \
     -H 'Content-Type: application/json' \
     -d '{
-      "baselineId": "baseline_real_2024",
-      "startYear": 2024,
-      "endYear": 2024,
+      "baselineId": "baseline_real_2020_latest",
+      "startYear": 2020,
       "persist": true
     }'
 
@@ -112,8 +111,8 @@ curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario' \
     -H 'Content-Type: application/json' \
     -d '{
       "scenarioId": "scenario_real_debug",
-      "baselineId": "baseline_real_2024",
-      "forecastWindow": "2024",
+      "baselineId": "baseline_real_2020_latest",
+      "forecastWindow": "2025",
       "tags": ["debug", "real-data"],
       "assumptions": ["single_target_policy_shock_for_debug_validation"],
       "policyShocks": [
@@ -132,6 +131,21 @@ curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario' \
           }
         }
       ]
+    }'
+
+# simulation - 用方案编排器直接拼一个 scenario
+curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/compose' \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "baselineId": "baseline_real_2020_latest",
+      "forecastWindow": "2025",
+      "topicId": "1010101-面上项目",
+      "shockType": "funding_boost",
+      "intensity": 0.65,
+      "enableSpillover": true,
+      "propagationStrength": 0.45,
+      "minSimilarity": 0.35,
+      "maxNeighbors": 12
     }'
 
 # simulation - 查看最新 scenario / compare / explain

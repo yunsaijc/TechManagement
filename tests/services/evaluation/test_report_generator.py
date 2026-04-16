@@ -104,7 +104,8 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert "/api/v1/evaluation/chat/ask-stream" in html
     assert "/api/v1/evaluation/chat/citation-highlight" in html
     assert 'data-evaluation-id="EVAL_DEMO"' in html
-    assert "http://127.0.0.1:8888" in html
+    assert 'data-default-api-base="http://127.0.0.1:8888"' in html
+    assert "return window.location.origin;" in html
     assert "研究目标是什么" in html
     assert 'id="dimension-accordion"' in html
     assert 'class="score-item is-open"' in html

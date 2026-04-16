@@ -1,19 +1,40 @@
-# topic_time_panel 设计
+# topic × year 分析宽表设计
 
-## 一、目标
+## 一、文件定位
 
-`topic_time_panel` 是趋势预判的核心底座。
+本文件只讨论 `topic × year` 分析宽表本身。
 
-它的职责很明确：
+它不是趋势体系总设计，也不是业务世界观说明。
 
-把项目库和图谱中的主题状态折叠到 `topic × year` 粒度，供后续完成：
+在完整趋势体系中，这张表的角色是：
 
-- 当前状态快照
-- 变化信号检测
-- 热点迁移关联
-- 趋势与风险排序
+- 统计层主分析 mart
+- 变化检测的输入
+- 基线预测的输入之一
 
-## 二、主键与粒度
+它不能替代：
+
+- 项目事实层
+- 图谱关系层
+- 机构和人员子视图
+- 领导级最终趋势结论
+
+## 二、为什么仍然需要这张宽表
+
+虽然 `topic × year` 不能当业务本体，但它仍然是必要的中间层，因为领导最关心的很多问题天然需要年度主题粒度：
+
+- 某主题近几年是升温还是回落
+- 某主题的资源投入是否持续扩张
+- 某主题的主导机构格局是否在变化
+- 某主题未来一年是否值得重点关注
+
+因此，应将它理解为：
+
+`主题年度状态的统一分析视图`
+
+而不是整个系统的总标题。
+
+## 三、主键与粒度
 
 ### 1. 主键
 
@@ -26,153 +47,176 @@
 
 固定为：
 
-- `topic × year`
+- 一个主题在一个自然年的综合状态
 
-这里不再混用季度、周期、阶段口径。
+说明：
 
-## 三、topic 统一规则
+- 该表默认使用自然年
+- 若未来引入季度或批次口径，应建立新 mart，不与本表混用
 
-当前系统中 topic 口径并不稳定，因此必须先统一。
+## 四、主题统一规则
 
-### 1. 统一口径
+### 1. 主题口径
 
-建议采用“指南方向优先”的规则：
+趋势模块默认采用“指南方向优先”规则统一主题。
 
-```text
-topic_id   = normalized_guide_identifier
-topic_name = normalized_guide_name
-topic_type = guide
-```
+建议优先级：
 
-优先级：
+1. `Sb_Jbxx.zndm` 及对应指南名称
+2. 项目库中可稳定映射的指南标识
+3. 图谱中与指南方向一致的主题映射
+4. 无法映射时才退回专项层展示
 
-1. `zndm`
-2. `guideName`
-3. `zxmc`
+### 2. 统一原则
 
-`department / office` 不进入主训练口径，只能作为映射失败时的回退展示字段。
+- 同一项目在同一年只能落到一个主 `topic_id`
+- 映射失败必须显式打标
+- 不允许同一输出里混用“指南主题”和“部门主题”
 
-### 2. 原则
+## 五、输入来源
 
-- 同一主题在所有数据源中必须只落到一个 `topic_id`
-- 不允许同一批结果同时混用 guide 主题和部门主题
-- 无法稳定映射的记录必须打标，而不是静默归并
+这张宽表由事实层和关系层共同汇总生成。
 
-## 四、源字段映射
+### 1. 项目事实输入
 
-### 1. 项目业务库映射
+主要来自：
 
-基于 [03-project-db.md](/home/tdkx/workspace/tech/docs/15-data/03-project-db.md)，优先利用以下字段：
+- `Sb_Jbxx`
+- `Sb_Sbzt`
+- `Sb_Jfgs`
+- `PS_XMPSXX`
+- `Ht_XMLXXX`
+- `Ht_Jbxx`
+- `Ht_Jfgs`
 
-| 原始表 | 原始字段 | 目标字段 | 说明 |
-|---|---|---|---|
-| `Sb_Jbxx` | `id` | `project_id` | 项目标识 |
-| `Sb_Jbxx` | `xmmc` | `project_name` | 项目名称 |
-| `Sb_Jbxx` | `zndm` | `topic_id_raw` | 指南代码 |
-| `Sb_Jbxx` | `zxmc` | `topic_name_raw` | 专项名称 |
-| `Sb_Jbxx` | `year` | `year` | 年度 |
-| `PS_XMPSXX` | `WPFS / FSFS` | `score_proxy` | 评审强度代理值 |
-| `Sb_Jfgs` | `zxjf / zcjf` | `requested_funding_amount` | 申报阶段经费概算 |
-| `Ht_XMLXXX` | `SFLX / LXBH` | `funded_flag / award_project_no` | 立项状态与立项编号 |
-| `Ht_Jfgs` | `zxjf / zcjf` | `funding_amount / self_raised_amount` | 合同阶段最终经费 |
+这些表提供：
 
-### 2. 图谱库映射
+- 项目数量
+- 经费数量
+- 评审强度代理
+- 立项与合同事实
 
-Neo4j `Project` 节点优先利用以下字段：
+### 2. 图谱关系输入
 
-| 图谱字段 | 目标字段 | 说明 |
-|---|---|---|
-| `year_norm / period` | `year` | 时间归一 |
-| `guideName` | `topic_name_raw` | 主 topic 口径来源 |
-| `department` | `topic_fallback` | 回退展示 |
-| `office` | `topic_fallback2` | 回退展示 |
+主要来自图谱中的项目、主题、机构、人员关系及其派生结构指标。
 
-图谱侧当前主要贡献的是：
+这些输入提供：
 
-- `collaboration_density`
+- 主题中心性
+- 协作密度
+- 迁移流向
+- 机构和人员桥接关系
+
+### 3. 外部辅助信号
+
+外部信息不直接写进主状态值，但可以在生成后与宽表按 `topic_id + year` 关联，参与：
+
+- 解释增强
+- 风险提示
+- 排序校正
+
+## 六、建议字段
+
+### 1. 主键与主题字段
+
+- `topic_id`
+- `topic_name`
+- `topic_source`
+- `year`
+
+### 2. 现状字段
+
+- `application_count`
+- `requested_special_funding`
+- `funded_count`
+- `contract_special_funding`
+- `avg_award_size`
+- `active_institution_count`
+- `active_person_count`
+
+### 3. 结构字段
+
+- `organization_concentration`
+- `institution_entry_share`
+- `person_entry_share`
 - `topic_centrality`
-- `migration_strength`
+- `collaboration_density`
+- `migration_inflow`
+- `migration_outflow`
 
-### 3. 外部信息映射
+### 4. 质量与边界字段
 
-外部信息不直接进入 `topic_time_panel` 主字段，而是通过独立信号层接入。
+- `sample_size`
+- `data_quality_flags`
+- `evidence_boundary_flags`
 
-推荐来源包括：
+说明：
 
-| 来源类型 | 建议输出字段 | 作用 |
-|---|---|---|
-| 政策文本 | `policy_signal_strength` | 识别政策导向变化 |
-| 新闻舆情 | `news_heat` | 识别短中期热点波动 |
-| 论文/专利 | `paper_heat / patent_heat` | 识别学术与技术热度 |
-| 产业信息 | `industry_signal_strength` | 识别产业拉动与外部约束 |
+- `review_score_proxy` 可以进入本表，但必须明确是代理量
+- 外部信号不建议直接写进本表主体字段，避免污染主状态
 
-这些字段应沉淀到 `topic_external_signals`，再用于 ranking 和 explanation。
-
-## 五、生成流程
+## 七、生成流程
 
 建议生成链路如下：
 
 ```text
-Step A: 读取项目库和图谱原始数据
-  -> Step B: 统一年份字段
-  -> Step C: 统一 topic_id / topic_name
-  -> Step D: 按 topic × year 聚合项目指标
-  -> Step E: 按 topic × year 聚合图谱指标
-  -> Step F: 生成外部 topic signals
-  -> Step G: 合并为 topic_time_panel
-  -> Step H: 打上 data_quality_flags
+读取项目事实
+  -> 统一 application_year / award_year / contract_year
+  -> 统一 topic_id
+  -> 聚合主题年度项目状态
+  -> 汇总主题年度机构/人员状态
+  -> 汇总图谱结构指标
+  -> 写入质量标记
+  -> 形成 topic_year_state mart
 ```
 
-## 六、字段分组
+关键要求：
 
-### 1. 主键字段
+- 事实聚合与图谱聚合必须使用同一 `topic_id`
+- 不同时间口径必须分开处理，再在年度层对齐
+- 样本不足主题必须显式标记
 
-- `topic_id`
-- `year`
+## 八、这张宽表能做什么
 
-### 2. 主题字段
+可以直接支撑：
 
-- `topic_name`
-- `topic_type`
-- `topic_source`
+- 当前主题格局快照
+- 近几年变化检测
+- 基线未来方向判断的主输入
+- 风险排序的主输入
 
-### 3. 项目状态字段
+需要结合其他层才能完成：
 
-- `application_count`
-- `funded_count`
-- `funding_amount`
-- `score_proxy`
+- 热点迁移路径解释
+- 机构主导机制解释
+- 人才断层与桥接分析
+- 领导问答中的证据追溯
 
-### 4. 图谱状态字段
+不能单独完成：
 
-- `collaboration_density`
-- `topic_centrality`
-- `migration_strength`
+- 完整趋势体系
+- 强因果判断
+- 验收/转化类硬结论
 
-### 5. 质量字段
+## 九、校验规则
 
-- `data_quality_flags`
-
-外部信息字段不进入本表主体，而通过 `topic_external_signals` 与本表并行存在。
-
-## 七、校验规则
-
-`topic_time_panel` 生成后必须完成以下校验：
+该 mart 生成后至少应完成以下校验：
 
 1. 主键唯一
-2. `topic_id` 非空比例达到阈值
-3. `year` 可解析比例达到阈值
-4. 同年内 `application_count >= funded_count`
-5. 图谱字段缺失必须显式标记
-6. 评审字段缺失必须显式标记
+2. `topic_id` 非空且稳定
+3. `application_count >= funded_count`
+4. 经费字段不存在明显负值或异常倍数
+5. 图谱结构字段缺失时显式打标
+6. 低样本主题不直接进入高置信度结论
 
-## 八、停损线
+## 十、设计结论
 
-如果出现以下情况，`topic_time_panel` 不应继续作为下游输入：
+`topic × year` 宽表必须保留，但它的定位必须收敛到“统计层主分析 mart”。
 
-1. `topic_id` 无法稳定统一
-2. 年份映射错误率过高
-3. `funded_count` 与 `funding_amount` 大面积失真
-4. 图谱字段无法映射到相同 topic 口径
+趋势模块真正的世界观应始终是：
 
-这时应先修数据口径，再推进 trend 计算。
+- 上层有项目事实和图谱关系
+- 中间有 `topic × year` 等统计 mart
+- 下层形成变化、预测、风险和领导解释
+
+只有这样，趋势体系才能成立为 `baseline world forecast`，而不是停留在宽表展示或热点图演示。

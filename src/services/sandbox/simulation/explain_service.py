@@ -9,6 +9,22 @@ from src.common.models.simulation import (
 )
 
 from . import repository
+from .compare_service import (
+    DIRECT_IMPACT,
+    SPILLOVER_IMPACT,
+    STRUCTURAL_CHANGE,
+    build_management_summary,
+    build_result_impact_breakdown,
+    build_topic_impact_layers,
+    classify_management_action,
+)
+
+_IMPACT_ORIGIN_LABELS = {
+    "direct": "直接作用",
+    "spillover": "外溢传导",
+    "mixed": "直接作用与外溢传导叠加",
+    "none": "未识别明确来源",
+}
 
 
 def explain_result(result: SimulationResult) -> SimulationExplanation:
@@ -20,21 +36,26 @@ def explain_result(result: SimulationResult) -> SimulationExplanation:
         + abs(item.delta_proxy_risk),
         reverse=True,
     )
+    impact_breakdown = build_result_impact_breakdown(result)
+    management_summary = build_management_summary(result, impact_breakdown=impact_breakdown)
     topics = [_explain_topic(item) for item in ordered[:5]]
 
-    summary = [
-        f"共推演 {len(result.impacts)} 个主题，场景 {result.scenario_id} 基于项目申报、评审、立项合同与图谱状态完成结构推演。",
+    summary = list(management_summary["executiveSummary"])
+    summary.append(
         (
-            "平均变化: "
+            "总体均值变化: "
             f"申报数 {with_sign(_avg_delta(result, 'delta_application_count'))}, "
             f"立项数 {with_sign(_avg_delta(result, 'delta_funded_count'))}, "
             f"合同经费 {with_sign(_avg_delta(result, 'delta_funding_amount'))}, "
             f"协作密度 {with_sign(_avg_delta(result, 'delta_collaboration_density'))}, "
             f"风险代理 {with_sign(_avg_delta(result, 'delta_proxy_risk'))}."
-        ),
-    ]
+        )
+    )
+    summary.append(_build_origin_distribution_summary(impact_breakdown))
     if ordered:
-        summary.append(f"最显著主题是 {ordered[0].topic_id}，主要受 {', '.join(ordered[0].applied_shocks) or '未命名冲击'} 驱动。")
+        summary.append(
+            f"变化最显著的主题是 {ordered[0].topic_id}，主要受{_impact_source_brief(ordered[0])}驱动。"
+        )
 
     return SimulationExplanation(
         scenario_id=result.scenario_id,
@@ -45,6 +66,8 @@ def explain_result(result: SimulationResult) -> SimulationExplanation:
         metadata={
             "sourceRunId": result.run_id,
             "topicCount": len(result.impacts),
+            "impactBreakdown": impact_breakdown,
+            "managementSummary": management_summary,
         },
     )
 
@@ -57,72 +80,59 @@ def explain_latest_result() -> SimulationExplanation | None:
 
 
 def _explain_topic(item) -> SimulationTopicExplanation:
-    reasons: list[str] = []
-    if item.delta_application_count > 0:
-        reasons.append(f"申报数增加 {item.delta_application_count}")
-    elif item.delta_application_count < 0:
-        reasons.append(f"申报数减少 {abs(item.delta_application_count)}")
-
-    if item.delta_funded_count > 0:
-        reasons.append(f"立项数增加 {item.delta_funded_count}")
-    elif item.delta_funded_count < 0:
-        reasons.append(f"立项数减少 {abs(item.delta_funded_count)}")
-
-    if item.delta_funding_amount > 0:
-        reasons.append(f"合同专项经费增加 {item.delta_funding_amount:.3f}")
-    elif item.delta_funding_amount < 0:
-        reasons.append(f"合同专项经费减少 {abs(item.delta_funding_amount):.3f}")
-
-    if item.delta_collaboration_density > 0:
-        reasons.append(f"协作密度提升 {item.delta_collaboration_density:.3f}")
-    elif item.delta_collaboration_density < 0:
-        reasons.append(f"协作密度下降 {abs(item.delta_collaboration_density):.3f}")
-
-    if item.delta_topic_centrality > 0:
-        reasons.append(f"图谱中心性提升 {item.delta_topic_centrality:.3f}")
-    elif item.delta_topic_centrality < 0:
-        reasons.append(f"图谱中心性下降 {abs(item.delta_topic_centrality):.3f}")
-
-    if item.delta_migration_strength > 0:
-        reasons.append(f"热点迁移强度上升 {item.delta_migration_strength:.3f}")
-    elif item.delta_migration_strength < 0:
-        reasons.append(f"热点迁移强度下降 {abs(item.delta_migration_strength):.3f}")
-
-    if item.delta_proxy_risk > 0:
-        reasons.append(f"风险代理上升 {item.delta_proxy_risk:.3f}")
-    elif item.delta_proxy_risk < 0:
-        reasons.append(f"风险代理下降 {abs(item.delta_proxy_risk):.3f}")
-
-    shock_text = ", ".join(item.applied_shocks) if item.applied_shocks else "当前无命中冲击"
-    reasons.append(f"命中冲击: {shock_text}")
+    topic_layers = build_topic_impact_layers(item)
+    reasons = [
+        _layer_reason("直接影响", topic_layers[DIRECT_IMPACT]),
+        _layer_reason("外溢影响", topic_layers[SPILLOVER_IMPACT]),
+        _layer_reason("结构变化", topic_layers[STRUCTURAL_CHANGE]),
+    ]
+    reasons.append(_impact_source_reason(item))
 
     return SimulationTopicExplanation(
         topic_id=item.topic_id,
-        headline=_build_headline(item),
+        headline=_build_headline(item, topic_layers),
         reasons=reasons,
-        action_hint=_build_action_hint(item),
+        action_hint=_build_action_hint(item, topic_layers),
     )
 
 
-def _build_headline(item) -> str:
-    if item.delta_proxy_risk > 0.03 and (item.delta_funded_count < 0 or item.delta_application_count < 0):
-        return "项目支持承压且风险代理上升"
-    if item.delta_funded_count > 0 and item.delta_funding_amount > 0 and item.delta_proxy_risk <= 0:
-        return "立项支持与合同经费同步增强"
-    if item.delta_collaboration_density > 0 and item.delta_migration_strength > 0:
-        return "协作与热点迁移同步增强"
-    if item.delta_application_count < 0 and item.delta_topic_centrality < 0:
-        return "申报热度与图谱中心性走弱"
-    return "结构变化待持续观察"
+def _build_headline(item, topic_layers: dict[str, object]) -> str:
+    action = classify_management_action(item, layers=topic_layers)
+    if action == "add":
+        if item.impact_origin == "mixed":
+            return "建议加码，直接作用与外溢传导同步显现"
+        if item.impact_origin == "spillover":
+            return "建议加码，外溢带动已开始转化为直接收益"
+        if topic_layers[SPILLOVER_IMPACT]["direction"] == "positive":
+            return "建议加码，直接收益和外溢带动同步显现"
+        return "建议加码，直接收益明确且结构稳定"
+    if action == "stop_loss":
+        return "建议止损，直接产出转弱且回报承压"
+    if action == "side_effect":
+        if item.impact_origin == "mixed":
+            return "直接收益存在，但叠加传导后的副作用抬头"
+        return "收益存在但副作用抬头，建议控节奏"
+    if topic_layers[STRUCTURAL_CHANGE]["direction"] == "positive":
+        return "结构改善开始显现，建议继续观察兑现"
+    return "变化有限，暂以跟踪观察为主"
 
 
-def _build_action_hint(item) -> str:
-    if item.delta_proxy_risk > 0.03:
-        return "优先做风险缓释，并复核该主题的立项节奏与合同经费安排。"
-    if item.delta_funding_amount > 0 and item.delta_funded_count > 0:
-        return "可继续维持支持力度，观察是否形成稳定的立项和合同落地优势。"
-    if item.delta_collaboration_density > 0.04:
-        return "建议进一步放大跨单位协作机制，巩固网络效应。"
+def _build_action_hint(item, topic_layers: dict[str, object]) -> str:
+    action = classify_management_action(item, layers=topic_layers)
+    if action == "add":
+        if item.impact_origin == "mixed":
+            return "建议纳入优先加码池，同时稳住直接投入和协作扩散两条链路，并继续跟踪风险约束是否抬头。"
+        if item.impact_origin == "spillover":
+            return "建议沿外溢传导链继续补强协作承接，验证扩散增益能否稳定转化为立项和合同经费。"
+        return "建议纳入优先加码池，优先保障合同经费和立项配额，并继续跟踪外溢带动是否兑现。"
+    if action == "stop_loss":
+        return "建议先收缩投入，复核该主题的立项效率、合同兑现和后续承接能力。"
+    if action == "side_effect":
+        if item.impact_origin == "mixed":
+            return "建议保留组合试点但压住放大节奏，分别检查直接投放和外溢扩散哪一条链路在推高风险。"
+        return "建议保留政策试点但压住节奏，先做风险缓释和结构校正，再决定是否继续放大。"
+    if topic_layers[SPILLOVER_IMPACT]["direction"] == "positive":
+        return "建议继续观察协作扩散能否转化为立项和合同经费的直接改善。"
     return "建议继续监测下一时间窗的项目与图谱状态变化。"
 
 
@@ -135,3 +145,62 @@ def _avg_delta(result: SimulationResult, field: str) -> float:
 def with_sign(value: float) -> str:
     sign = "+" if value > 0 else ""
     return f"{sign}{value:.3f}"
+
+
+def _layer_reason(label: str, layer: dict[str, object]) -> str:
+    signals = list(layer["signals"])
+    if not signals:
+        return f"{label}: 未形成显著变化"
+    parts = [_signal_text(signal) for signal in signals[:3]]
+    return f"{label}: {'，'.join(parts)}"
+
+
+def _signal_text(signal: dict[str, object]) -> str:
+    delta = float(signal["delta"])
+    direction = "上升" if delta > 0 else "下降"
+    if signal["metric"] in {"application_count", "funded_count"}:
+        direction = "增加" if delta > 0 else "减少"
+        return f"{signal['label']}{direction} {abs(delta):.0f}"
+    return f"{signal['label']}{direction} {abs(delta):.3f}"
+
+
+def _build_origin_distribution_summary(impact_breakdown: dict[str, object]) -> str:
+    origin_counts = impact_breakdown.get("impactOriginCounts", [])
+    if not origin_counts:
+        return "影响来源分布: 暂无可用信息。"
+    parts = [f"{item['label']} {item['topic_count']} 个" for item in origin_counts]
+    return "影响来源分布: " + "，".join(parts) + "。"
+
+
+def _impact_source_reason(item) -> str:
+    if item.impact_origin == "none" and item.applied_shocks:
+        return f"影响来源: 命中冲击 {_shock_list_text(item.applied_shocks)}"
+    if item.impact_origin == "mixed":
+        return (
+            f"影响来源: 直接冲击 {_shock_list_text(item.direct_shocks)}；"
+            f"外溢传导 {_shock_list_text(item.spillover_shocks)}"
+        )
+    if item.impact_origin == "direct":
+        return f"影响来源: 直接冲击 {_shock_list_text(item.direct_shocks)}"
+    if item.impact_origin == "spillover":
+        return f"影响来源: 外溢传导 {_shock_list_text(item.spillover_shocks)}"
+    return "影响来源: 未识别明确冲击来源"
+
+
+def _impact_source_brief(item) -> str:
+    if item.impact_origin == "none" and item.applied_shocks:
+        return f"命中冲击 {_shock_list_text(item.applied_shocks)}"
+    if item.impact_origin == "mixed":
+        return (
+            f"直接冲击 {_shock_list_text(item.direct_shocks)} "
+            f"与外溢传导 {_shock_list_text(item.spillover_shocks)}"
+        )
+    if item.impact_origin == "direct":
+        return f"直接冲击 {_shock_list_text(item.direct_shocks)}"
+    if item.impact_origin == "spillover":
+        return f"外溢传导 {_shock_list_text(item.spillover_shocks)}"
+    return _IMPACT_ORIGIN_LABELS["none"]
+
+
+def _shock_list_text(shocks: list[str]) -> str:
+    return "、".join(shocks) if shocks else "未命名冲击"
