@@ -26,6 +26,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
+cors_allow_origin_regex = os.getenv(
+    "APP_CORS_ALLOW_ORIGIN_REGEX",
+    r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3})(:\d+)?$",
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -33,7 +38,9 @@ app.add_middleware(
         "http://127.0.0.1:8006",
         "http://localhost:8005",
         "http://127.0.0.1:8005",
+        "http://192.168.0.200:8005",
     ],
+    allow_origin_regex=cors_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

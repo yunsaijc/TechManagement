@@ -1,89 +1,173 @@
-# 70 政策动作清单
+# 70 政策动作与 Scenario Contract
 
 ## 一、目的
 
-本清单用于统一沙盘推演中的 `PolicyInstrument` 定义。
+本文件定义沙盘推演中的政策输入范式。
 
-没有政策动作清单，系统很容易退化成：
+核心原则：
 
-- 对历史趋势做口头建议
-- 用 LLM 生成“如果这样做可能会更好”的文本
+- 不能再用 `funding_boost` 这类玩具参数当作正式政策
+- 一次推演输入必须是一份可审计的 `Scenario Contract`
 
-这两者都不是可执行的政策仿真。
+## 二、什么才算政策动作
 
-## 二、第一版政策动作范围
+满足以下条件的，才算政策动作：
 
-第一版建议只覆盖可参数化、可比较、可解释的动作，不追求政策文本的全覆盖。
+- 有明确行政主体
+- 有明确管理抓手
+- 有明确作用对象
+- 有明确生效时间
+- 有明确约束
+- 有明确可观测结果
 
-建议优先纳入以下 5 类：
+反之，下面这些只是引擎参数，不是政策：
 
-1. 配额调整
-2. 准入门槛调整
-3. 评审权重调整
-4. 重点方向倾斜
-5. 人才 / 协作支持
+- `intensity`
+- `spillover_strength`
+- `min_similarity`
+- 各种风险惩罚权重
 
-## 三、最小政策动作表
+它们只能作为内部计算配置，不应暴露给领导作为政策输入。
 
-| 动作类型 | 说明 | 作用对象 | 可调参数 | 生效周期 | 主要影响路径 | 历史可识别性 |
-|---|---|---|---|---|---|---|
-| `quota_adjustment` | 调整某类主题或计划的资助配额 | `topic` / `program` | 配额比例、绝对数量 | 年度 | `P -> funded_count -> output/conversion` | 中 |
-| `eligibility_change` | 调整申报资格或准入条件 | `topic` / `organization` / `applicant_type` | 门槛强度、约束条件 | 年度 | `P -> application_count -> funded_count` | 中高 |
-| `evaluation_weight_change` | 调整评审维度权重 | `topic` / 全局评审体系 | 权重向量、阈值 | 年度 | `P -> selection_structure -> output/conversion` | 低到中 |
-| `topic_priority_shift` | 对重点方向实施倾斜支持 | `topic` | 优先级、资源倾斜比例 | 年度 | `P -> funding_amount/talent_flow -> output` | 中 |
-| `talent_support` | 提供人才专项支持 | `topic` / `organization` | 支持强度、人数、经费 | 年度 / 多年 | `P -> talent_headcount/quality -> output/conversion` | 低到中 |
-| `collaboration_incentive` | 鼓励跨团队或跨主题协作 | `topic` / `organization_pair` | 激励强度、覆盖范围 | 年度 / 多年 | `P -> collaboration_density -> output/conversion` | 低 |
+## 三、Scenario Contract 结构
 
-## 四、动作字段建议
+一次完整推演必须至少包含 6 块：
 
-每个动作至少应具备以下字段：
+1. `intent`
+   领导原话、决策问题、政策意图
+2. `baseline_scope`
+   时间窗、主题范围、统计口径
+3. `actions`
+   政策动作清单
+4. `constraints`
+   预算、保底、风险、合规边界
+5. `evaluation`
+   方案成功标准
+6. `validation`
+   观测/代理/不支持声明
 
-| 字段 | 含义 |
-|---|---|
-| `instrument_id` | 动作唯一标识 |
-| `instrument_type` | 动作类型 |
-| `target_scope` | 作用对象范围 |
-| `parameters` | 强度、阈值、比例等参数 |
-| `effective_window` | 生效窗口 |
-| `constraints` | 预算、总量、资格等约束 |
-| `assumptions` | 未被数据识别、需外显的假设 |
+## 四、政策动作分类
 
-## 五、识别与假设边界
+最终政策动作分五类：
 
-不同政策动作的“历史可识别性”差异很大：
+### 1. 入口侧政策
 
-### 1. 相对可识别
+- 准入门槛
+- 申报条件
+- 指南收紧/放宽
+- 主体资格限制
 
-- 配额调整
-- 准入门槛变化
+### 2. 分配侧政策
 
-这类动作通常能在历史制度变化中找到较明确的事件点，适合后续做：
+- 预算增减
+- 主题配额
+- 立项份额
+- 优先级调整
 
-- DID
-- Event Study
-- Synthetic Control
+### 3. 评审侧政策
 
-### 2. 主要依赖结构假设
+- 评审阈值
+- 排序规则
+- 权重偏好
+- 保底机制
 
-- 评审权重变化
-- 人才支持
+### 4. 能力侧政策
+
 - 协作激励
+- 人才支持
+- 联合申报
+- 组织能力扶持
 
-这类动作在历史中往往没有足够干净的识别条件，第一版应明确标注：
+### 5. 治理侧政策
 
-- 哪些效果来自历史估计
-- 哪些效果来自专家参数化
+- 过程监管
+- 阶段门槛
+- 风险红线
+- 执行约束
 
-## 六、第一版推荐优先级
+## 五、当前数据条件下的动作支持等级
 
-如果要尽快做出可运行的沙盘推演 MVP，建议优先实现：
+### 1. 强支持
 
-1. `quota_adjustment`
-2. `topic_priority_shift`
-3. `talent_support`
+基于当前项目库和图谱，可直接进入第一版主流程：
 
-原因：
+- `budget_reallocate`
+- `budget_cap / budget_floor`
+- `quota_adjustment`
+- `priority_shift`
 
-- 作用对象清晰
-- 参数化简单
-- 容易和趋势预判层状态变量对接
+### 2. 中支持
+
+可以做，但必须标注部分依赖代理或规则假设：
+
+- `review_threshold_shift`
+- `score_band_gate`
+- `requested_to_award_control`
+
+### 3. 弱支持
+
+结构上可表达，但缺少稳定历史识别或核心事实表：
+
+- `collaboration_incentive`
+- `spillover_guidance`
+- `eligibility_gate_tighten`
+
+### 4. 当前不支持
+
+当前数据下不应作为领导级硬推演输入：
+
+- `talent_support` 的真实人才供给结果
+- `acceptance_rule_change`
+- `conversion_incentive`
+- `region_targeted_policy`
+- `organization_targeted_policy`
+- 外部舆情/产业冲击
+
+## 六、领导语言到结构化动作的映射
+
+领导自然语言不能直接进入引擎，必须经过结构化映射。
+
+映射流程：
+
+1. 识别要素
+   - 动词：收紧、放宽、倾斜、保底、限制、联合
+   - 对象：主题、指南、专项、主体群体
+   - 时间：明年、未来两年、本轮指南
+   - 约束：预算不增、风险可控、重点保底
+   - 目标：提质、降风险、压缩低效扩张
+
+2. 归入动作模板
+   - “收紧” 可能映射为：
+     - `budget_cap`
+     - `quota_reduce`
+     - `review_threshold_raise`
+     - `eligibility_gate_tighten`
+
+3. 识别不可落地部分
+   - 如“转化率极低”“人才断层”
+   - 若当前数据不支持，必须进入 `validation.unsupported_claims`
+
+## 七、验证声明
+
+每个动作与核心指标都必须标注：
+
+- `observed`
+- `proxy`
+- `structural_assumption`
+- `unsupported`
+
+如果某方案的核心目标本身属于 `unsupported`，系统必须明确输出：
+
+- `无法严格推演`
+或
+- `只能按代理口径近似推演`
+
+## 八、设计原则
+
+后续所有 simulation 设计都必须遵守：
+
+- 先写 `Scenario Contract`
+- 再落具体动作
+- 再定义约束
+- 再定义评估目标
+- 最后才进入引擎实现

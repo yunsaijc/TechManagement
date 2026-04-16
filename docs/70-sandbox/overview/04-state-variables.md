@@ -1,95 +1,149 @@
-# 70 状态变量清单
+# 70 状态变量与对象层次
 
 ## 一、目的
 
-本清单用于统一趋势预判与沙盘推演共享的状态变量定义。
+本清单用于统一趋势预判与沙盘推演共享的对象层次和状态变量定义。
 
-没有统一状态变量，后续会出现以下问题：
+本文件强调两点：
 
-1. 同一指标在不同模块中口径不一致
-2. 趋势预判输出无法直接作为沙盘推演基线
-3. 政策动作找不到明确的作用对象和结果变量
+1. `topic × year` 是主分析层，不是业务本体
+2. 所有变量必须区分“真实观测”与“代理”
 
-## 二、建模粒度
+## 二、对象层次
 
-第一版建议统一采用 `topic × time_window` 作为主粒度，必要时再扩展到：
+最终系统必须并存三层：
 
-- `topic × organization × time_window`
-- `topic × region × time_window`
-- `topic × funding_program × time_window`
+### 1. 事实层
 
-原因：
+围绕 `Project` 的生命周期事实：
 
-- `topic × time_window` 足够支撑热点迁移、结构变化和初版干预仿真
-- 如果一开始就上更细粒度，数据缺失和口径不齐会把建模复杂度迅速放大
+- 申报
+- 评审
+- 立项
+- 合同
+- 经费
+- 验收
+- 转化
 
-## 三、最小状态变量表
+### 2. 关系层
 
-| 变量名 | 含义 | 建议粒度 | 时间频率 | 数据来源 | 可直接观测 | 模型角色 |
-|---|---|---|---|---|---|---|
-| `application_count` | 申报数量 | `topic × time` | 年 / 季 | 项目申报库 | 是 | 基础状态、预测特征、结果变量 |
-| `funded_count` | 立项数量 | `topic × time` | 年 / 季 | 立项结果库 | 是 | 基础状态、结果变量 |
-| `funding_amount` | 资助金额 | `topic × time` | 年 / 季 | 经费数据 | 是 | 基础状态、政策传导中间变量 |
-| `project_active_count` | 在研项目数 | `topic × time` | 年 / 季 | 项目管理库 | 是 | 状态变量 |
-| `talent_headcount` | 参与人才规模 | `topic × time` | 年 / 季 | 专家/项目人员数据 | 基本是 | 状态变量、机制变量 |
-| `talent_senior_ratio` | 高层次人才占比 | `topic × time` | 年 / 季 | 人员职称数据 | 基本是 | 风险特征、机制变量 |
-| `talent_backbone_ratio` | 中坚骨干占比 | `topic × time` | 年 / 季 | 人员角色数据 | 部分 | 风险特征、机制变量 |
-| `collaboration_density` | 协作网络密度 | `topic × time` | 年 / 季 | 合作关系图谱 | 否，需计算 | 图特征、中间变量 |
-| `cross_topic_mobility` | 人才跨主题流动强度 | `topic × time` | 年 / 季 | 人才-项目-主题图谱 | 否，需计算 | 迁移特征、机制变量 |
-| `output_count` | 总产出数量 | `topic × time` | 年 / 季 | 论文/专利/成果库 | 是 | 状态变量、结果变量 |
-| `high_value_output_count` | 高价值产出数量 | `topic × time` | 年 / 季 | 高价值成果标注 | 部分 | 结果变量 |
-| `acceptance_rate` | 验收通过率 | `topic × time` | 年 / 季 | 项目验收库 | 是 | 结果变量 |
-| `conversion_rate` | 转化率 | `topic × time` | 年 / 季 | 成果转化库 | 部分 | 核心结果变量 |
-| `conversion_lag` | 从立项到转化的时滞 | `topic × time` | 年 / 季 | 项目与转化关联数据 | 否，需计算 | 效率特征、结果变量 |
-| `topic_centrality` | 主题在动态图中的中心性 | `topic × time` | 年 / 季 | 主题关系图 | 否，需计算 | 迁移和演化特征 |
-| `topic_embedding_shift` | 主题语义或结构漂移强度 | `topic × time` | 年 / 季 | 图嵌入/文本嵌入 | 否，需计算 | 迁移和预测特征 |
+围绕主题、机构、人员的结构关系：
 
-## 四、角色划分
+- `Project -> Topic`
+- `Project -> Institution`
+- `Project -> Person`
+- `Topic <-> Topic`
+- `Institution <-> Institution`
 
-这些状态变量在模型中应明确区分角色：
+### 3. 统计层
 
-### 1. 预测目标
+围绕可用于分析与推演的状态面板：
 
-第一批建议作为预测目标的变量：
+- `topic × year`
+- `topic × institution × year`
+- `topic × person × year`
+- `project_cohort_outcome`
 
-- `application_count`
-- `funded_count`
-- `output_count`
-- `conversion_rate`
+## 三、主分析粒度
 
-### 2. 风险特征
+第一主粒度定义为：
 
-第一批建议作为风险建模特征的变量：
+`topic × year`
 
-- `talent_senior_ratio`
-- `talent_backbone_ratio`
-- `collaboration_density`
-- `conversion_lag`
-- `topic_embedding_shift`
+理由：
 
-### 3. 干预中间变量
+- 足够支撑趋势预判
+- 足够作为沙盘推演的核心状态层
+- 能与预算、配额、评审阈值等政策动作对接
 
-第一批建议作为政策作用中间变量的变量：
+必要时下钻到：
 
-- `funding_amount`
-- `talent_headcount`
-- `collaboration_density`
-- `application_count`
-- `funded_count`
+- `topic × program × year`
+- `topic × institution × year`
+- `topic × person × year`
 
-## 五、第一版取舍
+## 四、主题年度状态变量
 
-第一版不要同时追求“全量变量完备”和“高复杂模型”。
+主题年度层至少应包含以下变量：
 
-建议先锁定以下最小变量集：
+| 变量 | 含义 | 数据性质 | 主要来源 | 角色 |
+|---|---|---|---|---|
+| `application_count` | 申报项目数 | 观测 | `Sb_Jbxx + Sb_Sbzt` | 基础状态 |
+| `requested_funding_amount` | 申报专项经费 | 观测 | `Sb_Jfgs` | 基础状态 |
+| `funded_count` | 立项项目数 | 观测 | `Ht_XMLXXX` | 基础状态 |
+| `funded_ratio` | 立项率，优先 cohort 口径 | 观测聚合 | 项目生命周期事实 | 结构结果 |
+| `contract_funding_amount` | 合同专项经费总额 | 观测 | `Ht_Jfgs` | 基础状态 |
+| `avg_award_size` | 平均合同/立项规模 | 观测聚合 | `Ht_Jfgs / Ht_XMLXXX` | 结构结果 |
+| `review_score_proxy` | 评审强度代理 | 代理 | `PS_XMPSXX` | 质量代理 |
+| `active_institution_count` | 活跃承担单位数 | 观测聚合 | 项目-单位关系 | 结构状态 |
+| `active_person_count` | 活跃 PI/人员数 | 部分观测 | 项目-人员/图谱 | 结构状态 |
+| `organization_concentration` | 机构集中度 | 观测聚合 | 项目-单位关系 | 风险特征 |
+| `entrant_share` | 新进入主体占比 | 观测聚合 | 单位/人员跨年状态 | 风险特征 |
+| `collaboration_density` | 协作网络密度 | 代理 | 图谱 | 结构代理 |
+| `topic_centrality` | 主题结构中心性 | 代理 | 图谱 | 结构代理 |
+| `migration_strength` | 主题迁移强度 | 代理 | 图谱 | 迁移代理 |
+| `structural_risk` | 结构性风险综合量 | 代理复合 | 观测 + 图谱 | 风险输出 |
 
-- `application_count`
-- `funded_count`
-- `funding_amount`
-- `talent_headcount`
-- `talent_senior_ratio`
-- `collaboration_density`
-- `output_count`
-- `conversion_rate`
+## 五、项目生命周期核心变量
 
-先把这些变量做稳，再逐步加入时滞、嵌入和图结构变量。
+项目层至少应保留以下变量：
+
+| 变量 | 含义 | 数据性质 |
+|---|---|---|
+| `project_id` | 项目主键，锚定 `Sb_Jbxx.id` | 观测 |
+| `application_year` | 申报年份 | 观测 |
+| `topic_id` | 项目所属主题 | 观测/映射 |
+| `requested_special_funding` | 申报专项经费 | 观测 |
+| `review_stage_flags` | 是否进入网评/复审/终评等阶段 | 观测 |
+| `review_score_raw` | 原始评审分数 | 观测 |
+| `review_score_percentile` | 评分分位 | 代理标准化 |
+| `funded_flag` | 是否立项 | 观测 |
+| `awarded_funding` | 立项经费 | 观测 |
+| `contracted_special_funding` | 合同专项经费 | 观测 |
+| `disbursed_amount` | 已拨付金额 | 观测 |
+
+## 六、时间轴规则
+
+系统中至少应并存以下时间轴：
+
+- `application_year`
+- `review_year`
+- `award_year`
+- `contract_year`
+- `acceptance_year`
+- `transformation_year`
+
+默认提供两种分析视角：
+
+1. `event_year`
+   某年真实发生了什么
+2. `application_cohort_year`
+   某批申报项目后来走成了什么样
+
+## 七、当前数据条件下的边界
+
+当前项目库和图谱下，可以稳定使用的结果变量主要是：
+
+- 申报
+- 评审
+- 立项
+- 合同
+- 经费
+- 主题/机构/人员结构关系
+
+以下指标只能作为弱代理或暂不进入领导级硬指标：
+
+- `acceptance_rate`
+- `transformation_rate`
+- `ROI`
+- 强人才供给判断
+
+## 八、文档使用原则
+
+后续任何 trend 或 simulation 设计，都必须基于本文件定义：
+
+- 先选对象层次
+- 再选口径
+- 再声明观测/代理属性
+
+否则不允许直接进入实现或领导表达层。
