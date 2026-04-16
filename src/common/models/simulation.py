@@ -12,7 +12,12 @@ class BaselineTopicState(BaseModel):
     application_count: int = Field(ge=0)
     funded_count: int = Field(ge=0)
     funding_amount: float = Field(ge=0.0)
+    requested_funding_amount: float = Field(default=0.0, ge=0.0)
     score_proxy: float | None = None
+    funded_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_funding_per_award: float = Field(default=0.0, ge=0.0)
+    growth_momentum: float = Field(default=0.0, ge=-1.0, le=1.0)
+    recent_share: float = Field(default=0.0, ge=0.0, le=1.0)
     collaboration_density: float = Field(default=0.0, ge=0.0, le=1.0)
     topic_centrality: float = Field(default=0.0, ge=0.0, le=1.0)
     migration_strength: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -37,11 +42,19 @@ class PolicyShock(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
+class ScenarioConstraints(BaseModel):
+    budget_limit: float | None = Field(default=None, ge=0.0)
+    spillover_budget_share: float | None = Field(default=None, ge=0.0, le=1.0)
+    risk_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_risk_increase: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class ScenarioDefinition(BaseModel):
     scenario_id: str
     baseline_id: str
     forecast_window: str
     policy_shocks: list[PolicyShock] = Field(default_factory=list)
+    constraints: ScenarioConstraints | None = None
     tags: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
 
@@ -74,6 +87,37 @@ class SimulationTopicImpact(BaseModel):
     projected_proxy_risk: float
     delta_proxy_risk: float
     applied_shocks: list[str] = Field(default_factory=list)
+    direct_shocks: list[str] = Field(default_factory=list)
+    spillover_shocks: list[str] = Field(default_factory=list)
+    impact_origin: str = "none"
+
+
+class SimulationReplayTopic(SimulationTopicImpact):
+    active_constraints: list[str] = Field(default_factory=list)
+
+
+class SimulationReplayPortfolio(BaseModel):
+    topic_count: int = Field(ge=0)
+    impacted_topic_count: int = Field(ge=0)
+    positive_funding_topic_count: int = Field(ge=0)
+    negative_funding_topic_count: int = Field(ge=0)
+    positive_risk_topic_count: int = Field(ge=0)
+    net_delta_funding_amount: float = 0.0
+    net_delta_funded_count: int = 0
+    avg_delta_proxy_risk: float = 0.0
+    direct_topic_count: int = Field(ge=0)
+    spillover_topic_count: int = Field(ge=0)
+    mixed_topic_count: int = Field(ge=0)
+    constrained_topic_count: int = Field(ge=0)
+
+
+class SimulationReplayFrame(BaseModel):
+    stage_id: str
+    stage_label: str
+    stage_order: int = Field(ge=0)
+    narrative: str
+    portfolio: SimulationReplayPortfolio
+    topics: list[SimulationReplayTopic] = Field(default_factory=list)
 
 
 class SimulationResult(BaseModel):
@@ -82,6 +126,7 @@ class SimulationResult(BaseModel):
     baseline_id: str
     forecast_window: str
     impacts: list[SimulationTopicImpact] = Field(default_factory=list)
+    simulation_frames: list[SimulationReplayFrame] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 

@@ -68,9 +68,9 @@ class SimulationBaselineRequest(BaseModel):
 
 
 class SimulationBaselineBuildRequest(BaseModel):
-    baselineId: str
-    startYear: int
-    endYear: int
+    baselineId: str = "baseline_real_2020_latest"
+    startYear: int | None = None
+    endYear: int | None = None
     persist: bool = True
 
 
@@ -87,7 +87,7 @@ class SimulationScenarioComposeRequest(BaseModel):
     baselineId: str | None = None
     scenarioId: str | None = None
     forecastWindow: str | None = None
-    topicId: str
+    topicId: str | None = None
     shockType: str = "funding_boost"
     intensity: float = Field(default=0.6, ge=0.0, le=1.0)
     coverage: float = Field(default=0.8, ge=0.0, le=1.0)
@@ -96,6 +96,10 @@ class SimulationScenarioComposeRequest(BaseModel):
     propagationStrength: float = Field(default=0.45, ge=0.0, le=1.0)
     minSimilarity: float = Field(default=0.35, ge=0.0, le=1.0)
     maxNeighbors: int = Field(default=12, ge=0)
+    actions: list[SimulationPolicyShockInput] = Field(default_factory=list)
+    budgetLimit: float | None = Field(default=None, ge=0.0)
+    spilloverBudgetShare: float | None = Field(default=None, ge=0.0, le=1.0)
+    maxRiskIncrease: float | None = Field(default=None, ge=0.0, le=1.0)
     tags: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
 
@@ -160,39 +164,81 @@ def _build_composed_scenario_definition(
     baseline_id: str,
     forecast_window: str,
 ) -> ScenarioDefinition:
-    shock_id = f"shock_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     scenario_id = payload.scenarioId or f"scenario_builder_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     tags = payload.tags or ["builder", "interactive"]
     assumptions = payload.assumptions or ["interactive_builder_generated_policy_shock"]
-    parameters: dict[str, object] = {
-        "enable_spillover": payload.enableSpillover,
-    }
-    if payload.enableSpillover:
-        parameters.update(
-            {
-                "propagation_strength": payload.propagationStrength,
-                "min_similarity": payload.minSimilarity,
-                "max_neighbors": payload.maxNeighbors,
-            }
-        )
+    actions = payload.actions or _compose_request_actions(payload)
 
     return ScenarioDefinition(
         scenario_id=scenario_id,
         baseline_id=baseline_id,
         forecast_window=forecast_window,
         policy_shocks=[
-            PolicyShock(
-                shock_id=shock_id,
-                shock_type=payload.shockType,
-                target_topics=[payload.topicId],
-                intensity=payload.intensity,
-                coverage=payload.coverage,
-                lag=payload.lag,
-                parameters=parameters,
+            _compose_action_to_policy_shock(
+                action,
+                index=index,
+                budget_limit=payload.budgetLimit,
+                spillover_budget_share=payload.spilloverBudgetShare,
+                max_risk_increase=payload.maxRiskIncrease,
             )
+            for index, action in enumerate(actions, start=1)
         ],
         tags=tags,
         assumptions=assumptions,
+    )
+
+
+def _compose_request_actions(payload: SimulationScenarioComposeRequest) -> list[SimulationPolicyShockInput]:
+    if not payload.topicId:
+        raise HTTPException(status_code=400, detail="组合方案缺少 topicId 或 actions")
+    return [
+        SimulationPolicyShockInput(
+            shockId=f"shock_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            shockType=payload.shockType,
+            targetTopics=[payload.topicId],
+            intensity=payload.intensity,
+            coverage=payload.coverage,
+            lag=payload.lag,
+            parameters={
+                "enable_spillover": payload.enableSpillover,
+                **(
+                    {
+                        "propagation_strength": payload.propagationStrength,
+                        "min_similarity": payload.minSimilarity,
+                        "max_neighbors": payload.maxNeighbors,
+                    }
+                    if payload.enableSpillover
+                    else {}
+                ),
+            },
+        )
+    ]
+
+
+def _compose_action_to_policy_shock(
+    action: SimulationPolicyShockInput,
+    *,
+    index: int,
+    budget_limit: float | None,
+    spillover_budget_share: float | None,
+    max_risk_increase: float | None,
+) -> PolicyShock:
+    parameters = dict(action.parameters)
+    if budget_limit is not None and "budget_limit" not in parameters:
+        parameters["budget_limit"] = budget_limit
+    if spillover_budget_share is not None and "spillover_budget_share" not in parameters:
+        parameters["spillover_budget_share"] = spillover_budget_share
+    if max_risk_increase is not None and "max_risk_increase" not in parameters:
+        parameters["max_risk_increase"] = max_risk_increase
+    shock_id = action.shockId or f"shock_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{index}"
+    return PolicyShock(
+        shock_id=shock_id,
+        shock_type=action.shockType,
+        target_topics=action.targetTopics,
+        intensity=action.intensity,
+        coverage=action.coverage,
+        lag=action.lag,
+        parameters=parameters,
     )
 
 
@@ -213,6 +259,11 @@ def _save_simulation_debug_artifacts(
     SIMULATION_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     json_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.json"
     html_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.html"
+    payload.setdefault("meta", {})
+    payload["meta"]["debug_json_path"] = str(json_path.resolve())
+    payload["meta"]["debug_json_url"] = f"/debug-sandbox/simulation/{json_path.name}"
+    payload["meta"]["debug_html_path"] = str(html_path.resolve())
+    payload["meta"]["debug_html_url"] = f"/debug-sandbox/simulation/{html_path.name}"
 
     with json_path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
@@ -239,6 +290,21 @@ def _get_simulation_debug_artifacts(artifact_name: str) -> dict[str, str]:
         payload["debug_html_path"] = str(html_path.resolve())
         payload["debug_html_url"] = f"/debug-sandbox/simulation/{html_path.name}"
     return payload
+
+
+def _default_scenario_forecast_window(baseline) -> str:
+    metadata = getattr(baseline, "metadata", {}) or {}
+    end_year = metadata.get("endYear")
+    if isinstance(end_year, int):
+        return str(end_year)
+    baseline_window = str(getattr(baseline, "forecast_window", "") or "").strip()
+    if baseline_window.isdigit():
+        return baseline_window
+    if "-" in baseline_window:
+        tail = baseline_window.split("-")[-1].strip()
+        if tail.isdigit():
+            return tail
+    return baseline_window or "当前窗口"
 
 
 def _build_baseline_debug_payload(
@@ -625,11 +691,8 @@ async def compose_simulation_scenario(payload: SimulationScenarioComposeRequest)
     if baseline is None:
         raise HTTPException(status_code=404, detail="尚未生成 baseline snapshot，无法编排方案")
 
-    baseline_id = payload.baselineId or baseline.baseline_id
-    if baseline_id != baseline.baseline_id:
-        raise HTTPException(status_code=400, detail="baselineId 与当前最新 baseline 不一致")
-
-    forecast_window = payload.forecastWindow or baseline.forecast_window
+    baseline_id = baseline.baseline_id
+    forecast_window = payload.forecastWindow or _default_scenario_forecast_window(baseline)
     scenario = _build_composed_scenario_definition(
         payload,
         baseline_id=baseline_id,

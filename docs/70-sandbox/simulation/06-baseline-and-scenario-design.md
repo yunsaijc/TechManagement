@@ -1,191 +1,259 @@
 # baseline 与 scenario 设计
 
-## 一、目标
+## 一、为什么要先固定 baseline 与 scenario
 
-沙盘推演层真正需要的不是“一个请求体”，而是两个稳定对象：
+simulation 的本质不是“给一个请求体跑一下”，而是：
 
-1. `baseline`
-2. `scenario`
+`比较同一 reference world 在不同政策场景下会出现怎样的反事实差异`
 
-其中：
+因此系统必须先稳定两个对象：
 
-- `baseline` 负责固定被干预的参考世界
-- `scenario` 负责表达对这个世界施加了哪些政策动作
+- `baseline`
+- `scenario`
 
-## 二、baseline 的来源
+没有固定 baseline，就没有可比性。
 
-第一版 `baseline` 不应人工拼装，而应直接来自趋势预判层的稳定输出。
+没有正式 scenario，就没有政策语义。
 
-推荐来源链路：
+## 二、baseline 的正式定义
+
+`baseline` 指在当前政策 regime 不变时，由真实数据和基线预测共同定义的参考世界。
+
+它至少要回答：
+
+- 当前结构是什么
+- 在不新增政策动作时，接下来会怎样自然延续
+- 这个参考世界的边界和约束是什么
+
+baseline 不是随手拼出来的一组数，也不是简单复制某年现状。
+
+## 三、baseline 的来源
+
+simulation 使用的 baseline 应来自两部分：
+
+### 1. 已观测历史状态
+
+来自真实项目链路和图谱关系：
+
+- `Sb_Jbxx`
+- `Sb_Sbzt`
+- `Sb_Jfgs`
+- `PS_XMPSXX`
+- `Ht_XMLXXX`
+- `Ht_Jbxx`
+- `Ht_Jfgs`
+- 图谱关系数据
+
+### 2. baseline forecast
+
+来自 trend 侧形成的“政策不变条件下的未来参考状态”。
+
+因此推荐链路是：
 
 ```text
-topic_time_panel
-  -> trend snapshot / ranking
-  -> baseline_snapshot
+真实项目链路 + 图谱关系
+  -> trend baseline forecast
+  -> simulation baseline snapshot
 ```
 
-也就是说：
+simulation 不负责重新发明 baseline，但必须把 baseline 固化成可复算对象。
 
-- baseline 不是单独维护的一套世界
-- baseline 是趋势层在某个时间点或某个预测窗口的冻结结果
+## 四、baseline 必须包含什么
 
-## 三、baseline_snapshot 设计
+一个可用 baseline 至少应覆盖以下状态。
 
-### 1. 版本化
+### 1. 申报侧状态
 
-每个 baseline 必须带版本：
+- 申报项目数
+- 申报专项经费
+- 主题申报份额
+- 新进入主体占比
+
+### 2. 评审侧状态
+
+- 评分分布
+- 分数分位
+- 阶段进入情况
+- 主题竞争压力代理
+
+### 3. 立项/合同侧状态
+
+- 立项项目数
+- 合同专项经费
+- 平均资助强度
+- 预算结构
+
+### 4. 结构侧状态
+
+- 协作密度
+- 主题中心性
+- 主题迁移强度
+- 机构集中度
+
+### 5. 基线约束
+
+- 总预算
+- 主题保底/上限
+- 项目数量边界
+- 规则适用范围
+
+## 五、baseline 的版本化要求
+
+每个 baseline 都必须带上以下信息：
 
 - `baseline_id`
-- `source_run_id`
+- `anchor_year`
+- `forecast_years`
 - `data_version`
 - `feature_version`
-- `forecast_version`
+- `baseline_method`
 
-否则后续同一场景无法复算。
+否则同一场景无法复算，也无法和后续结果做严肃比较。
 
-### 2. 字段建议
+## 六、scenario 的正式定义
 
-baseline 至少应包含：
+`scenario` 指在某个 baseline 上施加的一组正式政策安排。
 
-- 项目规模状态
-- 评审与立项状态
-- 合同经费状态
-- 图谱结构状态
-- 风险状态
+它不是单一动作，而是一个完整政策包。
 
-最低字段集合建议：
-
-- `application_count`
-- `funded_count`
-- `funding_amount`
-- `score_proxy`
-- `collaboration_density`
-- `topic_centrality`
-- `migration_strength`
-- `proxy_risk`
-
-外部信息不写入 baseline 主状态，而应在 scenario 侧以 `external_shock` 或 `external_constraint` 挂载。
-
-## 四、scenario 设计
-
-### 1. scenario 的职责
-
-一个 `scenario` 必须明确回答：
+一个正式 scenario 必须明确：
 
 1. 基于哪个 baseline
-2. 做了哪些动作
-3. 这些动作有哪些约束
-4. 存在哪些外生冲击
-5. 用哪些指标评价结果
+2. 覆盖哪些主题、指南、专项或对象
+3. 政策包中有哪些动作
+4. 有哪些预算、配额、合规约束
+5. 希望优化哪些目标
+6. 依赖哪些结构假设
+7. 哪些结果属于代理，哪些当前不支持
 
-### 2. 最小结构
+## 七、scenario 的最小结构
 
 ```json
 {
-  "baseline_id": "baseline_2026_y",
-  "scenario_name": "priority_shift_a",
-  "instruments": [],
-  "external_shocks": [],
-  "constraints": {},
-  "evaluation_targets": []
+  "baseline_id": "baseline_2025_2027_default",
+  "scenario_name": "压缩过热低效主题并向重点方向倾斜",
+  "policy_package": [],
+  "constraints": [],
+  "evaluation_goals": [],
+  "assumptions": [],
+  "validation": {}
 }
 ```
 
-## 五、instrument 在 scenario 中的组织方式
+这里的核心是 `policy_package`，不是零散的临时参数。
 
-第一版建议：
+## 八、policy package 的组织方式
 
-- 一个 scenario 支持多个 instrument
-- instrument 之间显式有顺序
-- 每个 instrument 可单独启停
+一个场景通常包含多项动作，动作之间可能有顺序和依赖。
 
-原因：
+建议具备以下能力：
 
-- 现实政策很少是单动作
-- 需要支持“单独动作”和“组合动作”对比
+- 多动作组合
+- 动作显式排序
+- 动作单独启停
+- 动作作用阶段明确
+- 动作支持等级明确
 
-## 六、外生冲击在 scenario 中的组织方式
+例如同一个场景中可以同时包含：
 
-建议：
+- 指南收紧
+- 评审阈值上移
+- 重点主题预算保底
+- 合同资助强度调整
 
-- 外部政策导向变化作为 `policy_shock`
-- 新闻/舆情事件作为 `event_shock`
-- 产业变化作为 `industry_shock`
+这样才符合真实治理中的“政策包”形态。
 
-这些冲击不直接改变 baseline，而是在 rollout 时改变参数、约束或解释权重。
+## 九、约束不是附属说明
 
-## 七、仿真窗口
+`constraints` 必须成为场景核心对象，而不是备注。
 
-每个 scenario 还必须定义推演窗口：
+常见约束包括：
 
-| 字段 | 含义 |
-|---|---|
-| `anchor_window` | 干预开始的时间点 |
-| `forecast_windows` | 需要推演的未来窗口 |
-| `rollout_mode` | 单期还是多期滚动 |
+- 总预算不增加
+- 总项目数保持区间稳定
+- 重点方向最低保障份额
+- 高风险主题最高占比
+- 单项目合同资助上限
 
-第一版建议优先支持：
+如果没有这些约束，场景比较会退化成“谁改得更大谁更好看”。
 
-- 单年度干预
-- 未来 1-2 个窗口的比较
+## 十、evaluation goals 决定方案优劣
 
-## 八、结果记录设计
+不同领导问题下，评估目标会不同。
 
-建议最少沉淀三类结果：
+常见目标包括：
 
-### 1. run-level
+- 压缩过热低效扩张
+- 提升重点方向的预算效率
+- 降低结构集中度风险
+- 控制挤出效应
+- 保持组合稳定性
 
-记录一次场景运行的全局信息：
+simulation 不应只输出“变了多少”，还要回答“是否更符合这次治理目标”。
 
-- `run_id`
-- `scenario_id`
-- `baseline_id`
-- `engine_version`
-- `status`
+## 十一、推荐的场景比较方式
 
-### 2. topic-level
+同一个 baseline 下，应支持以下比较方式：
 
-记录每个主题在不同窗口下的结果：
+### 1. baseline vs single scenario
 
-- `baseline_application_count`
-- `projected_application_count`
-- `baseline_funded_count`
-- `projected_funded_count`
-- `baseline_funding_amount`
-- `projected_funding_amount`
-- `baseline_proxy_risk`
-- `projected_proxy_risk`
+用于判断某一个政策包相对不干预会怎样变化。
 
-### 3. explanation-level
+### 2. baseline vs multiple scenarios
 
-记录变化原因：
+用于比较多个政策包谁更符合约束和目标。
 
-- 哪条路径贡献最大
-- 哪个 instrument 起主导作用
-- 哪些结果主要来自数据估计
-- 哪些结果主要来自结构假设
+### 3. scenario vs scenario
 
-## 九、当前推荐场景
+用于比较不同政策取向之间的受益、代价和风险差异。
 
-第一版不要追求全政策空间覆盖，建议只做以下 3 类：
+## 十二、当前数据下哪些场景最适合先进入正式推演
 
-1. `quota_adjustment`
-2. `topic_priority_shift`
-3. `collaboration_incentive`
+结合现有真实数据，最适合优先纳入正式场景库的是：
 
-原因：
+- 指南/主题优先级调整
+- 评审阈值与分数段门槛调整
+- 主题预算重分配
+- 配额增减
+- 合同资助强度调整
 
-- 作用对象清楚
-- 容易落到 `topic × time_window` 状态空间
-- 更适合作为结构仿真的第一批动作
+这些场景都能明确映射到治理流程四段。
 
-## 十、停损线
+以下场景只能弱表达或先不做硬结论：
 
-如果以下任一条件不满足，scenario 引擎应限制功能而不是硬算：
+- 人才断层修复类政策
+- 验收与成果转化类政策
+- 区域定向扶持类政策
+- 纯外部产业冲击类政策
 
-1. baseline 版本不可追溯
-2. instrument 参数无法结构化
-3. evaluation target 未定义
-4. baseline 与 forecast window 无法对齐
+## 十三、基线与场景的关系纪律
 
-这四种情况下继续跑，只会得到不可审计的“伪推演”。
+系统必须遵守以下纪律：
+
+### 1. 不改 baseline，只生成 scenario
+
+baseline 是参考世界，一旦冻结就不能被场景动作回写污染。
+
+### 2. 每个 scenario 必须绑定一个 baseline
+
+不同 baseline 之间的场景结果不可直接混比。
+
+### 3. 同一 baseline 下的多场景才具备可比性
+
+这是一切组合比较的前提。
+
+## 十四、停损线
+
+以下任一条件不满足时，系统应限制输出，而不是硬算：
+
+- baseline 无法追溯到真实数据版本
+- scenario 无法结构化为正式政策包
+- 关键约束缺失
+- evaluation goals 未定义
+- 目标结论超出当前数据支持范围
+
+一旦触发停损线，系统应明确告诉用户：
+
+- 哪一步无法成立
+- 当前最多只能输出到什么层级
+- 哪些部分只能作为代理解释
