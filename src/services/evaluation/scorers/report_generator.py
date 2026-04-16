@@ -2495,7 +2495,8 @@ class ReportGenerator:
             return ""
 
         default_port = os.getenv("APP_PORT", "8888")
-        default_api_base = f"http://127.0.0.1:{default_port}"
+        configured_api_base = str(os.getenv("EVALUATION_REPORT_API_BASE", "")).strip().rstrip("/")
+        default_api_base = configured_api_base or f"http://127.0.0.1:{default_port}"
         suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
         suggestion_html = "".join(
             f'<button type="button" class="chat-suggestion" data-question="{html.escape(question)}">{html.escape(question)}</button>'
@@ -2589,12 +2590,9 @@ class ReportGenerator:
 
             const detectDefaultBase = () => {{
               if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
-                if (window.location.port === configuredPort) {{
-                  return window.location.origin;
-                }}
-                return configuredBase;
+                return window.location.origin;
               }}
-              return configuredBase;
+              return configuredBase || `http://127.0.0.1:${{configuredPort || "8888"}}`;
             }};
 
             const apiBase = detectDefaultBase();
