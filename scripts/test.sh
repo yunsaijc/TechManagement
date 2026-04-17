@@ -119,7 +119,7 @@ curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario' \
         {
           "shockId": "shock_real_debug",
           "shockType": "funding_boost",
-          "targetTopics": ["1010101-面上项目"],
+          "targetTopics": ["面上项目"],
           "intensity": 0.6,
           "coverage": 0.8,
           "lag": 0,
@@ -139,7 +139,7 @@ curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/compo
     -d '{
       "baselineId": "baseline_real_2020_latest",
       "forecastWindow": "2025",
-      "topicId": "1010101-面上项目",
+      "topicId": "面上项目",
       "shockType": "funding_boost",
       "intensity": 0.65,
       "enableSpillover": true,
