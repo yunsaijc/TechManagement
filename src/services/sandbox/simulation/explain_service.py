@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from src.common.models.simulation import (
     SimulationExplanation,
     SimulationResult,
@@ -26,6 +28,8 @@ _IMPACT_ORIGIN_LABELS = {
     "none": "未识别明确来源",
 }
 
+_TOPIC_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9_]{6,}$")
+
 
 def explain_result(result: SimulationResult) -> SimulationExplanation:
     ordered = sorted(
@@ -36,6 +40,7 @@ def explain_result(result: SimulationResult) -> SimulationExplanation:
         + abs(item.delta_proxy_risk),
         reverse=True,
     )
+    ordered = _dedupe_impacts_by_topic_label(ordered)
     impact_breakdown = build_result_impact_breakdown(result)
     management_summary = build_management_summary(result, impact_breakdown=impact_breakdown)
     topics = [_explain_topic(item) for item in ordered[:5]]
@@ -54,7 +59,7 @@ def explain_result(result: SimulationResult) -> SimulationExplanation:
     summary.append(_build_origin_distribution_summary(impact_breakdown))
     if ordered:
         summary.append(
-            f"变化最显著的主题是 {ordered[0].topic_id}，主要受{_impact_source_brief(ordered[0])}驱动。"
+            f"变化最显著的主题是 {_topic_label(ordered[0])}，主要受{_impact_source_brief(ordered[0])}驱动。"
         )
 
     return SimulationExplanation(
@@ -90,6 +95,7 @@ def _explain_topic(item) -> SimulationTopicExplanation:
 
     return SimulationTopicExplanation(
         topic_id=item.topic_id,
+        topic_label=_topic_label(item),
         headline=_build_headline(item, topic_layers),
         reasons=reasons,
         action_hint=_build_action_hint(item, topic_layers),
@@ -204,3 +210,37 @@ def _impact_source_brief(item) -> str:
 
 def _shock_list_text(shocks: list[str]) -> str:
     return "、".join(shocks) if shocks else "未命名冲击"
+
+
+def _dedupe_impacts_by_topic_label(items: list) -> list:
+    selected = []
+    seen: set[str] = set()
+    for item in items:
+        key = _normalize_topic_label(_topic_label(item))
+        if key in seen:
+            continue
+        selected.append(item)
+        seen.add(key)
+    return selected
+
+
+def _topic_label(item) -> str:
+    label = str(getattr(item, "topic_label", "") or "").strip()
+    if label:
+        return label
+    return _fallback_topic_label(str(getattr(item, "topic_id", "") or ""))
+
+
+def _fallback_topic_label(topic_id: str) -> str:
+    text = " ".join(topic_id.strip().split())
+    if "-" not in text:
+        return text
+    prefix, remainder = text.split("-", 1)
+    remainder = " ".join(remainder.strip().split())
+    if prefix and remainder and _TOPIC_PREFIX_PATTERN.fullmatch(prefix):
+        return remainder
+    return text
+
+
+def _normalize_topic_label(label: str) -> str:
+    return " ".join(label.strip().split()).lower()
