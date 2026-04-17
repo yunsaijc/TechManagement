@@ -1,5 +1,6 @@
 """Embedding 向量模型工厂"""
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 import time
 from typing import List, Optional
 import numpy as np
@@ -19,6 +20,21 @@ class DashscopeEmbeddings:
         self.batch_size = 10  # Dashscope批量最大10条
         self.max_workers = 5  # 并发数
         self.max_retries = 3
+        self._disable_env_proxy = self._should_bypass_local_proxy()
+
+    @staticmethod
+    def _should_bypass_local_proxy() -> bool:
+        keys = [
+            "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+            "http_proxy", "https_proxy", "all_proxy",
+        ]
+        for k in keys:
+            v = str(os.getenv(k, "") or "").strip().lower()
+            if not v:
+                continue
+            if "127.0.0.1" in v or "localhost" in v:
+                return True
+        return False
 
     def _embed_batch(self, batch: List[str]) -> List[List[float]]:
         if not batch:
@@ -50,7 +66,8 @@ class DashscopeEmbeddings:
                     f"{self.base_url}/embeddings",
                     json=data,
                     headers=headers,
-                    timeout=300  # 批量请求需要更长时间
+                    timeout=300,  # 批量请求需要更长时间
+                    proxies={"http": None, "https": None} if self._disable_env_proxy else None,
                 )
                 import logging
                 logging.getLogger(__name__).info(f"[Embedding] 响应状态: {resp.status_code}")

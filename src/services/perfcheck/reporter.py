@@ -65,10 +65,10 @@ class PerfCheckReporter:
             covered = sum(1 for c in contents if bool(getattr(c, "is_covered", False)))
             total = len(contents)
             coverage_ratio = (covered / total) if total else 0.0
-            content_level = str(getattr(contents[0], "risk_level", "")).upper() if contents else ""
-            if content_level == "RED":
+            # 研究内容整体判定必须基于“覆盖条目数”，不能用第一条 risk_level 代表全局。
+            if covered == 0:
                 md.append(f"判定：**严重缩水**。任务书未覆盖申报书核心内容；覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
-            elif content_level == "YELLOW":
+            elif covered < total:
                 md.append(f"判定：**部分缩水**。任务书仅覆盖申报书部分内容；覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")
             else:
                 md.append(f"判定：**内容一致或扩展**。任务书覆盖申报书全部研究内容；覆盖率约 **{coverage_ratio:.1%}**（{covered}/{total}）。")

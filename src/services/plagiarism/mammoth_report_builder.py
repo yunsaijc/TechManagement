@@ -825,7 +825,7 @@ class MammothPlagiarismReportBuilder:
     .stat-label {{ font-size: 12px; color: var(--muted); font-weight: 800; }}
     .stat-value {{ margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }}
 
-    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; }}
+    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }}
     .sidebar {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }}
     .sidebar-top {{ padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }}
     .nav-title {{ font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }}
@@ -851,10 +851,10 @@ class MammothPlagiarismReportBuilder:
     .locate-badge.partial {{ background: var(--accent); color: #fff; }}
     .locate-badge.miss {{ background: #94a3b8; color: #fff; }}
 
-    .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }}
-    .panel {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; overflow: hidden; box-shadow: var(--shadow); }}
+    .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }}
+    .panel {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }}
     .panel-header {{ padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }}
-    .panel-body {{ padding: 14px; overflow: auto; scroll-behavior: smooth; }}
+    .panel-body {{ padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }}
 
     .empty {{ color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }}
     .hit {{

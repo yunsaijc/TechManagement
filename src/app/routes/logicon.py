@@ -5,7 +5,8 @@ import logging
 import os
 import re
 import uuid
-from typing import Dict, Optional, Tuple
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -13,6 +14,8 @@ from pydantic import BaseModel
 from src.common.models import ApiResponse, ResponseStatus
 from src.common.models.logicon import LogicOnResult, LogicOnTask
 from src.services.logicon import get_logicon_service
+from src.services.logicon.parser import LogicOnParser, PerfCheckParser
+from src.services.logicon.project_display import sanitize_logicon_display_name
 from src.services.logicon.reporter import LogicOnReporter
 
 
@@ -23,17 +26,174 @@ _results: Dict[str, LogicOnResult] = {}
 _tasks: Dict[str, LogicOnTask] = {}
 
 DEBUG_DIR = "/home/tdkx/ljh/Tech/debug_logicon"
+REPORTS_DIR = os.path.join(DEBUG_DIR, "reports")
 os.makedirs(DEBUG_DIR, exist_ok=True)
+os.makedirs(REPORTS_DIR, exist_ok=True)
 
 
 class LogicOnTextRequest(BaseModel):
     doc_kind: str = "auto"
     text: str
-    enable_llm: bool = False
+    enable_llm: bool = True
     return_graph: bool = False
+    enable_agent: bool = True
+    agent_max_turns: int = 8
+    enable_equivalence_probe: bool = True
     amount_tolerance_wan: float = 0.01
     date_tolerance_days: int = 30
     metric_tolerance_ratio: float = 0.01
+
+
+class LogicOnDebugPairedDocs(BaseModel):
+    """同一文档 stem 下申报书 / 任务书的批量报告（来自 debug_logicon/reports/batch_*）。"""
+
+    stem: str
+    display_name: str = ""
+    declaration: Optional[LogicOnResult] = None
+    task: Optional[LogicOnResult] = None
+
+
+class LogicOnDebugBatchView(BaseModel):
+    batch_id: str
+    report_abs_path: str
+    items: List[LogicOnDebugPairedDocs]
+
+
+def _latest_batch_subdir() -> Tuple[str, str]:
+    """返回 (batch_id, 绝对路径)；若无 batch_* 子目录则 ("", "")。"""
+    if not os.path.isdir(REPORTS_DIR):
+        return "", ""
+    names = [
+        n
+        for n in os.listdir(REPORTS_DIR)
+        if n.startswith("batch_") and os.path.isdir(os.path.join(REPORTS_DIR, n))
+    ]
+    if not names:
+        return "", ""
+    names.sort(reverse=True)
+    bid = names[0]
+    return bid, os.path.join(REPORTS_DIR, bid)
+
+
+def _load_batch_by_stem(batch_path: str) -> Dict[str, Dict[str, LogicOnResult]]:
+    """读取目录内 *_declaration.json / *_task.json，按 stem 聚合为 { stem: {declaration|task: LogicOnResult } }。"""
+    decl_pat = re.compile(r"^(.+)_declaration\.json$", re.I)
+    task_pat = re.compile(r"^(.+)_task\.json$", re.I)
+    by_stem: Dict[str, Dict[str, LogicOnResult]] = {}
+    try:
+        names = sorted(os.listdir(batch_path))
+    except OSError:
+        return {}
+    for name in names:
+        if not name.lower().endswith(".json"):
+            continue
+        full = os.path.join(batch_path, name)
+        if not os.path.isfile(full):
+            continue
+        m_d = decl_pat.match(name)
+        m_t = task_pat.match(name)
+        stem = (m_d or m_t)
+        if not stem:
+            continue
+        s = stem.group(1)
+        kind = "declaration" if m_d else "task"
+        try:
+            with open(full, encoding="utf-8") as f:
+                raw = json.load(f)
+            result = LogicOnResult.model_validate(raw)
+        except Exception as e:
+            logger.warning("skip invalid logicon batch json %s: %s", full, e)
+            continue
+        slot = by_stem.setdefault(s, {})
+        slot[kind] = result
+    return by_stem
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+# stem 与批量脚本输入文件名一致时，在此目录下查找原始 docx/pdf 以解析「项目名称」。
+_DOC_SEARCH_SUBDIRS = (
+    "data/samples_2025_docx/sbs",
+    "data/samples_2025_docx/hts",
+    "data/perfcheck_samples_2025_docx/sbs",
+    "data/perfcheck_samples_2025_docx/hts",
+)
+
+async def _load_batch_paired_results_async(batch_path: str) -> List[LogicOnDebugPairedDocs]:
+    by_stem = _load_batch_by_stem(batch_path)
+    stems = sorted(by_stem.keys())
+    if not stems:
+        return []
+    sem = asyncio.Semaphore(4)
+    parser = LogicOnParser()
+    perf = PerfCheckParser()
+    root = _project_root()
+
+    async def _resolve_one(stem: str) -> str:
+        """从样例目录中读取与 stem 同名的文档，抽取封面/页眉中的项目名称。"""
+        if not stem:
+            return ""
+        async with sem:
+            for sub in _DOC_SEARCH_SUBDIRS:
+                for ext in ("docx", "pdf"):
+                    path = root / sub / f"{stem}.{ext}"
+                    if not path.is_file():
+                        continue
+                    try:
+                        data = path.read_bytes()
+                        parsed = await parser.parse_file(data, ext)
+                        raw = getattr(parsed, "raw_text", "") or ""
+                        name = perf._extract_project_name(raw[:24000])
+                        if name:
+                            cleaned = sanitize_logicon_display_name(name)
+                            if cleaned:
+                                return cleaned
+                            # 清洗后过短则不再用原始长串，避免列表标题再次出现整表拼接
+                            return ""
+                    except Exception as e:
+                        logger.debug("display_name parse skip %s: %s", path, e)
+        return ""
+
+    labels = await asyncio.gather(*(_resolve_one(s) for s in stems), return_exceptions=True)
+    items: List[LogicOnDebugPairedDocs] = []
+    for stem, label in zip(stems, labels):
+        disk_label = ""
+        if isinstance(label, Exception):
+            logger.warning("display_name failed stem=%s: %s", stem, label)
+        else:
+            disk_label = str(label or "").strip()
+        slot = by_stem[stem]
+        decl = slot.get("declaration")
+        task = slot.get("task")
+        from_json = ""
+        if decl is not None:
+            from_json = str(getattr(decl, "project_name", "") or "").strip()
+        if not from_json and task is not None:
+            from_json = str(getattr(task, "project_name", "") or "").strip()
+        label_str = from_json or disk_label
+        items.append(
+            LogicOnDebugPairedDocs(
+                stem=stem,
+                display_name=label_str,
+                declaration=decl,
+                task=task,
+            )
+        )
+    return items
+
+
+@router.get("/debug-reports/latest", response_model=ApiResponse[LogicOnDebugBatchView])
+async def get_latest_debug_batch_reports() -> ApiResponse[LogicOnDebugBatchView]:
+    """供前端展示：debug_logicon/reports 下按名称倒序最新的 batch_* 目录内容。"""
+    batch_id, batch_path = _latest_batch_subdir()
+    if not batch_id:
+        payload = LogicOnDebugBatchView(batch_id="", report_abs_path=REPORTS_DIR, items=[])
+        return ApiResponse(status=ResponseStatus.SUCCESS, data=payload)
+    items = await _load_batch_paired_results_async(batch_path)
+    payload = LogicOnDebugBatchView(batch_id=batch_id, report_abs_path=batch_path, items=items)
+    return ApiResponse(status=ResponseStatus.SUCCESS, data=payload)
 
 
 def _make_task(*, task_id: str, doc_id: str) -> LogicOnTask:
@@ -103,12 +263,19 @@ def _save_debug_result(
     result: LogicOnResult,
     *,
     source_filename: str = "",
+    report_slug: str | None = None,
 ) -> tuple[str, str]:
+    """写入 JSON + Markdown；若提供 report_slug 则固定写入 reports/ 下（一份核验一对文件）。"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     source = _safe_stem(source_filename)
-    base_name = f"{source}_{result.doc_id}_{timestamp}" if source else f"{result.doc_id}_{timestamp}"
-    json_path = os.path.join(DEBUG_DIR, f"{base_name}.json")
-    md_path = os.path.join(DEBUG_DIR, f"{base_name}.md")
+    if report_slug:
+        base_name = _safe_stem(report_slug) or result.doc_id
+        json_path = os.path.join(REPORTS_DIR, f"{base_name}.json")
+        md_path = os.path.join(REPORTS_DIR, f"{base_name}.md")
+    else:
+        base_name = f"{source}_{result.doc_id}_{timestamp}" if source else f"{result.doc_id}_{timestamp}"
+        json_path = os.path.join(DEBUG_DIR, f"{base_name}.json")
+        md_path = os.path.join(DEBUG_DIR, f"{base_name}.md")
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(result.model_dump(mode="json"), f, ensure_ascii=False, indent=2)
@@ -120,6 +287,13 @@ def _save_debug_result(
     return json_path, md_path
 
 
+def _report_slug_for_upload(*, source_filename: str, doc_id: str) -> str:
+    stem = _safe_stem(source_filename)
+    if stem and stem != "unknown":
+        return f"{stem}__{doc_id}"
+    return doc_id
+
+
 async def _run_check_file_task(
     task_id: str,
     *,
@@ -127,8 +301,12 @@ async def _run_check_file_task(
     file_data: bytes,
     file_type: str,
     doc_kind: str,
+    source_filename: str = "",
     enable_llm: bool,
     return_graph: bool,
+    enable_agent: bool,
+    agent_max_turns: int,
+    enable_equivalence_probe: bool,
     amount_tolerance_wan: float,
     date_tolerance_days: int,
     metric_tolerance_ratio: float,
@@ -143,13 +321,17 @@ async def _run_check_file_task(
             doc_kind=doc_kind,
             enable_llm=enable_llm,
             return_graph=return_graph,
+            enable_agent=enable_agent,
+            agent_max_turns=agent_max_turns,
+            enable_equivalence_probe=enable_equivalence_probe,
             amount_tolerance_wan=amount_tolerance_wan,
             date_tolerance_days=date_tolerance_days,
             metric_tolerance_ratio=metric_tolerance_ratio,
             doc_id=doc_id,
         )
         try:
-            json_path, md_path = _save_debug_result(result)
+            slug = _report_slug_for_upload(source_filename=source_filename, doc_id=result.doc_id)
+            json_path, md_path = _save_debug_result(result, source_filename=source_filename, report_slug=slug)
             result.warnings.append(f"调试结果已保存: {json_path} ; {md_path}")
         except Exception as e:
             result.warnings.append(f"调试结果保存失败: {str(e)}")
@@ -175,8 +357,11 @@ async def _run_check_file_task(
 async def check_file(
     file: UploadFile = File(...),
     doc_kind: str = Form("auto"),
-    enable_llm: bool = Form(False),
+    enable_llm: bool = Form(True),
     return_graph: bool = Form(False),
+    enable_agent: bool = Form(True),
+    agent_max_turns: int = Form(8),
+    enable_equivalence_probe: bool = Form(True),
     amount_tolerance_wan: float = Form(0.01),
     date_tolerance_days: int = Form(30),
     metric_tolerance_ratio: float = Form(0.01),
@@ -191,12 +376,20 @@ async def check_file(
             doc_kind=doc_kind,
             enable_llm=enable_llm,
             return_graph=return_graph,
+            enable_agent=enable_agent,
+            agent_max_turns=agent_max_turns,
+            enable_equivalence_probe=enable_equivalence_probe,
             amount_tolerance_wan=amount_tolerance_wan,
             date_tolerance_days=date_tolerance_days,
             metric_tolerance_ratio=metric_tolerance_ratio,
         )
         try:
-            json_path, md_path = _save_debug_result(result, source_filename=file.filename or "")
+            slug = _report_slug_for_upload(source_filename=file.filename or "", doc_id=result.doc_id)
+            json_path, md_path = _save_debug_result(
+                result,
+                source_filename=file.filename or "",
+                report_slug=slug,
+            )
             result.warnings.append(f"调试结果已保存: {json_path} ; {md_path}")
         except Exception as e:
             result.warnings.append(f"调试结果保存失败: {str(e)}")
@@ -214,12 +407,20 @@ async def check_text(request: LogicOnTextRequest) -> ApiResponse[LogicOnResult]:
             doc_kind=request.doc_kind,
             enable_llm=request.enable_llm,
             return_graph=request.return_graph,
+            enable_agent=request.enable_agent,
+            agent_max_turns=request.agent_max_turns,
+            enable_equivalence_probe=request.enable_equivalence_probe,
             amount_tolerance_wan=request.amount_tolerance_wan,
             date_tolerance_days=request.date_tolerance_days,
             metric_tolerance_ratio=request.metric_tolerance_ratio,
         )
         try:
-            json_path, md_path = _save_debug_result(result, source_filename="check_text")
+            slug = _report_slug_for_upload(source_filename="check_text", doc_id=result.doc_id)
+            json_path, md_path = _save_debug_result(
+                result,
+                source_filename="check_text",
+                report_slug=slug,
+            )
             result.warnings.append(f"调试结果已保存: {json_path} ; {md_path}")
         except Exception as e:
             result.warnings.append(f"调试结果保存失败: {str(e)}")
@@ -232,8 +433,11 @@ async def check_text(request: LogicOnTextRequest) -> ApiResponse[LogicOnResult]:
 async def check_file_async(
     file: UploadFile = File(...),
     doc_kind: str = Form("auto"),
-    enable_llm: bool = Form(False),
+    enable_llm: bool = Form(True),
     return_graph: bool = Form(False),
+    enable_agent: bool = Form(True),
+    agent_max_turns: int = Form(8),
+    enable_equivalence_probe: bool = Form(True),
     amount_tolerance_wan: float = Form(0.01),
     date_tolerance_days: int = Form(30),
     metric_tolerance_ratio: float = Form(0.01),
@@ -251,8 +455,12 @@ async def check_file_async(
             file_data=file_data,
             file_type=file_type,
             doc_kind=doc_kind,
+            source_filename=file.filename or "",
             enable_llm=enable_llm,
             return_graph=return_graph,
+            enable_agent=enable_agent,
+            agent_max_turns=agent_max_turns,
+            enable_equivalence_probe=enable_equivalence_probe,
             amount_tolerance_wan=amount_tolerance_wan,
             date_tolerance_days=date_tolerance_days,
             metric_tolerance_ratio=metric_tolerance_ratio,

@@ -62,6 +62,7 @@ from src.common.models.logicon import (
     RuleInfo,
     RuleConfigSnapshot,
     LogicOnResult,
+    LogicOnDimensionSummary,
     LogicOnTextRequest,
     LogicOnTask,
 )
@@ -143,6 +144,7 @@ __all__ = [
     "RuleInfo",
     "RuleConfigSnapshot",
     "LogicOnResult",
+    "LogicOnDimensionSummary",
     "LogicOnTextRequest",
     "LogicOnTask",
 ]

@@ -72,6 +72,8 @@ class MetricComparison(BaseModel):
     type: str
     risk_level: str  # RED, YELLOW, GREEN
     reason: str
+    # 语义对齐阶段综合相似度（0~1），便于大批量排查误配；同名直配可为 None
+    match_similarity: Optional[float] = None
 
 class ContentComparison(BaseModel):
     apply_id: str

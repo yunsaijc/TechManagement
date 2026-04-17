@@ -207,6 +207,36 @@ def _match_rule_code_by_requirement(row_text: str, review_points: List[dict]) ->
 @router.get("/debug-batch-view")
 async def get_debug_batch_view(limit: int = 300) -> ApiResponse[dict]:
     """读取固定调试批次结果，供前端直接展示双栏页面。"""
+    exact_html_path = Path(
+        "/home/tdkx/ljh/Tech/debug_review/batch_review_db832d940a2843e6b3c33970336d0e9e/index.html"
+    )
+    if exact_html_path.exists():
+        try:
+            html_text = exact_html_path.read_text(encoding="utf-8")
+            marker = "const REPORT_DATA = "
+            start = html_text.find(marker)
+            if start >= 0:
+                start += len(marker)
+                end = html_text.find(";\n\n    const state", start)
+                if end < 0:
+                    end = html_text.find(";\n    const state", start)
+                if end > start:
+                    report_data = json.loads(html_text[start:end])
+                    return ApiResponse(
+                        status="success",
+                        data={
+                            "reportData": report_data,
+                            "reportAssetsBase": "/debug-review/batch_review_db832d940a2843e6b3c33970336d0e9e",
+                            "guideline": {"file_name": "2026年度中央引导地方形式审查要点.docx"},
+                            "stats": {
+                                "total_projects": len(report_data.get("projects") or []),
+                                "total_review_points": 0,
+                            },
+                        },
+                    )
+        except Exception as e:
+            logger.warning("解析固定调试页 REPORT_DATA 失败，将回退旧逻辑: %s", e)
+
     root = Path("/home/tdkx/ljh/Tech/debug_review")
     docx_path = root / "2026年度中央引导地方形式审查要点.docx"
     projects_dir = root / "batch_review_1775034762632" / "projects"

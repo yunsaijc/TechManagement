@@ -3327,3 +3327,68 @@ class PerfCheckParser:
         }
 
         return DocumentSchema(**data)
+
+
+class LogicOnParser:
+    """LogicOn 规则层封装：文档类型、文件解析与证据片段定位。"""
+
+    def __init__(self) -> None:
+        self._perf = PerfCheckParser()
+
+    def normalize_doc_kind(self, doc_kind: str, raw_text: str) -> str:
+        dk = (doc_kind or "auto").strip().lower()
+        if dk in ("declaration", "task"):
+            return dk
+        return self._perf._detect_doc_kind(raw_text or "")
+
+    async def parse_file(self, file_data: bytes, file_type: str):
+        from types import SimpleNamespace
+
+        ft = (file_type or "pdf").strip().lower().lstrip(".")
+        parser = get_parser(ft)
+        result = await parser.parse(file_data)
+        blocks = result.content.text_blocks
+        page_lines: dict[int, list[str]] = {}
+        for b in blocks:
+            p = int(b.page)
+            page_lines.setdefault(p, []).append(b.text)
+        if not page_lines:
+            raw = result.content.to_text()
+            return SimpleNamespace(raw_text=raw, page_texts={0: raw})
+        keys = sorted(page_lines.keys())
+        page_texts = {i: "\n".join(page_lines[i]) for i in keys}
+        raw_text = "\n\n".join(page_texts[k] for k in keys)
+        return SimpleNamespace(raw_text=raw_text, page_texts=page_texts)
+
+    def pick_evidence_snippet(
+        self,
+        *,
+        page_texts: Dict[int, str],
+        patterns: list[str],
+        context_radius: int = 180,
+        context_before: Optional[int] = None,
+        context_after: Optional[int] = None,
+        flags: int = re.IGNORECASE | re.MULTILINE,
+    ) -> tuple[Optional[int], Optional[str]]:
+        """摘录定位：默认不使用 DOTALL，避免 `.*` 跨表格/跨节区误匹配到无关段落。"""
+        if not page_texts or not patterns:
+            return None, None
+        cb = int(context_before) if context_before is not None else min(72, context_radius)
+        ca = int(context_after) if context_after is not None else context_radius
+        for page_idx in sorted(page_texts.keys()):
+            text = page_texts.get(page_idx) or ""
+            if not text.strip():
+                continue
+            for pat in patterns:
+                try:
+                    m = re.search(pat, text, flags)
+                except re.error:
+                    continue
+                if m:
+                    start = max(0, m.start() - cb)
+                    end = min(len(text), m.end() + ca)
+                    snippet = text[start:end].strip()
+                    if len(snippet) > 520:
+                        snippet = snippet[:520] + "…"
+                    return page_idx, snippet
+        return None, None

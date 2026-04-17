@@ -16,7 +16,8 @@ from src.app.routes import plagiarism
 from src.app.routes import perfcheck
 from src.app.routes import evaluation
 from src.app.routes import sandbox
-# from src.app.routes import logicon
+from src.app.routes import logicon
+from src.app.routes import expert_debug
 
 app = FastAPI(
     title="科技管理系统 API",
@@ -51,6 +52,8 @@ async def add_no_cache_for_frontend_html(request, call_next):
 FRONTEND_DIR = Path(__file__).parent.parent.parent / "frontend"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 DEBUG_EVAL_DIR = Path(__file__).parent.parent.parent / "debug_eval"
+DEBUG_REVIEW_DIR = Path(__file__).parent.parent.parent / "debug_review"
+DEBUG_PLAGIARISM_DIR = Path(__file__).parent.parent.parent / "debug_plagiarism"
 
 # 注册路由
 app.include_router(review.router, prefix="/api/v1/review", tags=["形式审查"])
@@ -59,7 +62,8 @@ app.include_router(plagiarism.router, prefix="/api/v1/plagiarism", tags=["查重
 app.include_router(perfcheck.router, prefix="/api/v1/perfcheck", tags=["绩效核验"])
 app.include_router(evaluation.router, prefix="/api/v1/evaluation", tags=["正文评审"])
 app.include_router(sandbox.router, prefix="/api/v1/sandbox", tags=["Sandbox研判"])
-# app.include_router(logicon.router, prefix="/api/v1/logicon", tags=["逻辑自洽"])
+app.include_router(logicon.router, prefix="/api/v1/logicon", tags=["逻辑自洽"])
+app.include_router(expert_debug.router, prefix="/api/v1/expert-debug", tags=["专家匹配"])
 
 SERVE_FRONTEND_DIR = FRONTEND_DIST_DIR if FRONTEND_DIST_DIR.exists() else FRONTEND_DIR
 
@@ -68,6 +72,12 @@ if SERVE_FRONTEND_DIR.exists():
 
 if DEBUG_EVAL_DIR.exists():
     app.mount("/debug-eval", StaticFiles(directory=DEBUG_EVAL_DIR, html=True), name="debug-eval")
+
+if DEBUG_REVIEW_DIR.exists():
+    app.mount("/debug-review", StaticFiles(directory=DEBUG_REVIEW_DIR, html=True), name="debug-review")
+
+if DEBUG_PLAGIARISM_DIR.exists():
+    app.mount("/debug-plagiarism", StaticFiles(directory=DEBUG_PLAGIARISM_DIR, html=True), name="debug-plagiarism")
 
 
 @app.get("/", include_in_schema=False)

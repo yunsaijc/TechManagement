@@ -3,9 +3,11 @@ import { useWorkbenchStore } from '../stores/workbench';
 import PerfcheckPanel from '../modules/perfcheck/PerfcheckPanel.vue';
 import ReviewPanel from '../modules/review/ReviewPanel.vue';
 import GroupingPanel from '../modules/grouping/GroupingPanel.vue';
+import ExpertMatchPanel from '../modules/expert/ExpertMatchPanel.vue';
 import PlagiarismPanel from '../modules/plagiarism/PlagiarismPanel.vue';
 import EvaluationPanel from '../modules/evaluation/EvaluationPanel.vue';
 import LogiconPanel from '../modules/logicon/LogiconPanel.vue';
+import LogiconReportsPanel from '../modules/logicon/LogiconReportsPanel.vue';
 import SandboxPanel from '../modules/sandbox/SandboxPanel.vue';
 
 const store = useWorkbenchStore();
@@ -13,27 +15,42 @@ const store = useWorkbenchStore();
 
 <template>
   <div class="main-content" v-if="store.currentModuleMeta">
-    <div v-if="store.selectedModuleId === 'perfcheck'">
+    <div v-if="store.selectedModuleId === 'perfcheck'" class="module-stage">
       <PerfcheckPanel />
     </div>
-    <div v-else-if="store.selectedModuleId === 'review'">
+    <div v-else-if="store.selectedModuleId === 'logicon_reports'" class="module-stage">
+      <LogiconReportsPanel />
+    </div>
+    <div v-else-if="store.selectedModuleId === 'review'" class="module-stage">
       <ReviewPanel />
     </div>
-    <div v-else-if="store.selectedModuleId === 'grouping'">
+    <div v-else-if="store.selectedModuleId === 'grouping'" class="module-stage">
       <GroupingPanel />
     </div>
-    <div v-else-if="store.selectedModuleId === 'plagiarism'">
+    <div v-else-if="store.selectedModuleId === 'expert_match'" class="module-stage">
+      <ExpertMatchPanel />
+    </div>
+    <div v-else-if="store.selectedModuleId === 'plagiarism'" class="module-stage">
       <PlagiarismPanel />
     </div>
-    <div v-else-if="store.selectedModuleId === 'evaluation'">
+    <div v-else-if="store.selectedModuleId === 'evaluation'" class="module-stage">
       <EvaluationPanel />
     </div>
-    <div v-else-if="store.selectedModuleId === 'logicon'">
+    <div v-else-if="store.selectedModuleId === 'logicon'" class="module-stage">
       <LogiconPanel />
     </div>
-    <div v-else-if="store.selectedModuleId === 'sandbox'">
+    <div v-else-if="store.selectedModuleId === 'sandbox'" class="module-stage">
       <SandboxPanel />
     </div>
-    <div v-else class="content-scroll" />
+    <div v-else class="content-scroll module-stage" />
   </div>
 </template>
+
+<style scoped>
+.module-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+</style>

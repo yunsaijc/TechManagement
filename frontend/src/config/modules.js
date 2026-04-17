@@ -84,48 +84,6 @@ const MODULES = [
         }
     },
     {
-        id: 'grouping',
-        icon: '👥',
-        title: '项目分组',
-        description: '按学科自动完成项目分组',
-        actions: [
-            {
-                id: 'grouping_full',
-                title: '开始分组',
-                description: '按学科自动完成项目分组（暂不进行专家匹配）',
-                api: {
-                    method: 'POST',
-                    path: '/grouping/projects',
-                    contentType: 'application/json',
-                },
-                output: [
-                    { name: 'id', label: '结果编号', description: '用于追踪本次分组结果' },
-                    { name: 'groups', label: '分组结果', description: '按学科 subject_name 展示，展开查看项目 xmmc 列表' },
-                    { name: 'statistics', label: '统计信息', description: '分组数/项目数/均衡度等' },
-                ],
-                fields: [
-                    { name: 'category', label: '分组类别（可选）', type: 'text', placeholder: '例如：default（默认）' },
-                    { name: 'max_per_group', label: '每组最多项目数', type: 'number', value: '15' },
-                ],
-                buildRequest(form, _files, helpers) {
-                    return {
-                        method: 'POST',
-                        url: `${helpers.apiBase()}/grouping/projects`,
-                        headers: { 'Content-Type': 'application/json' },
-                        body: {
-                            category: helpers.hasText(form.category) ? form.category : null,
-                            max_per_group: helpers.toNumber(form.max_per_group, 15),
-                        },
-                        replayable: true
-                    };
-                }
-            }
-        ],
-        fillExample(setField) {
-            setField('grouping_full', 'category', 'default');
-        }
-    },
-    {
         id: 'plagiarism',
         icon: '🔍',
         title: '查重检测',
@@ -174,6 +132,56 @@ const MODULES = [
         fillExample(setField) {
             setField('plagiarism_submit', 'section_config', '{"primary":{"start_pattern":"项目立项背景及意义"}}');
         }
+    },
+    {
+        id: 'grouping',
+        icon: '👥',
+        title: '项目分组',
+        description: '按学科自动完成项目分组',
+        actions: [
+            {
+                id: 'grouping_full',
+                title: '开始分组',
+                description: '按学科自动完成项目分组（暂不进行专家匹配）',
+                api: {
+                    method: 'POST',
+                    path: '/grouping/projects',
+                    contentType: 'application/json',
+                },
+                output: [
+                    { name: 'id', label: '结果编号', description: '用于追踪本次分组结果' },
+                    { name: 'groups', label: '分组结果', description: '按学科 subject_name 展示，展开查看项目 xmmc 列表' },
+                    { name: 'statistics', label: '统计信息', description: '分组数/项目数/均衡度等' },
+                ],
+                fields: [
+                    { name: 'category', label: '分组类别（可选）', type: 'text', placeholder: '例如：default（默认）' },
+                    { name: 'max_per_group', label: '每组最多项目数', type: 'number', value: '15' },
+                ],
+                buildRequest(form, _files, helpers) {
+                    return {
+                        method: 'POST',
+                        url: `${helpers.apiBase()}/grouping/projects`,
+                        headers: { 'Content-Type': 'application/json' },
+                        body: {
+                            category: helpers.hasText(form.category) ? form.category : null,
+                            max_per_group: helpers.toNumber(form.max_per_group, 15),
+                        },
+                        replayable: true
+                    };
+                }
+            }
+        ],
+        fillExample(setField) {
+            setField('grouping_full', 'category', 'default');
+        }
+    },
+    {
+        id: 'expert_match',
+        icon: '🎯',
+        title: '专家匹配',
+        description: '展示固定文件 match_result_20260415_115915.json（版式对齐同目录 HTML 报告）',
+        actions: [],
+        fillExample() {}
     },
     {
         id: 'evaluation',
@@ -264,6 +272,14 @@ const MODULES = [
         fillExample(setField) {
             setField('perfcheck_file', 'project_id', 'demo_001');
         }
+    },
+    {
+        id: 'logicon_reports',
+        icon: '🧩',
+        title: '逻辑自洽',
+        description: '展示 debug_logicon/reports 下最新 batch 核验结果',
+        actions: [],
+        fillExample() {}
     },
     // {
     //     id: 'logicon',

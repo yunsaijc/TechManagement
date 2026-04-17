@@ -47,12 +47,12 @@ class PlagiarismHtmlReportBuilder:
     .title {{ font-size: 18px; font-weight: 700; }}
     .meta {{ display: flex; gap: 10px; flex-wrap: wrap; }}
     .pill {{ background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 6px 10px; font-size: 12px; }}
-    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr; gap: 12px; padding: 12px; }}
+    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 280px 1fr; gap: 12px; padding: 12px; align-items: stretch; }}
     .sidebar {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; overflow: auto; }}
-    .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }}
-    .panel {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; display: flex; flex-direction: column; min-height: 0; }}
+    .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }}
+    .panel {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; display: flex; flex-direction: column; min-height: 0; height: 100%; }}
     .panel-header {{ padding: 12px 14px; border-bottom: 1px solid #e5e7eb; font-weight: 700; display: flex; justify-content: space-between; gap: 8px; }}
-    .panel-body {{ padding: 12px; overflow: auto; scroll-behavior: smooth; }}
+    .panel-body {{ padding: 12px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }}
     .doc-text {{ line-height: 1.9; font-size: 14px; white-space: pre-wrap; word-break: break-word; }}
     .hit {{ background: rgba(239, 68, 68, .18); color: #991b1b; border-radius: 4px; padding: 0 1px; cursor: pointer; transition: all .15s ease; }}
     .hit.template {{ background: rgba(245, 158, 11, .18); color: #92400e; }}

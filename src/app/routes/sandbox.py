@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from threading import Lock
+from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
+
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -17,6 +22,9 @@ from src.services.sandbox.macro_insight_step3 import main as step3_main
 from src.services.sandbox.neo4j_gds_preflight import main as step1_main
 
 router = APIRouter()
+_JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sandbox-job")
+_JOB_LOCK = Lock()
+_LEADERSHIP_JOBS: dict[str, dict[str, object]] = {}
 
 
 class LeadershipForecastRequest(BaseModel):
@@ -24,6 +32,63 @@ class LeadershipForecastRequest(BaseModel):
     runPreflight: bool = False
     mode: str = "quick"
     forceRefresh: bool = False
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _set_job(job_id: str, **kwargs: object) -> None:
+    with _JOB_LOCK:
+        item = _LEADERSHIP_JOBS.get(job_id)
+        if not item:
+            return
+        item.update(kwargs)
+
+
+def _run_leadership_job(job_id: str, payload: LeadershipForecastRequest) -> None:
+    def _progress_cb(event: dict[str, object]) -> None:
+        output = event.get("output") if isinstance(event.get("output"), dict) else None
+        _set_job(
+            job_id,
+            state="running",
+            progress=int(event.get("progress", 0) or 0),
+            step=str(event.get("step", "")),
+            message=str(event.get("message", "")),
+            partialOutput=output,
+            updatedAt=_now_iso(),
+        )
+
+    try:
+        _set_job(job_id, state="running", progress=3, step="queue", message="任务已启动", updatedAt=_now_iso())
+        report = run_leadership_sandbox(
+            payload.question,
+            payload.runPreflight,
+            payload.mode,
+            payload.forceRefresh,
+            _progress_cb,
+        )
+        _set_job(
+            job_id,
+            state="completed",
+            progress=100,
+            step="done",
+            message="推演完成",
+            updatedAt=_now_iso(),
+            finishedAt=_now_iso(),
+            report=report,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _set_job(
+            job_id,
+            state="failed",
+            progress=100,
+            step="error",
+            message=f"推演失败: {exc}",
+            error=str(exc),
+            updatedAt=_now_iso(),
+            finishedAt=_now_iso(),
+        )
 
 
 def _run_step(step_name: str, fn) -> dict[str, object]:
@@ -92,10 +157,69 @@ async def run_pipeline_leadership_forecast(payload: LeadershipForecastRequest) -
             payload.runPreflight,
             payload.mode,
             payload.forceRefresh,
+            None,
         )
         return report
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/pipeline/leadership-forecast/start")
+async def start_pipeline_leadership_forecast(payload: LeadershipForecastRequest) -> dict[str, object]:
+    """异步启动 Step2 -> Step5 推演任务，立即返回任务ID。"""
+    job_id = uuid4().hex
+    now = _now_iso()
+    with _JOB_LOCK:
+        _LEADERSHIP_JOBS[job_id] = {
+            "jobId": job_id,
+            "state": "queued",
+            "progress": 0,
+            "step": "queued",
+            "message": "任务排队中",
+            "error": "",
+            "createdAt": now,
+            "updatedAt": now,
+            "finishedAt": "",
+            "partialOutput": None,
+            "report": None,
+        }
+
+    _JOB_EXECUTOR.submit(_run_leadership_job, job_id, payload)
+    return {
+        "status": "accepted",
+        "jobId": job_id,
+        "state": "queued",
+        "progress": 0,
+        "message": "任务已提交",
+    }
+
+
+@router.get("/pipeline/leadership-forecast/jobs/{job_id}")
+async def get_pipeline_leadership_forecast_job(job_id: str) -> dict[str, object]:
+    """查询异步推演任务进度和结果。"""
+    with _JOB_LOCK:
+        item = _LEADERSHIP_JOBS.get(job_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+        state = str(item.get("state", "queued"))
+        result: dict[str, object] = {
+            "status": "ok",
+            "jobId": job_id,
+            "state": state,
+            "progress": int(item.get("progress", 0) or 0),
+            "step": str(item.get("step", "")),
+            "message": str(item.get("message", "")),
+            "error": str(item.get("error", "")),
+            "createdAt": str(item.get("createdAt", "")),
+            "updatedAt": str(item.get("updatedAt", "")),
+            "finishedAt": str(item.get("finishedAt", "")),
+        }
+        if isinstance(item.get("partialOutput"), dict):
+            result["partialOutput"] = item.get("partialOutput")
+        if state == "completed" and item.get("report"):
+            result["report"] = item.get("report")
+        return result
 
 
 @router.get("/pipeline/leadership-forecast/latest")

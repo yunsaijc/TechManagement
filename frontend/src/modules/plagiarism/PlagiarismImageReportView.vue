@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 const reportSrc = computed(() => {
-  const path = '/debug-plagiarism/by_guide_codes/plagiarism_batch_report.html';
+  const path = '/debug-plagiarism/image/by_guide_codes/plagiarism_image_batch_report.html';
   const { protocol, hostname, port } = window.location;
   const p = String(port || '').trim();
 
@@ -19,22 +19,22 @@ const reportSrc = computed(() => {
 </script>
 
 <template>
-  <div class="text-report-wrap">
+  <div class="image-report-wrap">
     <iframe
-      class="text-report-frame"
+      class="image-report-frame"
       :src="reportSrc"
-      title="文本查重报告"
+      title="图片查重报告"
     />
   </div>
 </template>
 
 <style scoped>
-.text-report-wrap {
+.image-report-wrap {
   height: 100%;
   min-height: 0;
 }
 
-.text-report-frame {
+.image-report-frame {
   display: block;
   width: 100%;
   height: 100%;

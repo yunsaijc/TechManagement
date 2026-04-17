@@ -17,7 +17,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,16 +38,17 @@ SESSION_KWARGS = {
 }
 
 
-DEFAULT_YEAR_A_START = 2023
-DEFAULT_YEAR_A_END = 2023
-DEFAULT_YEAR_B_START = 2024
-DEFAULT_YEAR_B_END = 2024
+CURRENT_YEAR = datetime.now().year
+DEFAULT_YEAR_A_START = CURRENT_YEAR - 1
+DEFAULT_YEAR_A_END = CURRENT_YEAR - 1
+DEFAULT_YEAR_B_START = CURRENT_YEAR
+DEFAULT_YEAR_B_END = CURRENT_YEAR
 DEFAULT_PREFERRED_STRATEGY = "auto"
 DEFAULT_MIN_OVERLAP = 1
 DEFAULT_MIN_JACCARD = 0.01
 DEFAULT_MAX_EDGES = 150000
 DEFAULT_TOP_COMMUNITIES = 8
-DEFAULT_OUTPUT_PATH = "debug_sandbox/hotspot_migration_real_schema_2023_to_2024.json"
+DEFAULT_OUTPUT_PATH = "debug_sandbox/Q1/hotspot_migration_real_schema_2023_to_2024.json"
 DEFAULT_COMMUNITY_EDGE_THRESHOLD = 200000
 
 SCI_KG_LABELS = [
@@ -234,6 +238,9 @@ class HotspotConfig:
     min_project_count: int
     min_undertakes_count: int
     min_year_norm_ratio: float
+    snapshot_cache_path: str
+    snapshot_cache_minutes: int
+    enable_graph_profile: bool
 
 
 @dataclass
@@ -260,13 +267,15 @@ def env_bool(name: str, default: bool) -> bool:
 
 
 def build_config() -> HotspotConfig:
-    year_a_start = DEFAULT_YEAR_A_START
-    year_a_end = DEFAULT_YEAR_A_END
-    year_b_start = DEFAULT_YEAR_B_START
-    year_b_end = DEFAULT_YEAR_B_END
+    year_a_start = int(os.getenv("HOTSPOT_YEAR_A_START", str(DEFAULT_YEAR_A_START)))
+    year_a_end = int(os.getenv("HOTSPOT_YEAR_A_END", str(DEFAULT_YEAR_A_END)))
+    year_b_start = int(os.getenv("HOTSPOT_YEAR_B_START", str(DEFAULT_YEAR_B_START)))
+    year_b_end = int(os.getenv("HOTSPOT_YEAR_B_END", str(DEFAULT_YEAR_B_END)))
 
     if year_a_end < year_a_start or year_b_end < year_b_start:
         raise ValueError("年份区间非法：结束年份不能小于开始年份")
+
+    preferred_strategy = os.getenv("HOTSPOT_PREFERRED_STRATEGY", DEFAULT_PREFERRED_STRATEGY).strip() or DEFAULT_PREFERRED_STRATEGY
 
     return HotspotConfig(
         uri=getenv_required("NEO4J_URI", "neo4j://192.168.0.198:7687"),
@@ -279,23 +288,94 @@ def build_config() -> HotspotConfig:
         year_b_end=year_b_end,
         node_query_template=DEFAULT_NODE_TEMPLATE,
         rel_query_template=DEFAULT_REL_TEMPLATE,
-        min_overlap_count=DEFAULT_MIN_OVERLAP,
-        min_jaccard=DEFAULT_MIN_JACCARD,
-        top_community_count=DEFAULT_TOP_COMMUNITIES,
+        min_overlap_count=max(1, int(os.getenv("HOTSPOT_MIN_OVERLAP", str(DEFAULT_MIN_OVERLAP)))),
+        min_jaccard=max(0.0, float(os.getenv("HOTSPOT_MIN_JACCARD", str(DEFAULT_MIN_JACCARD)))),
+        top_community_count=max(1, int(os.getenv("HOTSPOT_TOP_COMMUNITIES", str(DEFAULT_TOP_COMMUNITIES)))),
         output_path=DEFAULT_OUTPUT_PATH,
-        preferred_strategy=DEFAULT_PREFERRED_STRATEGY,
-        community_edge_threshold=DEFAULT_COMMUNITY_EDGE_THRESHOLD,
-        max_edges=DEFAULT_MAX_EDGES,
+        preferred_strategy=preferred_strategy,
+        community_edge_threshold=max(1, int(os.getenv("HOTSPOT_COMMUNITY_EDGE_THRESHOLD", str(DEFAULT_COMMUNITY_EDGE_THRESHOLD)))),
+        max_edges=max(1000, int(os.getenv("HOTSPOT_MAX_EDGES", str(DEFAULT_MAX_EDGES)))),
         require_real_data=env_bool("SANDBOX_REQUIRE_REAL_DATA", True),
         min_total_nodes=max(1, int(os.getenv("SANDBOX_REAL_MIN_TOTAL_NODES", "1000000"))),
         min_total_relationships=max(1, int(os.getenv("SANDBOX_REAL_MIN_TOTAL_RELATIONSHIPS", "1000000"))),
         min_project_count=max(1, int(os.getenv("SANDBOX_REAL_MIN_PROJECTS", "1000"))),
         min_undertakes_count=max(1, int(os.getenv("SANDBOX_REAL_MIN_UNDERTAKES", "1000"))),
         min_year_norm_ratio=max(0.0, min(1.0, float(os.getenv("SANDBOX_REAL_MIN_YEAR_NORM_RATIO", "0.95")))),
+        snapshot_cache_path=os.getenv("SANDBOX_REAL_SNAPSHOT_CACHE_PATH", "debug_sandbox/Q1/real_snapshot_cache.json"),
+        snapshot_cache_minutes=max(0, int(os.getenv("SANDBOX_REAL_SNAPSHOT_CACHE_MINUTES", "1440"))),
+        enable_graph_profile=env_bool("HOTSPOT_ENABLE_GRAPH_PROFILE", True),
+    )
+
+
+def _load_snapshot_cache(path: str) -> dict[str, Any] | None:
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _write_snapshot_cache(path: str, payload: dict[str, Any]) -> None:
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _load_verified_snapshot_cache(cfg: HotspotConfig) -> dict[str, Any] | None:
+    if cfg.snapshot_cache_minutes <= 0:
+        return None
+    cached = _load_snapshot_cache(cfg.snapshot_cache_path)
+    if not cached:
+        return None
+    try:
+        cached_db = str((cached.get("meta") or {}).get("database") or "")
+        if cached_db and cached_db != cfg.database:
+            return None
+        cached_ts = float((cached.get("meta") or {}).get("cachedAtEpoch", 0))
+        if cached_ts <= 0:
+            return None
+        age_seconds = max(0.0, time.time() - cached_ts)
+        if age_seconds > cfg.snapshot_cache_minutes * 60:
+            return None
+        data_source = cached.get("dataSource")
+        if not isinstance(data_source, dict):
+            return None
+        data_source["cache"] = {
+            "used": True,
+            "ageSeconds": int(age_seconds),
+            "ttlMinutes": cfg.snapshot_cache_minutes,
+        }
+        return data_source
+    except Exception:
+        return None
+
+
+def _save_snapshot_cache(cfg: HotspotConfig, data_source: dict[str, Any]) -> None:
+    _write_snapshot_cache(
+        cfg.snapshot_cache_path,
+        {
+            "meta": {
+                "database": cfg.database,
+                "cachedAtEpoch": time.time(),
+            },
+            "dataSource": data_source,
+        },
     )
 
 
 def verify_real_data_snapshot(session: Any, cfg: HotspotConfig) -> dict[str, Any]:
+    cached = _load_verified_snapshot_cache(cfg)
+    if cached:
+        return cached
+
     labels = sorted([str(r["label"]) for r in session.run("CALL db.labels() YIELD label RETURN label")])
     rel_types = sorted([str(r["relationshipType"]) for r in session.run(
         "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType"
@@ -346,7 +426,7 @@ def verify_real_data_snapshot(session: Any, cfg: HotspotConfig) -> dict[str, Any
     }
 
     verified = (not missing_labels) and (not missing_rels) and all(v["ok"] for v in checks.values())
-    return {
+    result = {
         "verified": verified,
         "requireRealData": cfg.require_real_data,
         "requiredLabels": required_labels,
@@ -354,7 +434,13 @@ def verify_real_data_snapshot(session: Any, cfg: HotspotConfig) -> dict[str, Any
         "missingLabels": missing_labels,
         "missingRelationshipTypes": missing_rels,
         "checks": checks,
+        "cache": {
+            "used": False,
+            "ttlMinutes": cfg.snapshot_cache_minutes,
+        },
     }
+    _save_snapshot_cache(cfg, result)
+    return result
 
 
 def _quote_label(label: str) -> str:
@@ -633,9 +719,12 @@ def build_projection(
     if not row:
         raise RuntimeError(f"图投影失败: {graph_name}")
 
+    node_count = int(row["nodeCount"] or 0)
+    relationship_count = int(row["relationshipCount"] or 0)
+
     return {
-        "nodeCount": int(row["nodeCount"]),
-        "relationshipCount": int(row["relationshipCount"]),
+        "nodeCount": node_count,
+        "relationshipCount": relationship_count,
     }
 
 
@@ -654,7 +743,7 @@ def select_strategy(
     if cfg.preferred_strategy != "auto":
         preferred = [item for item in catalog if item.name == cfg.preferred_strategy]
         if preferred:
-            ordered = preferred
+            ordered = preferred + [item for item in catalog if item.name != cfg.preferred_strategy]
     else:
         relation_first = [catalog_by_name["relation_chain_priority"]]
         attrs = [
@@ -841,23 +930,41 @@ def build_migration(
             if not set_b:
                 continue
 
-            overlap = len(set_a & set_b)
-            if overlap < min_overlap_count:
+            raw_overlap = len(set_a & set_b)
+            if raw_overlap < min_overlap_count:
                 continue
 
-            jaccard = overlap / len(set_a | set_b)
-            if jaccard < min_jaccard:
+            jaccard_raw = raw_overlap / len(set_a | set_b)
+            if jaccard_raw < min_jaccard:
                 continue
+
+            source_size = int(info_a.get("size", len(set_a)) or len(set_a))
+            target_size = int(info_b.get("size", len(set_b)) or len(set_b))
+
+            # 对关键词口径（如 project_guide_name）进行可解释增强：
+            # - value 使用可迁移规模 proxy（min(sizeA,sizeB)）而非关键词重合数(通常为1)
+            # - jaccard 字段输出规模相似度，避免大量 1.000 的误导
+            if basis == "keywordSet":
+                value = min(source_size, target_size)
+                size_similarity = (value / max(source_size, target_size)) if max(source_size, target_size) > 0 else 0.0
+                display_similarity = size_similarity
+            else:
+                value = raw_overlap
+                display_similarity = jaccard_raw
 
             links.append(
                 {
                     "source": str(cid_a),
                     "target": str(cid_b),
-                    "overlap": overlap,
-                    "jaccard": round(jaccard, 4),
-                    "sourceSize": len(set_a),
-                    "targetSize": len(set_b),
+                    "overlap": int(value),
+                    "rawOverlap": int(raw_overlap),
+                    "jaccard": round(display_similarity, 4),
+                    "jaccardRaw": round(jaccard_raw, 4),
+                    "sourceSize": source_size,
+                    "targetSize": target_size,
                     "basis": basis,
+                    "sourceKeyword": str((info_a.get("topKeywords") or [""])[0] or ""),
+                    "targetKeyword": str((info_b.get("topKeywords") or [""])[0] or ""),
                 }
             )
 
@@ -944,7 +1051,7 @@ def generate_brief(
             "主要迁移流：" + "；".join(
                 [
                     f"C{l['source']}→C{l['target']}"
-                    f"(overlap={l['overlap']}, jaccard={l['jaccard']})"
+                    f"(value={l['overlap']}, sim={l['jaccard']}, basis={l.get('basis', 'unknown')})"
                     for l in top_links
                 ]
             )
@@ -970,7 +1077,17 @@ def run(cfg: HotspotConfig) -> dict[str, Any]:
     try:
         with driver.session(database=cfg.database, **SESSION_KWARGS) as session:
             data_source = verify_real_data_snapshot(session, cfg)
-            graph_profile = collect_dual_layer_profile(session)
+            if cfg.enable_graph_profile:
+                graph_profile = collect_dual_layer_profile(session)
+            else:
+                graph_profile = {
+                    "scientificLayer": {"labels": {}, "presentLabels": [], "missingLabels": [], "ready": False},
+                    "managementLayer": {"labels": {}, "presentLabels": [], "missingLabels": [], "ready": False},
+                    "bridgeLayer": {"relationships": {}, "ready": False, "missingRelationships": []},
+                    "relations": {"managementCore": {}, "scientificCore": {}, "bridge": {}},
+                    "overallReady": False,
+                    "reliabilityNotes": ["快速模式已关闭图谱完整性深度统计，以提升执行速度。"],
+                }
             if cfg.require_real_data and not bool(data_source.get("verified", False)):
                 raise RuntimeError(f"真实数据校验失败: {data_source}")
 
@@ -988,26 +1105,49 @@ def run(cfg: HotspotConfig) -> dict[str, Any]:
                 graph_profile,
             )
 
-            proj_a = build_projection(session, cfg, graph_a, selected_strategy, cfg.year_a_start, cfg.year_a_end)
-            proj_b = build_projection(session, cfg, graph_b, selected_strategy, cfg.year_b_start, cfg.year_b_end)
+        def _projection_worker(graph_name: str, y0: int, y1: int) -> dict[str, int]:
+            with driver.session(database=cfg.database, **SESSION_KWARGS) as s_proj:
+                return build_projection(s_proj, cfg, graph_name, selected_strategy, y0, y1)
 
-            if proj_a["nodeCount"] == 0 or proj_b["nodeCount"] == 0:
-                raise RuntimeError("至少一个时间窗投影为空，请检查模板或年份区间")
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="hotspot-proj") as pool:
+            fut_pa = pool.submit(_projection_worker, graph_a, cfg.year_a_start, cfg.year_a_end)
+            fut_pb = pool.submit(_projection_worker, graph_b, cfg.year_b_start, cfg.year_b_end)
+            proj_a = fut_pa.result()
+            proj_b = fut_pb.result()
 
-            prefer_louvain = max(proj_a["relationshipCount"], proj_b["relationshipCount"]) >= cfg.community_edge_threshold
-            community_algorithm = "louvain" if prefer_louvain else "leiden"
-            assign_a = run_community_detection(session, graph_a, prefer_louvain=prefer_louvain)
-            assign_b = run_community_detection(session, graph_b, prefer_louvain=prefer_louvain)
+        if proj_a["nodeCount"] == 0 or proj_b["nodeCount"] == 0:
+            raise RuntimeError("至少一个时间窗投影为空，请检查模板或年份区间")
 
-            comm_a = summarize_communities(session, assign_a, cfg.top_community_count, selected_strategy)
-            comm_b = summarize_communities(session, assign_b, cfg.top_community_count, selected_strategy)
-            links, effective_threshold, threshold_attempts = build_migration_with_fallback(
-                comm_a,
-                comm_b,
-                cfg.min_overlap_count,
-                cfg.min_jaccard,
-            )
-            brief = generate_brief(cfg, comm_a, comm_b, links)
+        prefer_louvain = max(proj_a["relationshipCount"], proj_b["relationshipCount"]) >= cfg.community_edge_threshold
+        community_algorithm = "louvain" if prefer_louvain else "leiden"
+
+        def _community_worker(graph_name: str) -> list[dict[str, int]]:
+            with driver.session(database=cfg.database, **SESSION_KWARGS) as s_comm:
+                return run_community_detection(s_comm, graph_name, prefer_louvain=prefer_louvain)
+
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="hotspot-comm") as pool:
+            fut_ca = pool.submit(_community_worker, graph_a)
+            fut_cb = pool.submit(_community_worker, graph_b)
+            assign_a = fut_ca.result()
+            assign_b = fut_cb.result()
+
+        def _summarize_worker(assignments: list[dict[str, int]]) -> dict[int, dict[str, Any]]:
+            with driver.session(database=cfg.database, **SESSION_KWARGS) as s_sum:
+                return summarize_communities(s_sum, assignments, cfg.top_community_count, selected_strategy)
+
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="hotspot-sum") as pool:
+            fut_sa = pool.submit(_summarize_worker, assign_a)
+            fut_sb = pool.submit(_summarize_worker, assign_b)
+            comm_a = fut_sa.result()
+            comm_b = fut_sb.result()
+
+        links, effective_threshold, threshold_attempts = build_migration_with_fallback(
+            comm_a,
+            comm_b,
+            cfg.min_overlap_count,
+            cfg.min_jaccard,
+        )
+        brief = generate_brief(cfg, comm_a, comm_b, links)
 
         result = {
             "meta": {
@@ -1058,6 +1198,13 @@ def run(cfg: HotspotConfig) -> dict[str, Any]:
                         "target": f"B-{l['target']}",
                         "value": l["overlap"],
                         "jaccard": l["jaccard"],
+                        "rawOverlap": l.get("rawOverlap", l["overlap"]),
+                        "jaccardRaw": l.get("jaccardRaw", l["jaccard"]),
+                        "sourceSize": l.get("sourceSize", 0),
+                        "targetSize": l.get("targetSize", 0),
+                        "basis": l.get("basis", "unknown"),
+                        "sourceKeyword": l.get("sourceKeyword", ""),
+                        "targetKeyword": l.get("targetKeyword", ""),
                     }
                     for l in links
                 ],
