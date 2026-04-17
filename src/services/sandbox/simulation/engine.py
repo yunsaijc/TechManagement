@@ -465,6 +465,7 @@ def _simulate_topic(
 
     return SimulationTopicImpact(
         topic_id=topic.topic_id,
+        topic_label=topic.topic_label,
         forecast_window=forecast_window,
         baseline_application_count=topic.application_count,
         projected_application_count=projected_application_count,

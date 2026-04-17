@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.common.models.simulation import BaselineSnapshot, ScenarioDefinition, SimulationResult
+from src.common.models.simulation import BaselineSnapshot, SimulationResult
 from src.services.sandbox.simulation.debug_html import render_debug_html
+from src.services.sandbox.simulation.debug_payload import build_debug_payload
 
 DEBUG_ROOT = Path("debug_sandbox")
 BASE_DIR = Path("debug_sandbox/simulation")
@@ -21,30 +22,76 @@ LATEST_SCENARIO_DEBUG_JSON_PATH = BASE_DIR / "scenario_latest.debug.json"
 LATEST_SCENARIO_DEBUG_HTML_PATH = BASE_DIR / "scenario_latest.debug.html"
 
 
-def save_baseline_snapshot(snapshot: BaselineSnapshot) -> None:
+def save_baseline_snapshot(snapshot: BaselineSnapshot) -> dict[str, str]:
+    debug_artifacts = _debug_artifact_refs(
+        json_path=LATEST_BASELINE_DEBUG_JSON_PATH,
+        html_path=LATEST_BASELINE_DEBUG_HTML_PATH,
+    )
+    _attach_debug_artifacts(snapshot, debug_artifacts)
     _write_model(LATEST_BASELINE_PATH, snapshot)
     save_baseline_debug_artifacts(snapshot)
+    return debug_artifacts
 
 
 def load_latest_baseline_snapshot() -> BaselineSnapshot | None:
     return _read_model(LATEST_BASELINE_PATH, BaselineSnapshot)
 
 
-def save_scenario_result(result: SimulationResult) -> None:
+def save_scenario_result(
+    result: SimulationResult,
+    *,
+    baseline: BaselineSnapshot | None = None,
+    scenario: Any = None,
+    comparison: Any = None,
+    explanation: Any = None,
+    contract: Any = None,
+    compiled: Any = None,
+) -> dict[str, str]:
+    debug_artifacts = _debug_artifact_refs(
+        json_path=LATEST_SCENARIO_DEBUG_JSON_PATH,
+        html_path=LATEST_SCENARIO_DEBUG_HTML_PATH,
+    )
+    _attach_debug_artifacts(result, debug_artifacts)
     _write_model(LATEST_SCENARIO_PATH, result)
-    save_scenario_debug_artifacts(result)
+    save_scenario_debug_artifacts(
+        result,
+        baseline=baseline,
+        scenario=scenario,
+        comparison=comparison,
+        explanation=explanation,
+        contract=contract,
+        compiled=compiled,
+    )
+    return debug_artifacts
 
 
-def save_scenario_definition(scenario: ScenarioDefinition) -> None:
+def save_scenario_definition(scenario: Any) -> None:
     _write_model(LATEST_SCENARIO_DEFINITION_PATH, scenario)
 
 
-def load_latest_scenario_definition() -> ScenarioDefinition | None:
-    return _read_model(LATEST_SCENARIO_DEFINITION_PATH, ScenarioDefinition)
+def load_latest_scenario_definition() -> dict[str, Any] | None:
+    if not LATEST_SCENARIO_DEFINITION_PATH.exists():
+        return None
+    with LATEST_SCENARIO_DEFINITION_PATH.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def load_latest_scenario_result() -> SimulationResult | None:
     return _read_model(LATEST_SCENARIO_PATH, SimulationResult)
+
+
+def get_baseline_debug_artifacts() -> dict[str, str]:
+    return _get_debug_artifacts(
+        json_path=LATEST_BASELINE_DEBUG_JSON_PATH,
+        html_path=LATEST_BASELINE_DEBUG_HTML_PATH,
+    )
+
+
+def get_scenario_debug_artifacts() -> dict[str, str]:
+    return _get_debug_artifacts(
+        json_path=LATEST_SCENARIO_DEBUG_JSON_PATH,
+        html_path=LATEST_SCENARIO_DEBUG_HTML_PATH,
+    )
 
 
 def save_baseline_debug_artifacts(
@@ -64,9 +111,23 @@ def save_baseline_debug_artifacts(
 def save_scenario_debug_artifacts(
     result: SimulationResult,
     *,
+    baseline: BaselineSnapshot | None = None,
+    scenario: Any = None,
+    comparison: Any = None,
+    explanation: Any = None,
+    contract: Any = None,
+    compiled: Any = None,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, str]:
-    debug_payload = payload or build_scenario_debug_payload(result)
+    debug_payload = payload or build_scenario_debug_payload(
+        result,
+        baseline=baseline,
+        scenario=scenario,
+        comparison=comparison,
+        explanation=explanation,
+        contract=contract,
+        compiled=compiled,
+    )
     return _save_debug_bundle(
         payload=debug_payload,
         json_path=LATEST_SCENARIO_DEBUG_JSON_PATH,
@@ -76,70 +137,80 @@ def save_scenario_debug_artifacts(
 
 
 def build_baseline_debug_payload(snapshot: BaselineSnapshot) -> dict[str, Any]:
-    return {
-        "meta": {
-            "artifact_kind": "baseline",
-            "generated_at": _now_text(),
-            "baseline_id": snapshot.baseline_id,
-            "forecast_window": snapshot.forecast_window,
-        },
-        "baseline": snapshot.model_dump(),
+    payload = build_debug_payload(baseline=snapshot)
+    payload["meta"] = {
+        "artifact_kind": "baseline",
+        "generated_at": _now_text(),
+        "baseline_id": snapshot.baseline_id,
+        "forecast_window": snapshot.forecast_window,
     }
+    return payload
 
 
-def build_scenario_debug_payload(result: SimulationResult) -> dict[str, Any]:
-    baseline = load_latest_baseline_snapshot()
-    if baseline is not None and baseline.baseline_id != result.baseline_id:
-        baseline = None
+def build_scenario_debug_payload(
+    result: SimulationResult,
+    *,
+    baseline: BaselineSnapshot | None = None,
+    scenario: Any = None,
+    comparison: Any = None,
+    explanation: Any = None,
+    contract: Any = None,
+    compiled: Any = None,
+) -> dict[str, Any]:
+    comparison_error = None
+    explanation_error = None
 
-    scenario = load_latest_scenario_definition()
-    if scenario is not None and (
-        scenario.scenario_id != result.scenario_id or scenario.baseline_id != result.baseline_id
-    ):
-        scenario = None
+    if comparison is None:
+        try:
+            from src.services.sandbox.simulation.compare_service import compare_result
 
-    comparison = None
-    explanation = None
-    try:
-        from src.services.sandbox.simulation.compare_service import compare_result
+            comparison = compare_result(result)
+        except Exception as exc:  # pragma: no cover - best effort debug artifact
+            comparison_error = f"failed to build comparison: {exc.__class__.__name__}"
 
-        comparison = compare_result(result).model_dump()
-    except Exception as exc:  # pragma: no cover - best effort debug artifact
-        comparison = {
-            "error": f"failed to build comparison: {exc.__class__.__name__}",
-        }
+    if explanation is None:
+        try:
+            from src.services.sandbox.simulation.explain_service import explain_result
 
-    try:
-        from src.services.sandbox.simulation.explain_service import explain_result
+            explanation = explain_result(result)
+        except Exception as exc:  # pragma: no cover - best effort debug artifact
+            explanation_error = f"failed to build explanation: {exc.__class__.__name__}"
 
-        explanation = explain_result(result).model_dump()
-    except Exception as exc:  # pragma: no cover - best effort debug artifact
-        explanation = {
-            "error": f"failed to build explanation: {exc.__class__.__name__}",
-        }
+    normalized_scenario = _model_dump_if_needed(scenario)
 
-    return {
-        "meta": {
-            "artifact_kind": "scenario",
-            "generated_at": _now_text(),
-            "baseline_id": result.baseline_id,
-            "scenario_id": result.scenario_id,
-            "run_id": result.run_id,
-            "forecast_window": result.forecast_window,
-            "engine": result.metadata.get("engine"),
-        },
-        "baseline": baseline.model_dump(mode="json") if baseline else None,
-        "scenario": scenario.model_dump(mode="json") if scenario else None,
-        "result": result.model_dump(),
-        "comparison": comparison,
-        "explanation": explanation,
+    payload = build_debug_payload(
+        baseline=baseline,
+        scenario=scenario,
+        result=result,
+        comparison=comparison,
+        explanation=explanation,
+        contract=contract,
+        compiled=compiled,
+    )
+    payload["meta"] = {
+        "artifact_kind": "scenario",
+        "generated_at": _now_text(),
+        "baseline_id": result.baseline_id,
+        "scenario_id": result.scenario_id,
+        "run_id": result.run_id,
+        "forecast_window": result.forecast_window,
+        "engine": result.metadata.get("engine"),
     }
+    if normalized_scenario is not None:
+        payload["scenario"] = normalized_scenario
+    if comparison_error is not None:
+        payload["comparison"] = {"error": comparison_error}
+        payload["sanity_summary"]["warnings"].append(comparison_error)
+    if explanation_error is not None:
+        payload["explanation"] = {"error": explanation_error}
+        payload["sanity_summary"]["warnings"].append(explanation_error)
+    return payload
 
 
 def _write_model(path: Path, model) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
-        json.dump(model.model_dump(), fh, ensure_ascii=False, indent=2)
+        json.dump(_model_dump_if_needed(model), fh, ensure_ascii=False, indent=2)
 
 
 def _read_model(path: Path, model_cls):
@@ -178,6 +249,53 @@ def _save_debug_bundle(
         "json_url": f"/debug-sandbox/{json_rel}",
         "html_url": f"/debug-sandbox/{html_rel}",
     }
+
+
+def _get_debug_artifacts(
+    *,
+    json_path: Path,
+    html_path: Path,
+) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    if json_path.exists():
+        payload.update(_debug_artifact_refs(json_path=json_path, html_path=html_path, include_html=False))
+    if html_path.exists():
+        payload.update(_debug_artifact_refs(json_path=json_path, html_path=html_path, include_json=False))
+    return payload
+
+
+def _debug_artifact_refs(
+    *,
+    json_path: Path,
+    html_path: Path,
+    include_json: bool = True,
+    include_html: bool = True,
+) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    if include_json:
+        json_rel = json_path.relative_to(DEBUG_ROOT).as_posix()
+        payload["debug_json_path"] = str(json_path.resolve())
+        payload["debug_json_url"] = f"/debug-sandbox/{json_rel}"
+    if include_html:
+        html_rel = html_path.relative_to(DEBUG_ROOT).as_posix()
+        payload["debug_html_path"] = str(html_path.resolve())
+        payload["debug_html_url"] = f"/debug-sandbox/{html_rel}"
+    return payload
+
+
+def _attach_debug_artifacts(model: Any, debug_artifacts: dict[str, str]) -> None:
+    metadata = getattr(model, "metadata", None)
+    if isinstance(metadata, dict):
+        metadata["debugArtifacts"] = dict(debug_artifacts)
+
+
+def _model_dump_if_needed(value: Any) -> Any:
+    if value is None:
+        return None
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
+    return value
 
 
 def _now_text() -> str:
