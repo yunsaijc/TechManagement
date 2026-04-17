@@ -9,13 +9,15 @@ from .baseline_service import (
 )
 from .compare_service import compare_latest_result, compare_result
 from .explain_service import explain_latest_result, explain_result
-from .scenario_service import load_latest_scenario_result, run_scenario
+from .scenario_service import ScenarioExecutionBundle, load_latest_scenario_result, run_scenario, run_scenario_contract
 
 __all__ = [
     "create_baseline_snapshot",
     "build_baseline_snapshot_from_sources",
     "load_latest_baseline_snapshot",
     "run_scenario",
+    "run_scenario_contract",
+    "ScenarioExecutionBundle",
     "load_latest_scenario_result",
     "compare_result",
     "compare_latest_result",
