@@ -17,6 +17,7 @@ from PIL import Image
 from src.common.review_runtime import ReviewRuntime
 from src.common.models import BatchReviewRequest, BatchReviewResult, ProjectReviewResult
 from src.services.review.debug_writer import ReviewDebugWriter
+from src.services.review.doc_types import doc_type_to_legacy_doc_kind, get_doc_type_label, normalize_doc_type
 from src.services.review.notice_rules import build_notice_context
 from src.services.review.project_agent import ProjectReviewAgent
 from src.services.review.project_context_builder import ProjectContextBuilder
@@ -1682,6 +1683,7 @@ class BatchReviewAgent:
                     "source_file": source_file,
                     "source_name": str(item.get("source_name") or path.name),
                     "source_kind": str(item.get("source_kind") or "attachment"),
+                    "doc_type": normalize_doc_type(str(item.get("doc_type") or item.get("doc_kind") or "")),
                     "doc_kind": str(item.get("doc_kind") or ""),
                     "start_page": start_page,
                     "end_page": end_page,
@@ -1695,6 +1697,7 @@ class BatchReviewAgent:
                     "source_file": source_file,
                     "source_name": str(item.get("source_name") or path.name),
                     "source_kind": str(item.get("source_kind") or "attachment"),
+                    "doc_type": normalize_doc_type(str(item.get("doc_type") or item.get("doc_kind") or "")),
                     "doc_kind": str(item.get("doc_kind") or ""),
                     "merge_mode": merge_mode,
                 }
@@ -2055,6 +2058,7 @@ class BatchReviewAgent:
                     "source_file": proposal_file,
                     "source_name": proposal_path.name,
                     "source_kind": "proposal",
+                    "doc_type": "",
                     "doc_kind": "",
                 }
             )
@@ -2072,6 +2076,7 @@ class BatchReviewAgent:
                     "source_file": source_file,
                     "source_name": str(item.get("file_name") or path.name),
                     "source_kind": "attachment",
+                    "doc_type": self._attachment_doc_type(item),
                     "doc_kind": str(item.get("doc_kind") or ""),
                 }
             )
@@ -2563,16 +2568,72 @@ class BatchReviewAgent:
         }
         return mapping.get(str(rule_code or "").strip(), "")
 
+    def _attachment_doc_type(self, attachment: Dict[str, Any]) -> str:
+        """从附件对象中提取统一 doc_type。"""
+        if not isinstance(attachment, dict):
+            return "unknown"
+        raw = str(attachment.get("doc_type") or attachment.get("doc_kind") or "").strip()
+        return normalize_doc_type(raw)
+
+    def _attachment_doc_kind(self, attachment: Dict[str, Any]) -> str:
+        """从附件对象中提取旧 doc_kind。"""
+        if not isinstance(attachment, dict):
+            return ""
+        value = str(attachment.get("doc_kind") or "").strip()
+        if value:
+            return value
+        return doc_type_to_legacy_doc_kind(self._attachment_doc_type(attachment))
+
+    def _attachment_contains_doc_types(self, attachment: Dict[str, Any]) -> set[str]:
+        """提取复合命中的 doc_type 集合。"""
+        if not isinstance(attachment, dict):
+            return set()
+        details = attachment.get("classification_details", {})
+        if not isinstance(details, dict):
+            return set()
+        raw_values = details.get("contains_doc_types", [])
+        if not isinstance(raw_values, list):
+            raw_values = details.get("contains_doc_kinds", [])
+        if not isinstance(raw_values, list):
+            return set()
+        return {
+            normalize_doc_type(str(value).strip())
+            for value in raw_values
+            if str(value).strip()
+        }
+
+    def _attachment_contains_doc_kinds(self, attachment: Dict[str, Any]) -> set[str]:
+        """提取复合命中的旧 doc_kind 集合。"""
+        doc_types = self._attachment_contains_doc_types(attachment)
+        values = {
+            doc_type_to_legacy_doc_kind(doc_type)
+            for doc_type in doc_types
+            if doc_type
+        }
+        details = attachment.get("classification_details", {}) if isinstance(attachment, dict) else {}
+        raw_values = details.get("contains_doc_kinds", []) if isinstance(details, dict) else []
+        if isinstance(raw_values, list):
+            for value in raw_values:
+                text = str(value).strip()
+                if text:
+                    values.add(text)
+        return {item for item in values if item}
+
     def _find_matching_attachment(self, attachments: List[Any], doc_kind: str) -> Dict[str, Any] | None:
         """在附件列表中查找匹配类别"""
+        expected_doc_type = normalize_doc_type(doc_kind, default="")
         for item in attachments:
             if not isinstance(item, dict):
                 continue
-            if str(item.get("doc_kind", "")) == doc_kind:
+            if self._attachment_doc_kind(item) == doc_kind:
                 return item
-            details = item.get("classification_details", {})
-            contains = details.get("contains_doc_kinds", []) if isinstance(details, dict) else []
-            if isinstance(contains, list) and doc_kind in {str(value) for value in contains}:
+            if expected_doc_type and self._attachment_doc_type(item) == expected_doc_type:
+                return item
+            contains_doc_kinds = self._attachment_contains_doc_kinds(item)
+            contains_doc_types = self._attachment_contains_doc_types(item)
+            if doc_kind in contains_doc_kinds:
+                return item
+            if expected_doc_type and expected_doc_type in contains_doc_types:
                 return item
         return None
 
@@ -2586,6 +2647,12 @@ class BatchReviewAgent:
         if not doc_kinds:
             return []
         normalized_doc_kinds = [str(item).strip() for item in doc_kinds if str(item).strip()]
+        normalized_doc_types = {
+            normalize_doc_type(item, default="")
+            for item in normalized_doc_kinds
+            if str(item).strip()
+        }
+        normalized_doc_types.discard("")
         if not normalized_doc_kinds:
             return []
         matched: List[Dict[str, Any]] = []
@@ -2598,11 +2665,17 @@ class BatchReviewAgent:
                 source_file = str(item.get("file_ref", "") or "")
                 if source_file and source_file in seen_files:
                     continue
-                item_doc_kind = str(item.get("doc_kind", "")).strip()
-                details = item.get("classification_details", {})
-                contains = details.get("contains_doc_kinds", []) if isinstance(details, dict) else []
-                contains_doc_kinds = {str(value).strip() for value in contains if str(value).strip()}
-                if item_doc_kind == doc_kind or doc_kind in contains_doc_kinds:
+                item_doc_kind = self._attachment_doc_kind(item)
+                item_doc_type = self._attachment_doc_type(item)
+                contains_doc_kinds = self._attachment_contains_doc_kinds(item)
+                contains_doc_types = self._attachment_contains_doc_types(item)
+                expected_doc_type = normalize_doc_type(doc_kind, default="")
+                if (
+                    item_doc_kind == doc_kind
+                    or doc_kind in contains_doc_kinds
+                    or (expected_doc_type and item_doc_type == expected_doc_type)
+                    or (expected_doc_type and expected_doc_type in contains_doc_types)
+                ):
                     matched.append(item)
                     if source_file:
                         seen_files.add(source_file)
@@ -2620,11 +2693,16 @@ class BatchReviewAgent:
             source_file = str(item.get("file_ref", "") or "")
             if source_file and source_file in seen_files:
                 continue
-            item_doc_kind = str(item.get("doc_kind", "")).strip()
-            details = item.get("classification_details", {})
-            contains = details.get("contains_doc_kinds", []) if isinstance(details, dict) else []
-            contains_doc_kinds = {str(value).strip() for value in contains if str(value).strip()}
-            if item_doc_kind in target_doc_kinds or contains_doc_kinds & target_doc_kinds:
+            item_doc_kind = self._attachment_doc_kind(item)
+            item_doc_type = self._attachment_doc_type(item)
+            contains_doc_kinds = self._attachment_contains_doc_kinds(item)
+            contains_doc_types = self._attachment_contains_doc_types(item)
+            if (
+                item_doc_kind in target_doc_kinds
+                or contains_doc_kinds & target_doc_kinds
+                or item_doc_type in normalized_doc_types
+                or contains_doc_types & normalized_doc_types
+            ):
                 matched.append(item)
                 if source_file:
                     seen_files.add(source_file)
@@ -2644,8 +2722,9 @@ class BatchReviewAgent:
         source_file = str(attachment.get("file_ref", "") or "")
         details = attachment.get("classification_details", {})
         page = self._extract_first_page_hint(details)
-        tab_label = str(attachment.get("file_name") or self._doc_kind_label(str(attachment.get("doc_kind", ""))))
-        location_label = f"{self._doc_kind_label(str(attachment.get('doc_kind', '')))}"
+        attachment_kind = self._attachment_doc_kind(attachment)
+        tab_label = str(attachment.get("file_name") or self._doc_kind_label(attachment_kind))
+        location_label = f"{self._doc_kind_label(attachment_kind)}"
         if page:
             location_label += f" · 第{page}页"
         return self._build_file_target(
@@ -4150,7 +4229,7 @@ class BatchReviewAgent:
         proposal_excerpt = proposal_facts.get("proposal_text_excerpt", "")
         attachments = context_payload.get("attachments", []) if isinstance(context_payload, dict) else []
         attachment_index = {
-            str(att.get("doc_kind", "")): att
+            self._attachment_doc_kind(att): att
             for att in attachments
             if isinstance(att, dict)
         }
@@ -4246,11 +4325,15 @@ class BatchReviewAgent:
                 kinds = [str(item) for item in evidence["missing_doc_kinds"] if item]
                 if kinds:
                     return "缺失附件类别：" + "、".join(self._doc_kind_with_code(kind) for kind in kinds)
+            if isinstance(evidence.get("missing_doc_types"), list):
+                kinds = [str(item) for item in evidence["missing_doc_types"] if item]
+                if kinds:
+                    return "缺失附件类别：" + "、".join(self._doc_kind_with_code(kind) for kind in kinds)
             if isinstance(evidence.get("missing_conditional_attachments"), list):
                 lines = []
                 for item in evidence["missing_conditional_attachments"][:6]:
                     if isinstance(item, dict):
-                        kind = str(item.get("doc_kind", "-"))
+                        kind = str(item.get("doc_type") or item.get("doc_kind") or "-")
                         lines.append(f"{self._doc_kind_with_code(kind)}: {item.get('reason', '-')}")
                 if lines:
                     return "缺失条件性附件：\n" + "\n".join(lines)
@@ -4320,12 +4403,22 @@ class BatchReviewAgent:
         if not isinstance(evidence, dict):
             return []
         values: List[str] = []
+        if isinstance(evidence.get("missing_doc_types"), list):
+            values.extend(
+                doc_type_to_legacy_doc_kind(normalize_doc_type(str(item), default=""))
+                for item in evidence["missing_doc_types"]
+                if item
+            )
         if isinstance(evidence.get("missing_doc_kinds"), list):
             values.extend(str(item) for item in evidence["missing_doc_kinds"] if item)
         if isinstance(evidence.get("missing_conditional_attachments"), list):
             for item in evidence["missing_conditional_attachments"]:
-                if isinstance(item, dict) and item.get("doc_kind"):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("doc_kind"):
                     values.append(str(item["doc_kind"]))
+                elif item.get("doc_type"):
+                    values.append(doc_type_to_legacy_doc_kind(normalize_doc_type(str(item["doc_type"]), default="")))
         seen = set()
         deduped: List[str] = []
         for item in values:
@@ -4342,7 +4435,7 @@ class BatchReviewAgent:
         clues = "；".join(str(item) for item in visible_clues[:4])
         if not clues:
             clues = str(attachment.get("classification_reason", ""))
-        doc_kind = str(attachment.get("doc_kind", ""))
+        doc_kind = self._attachment_doc_kind(attachment)
         secondary_hits = self._format_secondary_refine_hits(details) if doc_kind == "other_supporting_material" else ""
         return (
             f"file_name={attachment.get('file_name', '')}\n"
@@ -4360,7 +4453,7 @@ class BatchReviewAgent:
         for index, item in enumerate(attachments[:5], start=1):
             if not isinstance(item, dict):
                 continue
-            kind = str(item.get("doc_kind", ""))
+            kind = self._attachment_doc_kind(item)
             details = item.get("classification_details", {})
             secondary_hits = (
                 self._format_secondary_refine_hits_inline(details)
@@ -4403,6 +4496,11 @@ class BatchReviewAgent:
 
     def _doc_kind_label(self, doc_kind: str) -> str:
         """附件类别中文标签"""
+        normalized_doc_type = normalize_doc_type(doc_kind, default="")
+        if normalized_doc_type:
+            label = get_doc_type_label(normalized_doc_type)
+            if label and label != "未知":
+                return label
         return self.DOC_KIND_LABELS.get(doc_kind, doc_kind or "-")
 
     def _doc_kind_with_code(self, doc_kind: str) -> str:
@@ -4415,7 +4513,9 @@ class BatchReviewAgent:
         details = attachment.get("classification_details", {})
         if not isinstance(details, dict):
             return "-"
-        values = details.get("contains_doc_kinds", [])
+        values = details.get("contains_doc_types", [])
+        if not isinstance(values, list) or not values:
+            values = details.get("contains_doc_kinds", [])
         if not isinstance(values, list) or not values:
             return "-"
         return "、".join(self._doc_kind_with_code(str(item)) for item in values if str(item).strip())
@@ -4442,7 +4542,7 @@ class BatchReviewAgent:
             if not isinstance(item, dict):
                 continue
             page = item.get("page", "-")
-            doc_kind = self._doc_kind_with_code(str(item.get("doc_kind", "")))
+            doc_kind = self._doc_kind_with_code(str(item.get("doc_type") or item.get("doc_kind") or ""))
             confidence = item.get("confidence", "-")
             reason = str(item.get("reason", "")).strip()
             lines.append(f"第{page}页 -> {doc_kind} @ {confidence} | {reason}")
@@ -4465,7 +4565,7 @@ class BatchReviewAgent:
             if not isinstance(item, dict):
                 continue
             page = item.get("page", "-")
-            doc_kind = self._doc_kind_label(str(item.get("doc_kind", "")))
+            doc_kind = self._doc_kind_label(str(item.get("doc_type") or item.get("doc_kind") or ""))
             confidence = item.get("confidence", "-")
             lines.append(f"      - 第{page}页 -> {doc_kind} @ {confidence}")
         if not lines:

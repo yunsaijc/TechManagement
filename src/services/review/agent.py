@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from src.common.llm import get_default_llm_client
 from src.common.models import CheckResult, CheckStatus, ReviewResult
 from src.common.vision.multimodal import MultimodalLLM
+from src.services.review.doc_types import normalize_doc_type
 from src.services.review.extractor import DocumentExtractor
 from src.services.review.rules import ReviewContext, RuleRegistry
 from src.services.review.rules.config import DOCUMENT_CONFIG, load_rules
@@ -45,7 +46,7 @@ class ReviewAgent:
         self,
         file_data: bytes,
         file_type: str,
-        document_type: str,
+        doc_type: Optional[str] = None,
         check_items: Optional[List[str]] = None,
         enable_llm_analysis: bool = False,
         review_id: Optional[str] = None,
@@ -56,7 +57,7 @@ class ReviewAgent:
         Args:
             file_data: 文件数据
             file_type: 文件类型
-            document_type: 文档类型（必填，由调用方指定）
+            doc_type: 文档类型（必填，由调用方指定）
             check_items: 检查项列表（可选）
             enable_llm_analysis: 是否启用 LLM 深度分析
 
@@ -68,25 +69,34 @@ class ReviewAgent:
         print("[REVIEW] 开始处理请求", flush=True)
 
         # 1. 文档类型由请求指定，不再进行 LLM 分类
-        if not document_type:
-            raise ValueError("document_type 为必填参数")
-        if document_type not in DOCUMENT_CONFIG:
-            raise ValueError(f"不支持的 document_type: {document_type}")
-        self._last_raw_type = document_type
-        logger.info(f"[REVIEW] Step1 使用请求指定类型: {document_type}")
-        print(f"[REVIEW] Step1 使用请求指定类型: {document_type}", flush=True)
+        requested_doc_type = doc_type or kwargs.pop("document_type", None)
+        if not requested_doc_type:
+            raise ValueError("doc_type 为必填参数")
+        normalized_doc_type = normalize_doc_type(requested_doc_type)
+        if normalized_doc_type not in DOCUMENT_CONFIG:
+            raise ValueError(f"不支持的 doc_type: {requested_doc_type}")
+        self._last_raw_type = str(requested_doc_type)
+        logger.info(f"[REVIEW] Step1 使用请求指定类型: {normalized_doc_type}")
+        print(f"[REVIEW] Step1 使用请求指定类型: {normalized_doc_type}", flush=True)
 
         from src.services.review.extractor import ExtractedContent
         extracted = ExtractedContent()
 
         # 3. LLM 深度分析（可选，提前到规则之前，用于规则使用）
         llm_analysis = None
-        if enable_llm_analysis:
+        auto_llm_analysis = bool(DOCUMENT_CONFIG.get(normalized_doc_type, {}).get("auto_llm_analysis"))
+        if enable_llm_analysis or auto_llm_analysis:
             logger.info("[REVIEW] Step2.5 LLM深度分析开始（提前到规则前）")
             print("[REVIEW] Step2.5 LLM深度分析开始（提前到规则前）", flush=True)
-            llm_analysis = await self._do_llm_analysis(file_data, extracted, document_type)
+            llm_analysis = await self._do_llm_analysis(file_data, extracted, normalized_doc_type)
             # 存到 extracted 里，供规则使用
             extracted.set("llm_analysis", llm_analysis)
+            self._hydrate_extracted_from_llm_analysis(
+                extracted=extracted,
+                llm_analysis=llm_analysis,
+                doc_type=normalized_doc_type,
+                file_data=file_data,
+            )
             logger.info("[REVIEW] Step2.5 LLM深度分析完成")
             print("[REVIEW] Step2.5 LLM深度分析完成", flush=True)
 
@@ -94,7 +104,7 @@ class ReviewAgent:
         context = ReviewContext(
             file_data=file_data,
             file_type=file_type,
-            document_type=document_type,
+            doc_type=normalized_doc_type,
             extracted=extracted,
             metadata=kwargs.get("metadata", {}),
         )
@@ -115,9 +125,9 @@ class ReviewAgent:
         all_results = rule_results + llm_results
 
         # 7. 如果是 unknown 类型，添加警告并提示管理员
-        if document_type == "unknown":
+        if normalized_doc_type == "unknown":
             all_results.append(CheckResult(
-                item="document_type",
+                item="doc_type",
                 status=CheckStatus.WARNING,
                 message=f"文档类型为 unknown（请求指定值：{self._last_raw_type}），请管理员新增类别后重新审查",
                 evidence={"raw_type": self._last_raw_type},
@@ -133,8 +143,8 @@ class ReviewAgent:
         result = ReviewResult(
             id=review_id or f"review_{int(time.time() * 1000)}",
             status="done",
-            document_type=document_type,
-            document_type_raw=self._last_raw_type,
+            doc_type=normalized_doc_type,
+            doc_type_raw=self._last_raw_type,
             results=all_results,
             ocr_text=extracted.get("text", ""),
             extracted_data={
@@ -154,6 +164,147 @@ class ReviewAgent:
         logger.info(f"[REVIEW] 处理完成，总耗时: {result.processing_time:.2f}s")
         print(f"[REVIEW] 处理完成，总耗时: {result.processing_time:.2f}s", flush=True)
         return result
+
+    def _hydrate_extracted_from_llm_analysis(
+        self,
+        extracted: Any,
+        llm_analysis: Optional[Dict[str, Any]],
+        doc_type: str,
+        file_data: bytes,
+    ) -> None:
+        """将专项分析结果回填到 extracted，避免 extracted_data 与 llm_analysis 打架。"""
+        if not llm_analysis:
+            return
+
+        normalized_doc_type = normalize_doc_type(doc_type)
+        if normalized_doc_type == "reward_award_contributor_form":
+            payload = llm_analysis.get("award_contributor_analysis") or {}
+            contributor_name = str(payload.get("contributor_name") or "").strip()
+            work_unit = str(payload.get("work_unit") or "").strip()
+            completion_unit = str(payload.get("completion_unit") or "").strip()
+            signature_names = [str(item).strip() for item in payload.get("signature_names", []) if str(item).strip()]
+            stamps_result = llm_analysis.get("stamps_result") or {}
+            signatures_result = llm_analysis.get("signatures_result") or {}
+
+            units: List[str] = []
+            for unit in (completion_unit, work_unit):
+                if unit and unit not in units:
+                    units.append(unit)
+
+            extracted.set("authors", [contributor_name] if contributor_name else [])
+            extracted.set("work_units", [work_unit] if work_unit else [])
+            extracted.set("units", units)
+            extracted.set("project_name", "")
+            extracted.set("stamps", list(stamps_result.get("stamps", [])) if isinstance(stamps_result, dict) else [])
+            if isinstance(signatures_result, dict) and signatures_result.get("signatures"):
+                extracted.set("signatures", list(signatures_result.get("signatures", [])))
+            else:
+                extracted.set(
+                    "signatures",
+                    [{"text": name, "bbox": None, "confidence": 0.9} for name in signature_names],
+                )
+            extracted.set("pages", self._count_pages(file_data))
+            return
+
+        extracted_fields = llm_analysis.get("extracted_fields") or {}
+        if not extracted.get("project_name"):
+            extracted.set("project_name", str(extracted_fields.get("项目名称") or "").strip())
+        stamps_result = llm_analysis.get("stamps_result") or {}
+        if not extracted.get("stamps") and isinstance(stamps_result, dict):
+            extracted.set("stamps", list(stamps_result.get("stamps", [])))
+
+    def _count_pages(self, file_data: bytes) -> int:
+        """统计页数，供结果输出使用。"""
+        if not file_data.startswith(b"%PDF"):
+            return 1
+        try:
+            import fitz
+
+            doc = fitz.open(stream=file_data, filetype="pdf")
+            page_count = int(doc.page_count or 1)
+            doc.close()
+            return page_count
+        except Exception:
+            return 1
+
+    def _build_award_contributor_analysis_image(self, file_data: bytes) -> bytes:
+        """构建主要完成人情况表的复合分析图。
+
+        面板包含：
+        A. 全页
+        B. 左下签名区（增强）
+        C. 工作单位公章候选区（增强）
+        D. 完成单位公章候选区（增强）
+        """
+        import io
+        from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+
+        image_data = self._pdf_to_image(file_data)
+        try:
+            page = Image.open(io.BytesIO(image_data))
+            page = ImageOps.exif_transpose(page).convert("RGB")
+        except Exception:
+            return image_data
+
+        def _crop_ratio(box: tuple[float, float, float, float]) -> Image.Image:
+            w, h = page.size
+            x1 = int(max(0.0, min(1.0, box[0])) * w)
+            y1 = int(max(0.0, min(1.0, box[1])) * h)
+            x2 = int(max(0.0, min(1.0, box[2])) * w)
+            y2 = int(max(0.0, min(1.0, box[3])) * h)
+            if x2 <= x1 or y2 <= y1:
+                return page.copy()
+            return page.crop((x1, y1, x2, y2))
+
+        def _enhance_region(img: Image.Image) -> Image.Image:
+            out = img.convert("RGB")
+            out = ImageOps.autocontrast(out, cutoff=1)
+            out = ImageEnhance.Color(out).enhance(1.2)
+            out = ImageEnhance.Contrast(out).enhance(1.35)
+            out = ImageEnhance.Sharpness(out).enhance(1.45)
+            out = out.filter(ImageFilter.UnsharpMask(radius=1.4, percent=130, threshold=2))
+            out = out.resize((max(1, out.width * 2), max(1, out.height * 2)), Image.LANCZOS)
+            border = max(12, min(out.size) // 18)
+            return ImageOps.expand(out, border=border, fill="white")
+
+        def _fit(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
+            fitted = img.copy()
+            fitted.thumbnail(target_size, Image.LANCZOS)
+            canvas = Image.new("RGB", target_size, "white")
+            x = (target_size[0] - fitted.width) // 2
+            y = (target_size[1] - fitted.height) // 2
+            canvas.paste(fitted, (x, y))
+            return canvas
+
+        def _panel(img: Image.Image, label: str, target_size: tuple[int, int], enhance: bool = False) -> Image.Image:
+            panel_img = _enhance_region(img) if enhance else img.convert("RGB")
+            panel = _fit(panel_img, target_size)
+            header_h = 44
+            panel_with_header = Image.new("RGB", (target_size[0], target_size[1] + header_h), "white")
+            panel_with_header.paste(panel, (0, header_h))
+            draw = ImageDraw.Draw(panel_with_header)
+            font = ImageFont.load_default()
+            draw.rectangle((0, 0, target_size[0], header_h), fill="#f3f4f6")
+            draw.text((14, 14), label, fill="black", font=font)
+            return panel_with_header
+
+        full_panel = _panel(page, "A 全页", (1160, 760), enhance=False)
+        signature_panel = _panel(_crop_ratio((0.00, 0.58, 0.46, 1.00)), "B 签名区", (360, 320), enhance=True)
+        work_panel = _panel(_crop_ratio((0.38, 0.58, 0.74, 1.00)), "C 工作单位公章候选区", (360, 320), enhance=True)
+        completion_panel = _panel(_crop_ratio((0.56, 0.58, 0.98, 1.00)), "D 完成单位公章候选区", (360, 320), enhance=True)
+
+        gap = 18
+        row_h = max(signature_panel.height, work_panel.height, completion_panel.height)
+        canvas_h = full_panel.height + gap + row_h
+        canvas = Image.new("RGB", (1160, canvas_h), "white")
+        canvas.paste(full_panel, (0, 0))
+        x_positions = [0, 400, 800]
+        for x, panel in zip(x_positions, [signature_panel, work_panel, completion_panel]):
+            canvas.paste(panel, (x, full_panel.height + gap))
+
+        buf = io.BytesIO()
+        canvas.save(buf, format="PNG")
+        return buf.getvalue()
 
     def _compress_image_for_llm(self, img_data: bytes, max_size: int = 2000000) -> bytes:
         """压缩图片到合理大小，避免超过 LLM 10MB 限制"""
@@ -204,7 +355,7 @@ class ReviewAgent:
         """文档分类 - 直接用 LLM 识别（不依赖 OCR）
         
         Returns:
-            (document_type, extracted_content)
+            (doc_type, extracted_content)
         """
         from src.common.vision.multimodal import MultimodalLLM
         from src.services.review.rules.config import get_type_labels_for_llm
@@ -258,7 +409,7 @@ class ReviewAgent:
     ) -> List[CheckResult]:
         """运行规则"""
         # 从配置加载规则
-        rule_names = load_rules(context.document_type)
+        rule_names = load_rules(context.doc_type)
         
         # 创建规则实例
         rules = []
@@ -269,7 +420,7 @@ class ReviewAgent:
         
         # 如果没有配置规则，使用 registry 的默认链
         if not rules:
-            rules = self.rule_registry.create_chain(context.document_type)
+            rules = self.rule_registry.create_chain(context.doc_type)
 
         # 过滤检查项
         if check_items:
@@ -429,21 +580,24 @@ class ReviewAgent:
         self,
         file_data: bytes,
         extracted: Any,
-        document_type: str = "unknown",
+        doc_type: str = "unknown",
     ) -> Dict[str, Any]:
         """LLM 深度分析（用于调试 OCR 效果）
         
         Args:
             file_data: 文件数据
             extracted: OCR 提取的内容
-            document_type: 文档类型
+            doc_type: 文档类型
             
         Returns:
             LLM 分析结果
         """
+        if normalize_doc_type(doc_type) == "reward_award_contributor_form":
+            return await self._do_award_contributor_llm_analysis(file_data, doc_type)
+
         multi_llm = MultimodalLLM(self.llm)
-        logger.info(f"[LLM] 深度分析开始，document_type={document_type}")
-        print(f"[LLM] 深度分析开始，document_type={document_type}", flush=True)
+        logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
+        print(f"[LLM] 深度分析开始，doc_type={doc_type}", flush=True)
         
         # 将 PDF 转为图片（取第一页）
         image_data = self._pdf_to_image(file_data)
@@ -451,7 +605,7 @@ class ReviewAgent:
         ocr_text = extracted.get("text", "") or ""
         
         # 1. 文档类型由请求指定，不做 LLM 分类
-        doc_type_llm = document_type
+        doc_type_llm = doc_type
         
         # 2. LLM 通用表格内容提取（一次调用，原文照抄）
         import re
@@ -460,7 +614,7 @@ class ReviewAgent:
         import io
         
         # 尝试从配置中获取关键字段
-        configured_fields = load_llm_extract_fields(document_type)
+        configured_fields = load_llm_extract_fields(doc_type)
         
         try:
             # 将 PDF 转为图片（取第一页）
@@ -555,6 +709,140 @@ class ReviewAgent:
             "stamps_description": stamps_desc,
             "stamps_result": stamps_result,  # 结构化印章数据
             "signatures_description": str(sigs_desc) if sigs_desc else "未检测到签字",
+        }
+
+    async def _do_award_contributor_llm_analysis(
+        self,
+        file_data: bytes,
+        doc_type: str,
+    ) -> Dict[str, Any]:
+        """主要完成人情况表专项结构化分析。"""
+        multi_llm = MultimodalLLM(self.llm)
+        logger.info(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}")
+        print(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}", flush=True)
+
+        image_data = self._build_award_contributor_analysis_image(file_data)
+        prompt = """这是一张用于审查“主要完成人情况表”的复合图，共 4 个面板：
+
+- A：全页
+- B：左下签名区（已放大增强）
+- C：工作单位公章候选区（已放大增强）
+- D：完成单位公章候选区（已放大增强）
+
+请优先根据 B/C/D 面板提取信息，只基于图片中清晰可见的内容，严格返回 JSON：
+
+{
+  "contributor_name": "表单中填写的本人姓名",
+  "work_unit": "工作单位填写值",
+  "completion_unit": "完成单位填写值",
+  "signature_names": ["本人签名处识别到的签名姓名"],
+  "work_unit_stamp_units": ["工作单位（公章）位置印章文字"],
+  "completion_unit_stamp_units": ["完成单位（公章）位置印章文字"],
+  "notes": ["无法确认时的简短说明"]
+}
+
+要求：
+1. 只读图片中能看清的文字，不允许猜测、联想、补全。
+2. “signature_names” 只填写 B 面板本人签名区域看出来的姓名，不要把正文姓名抄进去。
+3. “work_unit_stamp_units” 只填写 C 面板中与“工作单位（公章）”对应的印章文字。
+4. “completion_unit_stamp_units” 只填写 D 面板中与“完成单位（公章）”对应的印章文字。
+5. 不要识别页面其他印章，不要输出与工作单位/完成单位无关的章。
+6. 严禁把印章外部相邻红字、表头、正文、签字、日期当作印章文字。
+7. 如果两个单位相同且页面只盖了一个章，可以把同一个单位同时写入两个 stamp_units 数组。
+8. 看不清就留空字符串或空数组，不要猜。
+9. 返回严格 JSON，不要代码块，不要解释。"""
+
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            image_data,
+            prompt,
+            "主要完成人情况表专项分析",
+            timeout_sec=60,
+        )
+        payload = self._parse_award_contributor_analysis(raw)
+
+        extracted_fields = {
+            "姓名": payload.get("contributor_name", ""),
+            "工作单位": payload.get("work_unit", ""),
+            "完成单位": payload.get("completion_unit", ""),
+        }
+        signature_names = payload.get("signature_names", [])
+        work_stamp_units = payload.get("work_unit_stamp_units", [])
+        completion_stamp_units = payload.get("completion_unit_stamp_units", [])
+        all_stamp_units = []
+        for unit in [*work_stamp_units, *completion_stamp_units]:
+            text = str(unit or "").strip()
+            if text and text not in all_stamp_units:
+                all_stamp_units.append(text)
+        signatures_result = {
+            "signatures": [
+                {"text": name, "bbox": None, "confidence": 0.9}
+                for name in signature_names
+            ]
+        }
+        stamps_result = {
+            "stamps": [
+                {"unit": unit, "text": unit, "location": "工作单位（公章）", "bbox": None, "confidence": 0.9}
+                for unit in work_stamp_units
+            ] + [
+                {"unit": unit, "text": unit, "location": "完成单位（公章）", "bbox": None, "confidence": 0.9}
+                for unit in completion_stamp_units
+            ] + [
+                {"unit": unit, "text": unit, "location": "页面印章", "bbox": None, "confidence": 0.8}
+                for unit in all_stamp_units
+                if unit not in set(work_stamp_units + completion_stamp_units)
+            ]
+        }
+
+        signatures_description = "；".join(signature_names) if signature_names else "未检测到签字"
+        stamps_description = "；".join(all_stamp_units) if all_stamp_units else "未检测到印章"
+
+        return {
+            "document_type_llm": doc_type,
+            "extracted_fields": extracted_fields,
+            "stamps_description": stamps_description,
+            "stamps_result": stamps_result,
+            "signatures_result": signatures_result,
+            "signatures_description": signatures_description,
+            "award_contributor_analysis": payload,
+        }
+
+    def _parse_award_contributor_analysis(self, raw_text: str) -> Dict[str, Any]:
+        """解析主要完成人情况表专项 JSON。"""
+        import json
+        import re
+
+        stripped = str(raw_text or "").strip()
+        if stripped.startswith("```"):
+            parts = stripped.split("```", 2)
+            if len(parts) >= 2:
+                stripped = parts[1]
+                if stripped.startswith("json"):
+                    stripped = stripped[4:]
+        match = re.search(r"\{.*\}", stripped, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+
+        def _clean_text(value: Any) -> str:
+            return str(value or "").replace("\n", " ").replace("\xa0", " ").strip()
+
+        def _clean_list(value: Any) -> List[str]:
+            if not isinstance(value, list):
+                return []
+            return [_clean_text(item) for item in value if _clean_text(item)]
+
+        return {
+            "contributor_name": _clean_text(payload.get("contributor_name")),
+            "work_unit": _clean_text(payload.get("work_unit")),
+            "completion_unit": _clean_text(payload.get("completion_unit")),
+            "signature_names": _clean_list(payload.get("signature_names")),
+            "work_unit_stamp_units": _clean_list(payload.get("work_unit_stamp_units")),
+            "completion_unit_stamp_units": _clean_list(payload.get("completion_unit_stamp_units")),
+            "all_stamp_units": [],
+            "notes": _clean_list(payload.get("notes")),
+            "raw_response": raw_text,
         }
     
     def _pdf_to_image(self, file_data: bytes) -> bytes:
