@@ -11,7 +11,7 @@ from typing import Iterable, List
 from src.common.models import CooperationInfo, ProjectAttachment, ProjectIndexRow, ProjectInfo, ProjectReviewContext
 from src.common.review_runtime import ReviewRuntime
 from src.services.review.attachment_classifier import AttachmentClassifier
-from src.services.review.project_config import resolve_document_type, resolve_project_type
+from src.services.review.project_config import resolve_doc_type, resolve_project_type
 from src.services.review.project_fact_resolver import ProjectFactResolver
 
 
@@ -19,7 +19,7 @@ class ProjectContextBuilder:
     """根据数据库记录和文件目录构造项目上下文"""
 
     CORPUS_ROOT = Path(os.getenv("REVIEW_CORPUS_ROOT", "/mnt/remote_corpus"))
-    UNKNOWN_DOC_KIND = "unknown_attachment"
+    UNKNOWN_DOC_TYPE = "project_unknown_attachment"
 
     def __init__(
         self,
@@ -35,7 +35,7 @@ class ProjectContextBuilder:
         project_type = resolve_project_type(project_row.guide_name)
         attachments, scan_info, proposal_facts = await self._scan_attachments(project_row)
         classification_reliable = bool(attachments) and all(
-            attachment.doc_kind != self.UNKNOWN_DOC_KIND for attachment in attachments
+            attachment.doc_type != self.UNKNOWN_DOC_TYPE for attachment in attachments
         )
         project_info_updates = proposal_facts.get("project_info_updates", {})
 
@@ -125,20 +125,23 @@ class ProjectContextBuilder:
             classification = classified[str(path)]
             doc_kind = classification["doc_kind"]
             confidence = classification["confidence"]
-            document_type = resolve_document_type(doc_kind) if doc_kind != self.UNKNOWN_DOC_KIND else "unknown"
-            if doc_kind == self.UNKNOWN_DOC_KIND:
+            doc_type = resolve_doc_type(str(classification.get("doc_type") or doc_kind))
+            if doc_type == self.UNKNOWN_DOC_TYPE:
                 unknown_attachment_count += 1
+            details = dict(classification["details"])
+            contains_doc_kinds = details.get("contains_doc_kinds", [])
+            if isinstance(contains_doc_kinds, list) and not details.get("contains_doc_types"):
+                details["contains_doc_types"] = [resolve_doc_type(item) for item in contains_doc_kinds if item]
             attachments.append(
                 ProjectAttachment(
                     attachment_id=f"{project_row.project_id}-att-{index}",
-                    doc_kind=doc_kind,
+                    doc_type=doc_type,
                     file_name=path.name,
                     file_ref=str(path),
-                    document_type=document_type if document_type != "unknown" else None,
                     recognition_confidence=confidence,
                     classification_source=classification["source"],
                     classification_reason=classification["reason"],
-                    classification_details=classification["details"],
+                    classification_details=details,
                 )
             )
             attachment_debug_items.append(
@@ -146,11 +149,12 @@ class ProjectContextBuilder:
                     "attachment_id": f"{project_row.project_id}-att-{index}",
                     "file_name": path.name,
                     "file_ref": str(path),
+                    "doc_type": doc_type,
                     "doc_kind": doc_kind,
                     "recognition_confidence": confidence,
                     "classification_source": classification["source"],
                     "classification_reason": classification["reason"],
-                    "classification_details": classification["details"],
+                    "classification_details": details,
                 }
             )
         return attachments, {
