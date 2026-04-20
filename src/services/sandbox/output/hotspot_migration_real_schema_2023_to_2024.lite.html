@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>热点变化简报</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f4f7fb; color: #0f172a; }
+    .page { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .hero { background: linear-gradient(135deg, #ffffff 0%, #eef6ff 100%); border: 1px solid #d8e5f7; border-radius: 20px; padding: 24px; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05); }
+    .title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+    .subtitle { margin-top: 8px; font-size: 13px; color: #475569; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .stat { background: rgba(255,255,255,0.92); border: 1px solid #dbe7f5; border-radius: 16px; padding: 14px 16px; }
+    .stat-label { font-size: 12px; color: #64748b; }
+    .stat-value { margin-top: 6px; font-size: 24px; font-weight: 800; }
+    .section { margin-top: 18px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 18px 20px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04); }
+    .section-title { font-size: 16px; font-weight: 800; margin-bottom: 12px; }
+    .overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .overview-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
+    .overview-label { font-size: 11px; color: #64748b; }
+    .overview-value { margin-top: 6px; font-size: 14px; font-weight: 700; line-height: 1.6; }
+    .insight-list { display: grid; gap: 10px; }
+    .insight-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; line-height: 1.7; }
+    .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; }
+    .card-title { font-size: 15px; font-weight: 800; margin-bottom: 10px; }
+    .group-list, .change-list { display: grid; gap: 10px; }
+    .group-item, .change-item { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
+    .item-head { font-size: 14px; font-weight: 800; line-height: 1.5; }
+    .item-desc { margin-top: 8px; color: #334155; line-height: 1.7; font-size: 13px; }
+    .meta { margin-top: 8px; font-size: 12px; color: #64748b; }
+    .kw { display: inline-block; margin: 0 6px 6px 0; padding: 4px 8px; border-radius: 999px; background: #e9f2ff; color: #1d4ed8; font-size: 12px; }
+    .empty { color: #94a3b8; font-size: 13px; padding: 8px 0; }
+    @media (max-width: 1080px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .overview-grid { grid-template-columns: 1fr; }
+      .two-col { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+      .page { padding: 14px; }
+      .stats { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="title">热点变化简报</div>
+      <div class="subtitle">生成时间 2026-04-20T09:47:16.968528+00:00 | 来源 /home/tdkx/malin/TechManagement/src/services/sandbox/output/hotspot_migration_real_schema_2023_to_2024.json</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-label">2023年热点分组数</div><div class="stat-value">7</div></div><div class="stat"><div class="stat-label">2024年热点分组数</div><div class="stat-value">11</div></div><div class="stat"><div class="stat-label">重点领域方向</div><div class="stat-value">5</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">分析说明</div>
+      <div class="overview-grid">
+        <div class="overview-item"><div class="overview-label">起始年份</div><div class="overview-value">2023年</div></div>
+        <div class="overview-item"><div class="overview-label">对比年份</div><div class="overview-value">2024年</div></div>
+        <div class="overview-item"><div class="overview-label">分析方法</div><div class="overview-value">先按项目之间的关联关系做分组，再比较两个年份里哪些方向更集中、哪些方向发生了变化。</div></div>
+        <div class="overview-item"><div class="overview-label">2023年分析图规模</div><div class="overview-value">1608 个项目节点，126499 条项目关联</div></div><div class="overview-item"><div class="overview-label">2024年分析图规模</div><div class="overview-value">2185 个项目节点，150000 条项目关联</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">结论摘要</div>
+      <div class="insight-list">
+        <div class="insight-item">本次对 2023年 和 2024年 的项目关系做了对比分析，2023年识别出 7 个热点分组，2024年识别出 11 个热点分组。</div><div class="insight-item">2023年较受关注的方向主要包括：1010101-面上项目、6020101-自由探索类基础研究、2010104-数字河北建设。</div><div class="insight-item">2024年较受关注的方向主要包括：1010201-青年科学基金项目（A类）、6020401-自由探索类基础研究、1010201-青年科学基金项目（A类）。</div><div class="insight-item">“1010101-面上项目”在 2024年 继续保持活跃，属于延续性较强的方向。</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">重点方向</div>
+      <div class="two-col">
+        <div class="card"><div class="card-title">2023年</div><div class="group-list"><div class="group-item"><div class="item-head">1010101-面上项目</div><div class="meta">排序第 1，约 313 个项目</div><div class="item-desc">2023年中，该方向形成了约 313 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010101-面上项目</span></div></div><div class="group-item"><div class="item-head">6020101-自由探索类基础研究</div><div class="meta">排序第 2，约 290 个项目</div><div class="item-desc">2023年中，该方向形成了约 290 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">6020101-自由探索类基础研究</span></div></div><div class="group-item"><div class="item-head">2010104-数字河北建设</div><div class="meta">排序第 3，约 284 个项目</div><div class="item-desc">2023年中，该方向形成了约 284 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">2010104-数字河北建设</span><span class="kw">1010802-生物农业联合基金重点项目</span><span class="kw">2010301-研究院试点项目</span><span class="kw">5010601-河北省钢铁实验室研发项目</span><span class="kw">1010501-重点项目</span></div></div><div class="group-item"><div class="item-head">1010201-青年科学基金项目</div><div class="meta">排序第 4，约 224 个项目</div><div class="item-desc">2023年中，该方向形成了约 224 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010201-青年科学基金项目</span></div></div><div class="group-item"><div class="item-head">6020301-科技成果转移转化项目</div><div class="meta">排序第 5，约 174 个项目</div><div class="item-desc">2023年中，该方向形成了约 174 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">6020301-科技成果转移转化项目</span><span class="kw">1010701-中医药联合基金培育项目</span><span class="kw">2020101-战略性技术</span></div></div><div class="group-item"><div class="item-head">5020101-科普图书及科普影视作品创作</div><div class="meta">排序第 6，约 164 个项目</div><div class="item-desc">2023年中，该方向形成了约 164 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">5020101-科普图书及科普影视作品创作</span><span class="kw">5040101-产业创新创业团队项目</span><span class="kw">1010601-春晖人才项目</span><span class="kw">1010301-优秀青年科学基金项目</span><span class="kw">1010801-生物农业联合基金培育项目</span></div></div><div class="group-item"><div class="item-head">6020201-科技创新基地项目</div><div class="meta">排序第 7，约 159 个项目</div><div class="item-desc">2023年中，该方向形成了约 159 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">6020201-科技创新基地项目</span><span class="kw">5030101-智库项目</span><span class="kw">1010401-杰出青年科学基金项目</span><span class="kw">1010901-燕赵青年科学家项目</span><span class="kw">3040101-县域特色产业技术创新</span></div></div></div></div><div class="card"><div class="card-title">2024年</div><div class="group-list"><div class="group-item"><div class="item-head">1010201-青年科学基金项目（A类）</div><div class="meta">排序第 1，约 320 个项目</div><div class="item-desc">2024年中，该方向形成了约 320 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010201-青年科学基金项目（A类）</span></div></div><div class="group-item"><div class="item-head">6020401-自由探索类基础研究</div><div class="meta">排序第 2，约 320 个项目</div><div class="item-desc">2024年中，该方向形成了约 320 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">6020401-自由探索类基础研究</span></div></div><div class="group-item"><div class="item-head">1010201-青年科学基金项目（A类）</div><div class="meta">排序第 3，约 289 个项目</div><div class="item-desc">2024年中，该方向形成了约 289 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010201-青年科学基金项目（A类）</span><span class="kw">1010101-面上项目</span><span class="kw">6020401-自由探索类基础研究</span><span class="kw">2020102-高端装备制造产业</span><span class="kw">2030401-高安全性锂电池用固态电解质关键技术</span></div></div><div class="group-item"><div class="item-head">6020301-科技成果转移转化项目</div><div class="meta">排序第 4，约 170 个项目</div><div class="item-desc">2024年中，该方向形成了约 170 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">6020301-科技成果转移转化项目</span><span class="kw">4020101-原创科普资源开发</span><span class="kw">1010301-优秀青年科学基金项目</span></div></div><div class="group-item"><div class="item-head">1010101-面上项目</div><div class="meta">排序第 5，约 164 个项目</div><div class="item-desc">2024年中，该方向形成了约 164 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010101-面上项目</span></div></div><div class="group-item"><div class="item-head">1010202-青年科学基金项目（B类）</div><div class="meta">排序第 6，约 163 个项目</div><div class="item-desc">2024年中，该方向形成了约 163 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010202-青年科学基金项目（B类）</span><span class="kw">1010601-重点项目（A类）</span><span class="kw">2030701-战略性技术</span><span class="kw">1010401-杰出青年科学基金项目</span><span class="kw">1011001-概念验证项目</span></div></div><div class="group-item"><div class="item-head">1010701-京津冀基础研究合作专项</div><div class="meta">排序第 7，约 159 个项目</div><div class="item-desc">2024年中，该方向形成了约 159 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010701-京津冀基础研究合作专项</span><span class="kw">6020201-科技创新基地项目</span><span class="kw">6020101-区域科技创新体系项目</span><span class="kw">4040301-燕赵黄金台聚才计划骨干人才（科技平台）项目</span></div></div><div class="group-item"><div class="item-head">4010801-河北省技术创新中心研发项目</div><div class="meta">排序第 8，约 150 个项目</div><div class="item-desc">2024年中，该方向形成了约 150 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">4010801-河北省技术创新中心研发项目</span><span class="kw">2040101-场景建设项目</span><span class="kw">4060401-雄安新区(省地联动)科技项目</span><span class="kw">4030901-企业创新主体地位</span><span class="kw">1010501-燕赵青年科学家项目</span></div></div><div class="group-item"><div class="item-head">1010101-面上项目</div><div class="meta">排序第 9，约 150 个项目</div><div class="item-desc">2024年中，该方向形成了约 150 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010101-面上项目</span><span class="kw">4010701-河北省重点实验室研发项目</span><span class="kw">4050101-创新联合体专项</span><span class="kw">1010602-重点项目（B类）</span><span class="kw">2040201-场景示范项目</span></div></div><div class="group-item"><div class="item-head">1010101-面上项目</div><div class="meta">排序第 10，约 150 个项目</div><div class="item-desc">2024年中，该方向形成了约 150 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010101-面上项目</span></div></div><div class="group-item"><div class="item-head">1010101-面上项目</div><div class="meta">排序第 11，约 150 个项目</div><div class="item-desc">2024年中，该方向形成了约 150 个项目构成的重点分组。</div><div style="margin-top: 8px;"><span class="kw">1010101-面上项目</span></div></div></div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">重点趋势</div>
+      <div class="change-list">
+        <div class="change-item"><div class="item-head">1. 由“1010101-面上项目”到“1010101-面上项目”</div><div class="item-desc">“1010101-面上项目”在 2024年 继续保持活跃，属于延续性较强的方向。</div></div><div class="change-item"><div class="item-head">2. 由“6020301-科技成果转移转化项目”到“6020301-科技成果转移转化项目”</div><div class="item-desc">“6020301-科技成果转移转化项目”在 2024年 继续保持活跃，属于延续性较强的方向。</div></div><div class="change-item"><div class="item-head">3. 由“5020101-科普图书及科普影视作品创作”到“6020301-科技成果转移转化项目”</div><div class="item-desc">关注重点由“5020101-科普图书及科普影视作品创作”延伸到“6020301-科技成果转移转化项目”，说明研究关注点出现了转移。</div></div><div class="change-item"><div class="item-head">4. 由“6020201-科技创新基地项目”到“1010701-京津冀基础研究合作专项”</div><div class="item-desc">关注重点由“6020201-科技创新基地项目”延伸到“1010701-京津冀基础研究合作专项”，说明研究关注点出现了转移。</div></div><div class="change-item"><div class="item-head">5. 由“6020201-科技创新基地项目”到“1010202-青年科学基金项目（B类）”</div><div class="item-desc">关注重点由“6020201-科技创新基地项目”延伸到“1010202-青年科学基金项目（B类）”，说明研究关注点出现了转移。</div></div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

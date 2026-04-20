@@ -45,7 +45,10 @@ except ModuleNotFoundError:
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-DEFAULT_STEP2_PATH = "debug_sandbox/hotspot_migration_real_schema_2023_to_2024.json"
+SANDBOX_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = SANDBOX_DIR / "output"
+
+DEFAULT_STEP2_PATH = str(DEFAULT_OUTPUT_DIR / "hotspot_migration_real_schema_2023_to_2024.json")
 DEFAULT_STEP3_PATH = "debug_sandbox/macro_insight_2023_2023_to_2024_2024.json"
 DEFAULT_OUTPUT_PATH = "debug_sandbox/leadership_brief_step4.json"
 DEFAULT_TOP_MOVEMENTS = 5

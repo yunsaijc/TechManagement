@@ -15,8 +15,11 @@ from src.services.sandbox.hotspot_migration_step2 import main as step2_main
 from src.services.sandbox.macro_insight_step3 import main as step3_main
 from src.services.sandbox.neo4j_gds_preflight import main as step1_main
 
+SANDBOX_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = SANDBOX_DIR / "output"
+
 DEFAULT_OUTPUT_PATH = "debug_sandbox/leadership_sandbox_forecast.json"
-DEFAULT_STEP2_PATH = "debug_sandbox/hotspot_migration_real_schema_2023_to_2024.json"
+DEFAULT_STEP2_PATH = str(DEFAULT_OUTPUT_DIR / "hotspot_migration_real_schema_2023_to_2024.json")
 DEFAULT_STEP3_PATH = "debug_sandbox/macro_insight_2023_2023_to_2024_2024.json"
 DEFAULT_STEP4_PATH = "debug_sandbox/leadership_brief_step4.json"
 DEFAULT_STEP5_PATH = "debug_sandbox/graph_rag_answer_step5.json"
