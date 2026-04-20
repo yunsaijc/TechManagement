@@ -23,6 +23,7 @@ from paddleocr import PaddleOCR
 from PIL import Image
 
 from src.common.vision.multimodal import MultimodalLLM
+from src.services.review.doc_types import normalize_doc_type
 
 logger = logging.getLogger(__name__)
 
@@ -86,30 +87,31 @@ class DocumentExtractor:
     async def extract(
         self,
         file_data: bytes,
-        document_type: str = None,
+        doc_type: str = None,
     ) -> ExtractedContent:
         """提取文档关键内容
         
         Args:
             file_data: 文件数据（PDF 或图片）
-            document_type: 文档类型
+            doc_type: 文档类型
             
         Returns:
             ExtractedContent: 提取结果
         """
         # 检测是否为 PDF
         if file_data[:4] == b'%PDF':
-            return await self._extract_pdf(file_data, document_type)
+            return await self._extract_pdf(file_data, doc_type)
         else:
-            return await self._extract_image(file_data, document_type)
+            return await self._extract_image(file_data, doc_type)
     
     async def _extract_pdf(
         self,
         file_data: bytes,
-        document_type: str = None,
+        doc_type: str = None,
     ) -> ExtractedContent:
         """提取 PDF 内容"""
         try:
+            normalized_doc_type = normalize_doc_type(str(doc_type or ""), default="")
             doc = fitz.open(stream=file_data, filetype="pdf")
             page_count = doc.page_count
             
@@ -159,7 +161,8 @@ class DocumentExtractor:
             project_name = self._extract_project_name_from_text(full_text)
             
             return ExtractedContent({
-                "document_type": document_type,
+                "doc_type": normalized_doc_type,
+                "document_type": normalized_doc_type,
                 "project_name": project_name,
                 "units": units,
                 "work_units": work_units,
@@ -173,16 +176,18 @@ class DocumentExtractor:
         except Exception as e:
             return ExtractedContent({
                 "error": str(e),
-                "document_type": document_type,
+                "doc_type": normalize_doc_type(str(doc_type or ""), default=""),
+                "document_type": normalize_doc_type(str(doc_type or ""), default=""),
             })
     
     async def _extract_image(
         self,
         image_data: bytes,
-        document_type: str = None,
+        doc_type: str = None,
     ) -> ExtractedContent:
         """提取图片内容"""
         try:
+            normalized_doc_type = normalize_doc_type(str(doc_type or ""), default="")
             # 压缩图片
             img_data = self._compress_image(image_data)
             
@@ -208,7 +213,8 @@ class DocumentExtractor:
                 s["page"] = 1
             
             return ExtractedContent({
-                "document_type": document_type,
+                "doc_type": normalized_doc_type,
+                "document_type": normalized_doc_type,
                 "project_name": project_name,
                 "units": units,
                 "work_units": work_units,
@@ -222,7 +228,8 @@ class DocumentExtractor:
         except Exception as e:
             return ExtractedContent({
                 "error": str(e),
-                "document_type": document_type,
+                "doc_type": normalize_doc_type(str(doc_type or ""), default=""),
+                "document_type": normalize_doc_type(str(doc_type or ""), default=""),
             })
     
     def _compress_image(self, img_data: bytes, max_size: int = 2000000) -> bytes:

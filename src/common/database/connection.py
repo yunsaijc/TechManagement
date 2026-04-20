@@ -67,6 +67,28 @@ def reward_execute(db_name: str, sql: str, params: tuple = None):
         conn.close()
 
 
+def reward_execute_write(db_name: str, sql: str, params: tuple = None) -> int:
+    """
+    执行奖励评审数据库写入。
+
+    Args:
+        db_name: 数据库名
+        sql: SQL语句
+        params: 参数
+
+    Returns:
+        受影响行数
+    """
+    conn = get_reward_connection(db_name)
+    try:
+        with conn.cursor() as cursor:
+            affected = cursor.execute(sql, params or ())
+        conn.commit()
+        return int(affected or 0)
+    finally:
+        conn.close()
+
+
 def project_execute(sql: str, params: tuple = None):
     """
     执行项目评审数据库查询
