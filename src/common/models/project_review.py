@@ -2,7 +2,9 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field, field_validator
+
+from src.services.review.doc_types import doc_type_to_legacy_doc_kind, normalize_doc_type
 
 from src.common.models.review import CheckResult, ReviewResult
 
@@ -51,17 +53,38 @@ class CooperationInfo(BaseModel):
 
 class ProjectAttachment(BaseModel):
     """项目附件"""
+    model_config = ConfigDict(populate_by_name=True)
 
     attachment_id: str = Field(..., description="附件唯一标识")
-    doc_kind: str = Field(..., description="附件业务类型")
+    doc_type: str = Field(
+        ...,
+        validation_alias=AliasChoices("doc_type", "doc_kind", "document_type"),
+        description="统一附件类型",
+    )
     file_name: str = Field(..., description="文件名")
     file_ref: str = Field(..., description="文件引用")
-    document_type: Optional[str] = Field(default=None, description="附件级审查类型")
     required: bool = Field(False, description="是否必需")
     recognition_confidence: float = Field(0.0, description="类型识别置信度")
     classification_source: str = Field(default="", description="分类来源")
     classification_reason: str = Field(default="", description="分类原因")
     classification_details: Dict[str, Any] = Field(default_factory=dict, description="分类调试信息")
+
+    @field_validator("doc_type", mode="before")
+    @classmethod
+    def _normalize_doc_type(cls, value: Any) -> str:
+        return normalize_doc_type(str(value or ""), default="project_unknown_attachment")
+
+    @computed_field
+    @property
+    def doc_kind(self) -> str:
+        """兼容旧附件类别编码。"""
+        return doc_type_to_legacy_doc_kind(self.doc_type)
+
+    @computed_field
+    @property
+    def document_type(self) -> str:
+        """兼容旧字段名。"""
+        return self.doc_type
 
 
 class ExternalChecks(BaseModel):
@@ -109,9 +132,25 @@ class ProjectIndexRow(BaseModel):
 
 class MissingAttachment(BaseModel):
     """缺失附件"""
+    model_config = ConfigDict(populate_by_name=True)
 
-    doc_kind: str = Field(..., description="缺失的附件类型")
+    doc_type: str = Field(
+        ...,
+        validation_alias=AliasChoices("doc_type", "doc_kind"),
+        description="缺失的附件类型",
+    )
     reason: str = Field(..., description="缺失原因")
+
+    @field_validator("doc_type", mode="before")
+    @classmethod
+    def _normalize_doc_type(cls, value: Any) -> str:
+        return normalize_doc_type(str(value or ""), default="project_unknown_attachment")
+
+    @computed_field
+    @property
+    def doc_kind(self) -> str:
+        """兼容旧字段名。"""
+        return doc_type_to_legacy_doc_kind(self.doc_type)
 
 
 class ManualReviewItem(BaseModel):
@@ -168,10 +207,20 @@ class BatchReviewResult(BaseModel):
 
 class ProjectTypeInfo(BaseModel):
     """项目类型信息"""
+    model_config = ConfigDict(populate_by_name=True)
 
     value: str
     label: str
-    required_doc_kinds: List[str] = Field(default_factory=list)
+    required_doc_types: List[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("required_doc_types", "required_doc_kinds"),
+    )
+
+    @computed_field
+    @property
+    def required_doc_kinds(self) -> List[str]:
+        """兼容旧字段名。"""
+        return [doc_type_to_legacy_doc_kind(doc_type) for doc_type in self.required_doc_types]
 
 
 class ProjectReviewContext(BaseModel):

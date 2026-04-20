@@ -15,7 +15,7 @@ simulation 需要的不是一堆临时请求字段，而是一套围绕真实数
 
 ## 二、数据底座分层
 
-simulation 的数据底座应分三层，而不是把所有东西摊平成一个大表。
+simulation 的数据底座应分四层，而不是把所有东西摊平成一个大表。
 
 ### 1. 事实层
 
@@ -40,13 +40,27 @@ simulation 的数据底座应分三层，而不是把所有东西摊平成一个
 - `Institution-Institution`
 - 其他已建图关系
 
-### 3. 统计层
+### 3. 正式文本依据层
 
-在事实层与关系层之上沉淀：
+来自正式指南、政策和管理办法文本：
+
+- `sys_article`
+- `sys_menu`
+
+这一层不直接改结果变量，而是先沉淀：
+
+- `policy_document`
+- `policy_binding`
+
+### 4. 统计层
+
+在事实层、关系层与正式文本依据层之上沉淀：
 
 - `project_lifecycle_fact`
 - `topic_year_state`
 - `topic_graph_state`
+- `policy_document`
+- `policy_binding`
 - `baseline_snapshot`
 - `scenario_contract`
 - `simulation_run_result`
@@ -132,6 +146,57 @@ simulation 的数据底座应分三层，而不是把所有东西摊平成一个
 - 作为结构外溢阶段的输入与输出
 - 明确这些字段都是图谱代理，不冒充业务事实
 
+## 4. policy_document
+
+保存归一化后的正式文本对象。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `document_id` | string | 文档标识 |
+| `raw_article_id` | string | 原始 `sys_article.id` |
+| `raw_menu_id` | string | 原始 `sys_menu.id` |
+| `document_type` | string | `guide / policy / management_rule / notice / interpretation` |
+| `title` | string | 文档标题 |
+| `menu_name` | string | 原始栏目名称 |
+| `source` | string | 来源单位或来源站点 |
+| `publish_date` | date | 发布时间 |
+| `content_kind` | string | `html / external_url / pdf_embed / image_only` |
+| `content_text` | text | 归一化文本或链接内容 |
+| `canonical_url` | string | 外链或标准访问地址 |
+| `extracted_keys_json` | json | 年份、专项、项目类型、指南代码、阶段词、约束词 |
+| `dedupe_key` | string | 去重键 |
+
+作用：
+
+- 为 `Scenario Contract` 提供正式文本依据对象
+- 让领导级结论可追回到原始指南、政策和管理办法
+
+## 5. policy_binding
+
+保存正式文本到 sandbox 对象的映射关系。
+
+建议字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `binding_id` | string | 映射标识 |
+| `document_id` | string | 正式文本标识 |
+| `binding_type` | string | `topic / program / guide_code / stage / constraint` |
+| `topic_id` | string | 主题标识 |
+| `program_id` | string | 专项标识 |
+| `guide_code_hint` | string | 指南代码提示 |
+| `stage_name` | string | 适用治理阶段 |
+| `constraint_type` | string | 约束类型 |
+| `confidence_label` | string | 映射置信度 |
+| `evidence_excerpt` | string | 支撑该映射的摘录 |
+
+作用：
+
+- 把文档对象映射到 `topic / program / stage`
+- 防止页面只剩“系统解释”，没有正式依据链
+
 ## 四、baseline 与 scenario 对象
 
 ## 1. baseline_snapshot
@@ -170,6 +235,7 @@ simulation 的数据底座应分三层，而不是把所有东西摊平成一个
 | `baseline_id` | string | 关联基线 |
 | `intent_json` | json | 决策问题与意图 |
 | `baseline_scope_json` | json | 基线范围 |
+| `basis_documents_json` | json | 正式文本依据对象与引用关系 |
 | `policy_package_json` | json | 政策动作包 |
 | `constraints_json` | json | 预算/配额/合规约束 |
 | `evaluation_goals_json` | json | 评估目标 |
@@ -224,6 +290,7 @@ simulation 的数据底座应分三层，而不是把所有东西摊平成一个
 | `delta_json` | json | 变化量 |
 | `support_level` | string | 证据等级 |
 | `driver_action_ids_json` | json | 主导动作 |
+| `evidence_document_ids_json` | json | 支撑该阶段结论的正式文本 |
 
 作用：
 
@@ -283,6 +350,7 @@ simulation 的数据底座应分三层，而不是把所有东西摊平成一个
 | `explanation_type` | string | `evidence / assumption / limitation` |
 | `message` | string | 解释文本 |
 | `evidence_json` | json | 表、指标、规则引用 |
+| `document_citations_json` | json | 正式文本引用 |
 | `confidence_label` | string | 可信度标签 |
 
 ## 六、请求与持久化边界
@@ -308,11 +376,13 @@ simulation 的数据底座应分三层，而不是把所有东西摊平成一个
 1. `project_lifecycle_fact`
 2. `topic_year_state`
 3. `topic_graph_state`
-4. `baseline_snapshot`
-5. `scenario_contract`
-6. `simulation_run`
-7. `simulation_stage_result`
-8. `simulation_topic_result`
+4. `policy_document`
+5. `policy_binding`
+6. `baseline_snapshot`
+7. `scenario_contract`
+8. `simulation_run`
+9. `simulation_stage_result`
+10. `simulation_topic_result`
 
 这套对象已经足够支撑“基线-场景-比较-解释”的完整链路。
 

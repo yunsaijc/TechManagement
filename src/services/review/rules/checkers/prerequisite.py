@@ -1,6 +1,6 @@
 """前置条件检查规则"""
-from src.common.models.enums import DocumentType
 from src.common.models.review import CheckResult, CheckStatus
+from src.services.review.doc_types import normalize_doc_type
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 
@@ -13,32 +13,15 @@ class PrerequisiteCheckRule(BaseRule):
     description = "检查前置条件文档是否上传"
     priority = 20
 
-    # 文档类型 -> 前置条件映射
     PREREQUISITES = {
-        DocumentType.PATENT_CERTIFICATE: [],
-        DocumentType.PATENT_APPLICATION: [],
-        DocumentType.ACCEPTANCE_REPORT: [
-            DocumentType.LICENSE,
-            DocumentType.RETRIEVAL_REPORT,
+        "reward_acceptance_report": [
+            "project_retrieval_report",
         ],
-        DocumentType.LICENSE: [],
-        DocumentType.RETRIEVAL_REPORT: [],
-        DocumentType.AWARD_CERTIFICATE: [],
-        DocumentType.CONTRACT: [],
-        DocumentType.OTHER: [],
     }
 
     async def check(self, context: ReviewContext) -> CheckResult:
         """执行前置条件检查"""
-        from src.common.models.enums import DocumentType
-
-        # 转换文档类型
-        try:
-            doc_type = DocumentType(context.document_type)
-        except ValueError:
-            doc_type = DocumentType.OTHER
-
-        required = self.PREREQUISITES.get(doc_type, [])
+        required = self.PREREQUISITES.get(normalize_doc_type(context.doc_type), [])
 
         if not required:
             return CheckResult(
@@ -47,17 +30,15 @@ class PrerequisiteCheckRule(BaseRule):
                 message="无前置条件要求",
             )
 
-        # 检查已上传的文档
-        uploaded_types = context.metadata.get("uploaded_types", [])
-
-        missing = [t for t in required if t not in uploaded_types]
+        uploaded_types = [normalize_doc_type(item) for item in context.metadata.get("uploaded_types", [])]
+        missing = [item for item in required if item not in uploaded_types]
 
         if missing:
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,
-                message=f"缺少前置条件文档: {', '.join([t.value for t in missing])}",
-                evidence={"missing_types": [t.value for t in missing]},
+                message=f"缺少前置条件文档: {', '.join(missing)}",
+                evidence={"missing_doc_types": missing, "missing_types": missing},
             )
 
         return CheckResult(

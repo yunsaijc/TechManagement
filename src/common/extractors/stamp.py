@@ -1,14 +1,17 @@
 """印章提取器（Layer 4）
 
-职责：从文档中提取印章内容
-流程：LLM 直接分析图片，描述印章位置和内容（不需要 OCR）
+职责：从文档中提取印章内容。
+
+当前提供两类能力：
+1. 通用整页印章提取
+2. 面向固定表单的锚点约束局部印章提取
 """
 import io
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from src.common.llm import get_default_llm_client
 from src.common.vision.multimodal import MultimodalLLM
@@ -17,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class StampExtractor:
-    """印章提取器 - LLM 直接分析，返回结构化结果"""
+    """印章提取器。"""
 
     def __init__(self):
         self._llm_client = None
@@ -39,7 +42,6 @@ class StampExtractor:
             未提取到返回 None
         """
         try:
-            # 1. PDF 转图片
             image_data = self._pdf_to_image(file_data)
 
             # 2. LLM 直接分析印章位置和内容，返回结构化 JSON
@@ -92,11 +94,98 @@ class StampExtractor:
             logger.error(f"[StampExtractor] 印章提取失败: {e}")
             return None
 
+    async def extract_award_contributor_stamps(
+        self,
+        file_data: bytes,
+    ) -> Dict[str, Any]:
+        """专项：主要完成人情况表的锚点约束印章提取。"""
+        image_data = self._pdf_to_image(file_data)
+        page_image = self._load_image(image_data)
+        if page_image is None:
+            return self._empty_award_result()
+
+        anchors = await self._locate_award_contributor_anchor_regions(image_data)
+        regions: List[Dict[str, Any]] = []
+        role_results: Dict[str, Dict[str, Any]] = {}
+        for role_key, role_label in (
+            ("work_unit", "工作单位（公章）"),
+            ("completion_unit", "完成单位（公章）"),
+        ):
+            bbox = anchors.get(role_key)
+            if bbox is None:
+                bbox = self._default_award_stamp_bbox(role_key)
+            crop_bytes, crop_bbox = self._crop_with_margin(page_image, bbox, margin_ratio=0.12)
+            crop_result = await self._extract_stamps_from_region(
+                image_data=crop_bytes,
+                region_name=role_label,
+                hint=f"这是一张从“主要完成人情况表”中裁剪出的局部区域，请只识别 {role_label} 附近印章内部的文字。",
+            )
+            role_results[role_key] = crop_result
+            regions.append(
+                {
+                    "role": role_key,
+                    "label": role_label,
+                    "bbox": crop_bbox,
+                    "stamps": crop_result.get("stamps", []),
+                    "raw": crop_result.get("raw", ""),
+                }
+            )
+
+        page_stamps: Dict[str, Any] = {"stamps": [], "raw": ""}
+        if not role_results.get("work_unit", {}).get("stamps") and not role_results.get("completion_unit", {}).get("stamps"):
+            page_stamps = await self._extract_stamps_from_region(
+                image_data=image_data,
+                region_name="整页落款区域",
+                hint="优先关注页面下半部分尤其是右下角落款、公章区域，识别所有实际盖章的单位名称。",
+            )
+
+        work_units = self._dedup_units(role_results.get("work_unit", {}).get("stamps", []))
+        completion_units = self._dedup_units(role_results.get("completion_unit", {}).get("stamps", []))
+        all_units = self._dedup_units(
+            [
+                *page_stamps.get("stamps", []),
+                *role_results.get("work_unit", {}).get("stamps", []),
+                *role_results.get("completion_unit", {}).get("stamps", []),
+            ]
+        )
+
+        all_stamps = self._merge_award_stamps(
+            work_stamps=role_results.get("work_unit", {}).get("stamps", []),
+            completion_stamps=role_results.get("completion_unit", {}).get("stamps", []),
+            page_stamps=page_stamps.get("stamps", []),
+        )
+
+        return {
+            "stamps": all_stamps,
+            "work_unit_stamp_units": work_units,
+            "completion_unit_stamp_units": completion_units,
+            "all_stamp_units": all_units,
+            "anchor_regions": anchors,
+            "regions": regions,
+            "raw": {
+                "anchors": anchors,
+                "page": page_stamps.get("raw", ""),
+                "work_unit": role_results.get("work_unit", {}).get("raw", ""),
+                "completion_unit": role_results.get("completion_unit", {}).get("raw", ""),
+            },
+        }
+
     def _get_llm_client(self):
         """获取 LLM 客户端"""
         if self._llm_client is None:
             self._llm_client = get_default_llm_client()
         return self._llm_client
+
+    def _empty_award_result(self) -> Dict[str, Any]:
+        return {
+            "stamps": [],
+            "work_unit_stamp_units": [],
+            "completion_unit_stamp_units": [],
+            "all_stamp_units": [],
+            "anchor_regions": {},
+            "regions": [],
+            "raw": {},
+        }
 
     def _parse_stamp_coords(self, text: str) -> List[Dict]:
         """解析 LLM 返回的坐标描述"""
@@ -162,6 +251,160 @@ class StampExtractor:
             })
 
         return {"stamps": stamps}
+
+    async def _locate_award_contributor_anchor_regions(self, image_data: bytes) -> Dict[str, Dict[str, float]]:
+        prompt = """这是一张“主要完成人情况表”。
+请定位页面底部两个公章落款区域，并严格返回 JSON：
+
+{
+  "work_unit": {"x1": 0.0, "y1": 0.0, "x2": 0.0, "y2": 0.0},
+  "completion_unit": {"x1": 0.0, "y1": 0.0, "x2": 0.0, "y2": 0.0}
+}
+
+要求：
+- 坐标使用相对整页的 0~1 归一化值
+- bbox 覆盖“公章字样和其上方盖章区域”
+- 如果无法精确定位，也返回大致区域
+- 不要输出解释，只返回 JSON"""
+        multi_llm = MultimodalLLM(self._get_llm_client())
+        raw = await multi_llm.analyze_image(image_data, prompt)
+        payload = self._extract_json(raw)
+        if not payload:
+            return {}
+        try:
+            data = json.loads(payload)
+        except Exception:
+            return {}
+
+        out: Dict[str, Dict[str, float]] = {}
+        for key in ("work_unit", "completion_unit"):
+            bbox = self._normalize_bbox(data.get(key))
+            if bbox:
+                out[key] = bbox
+        return out
+
+    async def _extract_stamps_from_region(
+        self,
+        image_data: bytes,
+        region_name: str,
+        hint: str,
+    ) -> Dict[str, Any]:
+        prompt = f"""{hint}
+请识别图中真实可见的印章，并严格返回 JSON：
+
+{{
+  "stamps": [
+    {{
+      "text": "印章内部可辨认的单位名称",
+      "location": "{region_name}",
+      "bbox": {{"x1": 0.1, "y1": 0.2, "x2": 0.3, "y2": 0.4}},
+      "confidence": 0.95
+    }}
+  ]
+}}
+
+要求：
+- 只读取印章轮廓内部文字
+- 严禁把印章外部的红字、正文、签字、日期当作印章文字
+- 看不清就返回空字符串，不要猜
+- 没有印章时返回 {{"stamps": []}}
+- 只返回 JSON"""
+        multi_llm = MultimodalLLM(self._get_llm_client())
+        raw = await multi_llm.analyze_image(image_data, prompt)
+        parsed = self._parse_stamp_result(raw)
+        parsed["raw"] = raw
+        return parsed
+
+    def _normalize_bbox(self, bbox: Any) -> Optional[Dict[str, float]]:
+        if not isinstance(bbox, dict):
+            return None
+        try:
+            x1 = max(0.0, min(1.0, float(bbox.get("x1"))))
+            y1 = max(0.0, min(1.0, float(bbox.get("y1"))))
+            x2 = max(0.0, min(1.0, float(bbox.get("x2"))))
+            y2 = max(0.0, min(1.0, float(bbox.get("y2"))))
+        except Exception:
+            return None
+        if x2 <= x1 or y2 <= y1:
+            return None
+        return {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+
+    def _load_image(self, image_data: bytes) -> Optional[Image.Image]:
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            return ImageOps.exif_transpose(image).convert("RGB")
+        except Exception:
+            return None
+
+    def _crop_with_margin(
+        self,
+        image: Image.Image,
+        bbox: Dict[str, float],
+        margin_ratio: float = 0.1,
+    ) -> Tuple[bytes, Dict[str, float]]:
+        width, height = image.size
+        x1 = int(max(0, (bbox["x1"] - margin_ratio) * width))
+        y1 = int(max(0, (bbox["y1"] - margin_ratio) * height))
+        x2 = int(min(width, (bbox["x2"] + margin_ratio) * width))
+        y2 = int(min(height, (bbox["y2"] + margin_ratio) * height))
+        if x2 <= x1 or y2 <= y1:
+            x1, y1, x2, y2 = 0, 0, width, height
+        cropped = image.crop((x1, y1, x2, y2))
+        buf = io.BytesIO()
+        cropped.save(buf, format="PNG")
+        return buf.getvalue(), {
+            "x1": x1 / width,
+            "y1": y1 / height,
+            "x2": x2 / width,
+            "y2": y2 / height,
+        }
+
+    def _default_award_stamp_bbox(self, role_key: str) -> Dict[str, float]:
+        if role_key == "work_unit":
+            return {"x1": 0.48, "y1": 0.68, "x2": 0.78, "y2": 0.96}
+        return {"x1": 0.22, "y1": 0.68, "x2": 0.58, "y2": 0.96}
+
+    def _dedup_units(self, stamps: List[Dict[str, Any]]) -> List[str]:
+        seen: set[str] = set()
+        units: List[str] = []
+        for stamp in stamps:
+            unit = str(stamp.get("unit") or stamp.get("text") or "").strip()
+            key = unit.replace(" ", "")
+            if not unit or not key or key in seen:
+                continue
+            seen.add(key)
+            units.append(unit)
+        return units
+
+    def _merge_award_stamps(
+        self,
+        work_stamps: List[Dict[str, Any]],
+        completion_stamps: List[Dict[str, Any]],
+        page_stamps: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        merged: List[Dict[str, Any]] = []
+        seen: set[Tuple[str, str]] = set()
+        for location, stamps in (
+            ("工作单位（公章）", work_stamps),
+            ("完成单位（公章）", completion_stamps),
+            ("页面印章", page_stamps),
+        ):
+            for stamp in stamps:
+                unit = str(stamp.get("unit") or stamp.get("text") or "").strip()
+                key = (location, unit.replace(" ", ""))
+                if not unit or key in seen:
+                    continue
+                seen.add(key)
+                merged.append(
+                    {
+                        "unit": unit,
+                        "text": unit,
+                        "location": stamp.get("location") or location,
+                        "bbox": stamp.get("bbox"),
+                        "confidence": stamp.get("confidence", 0.0),
+                    }
+                )
+        return merged
 
 
     def _extract_json(self, text: str) -> Optional[str]:
