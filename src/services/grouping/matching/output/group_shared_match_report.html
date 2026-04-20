@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>专家匹配报告</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f3f6fb; color: #0f172a; }
+    .page { max-width: 1360px; margin: 0 auto; padding: 24px; }
+    .hero { background: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%); border: 1px solid #dbe7ff; border-radius: 20px; padding: 24px; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06); }
+    .title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+    .subtitle { margin-top: 8px; font-size: 13px; color: #475569; }
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+    .stat { background: rgba(255, 255, 255, 0.82); border: 1px solid #dbe7ff; border-radius: 16px; padding: 14px 16px; }
+    .stat-label { font-size: 12px; color: #475569; }
+    .stat-value { margin-top: 8px; font-size: 24px; font-weight: 800; color: #0f172a; }
+    .section { margin-top: 18px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 18px 20px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04); }
+    .section-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
+    .config-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+    .config-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; }
+    .config-label { font-size: 11px; color: #64748b; }
+    .config-value { margin-top: 6px; font-size: 15px; font-weight: 700; }
+    .cards { display: grid; gap: 16px; margin-top: 18px; }
+    .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04); }
+    .card-header { padding: 18px 20px; background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%); border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+    .card-title { font-size: 18px; font-weight: 800; color: #0f172a; }
+    .card-meta { margin-top: 8px; font-size: 12px; color: #64748b; display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill { background: #e8f0ff; color: #1d4ed8; border-radius: 999px; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+    .body { padding: 18px 20px 20px; }
+    .query { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; font-size: 13px; color: #334155; }
+    .query-label { color: #64748b; margin-right: 8px; }
+    .project-list { margin-top: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; font-size: 13px; color: #334155; }
+    .project-items { margin-top: 8px; display: grid; gap: 6px; }
+    .project-item { line-height: 1.5; }
+    .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .mini-stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; }
+    .mini-label { font-size: 11px; color: #64748b; }
+    .mini-value { margin-top: 6px; font-size: 18px; font-weight: 800; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+    th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    th { color: #475569; background: #f8fafc; font-size: 12px; }
+    tr:hover td { background: #fbfdff; }
+    .expert-name { font-weight: 700; color: #0f172a; }
+    .expert-id { margin-top: 4px; font-size: 11px; color: #64748b; }
+    .empty { padding: 20px; text-align: center; color: #94a3b8; font-size: 13px; }
+    @media (max-width: 1100px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .config-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 760px) {
+      .page { padding: 14px; }
+      .card-header { flex-direction: column; }
+      .stats { grid-template-columns: 1fr; }
+      .config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="title">项目组共享专家匹配报告</div>
+      <div class="subtitle">生成时间 2026-04-20T12:04:28</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-label">项目组总数</div><div class="stat-value">10</div></div><div class="stat"><div class="stat-label">已匹配项目组</div><div class="stat-value">10</div></div><div class="stat"><div class="stat-label">未匹配项目组</div><div class="stat-value">0</div></div><div class="stat"><div class="stat-label">平均组 Top1 分</div><div class="stat-value">93.44</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">运行参数</div>
+      <div class="config-grid">
+        <div class="config-item"><div class="config-label">top_k</div><div class="config-value">5</div></div>
+        <div class="config-item"><div class="config-label">expert_limit</div><div class="config-value">10</div></div>
+        <div class="config-item"><div class="config-label">llm_candidate_limit</div><div class="config-value">-</div></div>
+        <div class="config-item"><div class="config-label">search_timeout</div><div class="config-value">30</div></div>
+        <div class="config-item"><div class="config-label">max_concurrency</div><div class="config-value">-</div></div>
+        <div class="config-item"><div class="config-label">max_llm_concurrency</div><div class="config-value">-</div></div>
+        <div class="config-item"><div class="config-label">score_adjustment</div><div class="config-value">+30 capped at 100</div></div>
+      </div>
+    </section>
+
+    <section class="cards">
+      
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#1 Group 234</div>
+              <div class="card-meta">
+                <span>subject: 自然灾害风险评估与公共安全</span>
+                <span>project_count: 10</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>自然灾害风险评估与公共安全</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 面向灾害救援的空地多源数据融合与风险时空因果演化机理研究</div><div class="project-item">2. 低空经济轻量化基础设施规划管理研究</div><div class="project-item">3. 基于傅里叶叠层成像的光学图像加密与无损载体隐藏方法研究</div><div class="project-item">4. 面向通感算一体化的无人机射频指纹识别关键技术研究</div><div class="project-item">5. 无人机探测的低空湍流精细反演与智能预警关键技术研究</div><div class="project-item">6. 面向低空高密度运行的无人机集群智能协同与安全弹性调控研究</div><div class="project-item">7. 基于信息年龄的无人机智能仿生组网技术研究</div><div class="project-item">8. 安全约束下面向京津冀低空通信网的多目标优化智能规划方案研究</div><div class="project-item">9. 基于多源信息融合的低空空域态势感知关键技术研究</div><div class="project-item">10. 面向低空经济的高动态无人机集群安全态势感知与主动防御研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">92.49</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">91.30</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">张华</div><div class="expert-id">ID: 1432997</div></td><td>92.49</td></tr><tr><td>2</td><td><div class="expert-name">林孝松</div><div class="expert-id">ID: 1415031</div></td><td>92.34</td></tr><tr><td>3</td><td><div class="expert-name">杨志全</div><div class="expert-id">ID: 1422866</div></td><td>91.71</td></tr><tr><td>4</td><td><div class="expert-name">张鑫</div><div class="expert-id">ID: 99185282</div></td><td>91.55</td></tr><tr><td>5</td><td><div class="expert-name">丁学仁</div><div class="expert-id">ID: 1007705</div></td><td>88.42</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#2 Group 49</div>
+              <div class="card-meta">
+                <span>subject: 果树分子生物学</span>
+                <span>project_count: 12</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>果树分子生物学</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. ZjRAP2.12-ZjCYPQ32模块响应乙烯信号调控枣熊果酸和齐墩果酸合成的分子机制</div><div class="project-item">2. 桃果实关键香气标志物的量化表征与定向遗传效应研究</div><div class="project-item">3. 桃PpLAZY1a蛋白介导生长素分配参与桃垂枝树形形成机制</div><div class="project-item">4. FaMYB113调控草莓果实极性成熟的机制研究</div><div class="project-item">5. 种质溯源与品质评价对于河北高品质果蔬桑葚种植优化研究</div><div class="project-item">6. VvbHLH137-VvIAA9-like调控葡萄花青素积累的分子机制研究</div><div class="project-item">7. VvSnRK2s-VvNPF6s-VvNLPs分子模块调控葡萄硝态氮利用效率的分子机制研究</div><div class="project-item">8. 桃PpNAP1-PpMADS1模块调控PpUFGT3表达延缓果实采后软化的分子机制</div><div class="project-item">9. CsSAUR2调控黄瓜单性结实的机制研究</div><div class="project-item">10. VvNAC83调控葡萄果实硬度的分子机制研究</div><div class="project-item">11. 葡萄果实中 3-异丁基-2-甲氧基吡嗪（IBMP）代谢路径关键中间产物鉴定及功能解析</div><div class="project-item">12. VvWRKY19调控葡萄非光依赖型花色苷合成的分子机制研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">91.52</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">90.19</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">石海燕</div><div class="expert-id">ID: 1022312</div></td><td>91.52</td></tr><tr><td>2</td><td><div class="expert-name">许建锋</div><div class="expert-id">ID: 1022286</div></td><td>90.65</td></tr><tr><td>3</td><td><div class="expert-name">邓子牛</div><div class="expert-id">ID: 1103293</div></td><td>90.48</td></tr><tr><td>4</td><td><div class="expert-name">徐继忠</div><div class="expert-id">ID: 1003230</div></td><td>89.24</td></tr><tr><td>5</td><td><div class="expert-name">董文轩</div><div class="expert-id">ID: 1011736</div></td><td>89.07</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#3 Group 58</div>
+              <div class="card-meta">
+                <span>subject: 粮油食品原料学</span>
+                <span>project_count: 5</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>粮油食品原料学</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 淀粉-溶血磷脂复合物热解离驱动的膨化小米香气多级形成机制</div><div class="project-item">2. 淀粉调控面条加工品质的机制解析</div><div class="project-item">3. 鲟鱼热加工过程中风味物质动态变化规律研究</div><div class="project-item">4. “小麦酵母型内生担子菌”再探：生境适应性与功能</div><div class="project-item">5. 盐碱地施肥对旱碱麦多维度品质影响机制的研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">93.00</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">90.32</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">李书国</div><div class="expert-id">ID: 1018154</div></td><td>93.00</td></tr><tr><td>2</td><td><div class="expert-name">卢敏</div><div class="expert-id">ID: 9953868</div></td><td>91.55</td></tr><tr><td>3</td><td><div class="expert-name">薛文通</div><div class="expert-id">ID: 1001134</div></td><td>90.45</td></tr><tr><td>4</td><td><div class="expert-name">李佳栋</div><div class="expert-id">ID: 9946896</div></td><td>88.84</td></tr><tr><td>5</td><td><div class="expert-name">侯汉学</div><div class="expert-id">ID: 1316100</div></td><td>87.75</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#4 Group 40</div>
+              <div class="card-meta">
+                <span>subject: 农业水循环与利用</span>
+                <span>project_count: 4</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>农业水循环与利用</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 融合同位素与遥感的大蒜碳-水代谢及农田碳汇协同提升机制</div><div class="project-item">2. 冀南地区水-光-氮协同作用对冬小麦产量及耗水的影响基理研究</div><div class="project-item">3. 设施草莓多模态表型动态监测关键技术研究</div><div class="project-item">4. 干旱胁迫下棉花根冠表型协同演化的分析方法及田间验证</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">95.45</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">90.89</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">李茉</div><div class="expert-id">ID: 9946979</div></td><td>95.45</td></tr><tr><td>2</td><td><div class="expert-name">高洪生</div><div class="expert-id">ID: 1352633</div></td><td>90.51</td></tr><tr><td>3</td><td><div class="expert-name">孔德杰</div><div class="expert-id">ID: 9955031</div></td><td>90.24</td></tr><tr><td>4</td><td><div class="expert-name">蒋太明</div><div class="expert-id">ID: 1367816</div></td><td>89.41</td></tr><tr><td>5</td><td><div class="expert-name">宋男哲</div><div class="expert-id">ID: 9948274</div></td><td>88.82</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#5 Group 77</div>
+              <div class="card-meta">
+                <span>subject: 半导体光伏材料与太阳电池</span>
+                <span>project_count: 9</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>半导体光伏材料与太阳电池</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 面向全固态电池的磷氧基快离子导体薄膜软晶格与序构调控</div><div class="project-item">2. 聚合物碳纳米管复合薄膜前结的构筑及其对IBC电池载流子传输的调控机理</div><div class="project-item">3. 宽带隙钙钛矿太阳能电池性能与稳定性的协同优化</div><div class="project-item">4. 用于稳定锡基钙钛矿太阳能电池的协同抑制与再生策略的研究</div><div class="project-item">5. 面向高比能全固态电池的复合体系核壳正极设计与集成</div><div class="project-item">6. 钠离子电池单晶层状氧化物的晶面调控与电化学性能研究</div><div class="project-item">7. TOPCon电池钝化机理研究</div><div class="project-item">8. 梯度掺杂策略下硒化锑太阳电池的能带工程与载流子动力学研究</div><div class="project-item">9. 溶液法制备Cu2ZnSn(S,Se)4薄膜结晶机制研究与多结晶模式协同优化</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">98.09</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">94.98</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">谢志元</div><div class="expert-id">ID: 1321690</div></td><td>98.09</td></tr><tr><td>2</td><td><div class="expert-name">边继明</div><div class="expert-id">ID: 1346710</div></td><td>97.30</td></tr><tr><td>3</td><td><div class="expert-name">臧志刚</div><div class="expert-id">ID: 1415864</div></td><td>94.22</td></tr><tr><td>4</td><td><div class="expert-name">李国强</div><div class="expert-id">ID: 1325372</div></td><td>92.65</td></tr><tr><td>5</td><td><div class="expert-name">彭尚龙</div><div class="expert-id">ID: 1404554</div></td><td>92.63</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#6 Group 116</div>
+              <div class="card-meta">
+                <span>subject: 分离与吸附材料</span>
+                <span>project_count: 7</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>分离与吸附材料</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 双水相单体及MOFs协同调控制备图灵结构疏松纳滤膜的研究</div><div class="project-item">2. 淀粉样纤维气凝胶对噻嗪类分子选择性筛分机制研究</div><div class="project-item">3. 氨基酸功能化 SiO₂的可控制备及光刻胶超纯材料中痕量金属离子的选择性净化机制</div><div class="project-item">4. 精准分离膜的纳米孔道结构传感与动态监控研究</div><div class="project-item">5. 基于结构扭曲单体和基团“定位效应”差异的聚芳酯酰胺疏松纳滤膜</div><div class="project-item">6. 木质素基离子多孔聚合材料的构筑及其碘的高效捕获研究</div><div class="project-item">7. “均一孔径-均匀正电”芳香鎓盐纳滤膜的构筑及其高效镁锂分离性能研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">96.57</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">94.43</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">何本桥</div><div class="expert-id">ID: 1413286</div></td><td>96.57</td></tr><tr><td>2</td><td><div class="expert-name">赵东</div><div class="expert-id">ID: 1419469</div></td><td>94.67</td></tr><tr><td>3</td><td><div class="expert-name">郭敏杰</div><div class="expert-id">ID: 9907676</div></td><td>94.48</td></tr><tr><td>4</td><td><div class="expert-name">马应霞</div><div class="expert-id">ID: 1343440</div></td><td>93.98</td></tr><tr><td>5</td><td><div class="expert-name">江兵兵</div><div class="expert-id">ID: 1352072</div></td><td>92.45</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#7 Group 233</div>
+              <div class="card-meta">
+                <span>subject: 软件工程</span>
+                <span>project_count: 12</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>软件工程</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 面向高并行度FFT处理器结构的改良基-2^k算法与串接CSD复数乘法器共享设计研究</div><div class="project-item">2. 融合关系感知知识图谱嵌入与多任务学习的团购推荐算法研究</div><div class="project-item">3. 量子网络中长程量子纠缠与非局域性的理论研究</div><div class="project-item">4. 面向边缘智能的异构视觉骨干网络结构演化与线性动力学建模研究</div><div class="project-item">5. AI精准定制融合TPMS多孔骨支架的结构方案预测与性能优化方法研究</div><div class="project-item">6. 面向云API互补推荐的逻辑推理机理与溯因纠偏方法</div><div class="project-item">7. 空天地一体化网络的 VNF 部署的模型和方法</div><div class="project-item">8. 基于拓扑网络的铁路车站基础设施与设备异常影响的定量表达研究</div><div class="project-item">9. 衰减的有限经典极空间上LDPC码的构造及其在神经网络中的应用</div><div class="project-item">10. 基于知识图谱和强化学习的可解释性研究</div><div class="project-item">11. 复杂环境下差异化信息智能摆渡技术研究</div><div class="project-item">12. 超大规模移动网络智能编排技术研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">84.29</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">82.44</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">刘子林</div><div class="expert-id">ID: 1002048</div></td><td>84.29</td></tr><tr><td>2</td><td><div class="expert-name">林毅</div><div class="expert-id">ID: 1006708</div></td><td>82.83</td></tr><tr><td>3</td><td><div class="expert-name">杨杰</div><div class="expert-id">ID: 1003366</div></td><td>82.65</td></tr><tr><td>4</td><td><div class="expert-name">刘洪武</div><div class="expert-id">ID: 1005821</div></td><td>81.27</td></tr><tr><td>5</td><td><div class="expert-name">许兴基</div><div class="expert-id">ID: 1001016</div></td><td>81.17</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#8 Group 221</div>
+              <div class="card-meta">
+                <span>subject: 模式识别理论及应用</span>
+                <span>project_count: 11</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>模式识别理论及应用</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 事理约束下车辆部件及依附性缺陷协同检测方法</div><div class="project-item">2. 面向跨被试泛化的脑电情感表征学习与域适应模型研究</div><div class="project-item">3. 基于一致性表示与稀疏反馈的跨域图像交互分割研究</div><div class="project-item">4. 面向复杂施工场景的连续尺度人群密度感知与多模态图协同预警方法研究</div><div class="project-item">5. 新能源高渗透配电网负荷概率预测的多模型融合方法研究</div><div class="project-item">6. 基于时空注意力融合网络的低空三维风场反演关键技术研究</div><div class="project-item">7. 基于高效启发式搜索策略的自适应雷达波形设计方法研究</div><div class="project-item">8. 基于改进DeepSORT的目标跟踪及精准反制研究</div><div class="project-item">9. 小型机载视觉与雷达融合感知的入侵无人机反制方法研究</div><div class="project-item">10. 动态海面下基于波前相位调制的目标散射机理与识别方法研究</div><div class="project-item">11. 面向工业故障诊断的开放环境长尾持续学习方法研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">95.14</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">91.91</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">王震宇</div><div class="expert-id">ID: 9905139</div></td><td>95.14</td></tr><tr><td>2</td><td><div class="expert-name">段福庆</div><div class="expert-id">ID: 99211067</div></td><td>91.66</td></tr><tr><td>3</td><td><div class="expert-name">陈佳鑫</div><div class="expert-id">ID: 99210869</div></td><td>91.28</td></tr><tr><td>4</td><td><div class="expert-name">冯夫健</div><div class="expert-id">ID: 99191641</div></td><td>90.85</td></tr><tr><td>5</td><td><div class="expert-name">刘传才</div><div class="expert-id">ID: 1439135</div></td><td>90.63</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#9 Group 222</div>
+              <div class="card-meta">
+                <span>subject: 模式识别理论及应用</span>
+                <span>project_count: 9</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>模式识别理论及应用</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 超宽带TDOA定位NLOS识别与补偿方法研究</div><div class="project-item">2. 多体对称联合测量及其在量子网络中的应用</div><div class="project-item">3. 密集人群跨摄像头智能跟踪与协同预警关键技术研究</div><div class="project-item">4. 复杂环境下无人机巡检的跨模态自适应目标检测理论与方法</div><div class="project-item">5. 移动交通设备群体运行数据的时空关联建模与协同异常检测机理研究</div><div class="project-item">6. 复杂动态环境下低慢小无人机目标感知技术研究</div><div class="project-item">7. 跨场景无监督小样本图像识别方法的研究</div><div class="project-item">8. 基于大语言模型与频域分析的多模态图推荐方法研究</div><div class="project-item">9. 《垂直行业大数据驱动的客户动态画像与智能决策方法研究——以电梯服务市场为例》</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">96.22</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">93.36</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">王震宇</div><div class="expert-id">ID: 9905139</div></td><td>96.22</td></tr><tr><td>2</td><td><div class="expert-name">段福庆</div><div class="expert-id">ID: 99211067</div></td><td>93.63</td></tr><tr><td>3</td><td><div class="expert-name">冯夫健</div><div class="expert-id">ID: 99191641</div></td><td>92.50</td></tr><tr><td>4</td><td><div class="expert-name">刘传才</div><div class="expert-id">ID: 1439135</div></td><td>92.42</td></tr><tr><td>5</td><td><div class="expert-name">陈佳鑫</div><div class="expert-id">ID: 99210869</div></td><td>92.05</td></tr></tbody></table>
+          </div>
+        </article>
+        
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#10 Group 184</div>
+              <div class="card-meta">
+                <span>subject: 工程防火</span>
+                <span>project_count: 13</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 10</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>工程防火</div>
+            <div class="project-list"><span class="query-label">项目</span><div class="project-items"><div class="project-item">1. 纵向风作用下长大倾斜隧道火灾顶棚火焰扩展行为及烟气运移规律</div><div class="project-item">2. 消防水枪射流气-液耦合卷吸作用下火场烟气输运的扰动机制与调控方法研究</div><div class="project-item">3. 风险因素耦合对高层建筑火灾疏散安全的影响机理研究</div><div class="project-item">4. 火场高分子材料干扰汽油检验鉴定机理研究</div><div class="project-item">5. 基于数字孪生的火灾后混凝土结构三维损伤智能检测与评估研究</div><div class="project-item">6. 复杂服役环境下轨道交通碳纤维复合材料的燃烧行为演化</div><div class="project-item">7. 高温下多尺度纤维增强超高性能混凝土与钢筋界面粘结性能劣化机理研究</div><div class="project-item">8. 地下停车场电动汽车火灾下混凝土板热冲击响应与损伤演化机制研究</div><div class="project-item">9. TBM煤矿巷道纤维轻质混凝土管片火灾热-力耦合机制及安全性能研究</div><div class="project-item">10. 热力耦合作用下UHPC-NC界面损伤多尺度演化机理研究</div><div class="project-item">11. 稀疏观测下隧道火灾高维温度场的流形几何约束反演与概率化预测研究</div><div class="project-item">12. 基于TDLAS与AI融合的电缆通道火灾多模态超早期预警技术研究</div><div class="project-item">13. 考虑热-力路径的绿色新型波纹钢隧道加固型材退化机制及变形计算方法研究</div></div></div>
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">5</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">91.59</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">89.13</div></div>
+            </div>
+            <table><thead><tr><th>#</th><th>专家</th><th>平均匹配分</th></tr></thead><tbody><tr><td>1</td><td><div class="expert-name">王兴国</div><div class="expert-id">ID: 1002388</div></td><td>91.59</td></tr><tr><td>2</td><td><div class="expert-name">吴立志</div><div class="expert-id">ID: 1004503</div></td><td>88.90</td></tr><tr><td>3</td><td><div class="expert-name">王冬</div><div class="expert-id">ID: 1302966</div></td><td>88.59</td></tr><tr><td>4</td><td><div class="expert-name">陈长坤</div><div class="expert-id">ID: 1102519</div></td><td>88.42</td></tr><tr><td>5</td><td><div class="expert-name">蒋新生</div><div class="expert-id">ID: 1303761</div></td><td>88.16</td></tr></tbody></table>
+          </div>
+        </article>
+        
+    </section>
+  </div>
+</body>
+</html>

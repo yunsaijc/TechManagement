@@ -25,8 +25,31 @@ class MatchingReportBuilder:
         summary = payload.get("summary", {}) or {}
         run_config = payload.get("run_config", {}) or {}
         results = payload.get("results", []) or []
+        is_group_mode = any("group_experts" in item for item in results)
 
-        project_cards = [self._render_project_card(idx, item) for idx, item in enumerate(results, start=1)]
+        if is_group_mode:
+            cards = [self._render_group_card(idx, item) for idx, item in enumerate(results, start=1)]
+            title = "项目组共享专家匹配报告"
+            subtitle = f"生成时间 {html.escape(str(payload.get('generated_at', '')))}"
+            stats_html = (
+                f'<div class="stat"><div class="stat-label">项目组总数</div><div class="stat-value">{int(summary.get("group_count", 0) or 0)}</div></div>'
+                f'<div class="stat"><div class="stat-label">已匹配项目组</div><div class="stat-value">{int(summary.get("matched_group_count", 0) or 0)}</div></div>'
+                f'<div class="stat"><div class="stat-label">未匹配项目组</div><div class="stat-value">{int(summary.get("unmatched_group_count", 0) or 0)}</div></div>'
+                f'<div class="stat"><div class="stat-label">平均组 Top1 分</div><div class="stat-value">{float(summary.get("avg_top1_score", 0.0) or 0.0):.2f}</div></div>'
+            )
+        else:
+            cards = [self._render_project_card(idx, item) for idx, item in enumerate(results, start=1)]
+            title = "专家匹配报告"
+            subtitle = (
+                f'生成时间 {html.escape(str(payload.get("generated_at", "")))} | '
+                f'group_id {html.escape(str(payload.get("group_id", "")))}'
+            )
+            stats_html = (
+                f'<div class="stat"><div class="stat-label">项目总数</div><div class="stat-value">{int(summary.get("project_count", 0) or 0)}</div></div>'
+                f'<div class="stat"><div class="stat-label">已匹配项目</div><div class="stat-value">{int(summary.get("matched_project_count", 0) or 0)}</div></div>'
+                f'<div class="stat"><div class="stat-label">未匹配项目</div><div class="stat-value">{int(summary.get("unmatched_project_count", 0) or 0)}</div></div>'
+                f'<div class="stat"><div class="stat-label">平均 Top1 分</div><div class="stat-value">{float(summary.get("avg_top1_score", 0.0) or 0.0):.2f}</div></div>'
+            )
 
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -60,6 +83,9 @@ class MatchingReportBuilder:
     .body {{ padding: 18px 20px 20px; }}
     .query {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; font-size: 13px; color: #334155; }}
     .query-label {{ color: #64748b; margin-right: 8px; }}
+    .project-list {{ margin-top: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; font-size: 13px; color: #334155; }}
+    .project-items {{ margin-top: 8px; display: grid; gap: 6px; }}
+    .project-item {{ line-height: 1.5; }}
     .summary-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }}
     .mini-stat {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; }}
     .mini-label {{ font-size: 11px; color: #64748b; }}
@@ -88,13 +114,10 @@ class MatchingReportBuilder:
 <body>
   <div class="page">
     <section class="hero">
-      <div class="title">专家匹配报告</div>
-      <div class="subtitle">生成时间 {html.escape(str(payload.get("generated_at", "")))} | group_id {html.escape(str(payload.get("group_id", "")))}</div>
+      <div class="title">{title}</div>
+      <div class="subtitle">{subtitle}</div>
       <div class="stats">
-        <div class="stat"><div class="stat-label">项目总数</div><div class="stat-value">{int(summary.get("project_count", 0) or 0)}</div></div>
-        <div class="stat"><div class="stat-label">已匹配项目</div><div class="stat-value">{int(summary.get("matched_project_count", 0) or 0)}</div></div>
-        <div class="stat"><div class="stat-label">未匹配项目</div><div class="stat-value">{int(summary.get("unmatched_project_count", 0) or 0)}</div></div>
-        <div class="stat"><div class="stat-label">平均 Top1 分</div><div class="stat-value">{float(summary.get("avg_top1_score", 0.0) or 0.0):.2f}</div></div>
+        {stats_html}
       </div>
     </section>
 
@@ -107,11 +130,12 @@ class MatchingReportBuilder:
         {self._render_config_item("search_timeout", run_config.get("search_timeout"))}
         {self._render_config_item("max_concurrency", run_config.get("max_concurrency"))}
         {self._render_config_item("max_llm_concurrency", run_config.get("max_llm_concurrency"))}
+        {self._render_config_item("score_adjustment", run_config.get("score_adjustment"))}
       </div>
     </section>
 
     <section class="cards">
-      {"".join(project_cards) if project_cards else '<div class="empty">暂无匹配结果</div>'}
+      {"".join(cards) if cards else '<div class="empty">暂无匹配结果</div>'}
     </section>
   </div>
 </body>
@@ -159,6 +183,42 @@ class MatchingReportBuilder:
         </article>
         """
 
+    def _render_group_card(self, idx: int, item: Dict[str, Any]) -> str:
+        group_experts = item.get("group_experts", []) or []
+        top1_score = float(group_experts[0].get("avg_match_score", 0.0) or 0.0) if group_experts else 0.0
+        avg_score = (
+            sum(float(expert.get("avg_match_score", 0.0) or 0.0) for expert in group_experts) / len(group_experts)
+            if group_experts else 0.0
+        )
+        expert_rows = [self._render_group_expert_row(rank, expert) for rank, expert in enumerate(group_experts, start=1)]
+        projects = item.get("projects", []) or item.get("project_titles", []) or []
+        project_html = self._render_project_list(projects)
+
+        return f"""
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">#{idx} Group {html.escape(str(item.get("group_id", "")))}</div>
+              <div class="card-meta">
+                <span>subject: {html.escape(str(item.get("subject_name", "") or "-"))}</span>
+                <span>project_count: {int(item.get("project_count", 0) or 0)}</span>
+              </div>
+            </div>
+            <div class="pill">候选专家数 {int(item.get("expert_count", 0) or 0)}</div>
+          </div>
+          <div class="body">
+            <div class="query"><span class="query-label">关键词</span>{html.escape(str(item.get("query_text", "") or "-"))}</div>
+            {project_html}
+            <div class="summary-grid">
+              <div class="mini-stat"><div class="mini-label">共享专家数</div><div class="mini-value">{len(group_experts)}</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top1 分数</div><div class="mini-value">{top1_score:.2f}</div></div>
+              <div class="mini-stat"><div class="mini-label">组 Top-K 平均分</div><div class="mini-value">{avg_score:.2f}</div></div>
+            </div>
+            {self._render_expert_table(expert_rows, score_label="平均匹配分")}
+          </div>
+        </article>
+        """
+
     def _render_expert_row(self, rank: int, expert: Dict[str, Any]) -> str:
         return (
             "<tr>"
@@ -169,12 +229,36 @@ class MatchingReportBuilder:
             "</tr>"
         )
 
-    def _render_expert_table(self, rows: List[str]) -> str:
+    def _render_group_expert_row(self, rank: int, expert: Dict[str, Any]) -> str:
+        return (
+            "<tr>"
+            f"<td>{rank}</td>"
+            f"<td><div class=\"expert-name\">{html.escape(str(expert.get('expert_name', '')))}</div>"
+            f"<div class=\"expert-id\">ID: {html.escape(str(expert.get('expert_id', '')))}</div></td>"
+            f"<td>{float(expert.get('avg_match_score', 0.0) or 0.0):.2f}</td>"
+            "</tr>"
+        )
+
+    def _render_expert_table(self, rows: List[str], score_label: str = "匹配分") -> str:
         if not rows:
             return '<div class="empty">未匹配到专家</div>'
         return (
             "<table>"
-            "<thead><tr><th>#</th><th>专家</th><th>匹配分</th></tr></thead>"
+            f"<thead><tr><th>#</th><th>专家</th><th>{html.escape(score_label)}</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             "</table>"
+        )
+
+    def _render_project_list(self, projects: List[str]) -> str:
+        if not projects:
+            return '<div class="project-list"><span class="query-label">项目</span>-</div>'
+        items = "".join(
+            f'<div class="project-item">{idx}. {html.escape(str(project))}</div>'
+            for idx, project in enumerate(projects, start=1)
+        )
+        return (
+            '<div class="project-list">'
+            '<span class="query-label">项目</span>'
+            f'<div class="project-items">{items}</div>'
+            '</div>'
         )

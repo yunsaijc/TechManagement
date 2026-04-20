@@ -30,6 +30,8 @@ class GraphExpertProfiler:
     def __init__(self, llm: Any = None, embedder: Any = None):
         self.llm = llm or get_default_llm_client()
         self.embedder = embedder or get_default_embedding_client()
+        self._profile_cache: Dict[str, ExpertProfile] = {}
+        self._vector_cache: Dict[str, np.ndarray] = {}
 
     def build_expert_text(self, expert: Dict[str, Any]) -> str:
         """构建专家融合文本，尽量贴近原始 ExpertProfiler 的设计。"""
@@ -71,12 +73,43 @@ class GraphExpertProfiler:
         profile.text = text
         return profile
 
-    async def profile_experts(self, experts: List[Dict[str, Any]]) -> List[ExpertProfile]:
+    def _expert_cache_key(self, expert: Dict[str, Any], index: int = 0) -> str:
+        props = self._extract_properties(expert)
+        expert_id = props.get("id") or expert.get("id")
+        if expert_id:
+            return str(expert_id)
+        name = props.get("name") or expert.get("name")
+        if name:
+            return f"name:{name}"
+        return f"expert_{index}"
+
+    async def profile_experts(
+        self,
+        experts: List[Dict[str, Any]],
+        max_concurrency: int = 4,
+    ) -> List[ExpertProfile]:
         """批量分析图谱专家。"""
-        results: List[ExpertProfile] = []
-        for expert in experts:
-            results.append(await self.profile_expert(expert))
-        return results
+        if not experts:
+            return []
+
+        semaphore = asyncio.Semaphore(max(1, int(max_concurrency)))
+        results: List[ExpertProfile | None] = [None] * len(experts)
+
+        async def process_one(index: int, expert: Dict[str, Any]) -> None:
+            cache_key = self._expert_cache_key(expert, index)
+            cached = self._profile_cache.get(cache_key)
+            if cached is not None:
+                results[index] = cached
+                return
+
+            async with semaphore:
+                profile = await self.profile_expert(expert)
+
+            self._profile_cache[cache_key] = profile
+            results[index] = profile
+
+        await asyncio.gather(*(process_one(index, expert) for index, expert in enumerate(experts)))
+        return [profile for profile in results if profile is not None]
 
     def build_embedding_text(self, profile: ExpertProfile) -> str:
         """将结构化画像拼成最终 embedding 文本。"""
@@ -93,9 +126,33 @@ class GraphExpertProfiler:
 
     def generate_vectors(self, expert_profiles: List[ExpertProfile]) -> np.ndarray:
         """批量生成专家向量，逻辑保持与 matching.agent 接近。"""
-        texts = [self.build_embedding_text(profile) for profile in expert_profiles]
-        embeddings = self.embedder.embed_documents(texts)
-        return np.array(embeddings)
+        if not expert_profiles:
+            return np.empty((0, 0), dtype=float)
+
+        texts: List[str] = []
+        pending_indices: List[int] = []
+        vectors: List[np.ndarray | None] = [None] * len(expert_profiles)
+
+        for index, profile in enumerate(expert_profiles):
+            cache_key = str(profile.expert_id or f"profile_{index}")
+            cached = self._vector_cache.get(cache_key)
+            if cached is not None:
+                vectors[index] = cached
+                continue
+
+            text = self.build_embedding_text(profile)
+            texts.append(text)
+            pending_indices.append(index)
+
+        if texts:
+            embeddings = self.embedder.embed_documents(texts)
+            for index, embedding in zip(pending_indices, embeddings):
+                vector = np.asarray(embedding, dtype=float)
+                cache_key = str(expert_profiles[index].expert_id or f"profile_{index}")
+                self._vector_cache[cache_key] = vector
+                vectors[index] = vector
+
+        return np.vstack([vector for vector in vectors if vector is not None])
 
     def _build_profile_prompt(self, props: Dict[str, Any]) -> str:
         return f"""请分析以下专家信息，构建专家画像。

@@ -1,0 +1,536 @@
+{
+  "generated_at": "2026-04-20T12:04:28",
+  "source_grouping_file": "/home/tdkx/malin/TechManagement/src/services/grouping/matching/grouping_result.json",
+  "summary": {
+    "group_count": 10,
+    "matched_group_count": 10,
+    "unmatched_group_count": 0,
+    "project_count": 92,
+    "avg_top1_score": 93.44
+  },
+  "run_config": {
+    "top_k": 5,
+    "expert_limit": 10,
+    "search_timeout": 30,
+    "max_profile_concurrency": 4,
+    "sample_group_count": 10,
+    "query_source": "group.subject_name",
+    "score_adjustment": "+30 capped at 100"
+  },
+  "sampled_group_ids": [
+    234,
+    49,
+    58,
+    40,
+    77,
+    116,
+    233,
+    221,
+    222,
+    184
+  ],
+  "results": [
+    {
+      "group_id": 234,
+      "subject_name": "自然灾害风险评估与公共安全",
+      "project_count": 10,
+      "group_experts": [
+        {
+          "expert_id": "1432997",
+          "expert_name": "张华",
+          "avg_cosine_similarity": 0.6249,
+          "avg_match_score": 92.49
+        },
+        {
+          "expert_id": "1415031",
+          "expert_name": "林孝松",
+          "avg_cosine_similarity": 0.6234,
+          "avg_match_score": 92.34
+        },
+        {
+          "expert_id": "1422866",
+          "expert_name": "杨志全",
+          "avg_cosine_similarity": 0.6171,
+          "avg_match_score": 91.71
+        },
+        {
+          "expert_id": "99185282",
+          "expert_name": "张鑫",
+          "avg_cosine_similarity": 0.6155,
+          "avg_match_score": 91.55
+        },
+        {
+          "expert_id": "1007705",
+          "expert_name": "丁学仁",
+          "avg_cosine_similarity": 0.5842,
+          "avg_match_score": 88.42
+        }
+      ],
+      "query_text": "自然灾害风险评估与公共安全",
+      "expert_count": 10,
+      "projects": [
+        "面向灾害救援的空地多源数据融合与风险时空因果演化机理研究",
+        "低空经济轻量化基础设施规划管理研究",
+        "基于傅里叶叠层成像的光学图像加密与无损载体隐藏方法研究",
+        "面向通感算一体化的无人机射频指纹识别关键技术研究",
+        "无人机探测的低空湍流精细反演与智能预警关键技术研究",
+        "面向低空高密度运行的无人机集群智能协同与安全弹性调控研究",
+        "基于信息年龄的无人机智能仿生组网技术研究",
+        "安全约束下面向京津冀低空通信网的多目标优化智能规划方案研究",
+        "基于多源信息融合的低空空域态势感知关键技术研究",
+        "面向低空经济的高动态无人机集群安全态势感知与主动防御研究"
+      ]
+    },
+    {
+      "group_id": 49,
+      "subject_name": "果树分子生物学",
+      "project_count": 12,
+      "group_experts": [
+        {
+          "expert_id": "1022312",
+          "expert_name": "石海燕",
+          "avg_cosine_similarity": 0.6152,
+          "avg_match_score": 91.52
+        },
+        {
+          "expert_id": "1022286",
+          "expert_name": "许建锋",
+          "avg_cosine_similarity": 0.6065,
+          "avg_match_score": 90.65
+        },
+        {
+          "expert_id": "1103293",
+          "expert_name": "邓子牛",
+          "avg_cosine_similarity": 0.6048,
+          "avg_match_score": 90.48
+        },
+        {
+          "expert_id": "1003230",
+          "expert_name": "徐继忠",
+          "avg_cosine_similarity": 0.5924,
+          "avg_match_score": 89.24
+        },
+        {
+          "expert_id": "1011736",
+          "expert_name": "董文轩",
+          "avg_cosine_similarity": 0.5907,
+          "avg_match_score": 89.07
+        }
+      ],
+      "query_text": "果树分子生物学",
+      "expert_count": 10,
+      "projects": [
+        "ZjRAP2.12-ZjCYPQ32模块响应乙烯信号调控枣熊果酸和齐墩果酸合成的分子机制",
+        "桃果实关键香气标志物的量化表征与定向遗传效应研究",
+        "桃PpLAZY1a蛋白介导生长素分配参与桃垂枝树形形成机制",
+        "FaMYB113调控草莓果实极性成熟的机制研究",
+        "种质溯源与品质评价对于河北高品质果蔬桑葚种植优化研究",
+        "VvbHLH137-VvIAA9-like调控葡萄花青素积累的分子机制研究",
+        "VvSnRK2s-VvNPF6s-VvNLPs分子模块调控葡萄硝态氮利用效率的分子机制研究",
+        "桃PpNAP1-PpMADS1模块调控PpUFGT3表达延缓果实采后软化的分子机制",
+        "CsSAUR2调控黄瓜单性结实的机制研究",
+        "VvNAC83调控葡萄果实硬度的分子机制研究",
+        "葡萄果实中 3-异丁基-2-甲氧基吡嗪（IBMP）代谢路径关键中间产物鉴定及功能解析",
+        "VvWRKY19调控葡萄非光依赖型花色苷合成的分子机制研究"
+      ]
+    },
+    {
+      "group_id": 58,
+      "subject_name": "粮油食品原料学",
+      "project_count": 5,
+      "group_experts": [
+        {
+          "expert_id": "1018154",
+          "expert_name": "李书国",
+          "avg_cosine_similarity": 0.63,
+          "avg_match_score": 93.0
+        },
+        {
+          "expert_id": "9953868",
+          "expert_name": "卢敏",
+          "avg_cosine_similarity": 0.6155,
+          "avg_match_score": 91.55
+        },
+        {
+          "expert_id": "1001134",
+          "expert_name": "薛文通",
+          "avg_cosine_similarity": 0.6045,
+          "avg_match_score": 90.45
+        },
+        {
+          "expert_id": "9946896",
+          "expert_name": "李佳栋",
+          "avg_cosine_similarity": 0.5884,
+          "avg_match_score": 88.84
+        },
+        {
+          "expert_id": "1316100",
+          "expert_name": "侯汉学",
+          "avg_cosine_similarity": 0.5775,
+          "avg_match_score": 87.75
+        }
+      ],
+      "query_text": "粮油食品原料学",
+      "expert_count": 10,
+      "projects": [
+        "淀粉-溶血磷脂复合物热解离驱动的膨化小米香气多级形成机制",
+        "淀粉调控面条加工品质的机制解析",
+        "鲟鱼热加工过程中风味物质动态变化规律研究",
+        "“小麦酵母型内生担子菌”再探：生境适应性与功能",
+        "盐碱地施肥对旱碱麦多维度品质影响机制的研究"
+      ]
+    },
+    {
+      "group_id": 40,
+      "subject_name": "农业水循环与利用",
+      "project_count": 4,
+      "group_experts": [
+        {
+          "expert_id": "9946979",
+          "expert_name": "李茉",
+          "avg_cosine_similarity": 0.6545,
+          "avg_match_score": 95.45
+        },
+        {
+          "expert_id": "1352633",
+          "expert_name": "高洪生",
+          "avg_cosine_similarity": 0.6051,
+          "avg_match_score": 90.51
+        },
+        {
+          "expert_id": "9955031",
+          "expert_name": "孔德杰",
+          "avg_cosine_similarity": 0.6024,
+          "avg_match_score": 90.24
+        },
+        {
+          "expert_id": "1367816",
+          "expert_name": "蒋太明",
+          "avg_cosine_similarity": 0.5941,
+          "avg_match_score": 89.41
+        },
+        {
+          "expert_id": "9948274",
+          "expert_name": "宋男哲",
+          "avg_cosine_similarity": 0.5882,
+          "avg_match_score": 88.82
+        }
+      ],
+      "query_text": "农业水循环与利用",
+      "expert_count": 10,
+      "projects": [
+        "融合同位素与遥感的大蒜碳-水代谢及农田碳汇协同提升机制",
+        "冀南地区水-光-氮协同作用对冬小麦产量及耗水的影响基理研究",
+        "设施草莓多模态表型动态监测关键技术研究",
+        "干旱胁迫下棉花根冠表型协同演化的分析方法及田间验证"
+      ]
+    },
+    {
+      "group_id": 77,
+      "subject_name": "半导体光伏材料与太阳电池",
+      "project_count": 9,
+      "group_experts": [
+        {
+          "expert_id": "1321690",
+          "expert_name": "谢志元",
+          "avg_cosine_similarity": 0.6809,
+          "avg_match_score": 98.09
+        },
+        {
+          "expert_id": "1346710",
+          "expert_name": "边继明",
+          "avg_cosine_similarity": 0.673,
+          "avg_match_score": 97.3
+        },
+        {
+          "expert_id": "1415864",
+          "expert_name": "臧志刚",
+          "avg_cosine_similarity": 0.6422,
+          "avg_match_score": 94.22
+        },
+        {
+          "expert_id": "1325372",
+          "expert_name": "李国强",
+          "avg_cosine_similarity": 0.6265,
+          "avg_match_score": 92.65
+        },
+        {
+          "expert_id": "1404554",
+          "expert_name": "彭尚龙",
+          "avg_cosine_similarity": 0.6263,
+          "avg_match_score": 92.63
+        }
+      ],
+      "query_text": "半导体光伏材料与太阳电池",
+      "expert_count": 10,
+      "projects": [
+        "面向全固态电池的磷氧基快离子导体薄膜软晶格与序构调控",
+        "聚合物碳纳米管复合薄膜前结的构筑及其对IBC电池载流子传输的调控机理",
+        "宽带隙钙钛矿太阳能电池性能与稳定性的协同优化",
+        "用于稳定锡基钙钛矿太阳能电池的协同抑制与再生策略的研究",
+        "面向高比能全固态电池的复合体系核壳正极设计与集成",
+        "钠离子电池单晶层状氧化物的晶面调控与电化学性能研究",
+        "TOPCon电池钝化机理研究",
+        "梯度掺杂策略下硒化锑太阳电池的能带工程与载流子动力学研究",
+        "溶液法制备Cu2ZnSn(S,Se)4薄膜结晶机制研究与多结晶模式协同优化"
+      ]
+    },
+    {
+      "group_id": 116,
+      "subject_name": "分离与吸附材料",
+      "project_count": 7,
+      "group_experts": [
+        {
+          "expert_id": "1413286",
+          "expert_name": "何本桥",
+          "avg_cosine_similarity": 0.6657,
+          "avg_match_score": 96.57
+        },
+        {
+          "expert_id": "1419469",
+          "expert_name": "赵东",
+          "avg_cosine_similarity": 0.6467,
+          "avg_match_score": 94.67
+        },
+        {
+          "expert_id": "9907676",
+          "expert_name": "郭敏杰",
+          "avg_cosine_similarity": 0.6448,
+          "avg_match_score": 94.48
+        },
+        {
+          "expert_id": "1343440",
+          "expert_name": "马应霞",
+          "avg_cosine_similarity": 0.6398,
+          "avg_match_score": 93.98
+        },
+        {
+          "expert_id": "1352072",
+          "expert_name": "江兵兵",
+          "avg_cosine_similarity": 0.6245,
+          "avg_match_score": 92.45
+        }
+      ],
+      "query_text": "分离与吸附材料",
+      "expert_count": 10,
+      "projects": [
+        "双水相单体及MOFs协同调控制备图灵结构疏松纳滤膜的研究",
+        "淀粉样纤维气凝胶对噻嗪类分子选择性筛分机制研究",
+        "氨基酸功能化 SiO₂的可控制备及光刻胶超纯材料中痕量金属离子的选择性净化机制",
+        "精准分离膜的纳米孔道结构传感与动态监控研究",
+        "基于结构扭曲单体和基团“定位效应”差异的聚芳酯酰胺疏松纳滤膜",
+        "木质素基离子多孔聚合材料的构筑及其碘的高效捕获研究",
+        "“均一孔径-均匀正电”芳香鎓盐纳滤膜的构筑及其高效镁锂分离性能研究"
+      ]
+    },
+    {
+      "group_id": 233,
+      "subject_name": "软件工程",
+      "project_count": 12,
+      "group_experts": [
+        {
+          "expert_id": "1002048",
+          "expert_name": "刘子林",
+          "avg_cosine_similarity": 0.5429,
+          "avg_match_score": 84.29
+        },
+        {
+          "expert_id": "1006708",
+          "expert_name": "林毅",
+          "avg_cosine_similarity": 0.5283,
+          "avg_match_score": 82.83
+        },
+        {
+          "expert_id": "1003366",
+          "expert_name": "杨杰",
+          "avg_cosine_similarity": 0.5265,
+          "avg_match_score": 82.65
+        },
+        {
+          "expert_id": "1005821",
+          "expert_name": "刘洪武",
+          "avg_cosine_similarity": 0.5127,
+          "avg_match_score": 81.27
+        },
+        {
+          "expert_id": "1001016",
+          "expert_name": "许兴基",
+          "avg_cosine_similarity": 0.5117,
+          "avg_match_score": 81.17
+        }
+      ],
+      "query_text": "软件工程",
+      "expert_count": 10,
+      "projects": [
+        "面向高并行度FFT处理器结构的改良基-2^k算法与串接CSD复数乘法器共享设计研究",
+        "融合关系感知知识图谱嵌入与多任务学习的团购推荐算法研究",
+        "量子网络中长程量子纠缠与非局域性的理论研究",
+        "面向边缘智能的异构视觉骨干网络结构演化与线性动力学建模研究",
+        "AI精准定制融合TPMS多孔骨支架的结构方案预测与性能优化方法研究",
+        "面向云API互补推荐的逻辑推理机理与溯因纠偏方法",
+        "空天地一体化网络的 VNF 部署的模型和方法",
+        "基于拓扑网络的铁路车站基础设施与设备异常影响的定量表达研究",
+        "衰减的有限经典极空间上LDPC码的构造及其在神经网络中的应用",
+        "基于知识图谱和强化学习的可解释性研究",
+        "复杂环境下差异化信息智能摆渡技术研究",
+        "超大规模移动网络智能编排技术研究"
+      ]
+    },
+    {
+      "group_id": 221,
+      "subject_name": "模式识别理论及应用",
+      "project_count": 11,
+      "group_experts": [
+        {
+          "expert_id": "9905139",
+          "expert_name": "王震宇",
+          "avg_cosine_similarity": 0.6514,
+          "avg_match_score": 95.14
+        },
+        {
+          "expert_id": "99211067",
+          "expert_name": "段福庆",
+          "avg_cosine_similarity": 0.6166,
+          "avg_match_score": 91.66
+        },
+        {
+          "expert_id": "99210869",
+          "expert_name": "陈佳鑫",
+          "avg_cosine_similarity": 0.6128,
+          "avg_match_score": 91.28
+        },
+        {
+          "expert_id": "99191641",
+          "expert_name": "冯夫健",
+          "avg_cosine_similarity": 0.6085,
+          "avg_match_score": 90.85
+        },
+        {
+          "expert_id": "1439135",
+          "expert_name": "刘传才",
+          "avg_cosine_similarity": 0.6063,
+          "avg_match_score": 90.63
+        }
+      ],
+      "query_text": "模式识别理论及应用",
+      "expert_count": 10,
+      "projects": [
+        "事理约束下车辆部件及依附性缺陷协同检测方法",
+        "面向跨被试泛化的脑电情感表征学习与域适应模型研究",
+        "基于一致性表示与稀疏反馈的跨域图像交互分割研究",
+        "面向复杂施工场景的连续尺度人群密度感知与多模态图协同预警方法研究",
+        "新能源高渗透配电网负荷概率预测的多模型融合方法研究",
+        "基于时空注意力融合网络的低空三维风场反演关键技术研究",
+        "基于高效启发式搜索策略的自适应雷达波形设计方法研究",
+        "基于改进DeepSORT的目标跟踪及精准反制研究",
+        "小型机载视觉与雷达融合感知的入侵无人机反制方法研究",
+        "动态海面下基于波前相位调制的目标散射机理与识别方法研究",
+        "面向工业故障诊断的开放环境长尾持续学习方法研究"
+      ]
+    },
+    {
+      "group_id": 222,
+      "subject_name": "模式识别理论及应用",
+      "project_count": 9,
+      "group_experts": [
+        {
+          "expert_id": "9905139",
+          "expert_name": "王震宇",
+          "avg_cosine_similarity": 0.6622,
+          "avg_match_score": 96.22
+        },
+        {
+          "expert_id": "99211067",
+          "expert_name": "段福庆",
+          "avg_cosine_similarity": 0.6363,
+          "avg_match_score": 93.63
+        },
+        {
+          "expert_id": "99191641",
+          "expert_name": "冯夫健",
+          "avg_cosine_similarity": 0.625,
+          "avg_match_score": 92.5
+        },
+        {
+          "expert_id": "1439135",
+          "expert_name": "刘传才",
+          "avg_cosine_similarity": 0.6242,
+          "avg_match_score": 92.42
+        },
+        {
+          "expert_id": "99210869",
+          "expert_name": "陈佳鑫",
+          "avg_cosine_similarity": 0.6205,
+          "avg_match_score": 92.05
+        }
+      ],
+      "query_text": "模式识别理论及应用",
+      "expert_count": 10,
+      "projects": [
+        "超宽带TDOA定位NLOS识别与补偿方法研究",
+        "多体对称联合测量及其在量子网络中的应用",
+        "密集人群跨摄像头智能跟踪与协同预警关键技术研究",
+        "复杂环境下无人机巡检的跨模态自适应目标检测理论与方法",
+        "移动交通设备群体运行数据的时空关联建模与协同异常检测机理研究",
+        "复杂动态环境下低慢小无人机目标感知技术研究",
+        "跨场景无监督小样本图像识别方法的研究",
+        "基于大语言模型与频域分析的多模态图推荐方法研究",
+        "《垂直行业大数据驱动的客户动态画像与智能决策方法研究——以电梯服务市场为例》"
+      ]
+    },
+    {
+      "group_id": 184,
+      "subject_name": "工程防火",
+      "project_count": 13,
+      "group_experts": [
+        {
+          "expert_id": "1002388",
+          "expert_name": "王兴国",
+          "avg_cosine_similarity": 0.6159,
+          "avg_match_score": 91.59
+        },
+        {
+          "expert_id": "1004503",
+          "expert_name": "吴立志",
+          "avg_cosine_similarity": 0.589,
+          "avg_match_score": 88.9
+        },
+        {
+          "expert_id": "1302966",
+          "expert_name": "王冬",
+          "avg_cosine_similarity": 0.5859,
+          "avg_match_score": 88.59
+        },
+        {
+          "expert_id": "1102519",
+          "expert_name": "陈长坤",
+          "avg_cosine_similarity": 0.5842,
+          "avg_match_score": 88.42
+        },
+        {
+          "expert_id": "1303761",
+          "expert_name": "蒋新生",
+          "avg_cosine_similarity": 0.5816,
+          "avg_match_score": 88.16
+        }
+      ],
+      "query_text": "工程防火",
+      "expert_count": 10,
+      "projects": [
+        "纵向风作用下长大倾斜隧道火灾顶棚火焰扩展行为及烟气运移规律",
+        "消防水枪射流气-液耦合卷吸作用下火场烟气输运的扰动机制与调控方法研究",
+        "风险因素耦合对高层建筑火灾疏散安全的影响机理研究",
+        "火场高分子材料干扰汽油检验鉴定机理研究",
+        "基于数字孪生的火灾后混凝土结构三维损伤智能检测与评估研究",
+        "复杂服役环境下轨道交通碳纤维复合材料的燃烧行为演化",
+        "高温下多尺度纤维增强超高性能混凝土与钢筋界面粘结性能劣化机理研究",
+        "地下停车场电动汽车火灾下混凝土板热冲击响应与损伤演化机制研究",
+        "TBM煤矿巷道纤维轻质混凝土管片火灾热-力耦合机制及安全性能研究",
+        "热力耦合作用下UHPC-NC界面损伤多尺度演化机理研究",
+        "稀疏观测下隧道火灾高维温度场的流形几何约束反演与概率化预测研究",
+        "基于TDLAS与AI融合的电缆通道火灾多模态超早期预警技术研究",
+        "考虑热-力路径的绿色新型波纹钢隧道加固型材退化机制及变形计算方法研究"
+      ]
+    }
+  ]
+}
