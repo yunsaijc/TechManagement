@@ -1,8 +1,15 @@
 """项目级形式审查配置"""
 import os
 import re
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
+from src.services.review.doc_types import (
+    doc_type_to_legacy_doc_kind,
+    get_doc_type_description,
+    get_doc_type_label,
+    normalize_doc_type,
+)
 from src.services.review.notice_rules import get_merged_policy_review_points
 
 
@@ -241,21 +248,23 @@ PROJECT_CONFIG: Dict[str, Dict[str, Any]] = {
 }
 
 
-DOC_KIND_TO_DOCUMENT_TYPE: Dict[str, str] = {
-    "commitment_letter": "acceptance_report",
-    "ethics_approval": "acceptance_report",
-    "industry_permit": "acceptance_report",
-    "biosafety_commitment": "acceptance_report",
-    "cooperation_agreement": "acceptance_report",
-    "recommendation_letter": "acceptance_report",
-    "retrieval_report": "retrieval_report",
-    "acceptance_certificate": "acceptance_report",
-    "contributor_form": "award_contributor",
-    "patent_certificate": "patent_certificate",
-    "award_certificate": "award_certificate",
-    "base_staff_proof": "acceptance_report",
-    "business_license": "acceptance_report",
-    "research_paper": "acceptance_report",
+DOC_KIND_TO_DOC_TYPE: Dict[str, str] = {
+    "commitment_letter": "project_commitment_letter",
+    "ethics_approval": "project_ethics_approval",
+    "industry_permit": "project_industry_permit",
+    "biosafety_commitment": "project_biosafety_commitment",
+    "cooperation_agreement": "project_cooperation_agreement",
+    "recommendation_letter": "project_recommendation_letter",
+    "retrieval_report": "project_retrieval_report",
+    "acceptance_certificate": "project_acceptance_certificate",
+    "contributor_form": "reward_award_contributor_form",
+    "patent_certificate": "project_patent_certificate",
+    "award_certificate": "reward_award_certificate",
+    "base_staff_proof": "project_base_staff_proof",
+    "business_license": "project_business_license",
+    "research_paper": "project_research_paper",
+    "other_supporting_material": "project_other_supporting_material",
+    "unknown_attachment": "project_unknown_attachment",
 }
 
 
@@ -388,9 +397,9 @@ ATTACHMENT_FILENAME_HINTS: List[tuple[str, str]] = [
 ]
 
 
-DEFAULT_ATTACHMENT_REVIEW_DOC_KINDS: List[str] = [
-    "commitment_letter",
-    "recommendation_letter",
+DEFAULT_ATTACHMENT_REVIEW_DOC_TYPES: List[str] = [
+    "project_commitment_letter",
+    "project_recommendation_letter",
 ]
 
 
@@ -408,7 +417,21 @@ def get_project_types() -> List[str]:
 
 def get_project_config(project_type: str) -> Optional[Dict[str, Any]]:
     """获取项目配置"""
-    return PROJECT_CONFIG.get(project_type)
+    raw = PROJECT_CONFIG.get(project_type)
+    if not raw:
+        return None
+    config = deepcopy(raw)
+    required_doc_kinds = list(config.get("required_doc_kinds", []))
+    config["required_doc_types"] = [resolve_doc_type(doc_kind) for doc_kind in required_doc_kinds]
+
+    conditional_rules = []
+    for item in config.get("conditional_doc_rules", []):
+        normalized = dict(item)
+        doc_kind = str(normalized.get("doc_kind") or "").strip()
+        normalized["doc_type"] = resolve_doc_type(doc_kind)
+        conditional_rules.append(normalized)
+    config["conditional_doc_rules"] = conditional_rules
+    return config
 
 
 def get_policy_review_points(project_type: str) -> List[Dict[str, Any]]:
@@ -436,6 +459,7 @@ def get_attachment_kind_definitions(include_unknown: bool = True) -> List[Dict[s
     ]
     return [
         {
+            "doc_type": resolve_doc_type(doc_kind),
             "doc_kind": doc_kind,
             "label": ATTACHMENT_KIND_CONFIG[doc_kind]["label"],
             "description": ATTACHMENT_KIND_CONFIG[doc_kind]["description"],
@@ -458,17 +482,22 @@ def normalize_attachment_doc_kind(value: str) -> str:
 
 
 def get_attachment_review_doc_kinds() -> List[str]:
-    """获取允许进入旧附件审查链的附件类别"""
+    """获取允许进入旧附件审查链的旧附件类别编码。"""
+    return [doc_type_to_legacy_doc_kind(doc_type) for doc_type in get_attachment_review_doc_types()]
+
+
+def get_attachment_review_doc_types() -> List[str]:
+    """获取允许进入附件审查链的统一 doc_type。"""
     raw = os.getenv("REVIEW_ATTACHMENT_REVIEW_DOC_KINDS", "")
     if not raw.strip():
-        return DEFAULT_ATTACHMENT_REVIEW_DOC_KINDS.copy()
+        return DEFAULT_ATTACHMENT_REVIEW_DOC_TYPES.copy()
 
     values = []
     for item in raw.split(","):
-        doc_kind = normalize_attachment_doc_kind(item)
-        if doc_kind != "unknown_attachment":
-            values.append(doc_kind)
-    return values or DEFAULT_ATTACHMENT_REVIEW_DOC_KINDS.copy()
+        doc_type = resolve_doc_type(item)
+        if doc_type not in {"unknown", "project_unknown_attachment"}:
+            values.append(doc_type)
+    return values or DEFAULT_ATTACHMENT_REVIEW_DOC_TYPES.copy()
 
 
 def resolve_project_type(guide_name: str) -> str:
@@ -489,8 +518,27 @@ def _normalize_guide_name(guide_name: str) -> str:
     return text.strip()
 
 
+def resolve_doc_type(value: str, explicit_doc_type: Optional[str] = None) -> str:
+    """将旧 doc_kind / 旧 document_type / 新 doc_type 解析为统一 doc_type。"""
+    if explicit_doc_type:
+        return normalize_doc_type(explicit_doc_type)
+    normalized = normalize_doc_type(value, default="")
+    if normalized:
+        return normalized
+    legacy_kind = normalize_attachment_doc_kind(value)
+    return DOC_KIND_TO_DOC_TYPE.get(legacy_kind, "unknown")
+
+
 def resolve_document_type(doc_kind: str, explicit_document_type: Optional[str] = None) -> str:
-    """根据附件类型解析附件级审查类型"""
-    if explicit_document_type:
-        return explicit_document_type
-    return DOC_KIND_TO_DOCUMENT_TYPE.get(doc_kind, "unknown")
+    """兼容旧函数名，实际返回统一 doc_type。"""
+    return resolve_doc_type(doc_kind, explicit_document_type)
+
+
+def get_doc_type_label_by_value(value: str) -> str:
+    """获取统一 doc_type 对应中文标签。"""
+    return get_doc_type_label(resolve_doc_type(value))
+
+
+def get_doc_type_description_by_value(value: str) -> str:
+    """获取统一 doc_type 对应描述。"""
+    return get_doc_type_description(resolve_doc_type(value))

@@ -7,15 +7,19 @@ import time
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from docx import Document
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.common.models import ApiResponse, CheckResult, CheckStatus, ReviewResult
 from src.services.review.agent import ReviewAgent
+from src.services.review.doc_types import get_doc_type_label, normalize_doc_type
+from src.services.review.reward_review_service import REWARD_PATH_DOC_TYPES, RewardReviewService
 from src.services.review.rules.config import DOCUMENT_CONFIG
+from src.services.review.smb_file_reader import SMBReviewFileReader
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -26,9 +30,42 @@ _review_results: dict[str, ReviewResult] = {}
 
 class ReviewRequest(BaseModel):
     """审查请求"""
-    document_type: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    doc_type: str = Field(..., validation_alias=AliasChoices("doc_type", "document_type", "type"))
     check_items: Optional[List[str]] = None
     enable_llm_analysis: bool = False  # 是否启用 LLM 深度分析
+
+    @field_validator("doc_type", mode="before")
+    @classmethod
+    def _normalize_doc_type(cls, value: Any) -> str:
+        return normalize_doc_type(str(value or ""))
+
+
+class ReviewPathRequest(BaseModel):
+    """按 SMB 路径提交审查请求。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    project_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("project_id", "xmbh"))
+    doc_type: str = Field(..., validation_alias=AliasChoices("doc_type", "document_type", "type"))
+    file_path: str
+    check_items: Optional[List[str]] = None
+    enable_llm_analysis: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict) and not data.get("type") and data.get("document_type"):
+            data = dict(data)
+            data["type"] = data["document_type"]
+        return data
+
+    @field_validator("doc_type", mode="before")
+    @classmethod
+    def _normalize_doc_type(cls, value: Any) -> str:
+        return normalize_doc_type(str(value or ""))
 
 
 class DocumentTypeInfo(BaseModel):
@@ -43,6 +80,164 @@ class CheckItemInfo(BaseModel):
     value: str
     label: str
     description: str
+
+
+DEFAULT_CHECK_ITEMS = ["signature", "stamp"]
+
+
+def _normalize_check_items(items: Optional[List[str]]) -> List[str]:
+    """规范化检查项，默认签字盖章。"""
+    if not items:
+        return list(DEFAULT_CHECK_ITEMS)
+    normalized = [str(item).strip() for item in items if str(item).strip()]
+    return normalized or list(DEFAULT_CHECK_ITEMS)
+
+
+def _default_check_items_for_doc_type(doc_type: str) -> List[str]:
+    """根据 doc_type 生成默认检查项。"""
+    config = DOCUMENT_CONFIG.get(normalize_doc_type(doc_type), {})
+    rules = list(config.get("rules", []))
+    llm_rules = list(config.get("llm_rules", []))
+    values = [str(item).strip() for item in [*rules, *llm_rules] if str(item).strip()]
+    return values or list(DEFAULT_CHECK_ITEMS)
+
+
+def _resolve_effective_check_items(doc_type: str, requested_items: Optional[List[str]]) -> List[str]:
+    """解析最终检查项。
+
+    对仍沿用旧接口的调用方，如果只传了 ``signature`` / ``stamp``，
+    则自动扩展为该 doc_type 的完整默认规则集。
+    """
+    default_items = _default_check_items_for_doc_type(doc_type)
+    if not requested_items:
+        return default_items
+
+    normalized = _normalize_check_items(requested_items)
+    if set(normalized) == set(DEFAULT_CHECK_ITEMS) and set(default_items) != set(DEFAULT_CHECK_ITEMS):
+        return default_items
+    return normalized
+
+
+def _compact_check_result(item: CheckResult) -> Dict[str, Any]:
+    """压缩单条检查结果，供非 debug 响应使用。"""
+    return {
+        "code": item.item,
+        "status": item.status.value,
+        "message": item.message,
+        "evidence": dict(item.evidence or {}),
+    }
+
+
+def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dict[str, Any]:
+    """构造更适合人工阅读的查询结果。"""
+    doc_type_label = get_doc_type_label(result.doc_type)
+    data: Dict[str, Any] = {
+        "id": result.id,
+        "status": result.status,
+        "doc_type": result.doc_type,
+        "doc_type_label": doc_type_label,
+        "summary": result.summary,
+        "processed_at": result.processed_at,
+        "processing_time": result.processing_time,
+    }
+
+    structured = dict(result.structured_result or {})
+    if structured:
+        data.update(structured)
+    else:
+        data["checks"] = [_compact_check_result(item) for item in result.results]
+
+    if result.suggestions:
+        data["suggestions"] = list(result.suggestions)
+
+    if debug:
+        data["debug"] = {
+            "doc_type_raw": result.doc_type_raw,
+            "results": [_compact_check_result(item) for item in result.results],
+            "structured_result": structured,
+            "extracted_data": result.extracted_data,
+            "llm_analysis": result.llm_analysis,
+            "ocr_text": result.ocr_text,
+            "document_type": result.document_type,
+            "document_type_raw": result.document_type_raw,
+        }
+
+    return data
+
+
+def _build_placeholder_result(review_id: str, doc_type: str) -> ReviewResult:
+    """构造处理中占位结果。"""
+    return ReviewResult(
+        id=review_id,
+        status="processing",
+        doc_type=doc_type,
+        doc_type_raw="",
+        results=[],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary="处理中",
+        suggestions=[],
+        processing_time=0.0,
+    )
+
+
+def _build_failure_result(review_id: str, doc_type: str, error: Exception, start_time: float) -> ReviewResult:
+    """构造失败结果。"""
+    return ReviewResult(
+        id=review_id,
+        status="failed",
+        doc_type=doc_type,
+        doc_type_raw="",
+        results=[
+            CheckResult(
+                item="system",
+                status=CheckStatus.FAILED,
+                message=str(error),
+                evidence={},
+                confidence=1.0,
+            )
+        ],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary=f"审查失败：{error}",
+        suggestions=[],
+        processing_time=time.time() - start_time,
+    )
+
+
+async def _run_review_job(
+    review_id: str,
+    file_data: bytes,
+    filename: str,
+    doc_type: str,
+    check_items: List[str],
+    enable_llm_analysis: bool,
+    metadata: Dict[str, Any],
+) -> None:
+    """执行后台审查任务。"""
+    start_time = time.time()
+    agent = ReviewAgent()
+    try:
+        result = await agent.process(
+            file_data=file_data,
+            file_type=filename.split(".")[-1].lower() if "." in filename else "pdf",
+            doc_type=doc_type,
+            check_items=check_items,
+            enable_llm_analysis=enable_llm_analysis,
+            metadata=metadata,
+            review_id=review_id,
+        )
+        _review_results[review_id] = result
+    except Exception as e:
+        logger.exception("Review job failed: %s", review_id)
+        _review_results[review_id] = _build_failure_result(
+            review_id=review_id,
+            doc_type=doc_type,
+            error=e,
+            start_time=start_time,
+        )
 
 
 def _read_docx_paragraphs(docx_path: Path, max_paragraphs: int = 1200) -> List[str]:
@@ -151,6 +346,11 @@ def _safe_read_json(file_path: Path) -> dict:
 
 
 def _doc_kind_label(doc_kind: str) -> str:
+    normalized_doc_type = normalize_doc_type(doc_kind, default="")
+    if normalized_doc_type:
+        label = get_doc_type_label(normalized_doc_type)
+        if label and label != "未知":
+            return label
     labels = {
         "commitment_letter": "承诺书",
         "ethics_approval": "伦理审查意见",
@@ -304,9 +504,10 @@ async def get_debug_batch_view(limit: int = 300) -> ApiResponse[dict]:
 
         missing_attachments = []
         for item in result_payload.get("missing_attachments", []):
-            kind = str(item.get("doc_kind") or "").strip()
+            kind = str(item.get("doc_type") or item.get("doc_kind") or "").strip()
             missing_attachments.append(
                 {
+                    "doc_type": kind,
                     "doc_kind": kind,
                     "doc_label": _doc_kind_label(kind),
                     "reason": str(item.get("reason") or "").strip(),
@@ -418,7 +619,9 @@ async def get_debug_batch_view(limit: int = 300) -> ApiResponse[dict]:
 @router.post("")
 async def submit_review(
     file: UploadFile = File(...),
-    document_type: str = Form(...),
+    doc_type: Optional[str] = Form(None),
+    document_type: Optional[str] = Form(None),
+    type_: Optional[str] = Form(None, alias="type"),
     check_items: Optional[str] = Form(None),
     enable_llm_analysis: bool = Form(False),
     metadata: Optional[str] = Form(None),
@@ -427,7 +630,7 @@ async def submit_review(
 
     Args:
         file: 上传的文件
-        document_type: 文档类型（必填，由调用方指定）
+        doc_type: 文档类型（必填，由调用方指定）
         check_items: 检查项，逗号分隔（可选）
         enable_llm_analysis: 是否启用 LLM 深度分析（可选）
         metadata: 元数据 JSON 字符串（可选）
@@ -435,12 +638,15 @@ async def submit_review(
     Returns:
         审查结果
     """
-    import json
+    selected_doc_type = normalize_doc_type(str(doc_type or document_type or type_ or "").strip())
+    if not selected_doc_type or selected_doc_type == "unknown":
+        raise HTTPException(status_code=400, detail="doc_type/document_type/type 为必填参数，且必须是受支持类型")
 
     # 解析检查项
-    items = None
-    if check_items:
-        items = [i.strip() for i in check_items.split(",")]
+    items = _resolve_effective_check_items(
+        selected_doc_type,
+        [i.strip() for i in check_items.split(",")] if check_items else None,
+    )
 
     # 解析元数据
     meta_dict = {}
@@ -455,58 +661,19 @@ async def submit_review(
 
     try:
         review_id = f"review_{int(time.time() * 1000)}"
-        placeholder = ReviewResult(
-            id=review_id,
-            status="processing",
-            document_type=document_type,
-            document_type_raw="",
-            results=[],
-            ocr_text="",
-            extracted_data={},
-            llm_analysis=None,
-            summary="处理中",
-            suggestions=[],
-            processing_time=0.0,
-        )
+        placeholder = _build_placeholder_result(review_id, selected_doc_type)
         _review_results[review_id] = placeholder
 
         async def _run_review() -> None:
-            start_time = time.time()
-            agent = ReviewAgent()
-            try:
-                result = await agent.process(
-                    file_data=file_data,
-                    file_type=file.filename.split(".")[-1] if "." in file.filename else "pdf",
-                    document_type=document_type,
-                    check_items=items,
-                    enable_llm_analysis=enable_llm_analysis,
-                    metadata=meta_dict,
-                    review_id=review_id,
-                )
-                _review_results[review_id] = result
-            except Exception as e:
-                logger.exception("Review job failed: %s", review_id)
-                _review_results[review_id] = ReviewResult(
-                    id=review_id,
-                    status="failed",
-                    document_type=document_type,
-                    document_type_raw="",
-                    results=[
-                        CheckResult(
-                            item="system",
-                            status=CheckStatus.FAILED,
-                            message=str(e),
-                            evidence={},
-                            confidence=1.0,
-                        )
-                    ],
-                    ocr_text="",
-                    extracted_data={},
-                    llm_analysis=None,
-                    summary=f"审查失败：{e}",
-                    suggestions=[],
-                    processing_time=time.time() - start_time,
-                )
+            await _run_review_job(
+                review_id=review_id,
+                file_data=file_data,
+                filename=file.filename or "upload.pdf",
+                doc_type=selected_doc_type,
+                check_items=items,
+                enable_llm_analysis=enable_llm_analysis,
+                metadata=meta_dict,
+            )
 
         asyncio.create_task(_run_review())
 
@@ -519,8 +686,81 @@ async def submit_review(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/path")
+async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[ReviewResult]:
+    """按 SMB 路径提交文件进行形式审查。"""
+    review_id = f"review_{int(time.time() * 1000)}"
+    normalized_doc_type = normalize_doc_type(request.doc_type)
+    if normalized_doc_type in REWARD_PATH_DOC_TYPES and not str(request.project_id or "").strip():
+        raise HTTPException(status_code=400, detail="奖励平台材料必须传入 project_id")
+    placeholder = _build_placeholder_result(review_id, normalized_doc_type)
+    _review_results[review_id] = placeholder
+    items = _resolve_effective_check_items(normalized_doc_type, request.check_items)
+    start_time = time.time()
+
+    async def _run_review_from_smb() -> None:
+        try:
+            reader = SMBReviewFileReader()
+            file_data = await asyncio.to_thread(reader.read_bytes, request.file_path)
+            filename = Path(reader.normalize_share_path(request.file_path)).name or "remote.pdf"
+            metadata = dict(request.metadata)
+            metadata.setdefault("source", "smb")
+            metadata.setdefault("file_path", request.file_path)
+            if request.project_id:
+                metadata.setdefault("project_id", request.project_id)
+
+            reward_service: Optional[RewardReviewService] = None
+            reward_context: Optional[Dict[str, Any]] = None
+            if normalized_doc_type in REWARD_PATH_DOC_TYPES:
+                reward_service = RewardReviewService()
+                reward_context = await asyncio.to_thread(
+                    reward_service.build_context,
+                    str(request.project_id or ""),
+                    request.file_path,
+                    normalized_doc_type,
+                )
+                metadata["reward_review_context"] = reward_context
+
+            await _run_review_job(
+                review_id=review_id,
+                file_data=file_data,
+                filename=filename,
+                doc_type=normalized_doc_type,
+                check_items=items,
+                enable_llm_analysis=request.enable_llm_analysis,
+                metadata=metadata,
+            )
+            if reward_service and reward_context:
+                current = _review_results.get(review_id)
+                if current and current.status == "done":
+                    current = await asyncio.to_thread(
+                        reward_service.enrich_result,
+                        current,
+                        reward_context,
+                        items,
+                    )
+                    _review_results[review_id] = current
+                    await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)
+        except Exception as e:
+            logger.exception("SMB review job failed: %s", review_id)
+            _review_results[review_id] = _build_failure_result(
+                review_id=review_id,
+                doc_type=normalized_doc_type,
+                error=e,
+                start_time=start_time,
+            )
+
+    asyncio.create_task(_run_review_from_smb())
+
+    return ApiResponse(
+        status="success",
+        data=placeholder,
+        message="已提交路径审查任务，请稍后使用 review_id 查询结果",
+    )
+
+
 @router.get("/{review_id}")
-async def get_review(review_id: str) -> ApiResponse[ReviewResult]:
+async def get_review(review_id: str, debug: bool = False) -> Response:
     """根据 ID 查询审查结果
 
     Args:
@@ -533,10 +773,12 @@ async def get_review(review_id: str) -> ApiResponse[ReviewResult]:
     if not result:
         raise HTTPException(status_code=404, detail="审查结果不存在")
 
-    return ApiResponse(
+    payload = ApiResponse(
         status="success",
-        data=result,
+        data=_build_compact_review_data(result, debug=debug),
     )
+    body = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    return Response(content=body, media_type="application/json; charset=utf-8")
 
 
 @router.get("/document-types")
@@ -552,7 +794,7 @@ async def get_document_types() -> ApiResponse[List[DocumentTypeInfo]]:
         rules = config.get("rules", [])
         llm_rules = config.get("llm_rules", [])
         # 展示优先中文首标签；无标签则回退到 code
-        label = labels[0] if labels else doc_type
+        label = get_doc_type_label(doc_type) if labels else doc_type
         # 对外统一返回该类型可用检查项（规则引擎 + llm规则）
         check_items = [*rules, *llm_rules]
         types.append(

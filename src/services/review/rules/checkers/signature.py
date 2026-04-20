@@ -7,6 +7,7 @@
 """
 from src.common.models import CheckResult, CheckStatus
 from src.common.extractors import SignatureExtractor
+from src.services.review.doc_types import normalize_doc_type
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 
@@ -28,8 +29,8 @@ class SignatureCheckRule(BaseRule):
     async def should_run(self, context: ReviewContext) -> bool:
         """根据文档类型判断"""
         # 某些文档类型不需要签字检查
-        no_signature_types = ["retrieval_report"]
-        return context.document_type not in no_signature_types
+        no_signature_types = {"project_retrieval_report"}
+        return normalize_doc_type(context.doc_type) not in no_signature_types
 
     async def check(self, context: ReviewContext) -> CheckResult:
         """执行签字检查
@@ -37,6 +38,35 @@ class SignatureCheckRule(BaseRule):
         使用 SignatureExtractor 提取签字内容。
         能提取到则 PASS，否则 FAILED。
         """
+        llm_analysis = context.extracted.get("llm_analysis") if context.extracted else {}
+        if isinstance(llm_analysis, dict):
+            llm_signatures = llm_analysis.get("signatures_result")
+            if isinstance(llm_signatures, dict):
+                signatures = llm_signatures.get("signatures", [])
+                if signatures:
+                    return CheckResult(
+                        item=self.name,
+                        status=CheckStatus.PASSED,
+                        message=f"提取到 {len(signatures)} 个签字区域",
+                        evidence={
+                            "signatures": [
+                                {
+                                    "text": s.get("text", ""),
+                                    "bbox": s.get("bbox", {}),
+                                    "confidence": s.get("confidence", 0),
+                                }
+                                for s in signatures
+                            ],
+                        },
+                        confidence=0.9,
+                    )
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.FAILED,
+                    message="未提取到签字",
+                    evidence={"signatures": []},
+                )
+
         extractor = SignatureExtractor()
         
         try:

@@ -4,21 +4,27 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import asdict
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import datetime, timezone
 
 from src.common.models.simulation import BaselineSnapshot, BaselineTopicState
 from src.services.sandbox.data import (
     build_topic_aggregates,
     build_topic_year_aggregates,
+    inspect_graph_profile,
     load_graph_topic_metrics,
+    load_topic_migration_edges,
     load_graph_window_metadata,
     load_project_facts,
+    verify_graph_readiness,
 )
 
 from . import repository
 
 DEFAULT_BASELINE_START_YEAR = 2020
+SHARED_LAYER_BASELINE_KIND = "shared_layer"
+MANUAL_INPUT_BASELINE_KIND = "manual_input"
 
 
 @dataclass
@@ -70,12 +76,17 @@ def create_baseline_snapshot(
     metadata: dict[str, object] | None = None,
     persist: bool = True,
 ) -> BaselineSnapshot:
+    normalized_metadata = _normalize_baseline_metadata(
+        metadata,
+        baseline_id=baseline_id,
+        forecast_window=forecast_window,
+    )
     snapshot = BaselineSnapshot(
         baseline_id=baseline_id,
         forecast_window=forecast_window,
         topics=topics,
         assumptions=assumptions or [],
-        metadata=metadata or {},
+        metadata=normalized_metadata,
     )
     if persist:
         repository.save_baseline_snapshot(snapshot)
@@ -94,14 +105,18 @@ def build_baseline_snapshot_from_sources(
     total_started = time.perf_counter()
 
     project_load_started = time.perf_counter()
-    project_rows = _load_project_topic_aggregates(start_year=window.start_year, end_year=window.end_year)
-    project_year_rows = _load_project_topic_year_aggregates(start_year=window.start_year, end_year=window.end_year)
-    project_window_metadata = _load_project_window_metadata(start_year=window.start_year, end_year=window.end_year)
+    project_facts = _load_project_facts_for_window(start_year=window.start_year, end_year=window.end_year)
+    project_rows = _build_project_topic_aggregates(project_facts)
+    project_year_rows = _build_project_topic_year_aggregates(project_facts)
+    project_window_metadata = _build_project_window_metadata(project_facts, start_year=window.start_year, end_year=window.end_year)
     project_load_seconds = round(time.perf_counter() - project_load_started, 3)
 
     graph_load_started = time.perf_counter()
     graph_rows = _load_graph_topic_aggregates(start_year=window.start_year, end_year=window.end_year)
     graph_window_metadata = _load_graph_window_metadata(start_year=window.start_year, end_year=window.end_year)
+    topic_migration_edges = _load_topic_migration_edges(start_year=window.start_year, end_year=window.end_year)
+    graph_profile = _load_graph_profile()
+    graph_readiness = _load_graph_readiness()
     graph_load_seconds = round(time.perf_counter() - graph_load_started, 3)
     elapsed_seconds = round(time.perf_counter() - total_started, 3)
 
@@ -125,6 +140,15 @@ def build_baseline_snapshot_from_sources(
             "topic_growth_momentum_from_project_year_panel",
         ],
         metadata={
+            "baselineProvenance": {
+                "kind": SHARED_LAYER_BASELINE_KIND,
+                "source": "build_baseline_snapshot_from_sources",
+                "baselineId": baseline_id,
+                "forecastWindow": _format_window(window.start_year, window.end_year),
+                "createdAt": _baseline_timestamp(),
+                "startYear": window.start_year,
+                "endYear": window.end_year,
+            },
             "requestedStartYear": window.requested_start_year,
             "requestedEndYear": window.requested_end_year,
             "startYear": window.start_year,
@@ -135,9 +159,14 @@ def build_baseline_snapshot_from_sources(
             "windowResolvedBy": "project_db_latest_year",
             "yearCount": window.end_year - window.start_year + 1,
             "migrationWindowEligible": window.start_year < window.end_year,
+            "projectFactCount": len(project_facts),
             "projectTopicCount": len(project_rows),
             "projectTopicYearCount": len(project_year_rows),
             "graphTopicCount": len(graph_rows),
+            "topicMigrationEdgeCount": len(topic_migration_edges),
+            "topTopicMigrationEdges": _summarize_topic_migration_edges(topic_migration_edges),
+            "graphProfile": asdict(graph_profile),
+            "graphReadiness": asdict(graph_readiness),
             "topicCount": len(topics),
             "projectLoadSeconds": project_load_seconds,
             "graphLoadSeconds": graph_load_seconds,
@@ -179,189 +208,118 @@ def _resolve_baseline_window(
 
 
 def _load_latest_project_year() -> int | None:
-    from dotenv import load_dotenv
-
-    load_dotenv(Path(__file__).resolve().parents[4] / ".env")
-    from src.common.database.connection import project_execute
-
-    sql = """
-        SELECT MAX(CAST(b.year AS INT)) AS latest_year
-        FROM Sb_Jbxx b
-        INNER JOIN Sb_Sbzt sbzt ON sbzt.onlysign = b.id
-        WHERE sbzt.gkAudit = '1'
-          AND ISNUMERIC(b.year) = 1
-          AND CAST(b.year AS INT) >= 2020
-    """
-    rows = project_execute(sql)
-    if not rows:
+    facts = _load_project_facts_for_window(
+        start_year=DEFAULT_BASELINE_START_YEAR,
+        end_year=datetime.now().year + 1,
+    )
+    if not facts:
         return None
-    latest_year = getattr(rows[0], "latest_year", None)
-    if latest_year in (None, ""):
-        return None
-    return int(latest_year)
+    return max(item.application_year for item in facts)
 
 
-def _load_project_window_metadata(
+def _normalize_baseline_metadata(
+    metadata: dict[str, object] | None,
+    *,
+    baseline_id: str,
+    forecast_window: str,
+) -> dict[str, object]:
+    normalized = dict(metadata or {})
+    provenance = normalized.get("baselineProvenance")
+    default_provenance = {
+        "kind": MANUAL_INPUT_BASELINE_KIND,
+        "source": "create_baseline_snapshot",
+        "baselineId": baseline_id,
+        "forecastWindow": forecast_window,
+        "createdAt": _baseline_timestamp(),
+    }
+    if isinstance(provenance, dict):
+        normalized["baselineProvenance"] = {
+            **default_provenance,
+            **provenance,
+        }
+    else:
+        normalized["baselineProvenance"] = default_provenance
+    return normalized
+
+
+def _baseline_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _load_project_facts_for_window(
+    *,
+    start_year: int,
+    end_year: int,
+) -> list[object]:
+    return load_project_facts(start_year=start_year, end_year=end_year)
+
+
+def _build_project_window_metadata(
+    project_facts: list[object],
     *,
     start_year: int,
     end_year: int,
 ) -> dict[str, object]:
-    from dotenv import load_dotenv
+    yearly_stats_map: dict[int, dict[str, object]] = {}
+    topic_years: dict[str, set[int]] = {}
 
-    load_dotenv(Path(__file__).resolve().parents[4] / ".env")
-    from src.common.database.connection import project_execute
-
-    annual_sql = """
-        WITH reviewed_projects AS (
-            SELECT
-                CAST(b.year AS INT) AS project_year,
-                b.id AS project_id,
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(zn.name)), ''),
-                    NULLIF(LTRIM(RTRIM(zx.name)), ''),
-                    NULLIF(LTRIM(RTRIM(b.zxmc)), ''),
-                    NULLIF(LTRIM(RTRIM(b.zndm)), '')
-                ) AS topic_label
-            FROM Sb_Jbxx b
-            INNER JOIN Sb_Sbzt sbzt ON sbzt.onlysign = b.id
-            LEFT JOIN sys_guide zx ON zx.id = b.zxmc
-            LEFT JOIN sys_guide zn ON zn.id = b.zndm
-            WHERE sbzt.gkAudit = '1'
-              AND ISNUMERIC(b.year) = 1
-              AND CAST(b.year AS INT) >= ?
-              AND CAST(b.year AS INT) <= ?
-        ),
-        review_scores AS (
-            SELECT
-                ps.XMBH AS project_id,
-                AVG(
-                    CASE
-                        WHEN ISNUMERIC(ps.FSFS) = 1 THEN CAST(ps.FSFS AS FLOAT)
-                        WHEN ISNUMERIC(ps.WPFS) = 1 THEN CAST(ps.WPFS AS FLOAT)
-                        ELSE NULL
-                    END
-                ) AS score_proxy
-            FROM PS_XMPSXX ps
-            GROUP BY ps.XMBH
-        ),
-        contract_budget AS (
-            SELECT
-                htxx.onlysign AS project_id,
-                MAX(CASE WHEN NULLIF(LTRIM(RTRIM(htxx.xmbh)), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_contract_number,
-                SUM(CASE WHEN ISNUMERIC(htjf.zxjf) = 1 THEN CAST(htjf.zxjf AS FLOAT) ELSE 0 END) AS final_funding_amount
-            FROM Ht_Jbxx htxx
-            LEFT JOIN Ht_Jfgs htjf
-                ON htjf.onlysign = htxx.id
-               AND (
-                    ISNUMERIC(CAST(htjf.yskmbh AS VARCHAR(32))) = 1
-                    AND CAST(htjf.yskmbh AS INT) = 1
-               )
-            GROUP BY htxx.onlysign
-        ),
-        award_status AS (
-            SELECT
-                lx.XMBH AS project_id,
-                MAX(CASE WHEN ISNUMERIC(CAST(lx.SFLX AS VARCHAR(32))) = 1 AND CAST(lx.SFLX AS INT) = 1 THEN 1 ELSE 0 END) AS funded_flag,
-                MAX(CASE WHEN NULLIF(LTRIM(RTRIM(lx.LXBH)), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_award_number,
-                MAX(CASE WHEN ISNUMERIC(lx.LXJF) = 1 THEN CAST(lx.LXJF AS FLOAT) ELSE 0 END) AS award_funding_amount
-            FROM Ht_XMLXXX lx
-            GROUP BY lx.XMBH
-        ),
-        project_metrics AS (
-            SELECT
-                rp.project_year,
-                rp.topic_label,
-                rp.project_id,
-                CASE
-                    WHEN COALESCE(award.funded_flag, 0) = 1 THEN 1
-                    WHEN COALESCE(contract.has_contract_number, 0) = 1 THEN 1
-                    WHEN COALESCE(award.has_award_number, 0) = 1 THEN 1
-                    ELSE 0
-                END AS funded_flag,
-                CASE
-                    WHEN COALESCE(contract.final_funding_amount, 0) > 0 THEN contract.final_funding_amount
-                    WHEN COALESCE(award.award_funding_amount, 0) > 0 THEN award.award_funding_amount
-                    ELSE 0.0
-                END AS funding_amount,
-                COALESCE(review.score_proxy, NULL) AS score_proxy
-            FROM reviewed_projects rp
-            LEFT JOIN review_scores review ON review.project_id = rp.project_id
-            LEFT JOIN contract_budget contract ON contract.project_id = rp.project_id
-            LEFT JOIN award_status award ON award.project_id = rp.project_id
+    for fact in project_facts:
+        year = int(fact.application_year)
+        topic_name = _normalize_topic_label(fact.topic_id, fact.topic_name)
+        year_state = yearly_stats_map.setdefault(
+            year,
+            {
+                "year": year,
+                "applicationCount": 0,
+                "topicLabels": set(),
+                "fundedCount": 0,
+                "fundingAmount": 0.0,
+                "scoreValues": [],
+            },
         )
-        SELECT
-            project_year,
-            COUNT(1) AS application_count,
-            COUNT(DISTINCT topic_label) AS topic_count,
-            SUM(funded_flag) AS funded_count,
-            SUM(funding_amount) AS funding_amount,
-            AVG(score_proxy) AS avg_score_proxy
-        FROM project_metrics
-        GROUP BY project_year
-        ORDER BY project_year
-    """
-    annual_rows = project_execute(annual_sql, (start_year, end_year))
-    yearly_stats = [
-        {
-            "year": int(getattr(row, "project_year", 0) or 0),
-            "applicationCount": int(getattr(row, "application_count", 0) or 0),
-            "topicCount": int(getattr(row, "topic_count", 0) or 0),
-            "fundedCount": int(getattr(row, "funded_count", 0) or 0),
-            "fundingAmount": round(float(getattr(row, "funding_amount", 0.0) or 0.0), 6),
-            "avgScoreProxy": _as_float_or_none(getattr(row, "avg_score_proxy", None)),
-        }
-        for row in annual_rows
-    ]
+        year_state["applicationCount"] = int(year_state["applicationCount"]) + 1
+        if topic_name:
+            topic_labels = year_state["topicLabels"]
+            assert isinstance(topic_labels, set)
+            topic_labels.add(topic_name)
+            topic_years.setdefault(topic_name, set()).add(year)
+        year_state["fundedCount"] = int(year_state["fundedCount"]) + (1 if fact.funded_flag else 0)
+        year_state["fundingAmount"] = float(year_state["fundingAmount"]) + float(fact.final_funding_amount)
+        if fact.score_proxy is not None:
+            score_values = year_state["scoreValues"]
+            assert isinstance(score_values, list)
+            score_values.append(float(fact.score_proxy))
 
-    span_sql = """
-        WITH reviewed_projects AS (
-            SELECT
-                CAST(b.year AS INT) AS project_year,
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(zn.name)), ''),
-                    NULLIF(LTRIM(RTRIM(zx.name)), ''),
-                    NULLIF(LTRIM(RTRIM(b.zxmc)), ''),
-                    NULLIF(LTRIM(RTRIM(b.zndm)), '')
-                ) AS topic_label
-            FROM Sb_Jbxx b
-            INNER JOIN Sb_Sbzt sbzt ON sbzt.onlysign = b.id
-            LEFT JOIN sys_guide zx ON zx.id = b.zxmc
-            LEFT JOIN sys_guide zn ON zn.id = b.zndm
-            WHERE sbzt.gkAudit = '1'
-              AND ISNUMERIC(b.year) = 1
-              AND CAST(b.year AS INT) >= ?
-              AND CAST(b.year AS INT) <= ?
-        ),
-        topic_span AS (
-            SELECT
-                topic_label,
-                COUNT(DISTINCT project_year) AS active_year_count
-            FROM reviewed_projects
-            WHERE NULLIF(LTRIM(RTRIM(topic_label)), '') IS NOT NULL
-            GROUP BY topic_label
+    yearly_stats = []
+    for year in sorted(yearly_stats_map):
+        state = yearly_stats_map[year]
+        score_values = state["scoreValues"]
+        yearly_stats.append(
+            {
+                "year": year,
+                "applicationCount": int(state["applicationCount"]),
+                "topicCount": len(state["topicLabels"]),
+                "fundedCount": int(state["fundedCount"]),
+                "fundingAmount": round(float(state["fundingAmount"]), 6),
+                "avgScoreProxy": _average_or_none(score_values),
+            }
         )
-        SELECT
-            COUNT(1) AS total_topic_count,
-            SUM(CASE WHEN active_year_count = 1 THEN 1 ELSE 0 END) AS single_year_topic_count,
-            SUM(CASE WHEN active_year_count >= 2 THEN 1 ELSE 0 END) AS multi_year_topic_count,
-            AVG(CAST(active_year_count AS FLOAT)) AS avg_active_year_count,
-            MAX(active_year_count) AS max_active_year_count
-        FROM topic_span
-    """
-    span_rows = project_execute(span_sql, (start_year, end_year))
-    span_row = span_rows[0] if span_rows else None
 
+    active_year_counts = [len(years) for years in topic_years.values()]
     years_covered = [item["year"] for item in yearly_stats]
     return {
         "projectYearsCovered": years_covered,
         "projectYearsCoveredCount": len(years_covered),
         "projectYearlyStats": yearly_stats,
         "projectTopicSpanStats": {
-            "totalTopicCount": int(getattr(span_row, "total_topic_count", 0) or 0),
-            "singleYearTopicCount": int(getattr(span_row, "single_year_topic_count", 0) or 0),
-            "multiYearTopicCount": int(getattr(span_row, "multi_year_topic_count", 0) or 0),
-            "avgActiveYearCount": round(_as_float_or_zero(getattr(span_row, "avg_active_year_count", 0.0)), 6),
-            "maxActiveYearCount": int(getattr(span_row, "max_active_year_count", 0) or 0),
+            "totalTopicCount": len(topic_years),
+            "singleYearTopicCount": sum(1 for count in active_year_counts if count == 1),
+            "multiYearTopicCount": sum(1 for count in active_year_counts if count >= 2),
+            "avgActiveYearCount": round(sum(active_year_counts) / len(active_year_counts), 6)
+            if active_year_counts
+            else 0.0,
+            "maxActiveYearCount": max(active_year_counts, default=0),
+            "requestedWindowSpan": max(end_year - start_year + 1, 1),
         },
     }
 
@@ -374,16 +332,11 @@ def _load_graph_window_metadata(
     return load_graph_window_metadata(start_year=start_year, end_year=end_year)
 
 
-def _load_project_topic_aggregates(
-    *,
-    start_year: int,
-    end_year: int,
-) -> list[ProjectTopicAggregate]:
-    project_facts = load_project_facts(start_year=start_year, end_year=end_year)
+def _build_project_topic_aggregates(project_facts: list[object]) -> list[ProjectTopicAggregate]:
     return [
         ProjectTopicAggregate(
             topic_key=_normalize_topic_key(item.topic_id),
-            topic_label=item.topic_name,
+            topic_label=_normalize_topic_label(item.topic_id, item.topic_name),
             application_count=item.application_count,
             funded_count=item.funded_count,
             funding_amount=item.funding_amount,
@@ -395,16 +348,11 @@ def _load_project_topic_aggregates(
     ]
 
 
-def _load_project_topic_year_aggregates(
-    *,
-    start_year: int,
-    end_year: int,
-) -> list[ProjectTopicYearAggregate]:
-    project_facts = load_project_facts(start_year=start_year, end_year=end_year)
+def _build_project_topic_year_aggregates(project_facts: list[object]) -> list[ProjectTopicYearAggregate]:
     return [
         ProjectTopicYearAggregate(
             topic_key=_normalize_topic_key(item.topic_id),
-            topic_label=item.topic_name,
+            topic_label=_normalize_topic_label(item.topic_id, item.topic_name),
             year=item.year,
             application_count=item.application_count,
             funded_count=item.funded_count,
@@ -431,6 +379,22 @@ def _load_graph_topic_aggregates(
         )
         for item in load_graph_topic_metrics(start_year=start_year, end_year=end_year)
     ]
+
+
+def _load_topic_migration_edges(
+    *,
+    start_year: int,
+    end_year: int,
+) -> list[object]:
+    return load_topic_migration_edges(start_year=start_year, end_year=end_year)
+
+
+def _load_graph_profile():
+    return inspect_graph_profile()
+
+
+def _load_graph_readiness():
+    return verify_graph_readiness()
 
 
 def _merge_topic_aggregates(
@@ -463,7 +427,8 @@ def _merge_topic_aggregates(
         )
         topics.append(
             BaselineTopicState(
-                topic_id=project_row.topic_label,
+                topic_id=project_row.topic_key,
+                topic_label=project_row.topic_label,
                 application_count=project_row.application_count,
                 funded_count=project_row.funded_count,
                 funding_amount=round(project_row.funding_amount, 6),
@@ -535,6 +500,62 @@ def _clean_topic_label(value: object) -> str:
     return " ".join(str(value or "").strip().split())
 
 
+def _normalize_topic_label(topic_key: object, topic_label: object) -> str:
+    key = _clean_topic_label(topic_key)
+    label = _clean_topic_label(topic_label)
+    if not label:
+        return _fallback_topic_label(key)
+    _, remainder = _split_topic_label_prefix(label)
+    return remainder
+
+
+def _split_topic_label_prefix(label: str) -> tuple[str | None, str]:
+    if "-" not in label:
+        return None, label
+    prefix, remainder = label.split("-", 1)
+    prefix = _clean_topic_label(prefix)
+    remainder = _clean_topic_label(remainder)
+    normalized_prefix = prefix.replace("_", "")
+    if (
+        prefix
+        and remainder
+        and len(normalized_prefix) >= 6
+        and prefix.isascii()
+        and normalized_prefix.isalnum()
+    ):
+        return prefix, remainder
+    return None, label
+
+
+def _fallback_topic_label(topic_id: str) -> str:
+    _, remainder = _split_topic_label_prefix(_clean_topic_label(topic_id))
+    return remainder
+
+
+def _summarize_topic_migration_edges(edges: list[object], limit: int = 12) -> list[dict[str, object]]:
+    ranked = sorted(
+        edges,
+        key=lambda item: (item.migrating_person_count, item.flow_strength, item.target_capture_ratio),
+        reverse=True,
+    )
+    return [
+        {
+            "sourceTopicKey": item.source_topic_key,
+            "sourceTopicLabel": item.source_topic_label,
+            "sourceYear": item.source_year,
+            "targetTopicKey": item.target_topic_key,
+            "targetTopicLabel": item.target_topic_label,
+            "targetYear": item.target_year,
+            "migratingPersonCount": item.migrating_person_count,
+            "sourcePersonCount": item.source_person_count,
+            "targetPersonCount": item.target_person_count,
+            "flowStrength": item.flow_strength,
+            "targetCaptureRatio": item.target_capture_ratio,
+        }
+        for item in ranked[:limit]
+    ]
+
+
 def _as_float_or_none(value: object) -> float | None:
     if value in (None, ""):
         return None
@@ -547,6 +568,12 @@ def _as_float_or_none(value: object) -> float | None:
 def _as_float_or_zero(value: object) -> float:
     parsed = _as_float_or_none(value)
     return 0.0 if parsed is None else parsed
+
+
+def _average_or_none(values: object) -> float | None:
+    if not isinstance(values, list) or not values:
+        return None
+    return round(sum(float(value) for value in values) / len(values), 6)
 
 
 def _safe_ratio(numerator: float, denominator: float) -> float:

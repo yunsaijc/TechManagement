@@ -2,16 +2,25 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from src.common.models.simulation import BaselineTopicState, PolicyShock, ScenarioDefinition
+from src.common.models.simulation import (
+    BaselineTopicState,
+    EvaluationGoal,
+    PolicyAction,
+    PolicyShock,
+    ScenarioConstraint,
+    ScenarioContract,
+    ScenarioDefinition,
+    ScenarioIntent,
+    ValidationSummary,
+)
+from src.services.sandbox.simulation import repository as simulation_repository
 from src.services.sandbox.simulation.facade import (
     compare_latest_result,
     compare_result,
@@ -22,12 +31,18 @@ from src.services.sandbox.simulation.facade import (
     load_latest_baseline_snapshot,
     load_latest_scenario_result,
     run_scenario,
+    run_scenario_contract,
 )
-from src.services.sandbox.simulation.debug_html import render_debug_html
-from src.services.sandbox.simulation.debug_payload import build_debug_payload
+from src.services.sandbox.simulation.llm_contract import draft_scenario_contract_from_prompt
+from src.services.sandbox.simulation.scenario_compiler import compile_scenario_contract
+from src.services.sandbox.simulation.scenario_contract import (
+    adapt_legacy_compose_to_contract,
+    adapt_legacy_policy_shocks_to_contract,
+    build_compose_constraints,
+    build_scenario_contract,
+)
 
 router = APIRouter()
-SIMULATION_DEBUG_DIR = Path("debug_sandbox/simulation")
 
 
 class LeadershipForecastRequest(BaseModel):
@@ -86,7 +101,11 @@ class SimulationScenarioRequest(BaseModel):
 class SimulationScenarioComposeRequest(BaseModel):
     baselineId: str | None = None
     scenarioId: str | None = None
+    scenarioName: str | None = None
     forecastWindow: str | None = None
+    question: str | None = None
+    rawPolicyText: str | None = None
+    scenarioContract: dict[str, object] | None = None
     topicId: str | None = None
     shockType: str = "funding_boost"
     intensity: float = Field(default=0.6, ge=0.0, le=1.0)
@@ -100,15 +119,21 @@ class SimulationScenarioComposeRequest(BaseModel):
     budgetLimit: float | None = Field(default=None, ge=0.0)
     spilloverBudgetShare: float | None = Field(default=None, ge=0.0, le=1.0)
     maxRiskIncrease: float | None = Field(default=None, ge=0.0, le=1.0)
+    constraints: list[dict[str, object]] = Field(default_factory=list)
+    evaluationGoals: list[dict[str, object]] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
 
 
 class SimulationRunRequest(BaseModel):
-    baseline: SimulationBaselineRequest
-    scenario: SimulationScenarioRequest
+    baseline: SimulationBaselineRequest | None = None
+    scenario: SimulationScenarioRequest | None = None
+    baselineId: str | None = None
+    scenarioContract: dict[str, object] | None = None
+    question: str | None = None
     includeComparison: bool = True
     includeExplanation: bool = True
+    compareToBaseline: bool = True
     persist: bool = True
 
 
@@ -123,6 +148,7 @@ def _build_baseline_topics(payload: SimulationBaselineRequest) -> list[BaselineT
     return [
         BaselineTopicState(
             topic_id=item.topicId,
+            topic_label=item.topicId,
             application_count=item.applicationCount,
             funded_count=item.fundedCount,
             funding_amount=item.fundingAmount,
@@ -163,11 +189,12 @@ def _build_composed_scenario_definition(
     *,
     baseline_id: str,
     forecast_window: str,
+    resolved_topic_ids: list[str] | None = None,
 ) -> ScenarioDefinition:
     scenario_id = payload.scenarioId or f"scenario_builder_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     tags = payload.tags or ["builder", "interactive"]
     assumptions = payload.assumptions or ["interactive_builder_generated_policy_shock"]
-    actions = payload.actions or _compose_request_actions(payload)
+    actions = payload.actions or _compose_request_actions(payload, resolved_topic_ids=resolved_topic_ids)
 
     return ScenarioDefinition(
         scenario_id=scenario_id,
@@ -188,14 +215,18 @@ def _build_composed_scenario_definition(
     )
 
 
-def _compose_request_actions(payload: SimulationScenarioComposeRequest) -> list[SimulationPolicyShockInput]:
+def _compose_request_actions(
+    payload: SimulationScenarioComposeRequest,
+    *,
+    resolved_topic_ids: list[str] | None = None,
+) -> list[SimulationPolicyShockInput]:
     if not payload.topicId:
         raise HTTPException(status_code=400, detail="组合方案缺少 topicId 或 actions")
     return [
         SimulationPolicyShockInput(
             shockId=f"shock_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
             shockType=payload.shockType,
-            targetTopics=[payload.topicId],
+            targetTopics=resolved_topic_ids or [payload.topicId],
             intensity=payload.intensity,
             coverage=payload.coverage,
             lag=payload.lag,
@@ -242,54 +273,34 @@ def _compose_action_to_policy_shock(
     )
 
 
-def _build_debug_meta(*, source: str, title: str) -> dict[str, str]:
-    return {
-        "source": source,
-        "title": title,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
+def _resolve_topic_targets(selection: str | None, baseline) -> list[str] | None:
+    if not selection:
+        return None
+
+    topics = list(getattr(baseline, "topics", []) or [])
+    exact_ids = [topic.topic_id for topic in topics if topic.topic_id == selection]
+    if exact_ids:
+        return exact_ids
+
+    matching_labels = [
+        topic.topic_id
+        for topic in topics
+        if _baseline_topic_label(topic) == selection
+    ]
+    return matching_labels or None
 
 
-def _save_simulation_debug_artifacts(
-    *,
-    artifact_name: str,
-    payload: dict[str, Any],
-    title: str,
-) -> dict[str, str]:
-    SIMULATION_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    json_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.json"
-    html_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.html"
-    payload.setdefault("meta", {})
-    payload["meta"]["debug_json_path"] = str(json_path.resolve())
-    payload["meta"]["debug_json_url"] = f"/debug-sandbox/simulation/{json_path.name}"
-    payload["meta"]["debug_html_path"] = str(html_path.resolve())
-    payload["meta"]["debug_html_url"] = f"/debug-sandbox/simulation/{html_path.name}"
-
-    with json_path.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
-
-    html_path.write_text(render_debug_html(payload, title=title), encoding="utf-8")
-
-    return {
-        "debug_json_path": str(json_path.resolve()),
-        "debug_json_url": f"/debug-sandbox/simulation/{json_path.name}",
-        "debug_html_path": str(html_path.resolve()),
-        "debug_html_url": f"/debug-sandbox/simulation/{html_path.name}",
-    }
-
-
-def _get_simulation_debug_artifacts(artifact_name: str) -> dict[str, str]:
-    json_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.json"
-    html_path = SIMULATION_DEBUG_DIR / f"{artifact_name}.debug.html"
-
-    payload: dict[str, str] = {}
-    if json_path.exists():
-        payload["debug_json_path"] = str(json_path.resolve())
-        payload["debug_json_url"] = f"/debug-sandbox/simulation/{json_path.name}"
-    if html_path.exists():
-        payload["debug_html_path"] = str(html_path.resolve())
-        payload["debug_html_url"] = f"/debug-sandbox/simulation/{html_path.name}"
-    return payload
+def _baseline_topic_label(topic: BaselineTopicState) -> str:
+    label = str(topic.topic_label or "").strip()
+    if label:
+        return label
+    topic_id = str(topic.topic_id or "").strip()
+    if "-" not in topic_id:
+        return topic_id
+    prefix, remainder = topic_id.split("-", 1)
+    if prefix and remainder and len(prefix.replace("_", "")) >= 6 and prefix.isascii() and prefix.replace("_", "").isalnum():
+        return remainder.strip()
+    return topic_id
 
 
 def _default_scenario_forecast_window(baseline) -> str:
@@ -307,82 +318,320 @@ def _default_scenario_forecast_window(baseline) -> str:
     return baseline_window or "当前窗口"
 
 
-def _build_baseline_debug_payload(
-    *,
-    snapshot,
-    source: str,
-    title: str,
-) -> dict[str, Any]:
-    payload = build_debug_payload(baseline=snapshot)
-    payload["meta"] = _build_debug_meta(source=source, title=title)
-    return payload
-
-
-def _build_scenario_debug_payload(
-    *,
-    source: str,
-    title: str,
-    baseline=None,
-    scenario: ScenarioDefinition | None = None,
-    result=None,
-    comparison=None,
-    explanation=None,
-) -> dict[str, Any]:
-    payload = build_debug_payload(
-        baseline=baseline,
-        result=result,
-        comparison=comparison,
-        explanation=explanation,
-    )
-    if scenario is not None:
-        payload["scenario"] = scenario.model_dump(mode="json")
-    payload["meta"] = _build_debug_meta(source=source, title=title)
-    return payload
-
-
-def _match_latest_baseline(result) -> object | None:
-    baseline = load_latest_baseline_snapshot()
-    if baseline is None:
-        return None
-    if baseline.baseline_id != result.baseline_id:
-        return None
-    return baseline
+def _extract_model_debug_artifacts(model) -> dict[str, str]:
+    metadata = getattr(model, "metadata", {}) or {}
+    debug_artifacts = metadata.get("debugArtifacts")
+    if not isinstance(debug_artifacts, dict):
+        return {}
+    extracted: dict[str, str] = {}
+    for key in ("debug_json_path", "debug_json_url", "debug_html_path", "debug_html_url"):
+        value = debug_artifacts.get(key)
+        if isinstance(value, str) and value:
+            extracted[key] = value
+    return extracted
 
 
 def _build_scenario_response(
     *,
     source: str,
-    title: str,
     scenario: ScenarioDefinition,
     result,
     baseline=None,
 ) -> dict[str, object]:
-    resolved_baseline = baseline or _match_latest_baseline(result)
     comparison = compare_result(result)
     explanation = explain_result(result)
-    debug_payload = _build_scenario_debug_payload(
-        baseline=resolved_baseline,
-        scenario=scenario,
-        result=result,
-        comparison=comparison,
-        explanation=explanation,
-        source=source,
-        title=title,
-    )
-    debug_artifacts = _save_simulation_debug_artifacts(
-        artifact_name="scenario_latest",
-        payload=debug_payload,
-        title=title,
-    )
     return {
         "status": "ok",
         "source": source,
-        "baseline": resolved_baseline.model_dump() if resolved_baseline is not None else None,
+        "baseline": baseline.model_dump() if baseline is not None else None,
         "scenario": scenario.model_dump(),
         "result": result.model_dump(),
         "comparison": comparison.model_dump(),
         "explanation": explanation.model_dump(),
+        **_extract_model_debug_artifacts(result),
+    }
+
+
+def _load_required_baseline(*, expected_baseline_id: str | None = None):
+    baseline = load_latest_baseline_snapshot()
+    if baseline is None:
+        raise HTTPException(status_code=404, detail="尚未生成 baseline snapshot，无法执行正式 scenario contract")
+    if expected_baseline_id is not None and expected_baseline_id != baseline.baseline_id:
+        raise HTTPException(status_code=400, detail="baselineId 与当前可用 baseline 不一致")
+    return baseline
+
+
+def _parse_extra_constraints(payload: SimulationScenarioComposeRequest) -> list[ScenarioConstraint]:
+    constraints = build_compose_constraints(
+        budget_limit=payload.budgetLimit,
+        spillover_budget_share=payload.spilloverBudgetShare,
+        max_risk_increase=payload.maxRiskIncrease,
+    )
+    constraints.extend(ScenarioConstraint.model_validate(item) for item in payload.constraints)
+    return constraints
+
+
+def _parse_evaluation_goals(payload: SimulationScenarioComposeRequest) -> list[EvaluationGoal]:
+    return [EvaluationGoal.model_validate(item) for item in payload.evaluationGoals]
+
+
+def _normalize_contract(
+    contract: ScenarioContract,
+    *,
+    baseline,
+    forecast_window: str | None = None,
+    question: str | None = None,
+    scenario_name: str | None = None,
+    tags: list[str] | None = None,
+    assumptions: list[str] | None = None,
+    constraints: list[ScenarioConstraint] | None = None,
+    evaluation_goals: list[EvaluationGoal] | None = None,
+) -> ScenarioContract:
+    resolved_forecast_window = forecast_window or contract.forecast_window or _default_scenario_forecast_window(baseline)
+    resolved_question = (question or "").strip()
+    intent = contract.intent or ScenarioIntent()
+    if resolved_question and not intent.question:
+        intent = intent.model_copy(update={"question": resolved_question})
+
+    merged_constraints = list(contract.constraints)
+    if constraints:
+        merged_constraints.extend(constraints)
+    merged_goals = list(contract.evaluation_goals) or []
+    if evaluation_goals:
+        merged_goals.extend(evaluation_goals)
+    validation = contract.validation or ValidationSummary()
+
+    return contract.model_copy(
+        update={
+            "scenario_name": scenario_name or contract.scenario_name,
+            "forecast_window": resolved_forecast_window,
+            "baseline": contract.baseline.model_copy(
+                update={
+                    "baseline_id": contract.baseline.baseline_id or baseline.baseline_id,
+                }
+            ),
+            "intent": intent,
+            "tags": list(contract.tags) or list(tags or []),
+            "assumptions": list(contract.assumptions) or list(assumptions or []),
+            "constraints": merged_constraints,
+            "evaluation_goals": merged_goals,
+            "validation": validation,
+        }
+    )
+
+
+def _build_contract_from_compose_request(
+    payload: SimulationScenarioComposeRequest,
+    *,
+    baseline,
+) -> ScenarioContract:
+    forecast_window = payload.forecastWindow or _default_scenario_forecast_window(baseline)
+    question = (payload.question or payload.rawPolicyText or "").strip()
+    extra_constraints = _parse_extra_constraints(payload)
+    evaluation_goals = _parse_evaluation_goals(payload)
+    resolved_topic_ids = _resolve_topic_targets(payload.topicId, baseline) if payload.topicId else None
+
+    if payload.scenarioContract is not None:
+        contract = ScenarioContract.model_validate(payload.scenarioContract)
+        return _normalize_contract(
+            contract,
+            baseline=baseline,
+            forecast_window=forecast_window,
+            question=question,
+            scenario_name=payload.scenarioName,
+            tags=payload.tags,
+            assumptions=payload.assumptions,
+            constraints=extra_constraints,
+            evaluation_goals=evaluation_goals,
+        )
+
+    if question and not payload.topicId and not payload.actions:
+        draft = draft_scenario_contract_from_prompt(
+            question,
+            baseline_id=baseline.baseline_id,
+            forecast_window=forecast_window,
+            scenario_id=payload.scenarioId,
+        )
+        contract = adapt_legacy_policy_shocks_to_contract(
+            scenario_id=draft.scenario_id,
+            baseline_id=baseline.baseline_id,
+            forecast_window=draft.forecast_window,
+            policy_shocks=[item.model_dump(mode="json") for item in draft.policy_package],
+            tags=payload.tags,
+            assumptions=list(payload.assumptions) + list(draft.assumptions),
+            metadata={
+                "draft_objective": draft.objective,
+                "draft_summary": draft.summary,
+                "draft_warnings": list(draft.warnings),
+                "draft_generation_mode": draft.metadata.get("generationMode"),
+            },
+        )
+        return _normalize_contract(
+            contract,
+            baseline=baseline,
+            forecast_window=forecast_window,
+            question=question,
+            scenario_name=payload.scenarioName or draft.summary or draft.objective,
+            tags=payload.tags,
+            assumptions=list(payload.assumptions) + list(draft.assumptions),
+            constraints=extra_constraints,
+            evaluation_goals=evaluation_goals,
+        )
+
+    contract = adapt_legacy_compose_to_contract(
+        scenario_id=payload.scenarioId or f"scenario_builder_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        baseline_id=baseline.baseline_id,
+        forecast_window=forecast_window,
+        topic_id=(
+            resolved_topic_ids[0]
+            if resolved_topic_ids and len(resolved_topic_ids) == 1
+            else (None if resolved_topic_ids and len(resolved_topic_ids) > 1 else payload.topicId)
+        ),
+        shock_type=payload.shockType,
+        intensity=payload.intensity,
+        coverage=payload.coverage,
+        lag=payload.lag,
+        enable_spillover=payload.enableSpillover,
+        propagation_strength=payload.propagationStrength,
+        min_similarity=payload.minSimilarity,
+        max_neighbors=payload.maxNeighbors,
+        actions=(
+            [
+                {
+                    "action_id": item.shockId,
+                    "action_type": item.shockType,
+                    "target_topics": list(item.targetTopics),
+                    "intensity": item.intensity,
+                    "coverage": item.coverage,
+                    "lag": item.lag,
+                    "parameters": dict(item.parameters),
+                }
+                for item in payload.actions
+            ]
+            if payload.actions
+            else (
+                [
+                    {
+                        "action_id": "action_legacy_compose",
+                        "action_type": payload.shockType,
+                        "target_topics": resolved_topic_ids,
+                        "intensity": payload.intensity,
+                        "coverage": payload.coverage,
+                        "lag": payload.lag,
+                        "parameters": {
+                            "enable_spillover": payload.enableSpillover,
+                            **(
+                                {
+                                    "propagation_strength": payload.propagationStrength,
+                                    "min_similarity": payload.minSimilarity,
+                                    "max_neighbors": payload.maxNeighbors,
+                                }
+                                if payload.enableSpillover
+                                else {}
+                            ),
+                        },
+                    }
+                ]
+                if resolved_topic_ids and len(resolved_topic_ids) > 1
+                else None
+            )
+        ),
+        constraints=extra_constraints,
+        tags=payload.tags,
+        assumptions=payload.assumptions,
+        metadata={"compose_mode": "legacy_compatible"},
+    )
+    return _normalize_contract(
+        contract,
+        baseline=baseline,
+        forecast_window=forecast_window,
+        question=question,
+        scenario_name=payload.scenarioName,
+        tags=payload.tags,
+        assumptions=payload.assumptions,
+        constraints=extra_constraints,
+        evaluation_goals=evaluation_goals,
+    )
+
+
+def _build_stage_impacts(result) -> list[dict[str, object]]:
+    frames = list(getattr(result, "simulation_frames", []) or [])
+    return [
+        {
+            "stage_id": frame.stage_id,
+            "stage_label": frame.stage_label,
+            "stage_order": frame.stage_order,
+            "narrative": frame.narrative,
+            "portfolio": frame.portfolio.model_dump(),
+            "topic_count": len(frame.topics),
+            "top_topics": [topic.model_dump() for topic in frame.topics[:5]],
+        }
+        for frame in frames
+    ]
+
+
+def _build_formal_simulation_response(
+    *,
+    source: str,
+    baseline,
+    contract: ScenarioContract,
+    compiled,
+    result,
+    include_comparison: bool = True,
+    include_explanation: bool = True,
+    persist_debug_artifacts: bool = True,
+) -> dict[str, object]:
+    comparison = compare_result(result) if include_comparison else None
+    explanation = explain_result(result) if include_explanation else None
+    portfolio_assessment: dict[str, Any] | None = None
+    if comparison is not None:
+        metadata = comparison.metadata if isinstance(comparison.metadata, dict) else {}
+        portfolio_assessment = metadata.get("managementSummary") if isinstance(metadata.get("managementSummary"), dict) else {}
+
+    debug_artifacts: dict[str, str] = {}
+    if persist_debug_artifacts:
+        debug_artifacts = simulation_repository.save_scenario_debug_artifacts(
+            result,
+            baseline=baseline,
+            scenario=compiled.scenario_definition,
+            comparison=comparison,
+            explanation=explanation,
+            contract=contract,
+            compiled=compiled,
+        )
+
+    return {
+        "status": "ok",
+        "source": source,
+        "baseline": baseline.model_dump() if baseline is not None else None,
+        "scenario_contract": contract.model_dump(),
+        "compiled": compiled.model_dump(),
+        "scenario": compiled.scenario_definition.model_dump(),
+        "result": result.model_dump(),
+        "comparison": comparison.model_dump() if comparison is not None else None,
+        "explanation": explanation.model_dump() if explanation is not None else None,
+        "stage_impacts": _build_stage_impacts(result),
+        "counterfactual_comparison": comparison.model_dump() if comparison is not None else None,
+        "portfolio_assessment": portfolio_assessment or {},
+        "disclosures": [item.model_dump() for item in compiled.disclosures],
+        **(_extract_model_debug_artifacts(result) if persist_debug_artifacts else {}),
         **debug_artifacts,
+    }
+
+
+def _build_contract_validation(contract: ScenarioContract, compiled) -> dict[str, object]:
+    issues = [item.message for item in compiled.disclosures if item.severity == "error"]
+    warnings = [item.message for item in compiled.disclosures if item.severity != "error"]
+    return {
+        "scenario_id": contract.scenario_id,
+        "ok": not issues,
+        "issues": issues,
+        "warnings": warnings,
+        "suggestions": [],
+        "metadata": {
+            "mode": "local_contract_validation",
+            "support_level": compiled.support_level,
+        },
     }
 
 
@@ -492,7 +741,7 @@ async def get_latest_simulation_baseline() -> dict[str, object]:
         "status": "ok",
         "source": "latest_baseline_snapshot",
         "baseline": snapshot.model_dump(),
-        **_get_simulation_debug_artifacts("baseline_latest"),
+        **(_extract_model_debug_artifacts(snapshot) or simulation_repository.get_baseline_debug_artifacts()),
     }
 
 
@@ -508,22 +757,12 @@ async def run_simulation_baseline(payload: SimulationBaselineRequest) -> dict[st
         assumptions=payload.assumptions,
         metadata=payload.metadata,
     )
-    debug_payload = _build_baseline_debug_payload(
-        snapshot=snapshot,
-        source="create_baseline_snapshot",
-        title="Sandbox Simulation Baseline Debug",
-    )
-    debug_artifacts = _save_simulation_debug_artifacts(
-        artifact_name="baseline_latest",
-        payload=debug_payload,
-        title="Sandbox Simulation Baseline Debug",
-    )
 
     return {
         "status": "ok",
         "source": "create_baseline_snapshot",
         "baseline": snapshot.model_dump(),
-        **debug_artifacts,
+        **_extract_model_debug_artifacts(snapshot),
     }
 
 
@@ -542,16 +781,7 @@ async def build_simulation_baseline(payload: SimulationBaselineBuildRequest) -> 
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     debug_artifacts: dict[str, str] = {}
     if payload.persist:
-        debug_payload = _build_baseline_debug_payload(
-            snapshot=snapshot,
-            source="build_baseline_snapshot_from_sources",
-            title="Sandbox Simulation Baseline Debug",
-        )
-        debug_artifacts = _save_simulation_debug_artifacts(
-            artifact_name="baseline_latest",
-            payload=debug_payload,
-            title="Sandbox Simulation Baseline Debug",
-        )
+        debug_artifacts = _extract_model_debug_artifacts(snapshot)
 
     return {
         "status": "ok",
@@ -564,6 +794,38 @@ async def build_simulation_baseline(payload: SimulationBaselineBuildRequest) -> 
 @router.post("/simulation/run")
 async def run_simulation(payload: SimulationRunRequest) -> dict[str, object]:
     """执行一次完整 simulation run，并可附带 comparison/explanation。"""
+    if payload.scenarioContract is not None:
+        baseline = await run_in_threadpool(_load_required_baseline, expected_baseline_id=payload.baselineId)
+        contract = await run_in_threadpool(
+            _normalize_contract,
+            ScenarioContract.model_validate(payload.scenarioContract),
+            baseline=baseline,
+            question=payload.question,
+        )
+        try:
+            bundle = await run_in_threadpool(
+                run_scenario_contract,
+                contract=contract,
+                baseline=baseline,
+                persist=payload.persist,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        return await run_in_threadpool(
+            _build_formal_simulation_response,
+            source="run_simulation_contract",
+            baseline=bundle.baseline,
+            contract=bundle.compiled.contract,
+            compiled=bundle.compiled,
+            result=bundle.result,
+            include_comparison=payload.includeComparison,
+            include_explanation=payload.includeExplanation,
+            persist_debug_artifacts=payload.persist,
+        )
+
+    if payload.baseline is None or payload.scenario is None:
+        raise HTTPException(status_code=400, detail="缺少 baseline/scenario 或 scenarioContract")
     if payload.baseline.baselineId != payload.scenario.baselineId:
         raise HTTPException(status_code=400, detail="baselineId 与 scenario.baselineId 不一致")
 
@@ -583,6 +845,7 @@ async def run_simulation(payload: SimulationRunRequest) -> dict[str, object]:
             scenario=_build_scenario_definition(payload.scenario),
             baseline=baseline,
             persist=payload.persist,
+            require_supported_baseline=False,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -602,23 +865,7 @@ async def run_simulation(payload: SimulationRunRequest) -> dict[str, object]:
         explanation = await run_in_threadpool(explain_result, result)
         response["explanation"] = explanation.model_dump()
     if payload.persist:
-        scenario = _build_scenario_definition(payload.scenario)
-        debug_payload = _build_scenario_debug_payload(
-            baseline=baseline,
-            scenario=scenario,
-            result=result,
-            comparison=comparison,
-            explanation=explanation,
-            source="run_simulation",
-            title="Sandbox Simulation Scenario Debug",
-        )
-        response.update(
-            _save_simulation_debug_artifacts(
-                artifact_name="scenario_latest",
-                payload=debug_payload,
-                title="Sandbox Simulation Scenario Debug",
-            )
-        )
+        response.update(_extract_model_debug_artifacts(result))
     return response
 
 
@@ -632,7 +879,7 @@ async def get_latest_simulation_scenario() -> dict[str, object]:
         "status": "ok",
         "source": "latest_scenario_result",
         "result": result.model_dump(),
-        **_get_simulation_debug_artifacts("scenario_latest"),
+        **(_extract_model_debug_artifacts(result) or simulation_repository.get_scenario_debug_artifacts()),
     }
 
 
@@ -678,7 +925,6 @@ async def run_simulation_scenario(payload: SimulationScenarioRequest) -> dict[st
     return await run_in_threadpool(
         _build_scenario_response,
         source="run_scenario",
-        title="Sandbox Simulation Scenario Debug",
         scenario=scenario,
         result=result,
     )
@@ -686,33 +932,38 @@ async def run_simulation_scenario(payload: SimulationScenarioRequest) -> dict[st
 
 @router.post("/simulation/scenario/compose")
 async def compose_simulation_scenario(payload: SimulationScenarioComposeRequest) -> dict[str, object]:
-    """用领导可选控件快速拼装一个 scenario，并直接执行推演。"""
-    baseline = await run_in_threadpool(load_latest_baseline_snapshot)
-    if baseline is None:
-        raise HTTPException(status_code=404, detail="尚未生成 baseline snapshot，无法编排方案")
+    """拼装正式 Scenario Contract，并兼容旧 compose 参数直接执行推演。"""
+    baseline = await run_in_threadpool(_load_required_baseline, expected_baseline_id=payload.baselineId)
+    if payload.topicId:
+        resolved_topic_ids = _resolve_topic_targets(payload.topicId, baseline)
+        if not resolved_topic_ids:
+            raise HTTPException(status_code=400, detail="topicId 未匹配到当前 baseline 中的主题")
 
-    baseline_id = baseline.baseline_id
-    forecast_window = payload.forecastWindow or _default_scenario_forecast_window(baseline)
-    scenario = _build_composed_scenario_definition(
+    contract = await run_in_threadpool(
+        _build_contract_from_compose_request,
         payload,
-        baseline_id=baseline_id,
-        forecast_window=forecast_window,
+        baseline=baseline,
     )
+    compiled = await run_in_threadpool(compile_scenario_contract, contract, baseline=baseline)
 
     try:
         result = await run_in_threadpool(
             run_scenario,
-            scenario=scenario,
+            scenario=compiled.scenario_definition,
             baseline=baseline,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return await run_in_threadpool(
-        _build_scenario_response,
+    response = await run_in_threadpool(
+        _build_formal_simulation_response,
         source="compose_simulation_scenario",
-        title="Sandbox Simulation Scenario Debug",
-        scenario=scenario,
-        result=result,
         baseline=baseline,
+        contract=contract,
+        compiled=compiled,
+        result=result,
+        persist_debug_artifacts=True,
     )
+    response["validation"] = _build_contract_validation(contract, compiled)
+    response["normalization_notes"] = [item["message"] for item in response["disclosures"]]
+    return response

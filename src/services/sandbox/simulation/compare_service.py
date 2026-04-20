@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import re
 
 from src.common.models.simulation import (
     SimulationTopicImpact,
@@ -37,10 +38,12 @@ _MANAGEMENT_ACTION_LABELS = {
     "observe": "继续观察",
 }
 
+_TOPIC_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9_]{6,}$")
+
 
 def compare_result(result: SimulationResult) -> SimulationComparison:
     impacts = list(result.impacts)
-    topic_count = len(impacts)
+    topic_count = len({_topic_label_key(item) for item in impacts})
 
     avg_delta_application_count = _avg(item.delta_application_count for item in impacts)
     avg_delta_funded_count = _avg(item.delta_funded_count for item in impacts)
@@ -50,8 +53,8 @@ def compare_result(result: SimulationResult) -> SimulationComparison:
     avg_delta_migration_strength = _avg(item.delta_migration_strength for item in impacts)
     avg_delta_proxy_risk = _avg(item.delta_proxy_risk for item in impacts)
 
-    opportunities = sorted(impacts, key=_opportunity_score, reverse=True)[:3]
-    risks = sorted(impacts, key=_risk_score, reverse=True)[:3]
+    opportunities = _top_unique_impacts(impacts, score_fn=_opportunity_score, limit=3)
+    risks = _top_unique_impacts(impacts, score_fn=_risk_score, limit=3)
     impact_breakdown = build_result_impact_breakdown(result)
     management_summary = build_management_summary(result, impact_breakdown=impact_breakdown)
 
@@ -130,7 +133,8 @@ def build_management_summary(
         ),
         key=lambda item: item["management_priority"],
         reverse=True,
-    )[:5]
+    )
+    recommended_add = _top_unique_layers(recommended_add, limit=5)
     recommended_stop_loss = sorted(
         (
             layer
@@ -139,7 +143,8 @@ def build_management_summary(
         ),
         key=lambda item: item["management_priority"],
         reverse=True,
-    )[:5]
+    )
+    recommended_stop_loss = _top_unique_layers(recommended_stop_loss, limit=5)
     side_effect_topics = sorted(
         (
             layer
@@ -148,8 +153,15 @@ def build_management_summary(
         ),
         key=lambda item: item["management_priority"],
         reverse=True,
-    )[:5]
-    observe_count = sum(1 for layer in topic_layers if layer["management_action"] == "observe")
+    )
+    side_effect_topics = _top_unique_layers(side_effect_topics, limit=5)
+    observe_count = len(
+        {
+            _topic_label_key_from_layer(layer)
+            for layer in topic_layers
+            if layer["management_action"] == "observe"
+        }
+    )
 
     return {
         "recommendedAddTopics": [_to_management_topic(layer) for layer in recommended_add],
@@ -200,6 +212,7 @@ def build_topic_impact_layers(item: SimulationTopicImpact) -> dict[str, object]:
     management_action = classify_management_action(item, layers=layers)
     return {
         "topic_id": item.topic_id,
+        "topic_label": _topic_label(item),
         "dominant_type": dominant_type,
         "dominant_label": _IMPACT_LABELS[dominant_type],
         "management_action": management_action,
@@ -267,6 +280,7 @@ def _to_summary(item) -> SimulationComparisonTopic:
     )[0]
     return SimulationComparisonTopic(
         topic_id=item.topic_id,
+        topic_label=_topic_label(item),
         net_score=net_score,
         dominant_change=dominant_change,
         applied_shocks=list(item.applied_shocks),
@@ -405,6 +419,7 @@ def _top_topic_layers(
     return [
         {
             "topic_id": layer["topic_id"],
+            "topic_label": layer.get("topic_label"),
             "score": layer[impact_type]["score"],
             "direction": layer[impact_type]["direction"],
             "management_action": layer["management_action"],
@@ -413,7 +428,7 @@ def _top_topic_layers(
             "impact_origin_label": layer["impact_origin_label"],
             "source_shocks": list(layer[impact_type]["source_shocks"]),
         }
-        for layer in ranked[:limit]
+        for layer in _top_unique_layers(ranked, limit=limit)
     ]
 
 
@@ -429,6 +444,7 @@ def _topic_layers_from_breakdown(
 def _to_management_topic(layer: dict[str, object]) -> dict[str, object]:
     return {
         "topic_id": layer["topic_id"],
+        "topic_label": layer.get("topic_label"),
         "management_action": layer["management_action"],
         "management_action_label": layer["management_action_label"],
         "dominant_type": layer["dominant_type"],
@@ -454,9 +470,10 @@ def _build_executive_summary(
     side_effect_topics: list[dict[str, object]],
     observe_count: int,
 ) -> list[str]:
+    total_topics = len({_topic_label_key_from_layer(layer) for layer in topic_layers})
     return [
         (
-            f"本次推演覆盖 {len(result.impacts)} 个主题。"
+            f"本次推演覆盖 {total_topics} 个主题。"
             f"建议加码 {len(recommended_add)} 个主题，"
             f"建议止损 {len(recommended_stop_loss)} 个主题，"
             f"需重点防副作用 {len(side_effect_topics)} 个主题，"
@@ -498,7 +515,7 @@ def _management_priority(
 def _topic_names(topic_layers: list[dict[str, object]]) -> str:
     if not topic_layers:
         return "暂无显著主题"
-    return "、".join(str(item["topic_id"]) for item in topic_layers[:3])
+    return "、".join(_topic_label_from_layer(item) for item in topic_layers[:3])
 
 
 def _impact_origin_counts(topic_layers: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -508,7 +525,9 @@ def _impact_origin_counts(topic_layers: list[dict[str, object]]) -> list[dict[st
             "impact_origin": origin,
             "label": _IMPACT_ORIGIN_LABELS[origin],
             "topic_count": sum(1 for layer in topic_layers if layer["impact_origin"] == origin),
-            "sample_topics": [layer["topic_id"] for layer in topic_layers if layer["impact_origin"] == origin][:3],
+            "sample_topics": _unique_sample_topics(
+                [layer for layer in topic_layers if layer["impact_origin"] == origin]
+            ),
         }
         for origin in ordered_origins
     ]
@@ -532,4 +551,94 @@ def _top_origin_topics(
         key=lambda layer: abs(float(layer[impact_type]["score"])),
         reverse=True,
     )
-    return ranked[:limit]
+    return _top_unique_layers(ranked, limit=limit)
+
+
+def _top_unique_impacts(
+    impacts: list[SimulationTopicImpact],
+    *,
+    score_fn,
+    limit: int,
+) -> list[SimulationTopicImpact]:
+    ranked = sorted(impacts, key=score_fn, reverse=True)
+    selected: list[SimulationTopicImpact] = []
+    seen: set[str] = set()
+    for item in ranked:
+        key = _topic_label_key(item)
+        if key in seen:
+            continue
+        selected.append(item)
+        seen.add(key)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _top_unique_layers(
+    layers: list[dict[str, object]],
+    *,
+    limit: int,
+) -> list[dict[str, object]]:
+    selected: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for layer in layers:
+        key = _topic_label_key_from_layer(layer)
+        if key in seen:
+            continue
+        selected.append(layer)
+        seen.add(key)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _unique_sample_topics(topic_layers: list[dict[str, object]], limit: int = 3) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for layer in topic_layers:
+        label = _topic_label_from_layer(layer)
+        key = _topic_label_key_from_layer(layer)
+        if key in seen:
+            continue
+        output.append(label)
+        seen.add(key)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def _topic_label(item: SimulationTopicImpact | SimulationComparisonTopic) -> str:
+    label = str(getattr(item, "topic_label", "") or "").strip()
+    if label:
+        return label
+    return _fallback_topic_label(str(getattr(item, "topic_id", "") or ""))
+
+
+def _topic_label_key(item: SimulationTopicImpact | SimulationComparisonTopic) -> str:
+    return _normalize_topic_label(_topic_label(item))
+
+
+def _topic_label_from_layer(layer: dict[str, object]) -> str:
+    label = str(layer.get("topic_label") or "").strip()
+    if label:
+        return label
+    return _fallback_topic_label(str(layer.get("topic_id") or ""))
+
+
+def _topic_label_key_from_layer(layer: dict[str, object]) -> str:
+    return _normalize_topic_label(_topic_label_from_layer(layer))
+
+
+def _fallback_topic_label(topic_id: str) -> str:
+    text = " ".join(topic_id.strip().split())
+    if "-" not in text:
+        return text
+    prefix, remainder = text.split("-", 1)
+    remainder = " ".join(remainder.strip().split())
+    if prefix and remainder and _TOPIC_PREFIX_PATTERN.fullmatch(prefix):
+        return remainder
+    return text
+
+
+def _normalize_topic_label(label: str) -> str:
+    return " ".join(label.strip().split()).lower()

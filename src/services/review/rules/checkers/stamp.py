@@ -31,6 +31,36 @@ class StampCheckRule(BaseRule):
         使用 StampExtractor 提取印章内容。
         能提取到则 PASS，否则 FAILED。
         """
+        llm_analysis = context.extracted.get("llm_analysis") if context.extracted else {}
+        if isinstance(llm_analysis, dict):
+            llm_stamps = llm_analysis.get("stamps_result")
+            if isinstance(llm_stamps, dict):
+                stamps = llm_stamps.get("stamps", [])
+                if stamps:
+                    return CheckResult(
+                        item=self.name,
+                        status=CheckStatus.PASSED,
+                        message=f"提取到 {len(stamps)} 个印章",
+                        evidence={
+                            "stamps": [
+                                {
+                                    "text": s.get("text") or s.get("unit", ""),
+                                    "bbox": s.get("bbox", {}),
+                                    "confidence": s.get("confidence", 0),
+                                    "location": s.get("location", ""),
+                                }
+                                for s in stamps
+                            ],
+                        },
+                        confidence=0.9,
+                    )
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.FAILED,
+                    message="未提取到印章",
+                    evidence={"stamps": []},
+                )
+
         extractor = StampExtractor()
         
         try:
