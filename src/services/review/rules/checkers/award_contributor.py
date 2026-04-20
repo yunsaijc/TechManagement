@@ -137,6 +137,22 @@ class _BaseAwardContributorStampRule(_BaseAwardContributorRule):
     def _role_stamp_units(self, payload: Dict[str, Any]) -> List[str]:
         return _dedup_texts([str(item) for item in payload.get(f"{self.role_key}_stamp_units", []) if str(item).strip()])
 
+    def _build_evidence(
+        self,
+        expected_unit: str,
+        same_unit: bool,
+        role_units: List[str],
+        all_stamp_units: List[str],
+    ) -> Dict[str, Any]:
+        evidence: Dict[str, Any] = {
+            self.role_key: expected_unit,
+            "same_unit": same_unit,
+            "role_stamp_units": role_units,
+        }
+        if all_stamp_units:
+            evidence["all_stamp_units"] = all_stamp_units
+        return evidence
+
     async def check(self, context: ReviewContext) -> CheckResult:
         payload = self._payload(context)
         if not payload:
@@ -172,12 +188,7 @@ class _BaseAwardContributorStampRule(_BaseAwardContributorRule):
                 item=self.name,
                 status=CheckStatus.FAILED,
                 message=f"未识别到“{self.role_label}”位置的公章",
-                evidence={
-                    self.role_key: expected_unit,
-                    "same_unit": same_unit,
-                    "role_stamp_units": role_units,
-                    "all_stamp_units": all_stamp_units,
-                },
+                evidence=self._build_evidence(expected_unit, same_unit, role_units, all_stamp_units),
             )
 
         if not _unit_matches(expected_unit, fallback_units):
@@ -185,24 +196,14 @@ class _BaseAwardContributorStampRule(_BaseAwardContributorRule):
                 item=self.name,
                 status=CheckStatus.FAILED,
                 message=f"{self.role_label}“{expected_unit}”与对应公章不一致",
-                evidence={
-                    self.role_key: expected_unit,
-                    "same_unit": same_unit,
-                    "role_stamp_units": role_units,
-                    "all_stamp_units": all_stamp_units,
-                },
+                evidence=self._build_evidence(expected_unit, same_unit, role_units, all_stamp_units),
             )
 
         return CheckResult(
             item=self.name,
             status=CheckStatus.PASSED,
             message=f"{self.role_label}“{expected_unit}”与对应公章一致",
-            evidence={
-                self.role_key: expected_unit,
-                "same_unit": same_unit,
-                "role_stamp_units": role_units,
-                "all_stamp_units": all_stamp_units,
-            },
+            evidence=self._build_evidence(expected_unit, same_unit, role_units, all_stamp_units),
         )
 
 

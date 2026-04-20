@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from docx import Document
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.common.models import ApiResponse, CheckResult, CheckStatus, ReviewResult
 from src.services.review.agent import ReviewAgent
 from src.services.review.doc_types import get_doc_type_label, normalize_doc_type
+from src.services.review.reward_review_service import REWARD_PATH_DOC_TYPES, RewardReviewService
 from src.services.review.rules.config import DOCUMENT_CONFIG
 from src.services.review.smb_file_reader import SMBReviewFileReader
 
@@ -45,6 +47,7 @@ class ReviewPathRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    project_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("project_id", "xmbh"))
     doc_type: str = Field(..., validation_alias=AliasChoices("doc_type", "document_type", "type"))
     file_path: str
     check_items: Optional[List[str]] = None
@@ -113,6 +116,53 @@ def _resolve_effective_check_items(doc_type: str, requested_items: Optional[List
     if set(normalized) == set(DEFAULT_CHECK_ITEMS) and set(default_items) != set(DEFAULT_CHECK_ITEMS):
         return default_items
     return normalized
+
+
+def _compact_check_result(item: CheckResult) -> Dict[str, Any]:
+    """压缩单条检查结果，供非 debug 响应使用。"""
+    return {
+        "code": item.item,
+        "status": item.status.value,
+        "message": item.message,
+        "evidence": dict(item.evidence or {}),
+    }
+
+
+def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dict[str, Any]:
+    """构造更适合人工阅读的查询结果。"""
+    doc_type_label = get_doc_type_label(result.doc_type)
+    data: Dict[str, Any] = {
+        "id": result.id,
+        "status": result.status,
+        "doc_type": result.doc_type,
+        "doc_type_label": doc_type_label,
+        "summary": result.summary,
+        "processed_at": result.processed_at,
+        "processing_time": result.processing_time,
+    }
+
+    structured = dict(result.structured_result or {})
+    if structured:
+        data.update(structured)
+    else:
+        data["checks"] = [_compact_check_result(item) for item in result.results]
+
+    if result.suggestions:
+        data["suggestions"] = list(result.suggestions)
+
+    if debug:
+        data["debug"] = {
+            "doc_type_raw": result.doc_type_raw,
+            "results": [_compact_check_result(item) for item in result.results],
+            "structured_result": structured,
+            "extracted_data": result.extracted_data,
+            "llm_analysis": result.llm_analysis,
+            "ocr_text": result.ocr_text,
+            "document_type": result.document_type,
+            "document_type_raw": result.document_type_raw,
+        }
+
+    return data
 
 
 def _build_placeholder_result(review_id: str, doc_type: str) -> ReviewResult:
@@ -641,6 +691,8 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
     """按 SMB 路径提交文件进行形式审查。"""
     review_id = f"review_{int(time.time() * 1000)}"
     normalized_doc_type = normalize_doc_type(request.doc_type)
+    if normalized_doc_type in REWARD_PATH_DOC_TYPES and not str(request.project_id or "").strip():
+        raise HTTPException(status_code=400, detail="奖励平台材料必须传入 project_id")
     placeholder = _build_placeholder_result(review_id, normalized_doc_type)
     _review_results[review_id] = placeholder
     items = _resolve_effective_check_items(normalized_doc_type, request.check_items)
@@ -654,6 +706,21 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
             metadata = dict(request.metadata)
             metadata.setdefault("source", "smb")
             metadata.setdefault("file_path", request.file_path)
+            if request.project_id:
+                metadata.setdefault("project_id", request.project_id)
+
+            reward_service: Optional[RewardReviewService] = None
+            reward_context: Optional[Dict[str, Any]] = None
+            if normalized_doc_type in REWARD_PATH_DOC_TYPES:
+                reward_service = RewardReviewService()
+                reward_context = await asyncio.to_thread(
+                    reward_service.build_context,
+                    str(request.project_id or ""),
+                    request.file_path,
+                    normalized_doc_type,
+                )
+                metadata["reward_review_context"] = reward_context
+
             await _run_review_job(
                 review_id=review_id,
                 file_data=file_data,
@@ -663,6 +730,17 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
                 enable_llm_analysis=request.enable_llm_analysis,
                 metadata=metadata,
             )
+            if reward_service and reward_context:
+                current = _review_results.get(review_id)
+                if current and current.status == "done":
+                    current = await asyncio.to_thread(
+                        reward_service.enrich_result,
+                        current,
+                        reward_context,
+                        items,
+                    )
+                    _review_results[review_id] = current
+                    await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)
         except Exception as e:
             logger.exception("SMB review job failed: %s", review_id)
             _review_results[review_id] = _build_failure_result(
@@ -682,7 +760,7 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
 
 
 @router.get("/{review_id}")
-async def get_review(review_id: str) -> ApiResponse[ReviewResult]:
+async def get_review(review_id: str, debug: bool = False) -> Response:
     """根据 ID 查询审查结果
 
     Args:
@@ -695,10 +773,12 @@ async def get_review(review_id: str) -> ApiResponse[ReviewResult]:
     if not result:
         raise HTTPException(status_code=404, detail="审查结果不存在")
 
-    return ApiResponse(
+    payload = ApiResponse(
         status="success",
-        data=result,
+        data=_build_compact_review_data(result, debug=debug),
     )
+    body = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    return Response(content=body, media_type="application/json; charset=utf-8")
 
 
 @router.get("/document-types")

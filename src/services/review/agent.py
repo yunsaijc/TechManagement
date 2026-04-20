@@ -177,7 +177,7 @@ class ReviewAgent:
             return
 
         normalized_doc_type = normalize_doc_type(doc_type)
-        if normalized_doc_type == "reward_award_contributor_form":
+        if normalized_doc_type in {"wcr", "wjwcr"}:
             payload = llm_analysis.get("award_contributor_analysis") or {}
             contributor_name = str(payload.get("contributor_name") or "").strip()
             work_unit = str(payload.get("work_unit") or "").strip()
@@ -231,10 +231,10 @@ class ReviewAgent:
         """构建主要完成人情况表的复合分析图。
 
         面板包含：
-        A. 全页
-        B. 左下签名区（增强）
-        C. 工作单位公章候选区（增强）
-        D. 完成单位公章候选区（增强）
+        A. 字段区（姓名/工作单位/完成单位）
+        B. 签名区
+        C. 工作单位公章候选区
+        D. 完成单位公章候选区
         """
         import io
         from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
@@ -259,12 +259,12 @@ class ReviewAgent:
         def _enhance_region(img: Image.Image) -> Image.Image:
             out = img.convert("RGB")
             out = ImageOps.autocontrast(out, cutoff=1)
-            out = ImageEnhance.Color(out).enhance(1.2)
-            out = ImageEnhance.Contrast(out).enhance(1.35)
-            out = ImageEnhance.Sharpness(out).enhance(1.45)
-            out = out.filter(ImageFilter.UnsharpMask(radius=1.4, percent=130, threshold=2))
-            out = out.resize((max(1, out.width * 2), max(1, out.height * 2)), Image.LANCZOS)
-            border = max(12, min(out.size) // 18)
+            out = ImageEnhance.Color(out).enhance(1.1)
+            out = ImageEnhance.Contrast(out).enhance(1.22)
+            out = ImageEnhance.Sharpness(out).enhance(1.2)
+            out = out.filter(ImageFilter.UnsharpMask(radius=1.1, percent=110, threshold=2))
+            out = out.resize((max(1, int(out.width * 1.6)), max(1, int(out.height * 1.6))), Image.LANCZOS)
+            border = max(10, min(out.size) // 20)
             return ImageOps.expand(out, border=border, fill="white")
 
         def _fit(img: Image.Image, target_size: tuple[int, int]) -> Image.Image:
@@ -288,22 +288,22 @@ class ReviewAgent:
             draw.text((14, 14), label, fill="black", font=font)
             return panel_with_header
 
-        full_panel = _panel(page, "A 全页", (1160, 760), enhance=False)
-        signature_panel = _panel(_crop_ratio((0.00, 0.58, 0.46, 1.00)), "B 签名区", (360, 320), enhance=True)
-        work_panel = _panel(_crop_ratio((0.38, 0.58, 0.74, 1.00)), "C 工作单位公章候选区", (360, 320), enhance=True)
-        completion_panel = _panel(_crop_ratio((0.56, 0.58, 0.98, 1.00)), "D 完成单位公章候选区", (360, 320), enhance=True)
+        fields_panel = _panel(_crop_ratio((0.04, 0.06, 0.96, 0.52)), "A 字段区", (760, 360), enhance=True)
+        signature_panel = _panel(_crop_ratio((0.02, 0.58, 0.46, 0.97)), "B 签名区", (360, 300), enhance=True)
+        work_panel = _panel(_crop_ratio((0.44, 0.58, 0.76, 0.97)), "C 工作单位公章区", (360, 300), enhance=True)
+        completion_panel = _panel(_crop_ratio((0.60, 0.58, 0.98, 0.97)), "D 完成单位公章区", (360, 300), enhance=True)
 
         gap = 18
-        row_h = max(signature_panel.height, work_panel.height, completion_panel.height)
-        canvas_h = full_panel.height + gap + row_h
-        canvas = Image.new("RGB", (1160, canvas_h), "white")
-        canvas.paste(full_panel, (0, 0))
-        x_positions = [0, 400, 800]
-        for x, panel in zip(x_positions, [signature_panel, work_panel, completion_panel]):
-            canvas.paste(panel, (x, full_panel.height + gap))
+        canvas_w = fields_panel.width + signature_panel.width + gap
+        canvas_h = fields_panel.height + gap + max(work_panel.height, completion_panel.height)
+        canvas = Image.new("RGB", (canvas_w, canvas_h), "white")
+        canvas.paste(fields_panel, (0, 0))
+        canvas.paste(signature_panel, (fields_panel.width + gap, 0))
+        canvas.paste(work_panel, (0, fields_panel.height + gap))
+        canvas.paste(completion_panel, (work_panel.width + gap, fields_panel.height + gap))
 
         buf = io.BytesIO()
-        canvas.save(buf, format="PNG")
+        canvas.save(buf, format="PNG", optimize=True)
         return buf.getvalue()
 
     def _compress_image_for_llm(self, img_data: bytes, max_size: int = 2000000) -> bytes:
@@ -592,7 +592,7 @@ class ReviewAgent:
         Returns:
             LLM 分析结果
         """
-        if normalize_doc_type(doc_type) == "reward_award_contributor_form":
+        if normalize_doc_type(doc_type) in {"wcr", "wjwcr"}:
             return await self._do_award_contributor_llm_analysis(file_data, doc_type)
 
         multi_llm = MultimodalLLM(self.llm)
@@ -722,35 +722,26 @@ class ReviewAgent:
         print(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}", flush=True)
 
         image_data = self._build_award_contributor_analysis_image(file_data)
-        prompt = """这是一张用于审查“主要完成人情况表”的复合图，共 4 个面板：
+        prompt = """这是“主要完成人情况表”的 4 个局部截图：
+- A 字段区：姓名、工作单位、完成单位
+- B 签名区：只看本人签名
+- C 工作单位公章区
+- D 完成单位公章区
 
-- A：全页
-- B：左下签名区（已放大增强）
-- C：工作单位公章候选区（已放大增强）
-- D：完成单位公章候选区（已放大增强）
-
-请优先根据 B/C/D 面板提取信息，只基于图片中清晰可见的内容，严格返回 JSON：
-
+只基于清晰可见内容返回严格 JSON：
 {
-  "contributor_name": "表单中填写的本人姓名",
-  "work_unit": "工作单位填写值",
-  "completion_unit": "完成单位填写值",
-  "signature_names": ["本人签名处识别到的签名姓名"],
-  "work_unit_stamp_units": ["工作单位（公章）位置印章文字"],
-  "completion_unit_stamp_units": ["完成单位（公章）位置印章文字"],
-  "notes": ["无法确认时的简短说明"]
+  "contributor_name": "",
+  "work_unit": "",
+  "completion_unit": "",
+  "signature_name": "",
+  "work_unit_stamp_unit": "",
+  "completion_unit_stamp_unit": ""
 }
 
 要求：
-1. 只读图片中能看清的文字，不允许猜测、联想、补全。
-2. “signature_names” 只填写 B 面板本人签名区域看出来的姓名，不要把正文姓名抄进去。
-3. “work_unit_stamp_units” 只填写 C 面板中与“工作单位（公章）”对应的印章文字。
-4. “completion_unit_stamp_units” 只填写 D 面板中与“完成单位（公章）”对应的印章文字。
-5. 不要识别页面其他印章，不要输出与工作单位/完成单位无关的章。
-6. 严禁把印章外部相邻红字、表头、正文、签字、日期当作印章文字。
-7. 如果两个单位相同且页面只盖了一个章，可以把同一个单位同时写入两个 stamp_units 数组。
-8. 看不清就留空字符串或空数组，不要猜。
-9. 返回严格 JSON，不要代码块，不要解释。"""
+1. 看不清就留空，不要猜。
+2. 只识别对应区域，不要把别处文字带进来。
+3. 只返回 JSON，不要解释，不要代码块。"""
 
         raw = await self._analyze_image_with_timeout(
             multi_llm,
@@ -829,17 +820,18 @@ class ReviewAgent:
             return str(value or "").replace("\n", " ").replace("\xa0", " ").strip()
 
         def _clean_list(value: Any) -> List[str]:
-            if not isinstance(value, list):
-                return []
-            return [_clean_text(item) for item in value if _clean_text(item)]
+            if isinstance(value, list):
+                return [_clean_text(item) for item in value if _clean_text(item)]
+            text = _clean_text(value)
+            return [text] if text else []
 
         return {
             "contributor_name": _clean_text(payload.get("contributor_name")),
             "work_unit": _clean_text(payload.get("work_unit")),
             "completion_unit": _clean_text(payload.get("completion_unit")),
-            "signature_names": _clean_list(payload.get("signature_names")),
-            "work_unit_stamp_units": _clean_list(payload.get("work_unit_stamp_units")),
-            "completion_unit_stamp_units": _clean_list(payload.get("completion_unit_stamp_units")),
+            "signature_names": _clean_list(payload.get("signature_names") or payload.get("signature_name")),
+            "work_unit_stamp_units": _clean_list(payload.get("work_unit_stamp_units") or payload.get("work_unit_stamp_unit")),
+            "completion_unit_stamp_units": _clean_list(payload.get("completion_unit_stamp_units") or payload.get("completion_unit_stamp_unit")),
             "all_stamp_units": [],
             "notes": _clean_list(payload.get("notes")),
             "raw_response": raw_text,

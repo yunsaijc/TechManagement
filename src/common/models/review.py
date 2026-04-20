@@ -42,6 +42,7 @@ class ReviewResult(BaseModel):
         description="原始文档类型输入/分类结果",
     )
     results: List[CheckResult] = Field(default_factory=list, description="检查结果列表")
+    structured_result: Dict[str, Any] = Field(default_factory=dict, description="按业务分组的结构化结果")
     ocr_text: str = Field(default="", description="OCR 提取的文字内容")
     extracted_data: Dict[str, Any] = Field(default_factory=dict, description="提取的结构化数据")
     llm_analysis: Optional[Dict[str, Any]] = Field(default=None, description="LLM 深度分析结果")
