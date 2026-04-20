@@ -6,7 +6,7 @@
 
 两者必须先共享同一层：
 
-`真实项目链路 -> 统一对象映射 -> 共享聚合输入 -> trend / simulation`
+`真实项目链路 + 正式政策文本 -> 统一对象映射 -> 共享聚合输入 -> trend / simulation`
 
 这层当前已经在代码中落为：
 
@@ -25,6 +25,10 @@
 
 1. 把项目库中的真实生命周期事实统一拉成可复用对象
 2. 把图谱侧的公共 `topic/year` 口径与最小 topic 指标统一成可复用输入
+
+但按新范式，下一步必须补入第三件事：
+
+3. 把指南、政策、管理办法等正式文本统一拉成可审计的依据对象
 
 当前覆盖的项目链路是：
 
@@ -73,6 +77,14 @@
 - topic 到 concept 的知识桥接
 - trend 预测逻辑
 - simulation 状态转移逻辑
+
+但这不等于正式文本层可以继续缺席。
+
+如果没有统一的政策文本层，后续会持续出现三个问题：
+
+- `simulation` 的 `policy_package` 无法追溯到正式指南或管理办法
+- `constraints` 会退化成人工口头描述，缺少规则依据
+- 领导页只能展示“系统怎么推”，却说不清“为什么可以这么推”
 
 ## 三、统一对象模型
 
@@ -194,6 +206,59 @@
 
 这两个对象当前是为了先把项目事实链打通，不表示后续人员和机构建模已经完成。
 
+### 7. 下一步必须补入的 PolicyDocument / PolicyBinding
+
+这部分当前还未正式落库到共享层，但从范式上已经必须补入。
+
+建议新增两个统一对象：
+
+#### `PolicyDocument`
+
+用于承接 `sys_article + sys_menu` 中的正式文本对象。
+
+最小字段应包括：
+
+- `document_id`
+- `document_type`
+- `title`
+- `menu_name`
+- `source`
+- `publish_date`
+- `content_kind`
+- `content_text`
+- `canonical_url`
+- `raw_article_id`
+- `raw_menu_id`
+
+其中：
+
+- `document_type` 至少区分 `guide / policy / management_rule / notice / interpretation`
+- `content_kind` 至少区分 `html / external_url / pdf_embed / image_only`
+
+#### `PolicyBinding`
+
+用于把正式文本映射到 sandbox 对象与规则。
+
+最小字段应包括：
+
+- `document_id`
+- `binding_type`
+- `topic_id`
+- `program_id`
+- `guide_code_hint`
+- `stage_scope`
+- `constraint_scope`
+- `confidence_label`
+- `evidence_excerpt`
+
+它的职责不是直接替代引擎计算，而是提供：
+
+- `topic / program / guide code` 对齐线索
+- `policy_package` 的来源依据
+- `constraints` 的规则依据
+- `assumptions` 的支持材料
+- `validation` 的边界披露
+
 ## 四、当前公共接口
 
 共享层对上游暴露两种消费方式。
@@ -299,7 +364,68 @@
 - 再定义一套 topic 迁移边抽取查询
 - 再定义一套图谱 readiness / profile 基础查询
 
-## 七、当前边界与缺口
+## 七、必须补入的正式文本层
+
+共享层下一步必须把正式文本层纳入统一底座，而不是继续让 `simulation` 在自己的目录里临时解析文章。
+
+建议来源先按以下口径进入：
+
+### 1. 指南文本
+
+主来源：
+
+- `sys_article`
+- `sys_menu`
+
+初始筛选口径可以从以下 SQL 起步：
+
+- `SELECT * FROM sys_article WHERE title LIKE '%指南%'`
+
+但进入共享层前必须做：
+
+- 同文去重
+- `guide / notice / interpretation` 分型
+- HTML / URL / PDF / 图片内容分型
+- 年份、专项、项目类型、指南代码抽取
+
+### 2. 政策与管理办法文本
+
+主来源：
+
+- `sys_article`
+- `sys_menu`
+
+初始筛选口径可以从以下 SQL 起步：
+
+- `sys_menu.name LIKE '%政策%'`
+- `sys_menu.name LIKE '%管理办法%'`
+
+但进入共享层前必须做：
+
+- 同标题多栏目挂载去重
+- `policy / management_rule / notice` 分型
+- 规则条款抽取
+- 适用阶段与约束类型抽取
+
+### 3. 进入共享层后的职责
+
+正式文本层进入共享层后，负责的不是“给 HTML 找素材”，而是：
+
+- 统一 `Scenario Contract` 的依据对象
+- 给 `policy_package` 提供可追溯来源
+- 给 `constraints` 提供正式规则锚点
+- 给 `assumptions` 和 `validation` 提供证据边界
+
+### 4. 不应做的事
+
+正式文本层不应直接做以下事情：
+
+- 不应直接替代引擎改结果变量
+- 不应把 raw 文本直接当成 scenario 输入
+- 不应绕过 `topic / program / stage` 的统一映射
+- 不应在领导页上把文本原文冒充成结构化结论
+
+## 八、当前边界与缺口
 
 共享层虽然已经立住，但仍然只是第一步。
 
@@ -334,14 +460,15 @@
 
 这一步后续应由共享层继续往下补，而不是交给单个业务模块临时拼。
 
-## 八、后续扩展顺序
+## 九、后续扩展顺序
 
 如果继续沿主线推进，推荐顺序是：
 
-1. 在共享层补关系仓储与 mapper
-2. 下沉 topic 到 concept 的知识桥接
-3. 让 `trend` 在这层之上做 baseline world forecast
-4. 让 `simulation` 在这层之上做状态转移与反事实比较
+1. 在共享层补正式文本仓储、归一化与绑定层
+2. 在共享层补关系仓储与 mapper
+3. 下沉 topic 到 concept 的知识桥接
+4. 让 `trend` 在这层之上做 baseline world forecast
+5. 让 `simulation` 在这层之上做状态转移与反事实比较
 
 顺序不能反过来。
 

@@ -100,6 +100,67 @@ curl -X POST "http://localhost:8000/api/v1/review" \
 
 ---
 
+### 1.1 按 SMB 路径提交审查
+
+**POST** `/api/v1/review/path`
+
+按 SMB 路径提交单文件进行形式审查。
+
+#### 当前已实现入参
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `doc_type` | String | 是 | 文档类型；奖励平台约定使用字典类型值 |
+| `file_path` | String | 是 | SMB/UNC 路径或 share 内相对路径 |
+| `check_items` | Array[String] | 否 | 检查项列表 |
+| `enable_llm_analysis` | Boolean | 否 | 是否启用 LLM 深度分析 |
+| `metadata` | Object | 否 | 元数据 |
+
+#### 当前请求示例
+
+```bash
+curl -X POST "http://localhost:8888/api/v1/review/path" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doc_type": "wcr",
+    "file_path": "FJCL\\static\\rpw\\gzy2025\\2025-103-2005\\1757576186465.pdf"
+  }'
+```
+
+#### 奖励平台主线入参约定（待实现）
+
+奖励平台签字盖章专项后续将以以下 3 个字段作为主入口：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `project_id` | String | 是 | 奖励项目编号，对应 `XMBH` |
+| `file_path` | String | 是 | PDF 完整 SMB 路径 |
+| `doc_type` | String | 是 | 奖励材料字典类型 |
+
+建议 `doc_type` 取值：
+
+| 值 | 中文名称 | 注释 |
+|------|------|------|
+| `tjdwyj` | 提名单位意见表 | 奖励项目提名单位出具的意见页，用于校验提名单位名称与盖章 |
+| `gzdwyj` | 候选人工作单位意见 | 候选人所在工作单位出具的意见页，用于校验工作单位名称与盖章 |
+| `wcr` | 主要完成人情况表 | 境内主要完成人签字盖章页，用于校验姓名、工作单位、完成单位 |
+| `wjwcr` | 外籍主要完成人情况表 | 外籍主要完成人对应材料，校验逻辑与 `wcr` 类似 |
+| `wcdw` | 主要完成单位情况表 | 完成单位签章页，用于校验单位名称、法定代表人、盖章 |
+| `hzdw` | 河北省内主要合作单位情况表 | 合作单位签章页，用于校验合作单位名称与盖章 |
+
+后续该主线将基于 `project_id + file_path + doc_type`：
+
+- 定位 `xmsbnew.t_xm_gzy` 中的唯一附件记录
+- 读取 SMB 远端文件
+- 返回并落地保存：
+  - 是否有签字
+  - 是否有盖章
+  - 识别的签字内容
+  - 识别的印章内容
+  - 与奖励库目标字段的比对结果
+
+---
+
 ### 2. 查询审查结果
 
 **GET** `/api/v1/review/{review_id}`

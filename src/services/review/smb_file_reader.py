@@ -7,7 +7,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from pathlib import PureWindowsPath
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_ENV_FILE = _PROJECT_ROOT / ".env"
 
 
 class SMBConfigurationError(RuntimeError):
@@ -32,12 +37,12 @@ class SMBReviewSettings:
     @classmethod
     def from_env(cls) -> "SMBReviewSettings":
         """从环境变量加载配置。"""
-        host = str(os.getenv("REVIEW_SMB_HOST", "")).strip()
-        share = str(os.getenv("REVIEW_SMB_SHARE", "")).strip()
-        username = str(os.getenv("REVIEW_SMB_USERNAME", "")).strip()
-        password = str(os.getenv("REVIEW_SMB_PASSWORD", ""))
-        port_raw = str(os.getenv("REVIEW_SMB_PORT", "445")).strip() or "445"
-        base_dir = str(os.getenv("REVIEW_SMB_BASE_DIR", "")).strip()
+        host = cls._get_env("REVIEW_SMB_HOST").strip()
+        share = cls._get_env("REVIEW_SMB_SHARE").strip()
+        username = cls._get_env("REVIEW_SMB_USERNAME").strip()
+        password = cls._get_env("REVIEW_SMB_PASSWORD")
+        port_raw = cls._get_env("REVIEW_SMB_PORT", "445").strip() or "445"
+        base_dir = cls._get_env("REVIEW_SMB_BASE_DIR").strip()
 
         missing = [
             name
@@ -65,6 +70,27 @@ class SMBReviewSettings:
             port=port,
             base_dir=base_dir,
         )
+
+    @staticmethod
+    def _get_env(name: str, default: str = "") -> str:
+        value = os.getenv(name)
+        if value is not None and value != "":
+            return value
+        if not _ENV_FILE.exists():
+            return default
+        prefix = f"{name}="
+        try:
+            for line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+                raw = line.strip()
+                if not raw or raw.startswith("#") or not raw.startswith(prefix):
+                    continue
+                parsed = raw[len(prefix) :].strip()
+                if len(parsed) >= 2 and parsed[0] == parsed[-1] and parsed[0] in {"'", '"'}:
+                    parsed = parsed[1:-1]
+                return parsed
+        except Exception:
+            return default
+        return default
 
 
 class SMBReviewFileReader:

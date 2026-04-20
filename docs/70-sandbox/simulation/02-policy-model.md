@@ -37,6 +37,7 @@
     "program_scope": ["province_plan"],
     "population_scope": "公开申报且能关联评审与合同链路的项目"
   },
+  "basis_documents": [],
   "policy_package": [],
   "constraints": [],
   "evaluation_goals": [],
@@ -49,7 +50,57 @@
 }
 ```
 
-## 三、政策动作的最小语义单元
+这里的 `basis_documents` 不是第六个治理对象，而是对 `policy_package / constraints / assumptions / validation` 的统一证据支撑层。
+
+如果没有这层，系统就会退回：
+
+- 用口头描述代替正式指南
+- 用主观理解代替管理办法约束
+- 用页面文案代替可追溯证据
+
+建议 `basis_documents` 结构至少包括：
+
+```json
+[
+  {
+    "document_id": "article_326",
+    "document_type": "guide",
+    "title": "关于印发2022年度河北省省级科技计划基础研究专项（自然科学基金）项目申报指南的通知",
+    "publish_date": "2022-01-28",
+    "source_system": "sys_article",
+    "support_scope": ["policy_package", "constraints"],
+    "link_keys": {
+      "year": 2022,
+      "program_name": "基础研究专项（自然科学基金）",
+      "guide_code_hint": "1010101"
+    }
+  }
+]
+```
+
+## 三、正式文本依据层
+
+正式文本依据层的作用不是把文章原文直接送进引擎，而是先把原始文本归一化为可引用对象。
+
+建议来源先包括：
+
+- `sys_article` 中标题命中“指南”的正式通知与指南文本
+- `sys_menu` 为“政策 / 管理办法”相关栏目下的正式规则文本
+
+进入 `Scenario Contract` 前，至少应完成：
+
+1. 文档分型
+   区分 `guide / policy / management_rule / notice / interpretation`
+2. 内容分型
+   区分 `html / external_url / pdf_embed / image_only`
+3. 关联键抽取
+   抽取年份、专项、项目类型、指南代码、阶段词、约束词
+4. 去重
+   解决同标题在多个栏目重复挂载的问题
+
+如果跳过这一步，直接把 raw 文本或 SQL 结果塞进 `Scenario Contract`，那只是把 toy prompt 包装成正式输入。
+
+## 四、政策动作的最小语义单元
 
 `policy_package` 由多个政策动作组成，但动作本身不再单独作为系统主叙事对象。动作只是 `Scenario Contract` 中的组成件。
 
@@ -72,6 +123,7 @@
     "end_year": 2026
   },
   "support_level": "proxy_supported",
+  "basis_document_ids": ["article_326"],
   "evidence_requirement": [
     "PS_XMPSXX score distribution",
     "historical funded boundary"
@@ -91,10 +143,12 @@
   用规则表达动作内容，而不是写主观描述。
 - `support_level`
   标记当前数据下是强支持、代理支持还是不支持。
+- `basis_document_ids`
+  标记该动作引用了哪些正式指南、政策或管理办法。
 - `evidence_requirement`
   指明动作成立需要哪些历史证据或规则依据。
 
-## 四、政策动作必须围绕治理流程定义
+## 五、政策动作必须围绕治理流程定义
 
 所有动作都必须落到真实治理流程上，而不是直接改最终结果变量。
 
@@ -135,13 +189,19 @@
 
 这一层只能作为前面三层传导后的派生结果，不能跳过前序流程单独硬算。
 
-## 五、当前真实数据下的政策动作支持边界
+## 六、当前真实数据下的政策动作支持边界
 
 当前可用主链路为：
 
 `Sb_Jbxx -> Sb_Sbzt -> Sb_Jfgs -> PS_XMPSXX -> Ht_XMLXXX -> Ht_Jbxx -> Ht_Jfgs`
 
-并辅以图谱关系数据。
+并辅以图谱关系数据与正式文本依据层。
+
+这里的正式文本依据层主要提供：
+
+- 指南收紧、放宽、优先导向的文本依据
+- 管理办法中的预算、配额、资助强度、适用范围约束
+- 当前政策 regime 的边界披露
 
 基于这套数据，动作支持程度应明确分层。
 
@@ -181,7 +241,7 @@
 
 可以把这些内容写进 `assumptions` 或 `unsupported_claims`，但不能假装已被当前数据严格识别。
 
-## 六、evaluation_goals 不是装饰字段
+## 七、evaluation_goals 不是装饰字段
 
 没有明确的评估目标，推演无法判断方案优劣。
 
@@ -212,7 +272,7 @@
 ]
 ```
 
-## 七、assumptions 必须显式化
+## 八、assumptions 必须显式化
 
 当前数据无法把所有机制都识别成强因果，因此 `assumptions` 是正式输入的一部分，不是备注。
 
@@ -230,7 +290,13 @@
 - `confidence_level`
 - `supported_by`
 
-## 八、LLM 在政策建模中的职责
+其中 `supported_by` 可以引用：
+
+- 历史事实指标
+- 图谱代理指标
+- `basis_documents` 中的正式文本对象
+
+## 九、LLM 在政策建模中的职责
 
 LLM 可以做：
 
@@ -243,16 +309,18 @@ LLM 不能做：
 - 直接生成不存在的数据
 - 直接决定动作效果大小
 - 把弱代理包装成强证据
+- 直接把原始文章正文改写成引擎规则
 
-## 九、建模纪律
+## 十、建模纪律
 
 后续任何 simulation 设计都必须遵守以下顺序：
 
 1. 先定义 `baseline_scope`
-2. 再定义 `policy_package`
-3. 再定义 `constraints`
-4. 再定义 `evaluation_goals`
-5. 再定义 `assumptions`
-6. 最后定义 `validation`
+2. 再归一化 `basis_documents`
+3. 再定义 `policy_package`
+4. 再定义 `constraints`
+5. 再定义 `evaluation_goals`
+6. 再定义 `assumptions`
+7. 最后定义 `validation`
 
 如果一开始就只给一组松散参数，那么得到的只会是不可审计的“参数游戏”，不是政策推演。
