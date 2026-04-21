@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -83,9 +84,11 @@ def build_macro_insight_lite_payload(
     meta = result.get("meta", {}) if isinstance(result.get("meta", {}), dict) else {}
     group_counts = summary.get("groupCounts", {}) if isinstance(summary.get("groupCounts", {}), dict) else {}
 
+    # 排序逻辑：先按类型分组（opportunity优先），再按严重程度，最后按主题
     ranked_findings = sorted(
         findings,
         key=lambda item: (
+            0 if 'opportunity' in str(item.get("type", "")) else 1,
             _severity_rank(str(item.get("severity", ""))),
             str(item.get("topic", "")),
             str(item.get("type", "")),
@@ -98,6 +101,8 @@ def build_macro_insight_lite_payload(
                 "topic": item.get("topic", "<未知主题>"),
                 "severity": item.get("severity", "unknown"),
                 "type": item.get("type", "unknown"),
+                "typeName": item.get("typeName", item.get("type", "unknown")),
+                "typeDescription": item.get("typeDescription", ""),
                 "suggestion": item.get("suggestion", ""),
                 "evidence": item.get("evidence", {}),
                 "evidenceExplanation": build_evidence_explanation(
@@ -193,6 +198,7 @@ class MacroInsightReportBuilder:
     td {{ font-size: 13px; line-height: 1.7; }}
     .severity-high {{ color: #b91c1c; font-weight: 800; }}
     .severity-medium {{ color: #b45309; font-weight: 800; }}
+    .severity-opportunity {{ color: #15803d; font-weight: 800; }}
     .empty {{ color: #a8a29e; font-size: 13px; padding: 8px 0; }}
     pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 12px; }}
     .evidence-box {{ display: grid; gap: 8px; }}
@@ -287,11 +293,53 @@ class MacroInsightReportBuilder:
             '</div>'
         )
 
+    # 术语映射表，将技术术语转换为人类可读表述
+    TERM_MAPPING = {
+        # 边界定位
+        'governance_only': '治理层面',
+        # 分析维度
+        'conversion': '项目转化',
+        'output_quality': '成果质量',
+        'talent_structure': '人才结构',
+        'collaboration': '协作网络',
+        'knowledge_semantics': '知识语义',
+        # 排除内容
+        'community_detection': '社区检测',
+        'hotspot_migration': '热点迁移',
+        # 风险类型
+        'backbone_absent_risk': '缺少中坚骨干',
+        'conversion_efficiency_gap': '转化效率差距',
+        'conversion_recovery_signal': '转化恢复信号',
+        'emerging_topic_opportunity': '新兴主题机会',
+        'high_growth_high_conversion': '高增长高转化',
+        'low_conversion_after_growth': '高增长低转化',
+        'persistent_low_conversion': '持续低转化',
+        'senior_talent_shortage': '高级人才短缺',
+        'talent_structure_gap': '人才结构缺口',
+        'zero_output_high_heat': '高热度无输出',
+        # 分组名称
+        'risk': '风险',
+        'opportunity': '机会',
+        'talent': '人才',
+    }
+
     def _render_overview_item(self, label: Any, value: Any) -> str:
+        # 处理窗口类型的字典
+        if isinstance(value, dict) and 'name' in value:
+            display_value = value['name']
+        # 处理主题口径
+        elif str(value) == 'step2.communities.nodeIds':
+            display_value = '基于热点迁移分析识别的主题社区'
+        # 处理列表 - 应用术语映射
+        elif isinstance(value, list):
+            display_value = '、'.join(self.TERM_MAPPING.get(str(item), str(item)) for item in value)
+        # 处理单个值 - 应用术语映射
+        else:
+            display_value = self.TERM_MAPPING.get(str(value), value)
         return (
             '<div class="overview-item">'
             f'<div class="overview-label">{html.escape(str(label if label is not None else "-"))}</div>'
-            f'<div class="overview-value">{html.escape(str(value if value is not None else "-"))}</div>'
+            f'<div class="overview-value">{html.escape(str(display_value if display_value is not None else "-"))}</div>'
             '</div>'
         )
 
@@ -300,7 +348,7 @@ class MacroInsightReportBuilder:
             return '<div class="empty">暂无分组统计</div>'
         return "".join(
             '<div class="insight-item">'
-            f'<strong>{html.escape(str(key))}</strong>：{html.escape(str(value))}'
+            f'<strong>{html.escape(str(self.TERM_MAPPING.get(str(key), str(key))))}</strong>：{html.escape(str(value))}'
             '</div>'
             for key, value in group_counts.items()
         )
@@ -308,7 +356,7 @@ class MacroInsightReportBuilder:
     def _render_risk_types(self, risk_types: List[Any]) -> str:
         if not risk_types:
             return '<div class="empty">暂无风险类型</div>'
-        return "".join(f'<span class="pill">{html.escape(str(item))}</span>' for item in risk_types)
+        return "".join(f'<span class="pill">{html.escape(str(self.TERM_MAPPING.get(str(item), str(item))))}</span>' for item in risk_types)
 
     def _render_actions(self, actions: List[Any]) -> str:
         if not actions:
@@ -318,22 +366,75 @@ class MacroInsightReportBuilder:
             for item in actions
         )
 
+    @staticmethod
+    def _format_topic_name(topic: str) -> str:
+        if not topic:
+            return "<未知主题>"
+        topic = str(topic)
+        topic = re.sub(r'^window[AB]-', '', topic)
+        topic = re.sub(r'^C\d+\s*[-｜|]\s*', '', topic)
+        topic = topic.replace("｜", " - ").replace("|", " - ")
+        return topic if topic else "<未知主题>"
+
+    @staticmethod
+    def _format_severity(item: Dict[str, Any]) -> str:
+        type_name = str(item.get("typeName", item.get("type", "")))
+        if "opportunity" in type_name:
+            return "机会"
+        severity = str(item.get("severity", "")).lower()
+        if severity == "high":
+            return "高风险"
+        elif severity == "medium":
+            return "中风险"
+        return "未知"
+
+    @staticmethod
+    def _format_evidence_value(key: str, value: Any) -> str:
+        if value is None:
+            return "-"
+        if isinstance(value, float):
+            if key in ("conversionA", "conversionB", "conversionDrop", "recoveryDelta", "gapFactor", "backboneRatio", "seniorRatio", "collabPerCapita"):
+                return f"{value:.2%}"
+            return f"{value:.2f}"
+        if isinstance(value, int):
+            return str(value)
+        return str(value)
+
     def _render_findings(self, findings: List[Dict[str, Any]]) -> str:
         if not findings:
             return '<tr><td colspan="5" class="empty">暂无重点发现</td></tr>'
 
         rows = []
         for item in findings:
-            severity = str(item.get("severity", "-"))
-            severity_class = "severity-high" if severity.lower() == "high" else "severity-medium"
-            evidence_json = json.dumps(item.get("evidence", {}), ensure_ascii=False, indent=2)
+            severity_display = self._format_severity(item)
+            type_name = item.get("typeName", item.get("type", "-"))
+            is_opportunity = "opportunity" in str(item.get("type", ""))
+            severity_class = "severity-opportunity" if is_opportunity else ("severity-high" if "高风险" in severity_display else "severity-medium")
+
+            evidence = item.get("evidence", {})
             evidence_explanation = item.get("evidenceExplanation", []) or []
+
+            evidence_items = []
+            for k, v in evidence.items():
+                label = EVIDENCE_FIELD_LABELS.get(k, k)
+                evidence_items.append(f"<strong>{label}</strong>：{self._format_evidence_value(k, v)}")
+            evidence_display = '<div class="evidence-note"><div class="evidence-note-list">' + "".join(
+                f'<div class="evidence-note-item">{e}</div>' for e in evidence_items
+            ) + '</div></div>'
+
+            type_description = item.get("typeDescription", "")
+            type_display = html.escape(str(type_name))
+            if type_description:
+                type_display = f'{html.escape(str(type_name))}（{html.escape(str(type_description))}）'
+
+            topic_display = html.escape(self._format_topic_name(item.get("topic", "-")))
+
             rows.append(
                 "<tr>"
-                f'<td>{html.escape(str(item.get("topic", "-")))}</td>'
-                f'<td class="{severity_class}">{html.escape(severity)}</td>'
-                f'<td>{html.escape(str(item.get("type", "-")))}</td>'
-                f'<td><div class="evidence-box"><pre>{html.escape(evidence_json)}</pre>{self._render_evidence_explanation(evidence_explanation)}</div></td>'
+                f'<td>{topic_display}</td>'
+                f'<td class="{severity_class}">{html.escape(severity_display)}</td>'
+                f'<td>{type_display}</td>'
+                f'<td><div class="evidence-box">{evidence_display}{self._render_evidence_explanation(evidence_explanation)}</div></td>'
                 f'<td>{html.escape(str(item.get("suggestion", "")))}</td>'
                 "</tr>"
             )
