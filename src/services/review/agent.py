@@ -84,19 +84,35 @@ class ReviewAgent:
 
         # 3. LLM 深度分析（可选，提前到规则之前，用于规则使用）
         llm_analysis = None
+        llm_analysis_error = ""
         auto_llm_analysis = bool(DOCUMENT_CONFIG.get(normalized_doc_type, {}).get("auto_llm_analysis"))
         if enable_llm_analysis or auto_llm_analysis:
             logger.info("[REVIEW] Step2.5 LLM深度分析开始（提前到规则前）")
             print("[REVIEW] Step2.5 LLM深度分析开始（提前到规则前）", flush=True)
-            llm_analysis = await self._do_llm_analysis(file_data, extracted, normalized_doc_type)
+            try:
+                llm_analysis = await self._do_llm_analysis(
+                    file_data,
+                    extracted,
+                    normalized_doc_type,
+                    kwargs.get("metadata", {}),
+                )
+            except Exception as exc:
+                llm_analysis_error = str(exc)
+                logger.warning("[REVIEW] Step2.5 LLM深度分析降级: %s", llm_analysis_error)
+                print(f"[REVIEW] Step2.5 LLM深度分析降级: {llm_analysis_error}", flush=True)
+                llm_analysis = {
+                    "error": llm_analysis_error,
+                    "document_type_llm": normalized_doc_type,
+                }
             # 存到 extracted 里，供规则使用
             extracted.set("llm_analysis", llm_analysis)
-            self._hydrate_extracted_from_llm_analysis(
-                extracted=extracted,
-                llm_analysis=llm_analysis,
-                doc_type=normalized_doc_type,
-                file_data=file_data,
-            )
+            if not llm_analysis_error:
+                self._hydrate_extracted_from_llm_analysis(
+                    extracted=extracted,
+                    llm_analysis=llm_analysis,
+                    doc_type=normalized_doc_type,
+                    file_data=file_data,
+                )
             logger.info("[REVIEW] Step2.5 LLM深度分析完成")
             print("[REVIEW] Step2.5 LLM深度分析完成", flush=True)
 
@@ -123,6 +139,15 @@ class ReviewAgent:
 
         # 4. 结果聚合（LLM分析已在Step2.5提前执行）
         all_results = rule_results + llm_results
+        if llm_analysis_error:
+            all_results.append(
+                CheckResult(
+                    item="system",
+                    status=CheckStatus.WARNING,
+                    message=f"LLM深度分析已降级：{llm_analysis_error}",
+                    evidence={"stage": "llm_analysis"},
+                )
+            )
 
         # 7. 如果是 unknown 类型，添加警告并提示管理员
         if normalized_doc_type == "unknown":
@@ -259,11 +284,11 @@ class ReviewAgent:
         def _enhance_region(img: Image.Image) -> Image.Image:
             out = img.convert("RGB")
             out = ImageOps.autocontrast(out, cutoff=1)
-            out = ImageEnhance.Color(out).enhance(1.1)
-            out = ImageEnhance.Contrast(out).enhance(1.22)
-            out = ImageEnhance.Sharpness(out).enhance(1.2)
-            out = out.filter(ImageFilter.UnsharpMask(radius=1.1, percent=110, threshold=2))
-            out = out.resize((max(1, int(out.width * 1.6)), max(1, int(out.height * 1.6))), Image.LANCZOS)
+            out = ImageEnhance.Color(out).enhance(1.05)
+            out = ImageEnhance.Contrast(out).enhance(1.18)
+            out = ImageEnhance.Sharpness(out).enhance(1.1)
+            out = out.filter(ImageFilter.UnsharpMask(radius=1.0, percent=100, threshold=2))
+            out = out.resize((max(1, int(out.width * 1.35)), max(1, int(out.height * 1.35))), Image.LANCZOS)
             border = max(10, min(out.size) // 20)
             return ImageOps.expand(out, border=border, fill="white")
 
@@ -288,10 +313,11 @@ class ReviewAgent:
             draw.text((14, 14), label, fill="black", font=font)
             return panel_with_header
 
-        fields_panel = _panel(_crop_ratio((0.04, 0.06, 0.96, 0.52)), "A 字段区", (760, 360), enhance=True)
-        signature_panel = _panel(_crop_ratio((0.02, 0.58, 0.46, 0.97)), "B 签名区", (360, 300), enhance=True)
-        work_panel = _panel(_crop_ratio((0.44, 0.58, 0.76, 0.97)), "C 工作单位公章区", (360, 300), enhance=True)
-        completion_panel = _panel(_crop_ratio((0.60, 0.58, 0.98, 0.97)), "D 完成单位公章区", (360, 300), enhance=True)
+        fields_panel = _panel(_crop_ratio((0.04, 0.08, 0.96, 0.48)), "A 字段区", (620, 280), enhance=True)
+        signature_panel = _panel(_crop_ratio((0.02, 0.60, 0.46, 0.97)), "B 签名区", (300, 240), enhance=True)
+        # C/D 两个公章区使用互斥的左右落款区域，避免同一枚公章被重复借给两个角色。
+        completion_panel = _panel(_crop_ratio((0.06, 0.60, 0.50, 0.97)), "D 完成单位公章区", (300, 240), enhance=True)
+        work_panel = _panel(_crop_ratio((0.50, 0.60, 0.94, 0.97)), "C 工作单位公章区", (300, 240), enhance=True)
 
         gap = 18
         canvas_w = fields_panel.width + signature_panel.width + gap
@@ -303,7 +329,7 @@ class ReviewAgent:
         canvas.paste(completion_panel, (work_panel.width + gap, fields_panel.height + gap))
 
         buf = io.BytesIO()
-        canvas.save(buf, format="PNG", optimize=True)
+        canvas.save(buf, format="JPEG", quality=84, optimize=True)
         return buf.getvalue()
 
     def _compress_image_for_llm(self, img_data: bytes, max_size: int = 2000000) -> bytes:
@@ -581,6 +607,7 @@ class ReviewAgent:
         file_data: bytes,
         extracted: Any,
         doc_type: str = "unknown",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """LLM 深度分析（用于调试 OCR 效果）
         
@@ -593,7 +620,7 @@ class ReviewAgent:
             LLM 分析结果
         """
         if normalize_doc_type(doc_type) in {"wcr", "wjwcr"}:
-            return await self._do_award_contributor_llm_analysis(file_data, doc_type)
+            return await self._do_award_contributor_llm_analysis(file_data, doc_type, metadata or {})
 
         multi_llm = MultimodalLLM(self.llm)
         logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
@@ -715,6 +742,7 @@ class ReviewAgent:
         self,
         file_data: bytes,
         doc_type: str,
+        metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         """主要完成人情况表专项结构化分析。"""
         multi_llm = MultimodalLLM(self.llm)
@@ -722,13 +750,63 @@ class ReviewAgent:
         print(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}", flush=True)
 
         image_data = self._build_award_contributor_analysis_image(file_data)
-        prompt = """这是“主要完成人情况表”的 4 个局部截图：
-- A 字段区：姓名、工作单位、完成单位
-- B 签名区：只看本人签名
-- C 工作单位公章区
-- D 完成单位公章区
+        reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
+        target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
+        expected_name = str((target_values or {}).get("name") or "").strip()
+        expected_work_unit = str((target_values or {}).get("work_unit") or "").strip()
+        expected_completion_unit = str((target_values or {}).get("completion_unit") or "").strip()
 
-只基于清晰可见内容返回严格 JSON：
+        if expected_name or expected_work_unit or expected_completion_unit:
+            prompt = """4 个局部图：
+A 字段区
+B 签名区
+C 工作单位公章区
+D 完成单位公章区
+
+目标值：
+姓名=%s
+工作单位=%s
+完成单位=%s
+
+只返回 JSON：
+{
+  "raw": {
+    "contributor_name": "",
+    "work_unit": "",
+    "completion_unit": "",
+    "signature_name": "",
+    "work_unit_stamp_unit": "",
+    "completion_unit_stamp_unit": ""
+  },
+  "verify": {
+    "name": "yes|no|uncertain",
+    "signature_for_name": "yes|no|uncertain",
+    "work_unit": "yes|no|uncertain",
+    "completion_unit": "yes|no|uncertain",
+    "work_unit_stamp": "yes|no|uncertain",
+    "completion_unit_stamp": "yes|no|uncertain"
+  }
+}
+
+规则：
+1. raw 只能写图中直接看到的原始内容，看不清留空，不能按目标值补全。
+2. verify 只能填 yes/no/uncertain。
+3. yes=清晰确认与目标一致；no=清晰确认不一致或未见；uncertain=看不清。
+4. C 区只判断工作单位公章，D 区只判断完成单位公章，禁止跨区借用另一块区域的文字或公章。
+5. 公章只看红章，不要把打印文字当公章。
+6. 只返回 JSON，不要解释。""" % (
+                expected_name or "空",
+                expected_work_unit or "空",
+                expected_completion_unit or "空",
+            )
+        else:
+            prompt = """4 个局部图：
+A 字段区
+B 签名区
+C 工作单位公章区
+D 完成单位公章区
+
+只返回 JSON：
 {
   "contributor_name": "",
   "work_unit": "",
@@ -738,17 +816,18 @@ class ReviewAgent:
   "completion_unit_stamp_unit": ""
 }
 
-要求：
-1. 看不清就留空，不要猜。
-2. 只识别对应区域，不要把别处文字带进来。
-3. 只返回 JSON，不要解释，不要代码块。"""
+规则：
+1. 只基于清晰可见内容填写，看不清留空，不要猜。
+2. C 区只识别工作单位公章，D 区只识别完成单位公章，禁止跨区借字。
+3. 只识别对应区域，不要把别处文字带进来。
+4. 只返回 JSON，不要解释。"""
 
         raw = await self._analyze_image_with_timeout(
             multi_llm,
             image_data,
             prompt,
             "主要完成人情况表专项分析",
-            timeout_sec=60,
+            timeout_sec=90,
         )
         payload = self._parse_award_contributor_analysis(raw)
 
@@ -795,6 +874,7 @@ class ReviewAgent:
             "stamps_result": stamps_result,
             "signatures_result": signatures_result,
             "signatures_description": signatures_description,
+            "verification_result": payload.get("verification", {}),
             "award_contributor_analysis": payload,
         }
 
@@ -825,15 +905,30 @@ class ReviewAgent:
             text = _clean_text(value)
             return [text] if text else []
 
+        raw_payload = payload.get("raw") if isinstance(payload.get("raw"), dict) else payload
+        verify_payload = payload.get("verify") if isinstance(payload.get("verify"), dict) else {}
+
+        def _clean_verify(value: Any) -> str:
+            text = _clean_text(value).lower()
+            return text if text in {"yes", "no", "uncertain"} else ""
+
         return {
-            "contributor_name": _clean_text(payload.get("contributor_name")),
-            "work_unit": _clean_text(payload.get("work_unit")),
-            "completion_unit": _clean_text(payload.get("completion_unit")),
-            "signature_names": _clean_list(payload.get("signature_names") or payload.get("signature_name")),
-            "work_unit_stamp_units": _clean_list(payload.get("work_unit_stamp_units") or payload.get("work_unit_stamp_unit")),
-            "completion_unit_stamp_units": _clean_list(payload.get("completion_unit_stamp_units") or payload.get("completion_unit_stamp_unit")),
+            "contributor_name": _clean_text(raw_payload.get("contributor_name")),
+            "work_unit": _clean_text(raw_payload.get("work_unit")),
+            "completion_unit": _clean_text(raw_payload.get("completion_unit")),
+            "signature_names": _clean_list(raw_payload.get("signature_names") or raw_payload.get("signature_name")),
+            "work_unit_stamp_units": _clean_list(raw_payload.get("work_unit_stamp_units") or raw_payload.get("work_unit_stamp_unit")),
+            "completion_unit_stamp_units": _clean_list(raw_payload.get("completion_unit_stamp_units") or raw_payload.get("completion_unit_stamp_unit")),
             "all_stamp_units": [],
-            "notes": _clean_list(payload.get("notes")),
+            "verification": {
+                "name": _clean_verify(verify_payload.get("name")),
+                "signature_for_name": _clean_verify(verify_payload.get("signature_for_name")),
+                "work_unit": _clean_verify(verify_payload.get("work_unit")),
+                "completion_unit": _clean_verify(verify_payload.get("completion_unit")),
+                "work_unit_stamp": _clean_verify(verify_payload.get("work_unit_stamp")),
+                "completion_unit_stamp": _clean_verify(verify_payload.get("completion_unit_stamp")),
+            },
+            "notes": _clean_list(raw_payload.get("notes") or payload.get("notes")),
             "raw_response": raw_text,
         }
     

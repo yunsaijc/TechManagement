@@ -7,6 +7,7 @@
 """
 from src.common.models.review import CheckResult, CheckStatus
 from src.common.extractors import StampExtractor
+from src.services.review.doc_types import normalize_doc_type
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 
@@ -33,6 +34,13 @@ class StampCheckRule(BaseRule):
         """
         llm_analysis = context.extracted.get("llm_analysis") if context.extracted else {}
         if isinstance(llm_analysis, dict):
+            if normalize_doc_type(context.doc_type) in {"wcr", "wjwcr"} and llm_analysis.get("error"):
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.WARNING,
+                    message=f"专项分析已降级，跳过通用印章提取：{llm_analysis.get('error')}",
+                    evidence={"stage": "llm_analysis"},
+                )
             llm_stamps = llm_analysis.get("stamps_result")
             if isinstance(llm_stamps, dict):
                 stamps = llm_stamps.get("stamps", [])

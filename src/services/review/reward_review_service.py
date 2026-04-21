@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -56,6 +57,69 @@ def _dedup(values: List[str]) -> List[str]:
         seen.add(key)
         result.append(text)
     return result
+
+
+def _raw_field_state(expected: str, observed: str) -> str:
+    expected_text = str(expected or "").strip()
+    observed_text = str(observed or "").strip()
+    if not expected_text or not observed_text:
+        return "unknown"
+    return "match" if _matches(expected_text, [observed_text]) else "mismatch"
+
+
+def _raw_candidate_state(expected: str, candidates: List[str]) -> str:
+    expected_text = str(expected or "").strip()
+    normalized_candidates = [str(item or "").strip() for item in (candidates or []) if str(item or "").strip()]
+    if not expected_text or not normalized_candidates:
+        return "unknown"
+    return "match" if _matches(expected_text, normalized_candidates) else "mismatch"
+
+
+def _clean_signature_text(value: Any) -> str:
+    text = str(value or "").replace("\n", " ").replace("\xa0", " ").strip()
+    if not text:
+        return ""
+
+    banned_exact_values = {
+        "位置如下",
+        "如下",
+        "位置",
+        "签字位置如下",
+        "签名位置如下",
+        "签字如下",
+        "签名如下",
+    }
+
+    patterns = [
+        r"(?:本人签名|签名人|签字人|签名|签字)[：:\s]*([A-Za-z\u4e00-\u9fff·• ]{2,40})$",
+        r"(?:本人签名|签名人|签字人|签名|签字)[：:\s]*([A-Za-z\u4e00-\u9fff·• ]{2,40})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            candidate = match.group(1).strip()
+            if (
+                re.fullmatch(r"[A-Za-z\u4e00-\u9fff·• ]{2,40}", candidate)
+                and candidate not in banned_exact_values
+                and "位置" not in candidate
+                and "如下" not in candidate
+            ):
+                return candidate
+
+    description_markers = {
+        "页面", "位于", "位置", "区域", "上方", "下方", "左侧", "右侧", "左下角", "右下角",
+        "中间", "附近", "公章", "手写", "黑色", "红色", "文字", "覆盖", "具体", "如下",
+        "有一个", "可见", "显示", "图中",
+    }
+    if any(marker in text for marker in description_markers):
+        return ""
+    if any(punct in text for punct in ("，", "。", "；")):
+        return ""
+    if len(text) > 40:
+        return ""
+    if not re.fullmatch(r"[A-Za-z\u4e00-\u9fff·• ]{2,40}", text):
+        return ""
+    return text
 
 
 def _pick_case_insensitive(row: Dict[str, Any], *keys: str) -> Any:
@@ -126,6 +190,7 @@ class RewardReviewService:
         result: ReviewResult,
         context: Dict[str, Any],
         check_items: Optional[List[str]] = None,
+        file_data: Optional[bytes] = None,
     ) -> ReviewResult:
         normalized_doc_type = normalize_doc_type(result.doc_type)
         effective_items = {str(item).strip() for item in (check_items or []) if str(item).strip()}
@@ -133,11 +198,18 @@ class RewardReviewService:
         observed_fields = self._collect_observed_fields(result, normalized_doc_type)
         signatures = self._collect_signature_texts(result)
         stamps = self._collect_stamp_texts(result)
+        verification = self._collect_verification_result(
+            result=result,
+            file_data=file_data,
+            doc_type=normalized_doc_type,
+            target_values=context.get("target_values", {}) or {},
+        )
 
         result.extracted_data["reward_project_id"] = context.get("project_id", "")
         result.extracted_data["reward_recognized_signatures"] = signatures
         result.extracted_data["reward_recognized_stamps"] = stamps
         result.extracted_data["reward_target_values"] = context.get("target_values", {})
+        result.extracted_data["reward_verification"] = verification
 
         extras: List[CheckResult] = []
         errors = [str(item) for item in context.get("errors", []) if str(item).strip()]
@@ -166,6 +238,7 @@ class RewardReviewService:
                             label="提名单位公章",
                             expected=str(target_values.get("nomination_unit_name") or ""),
                             candidates=stamps,
+                            verification=verification.get("nomination_unit_stamp"),
                         )
                     ],
                     effective_items,
@@ -180,6 +253,7 @@ class RewardReviewService:
                             label="候选人工作单位公章",
                             expected=str(target_values.get("candidate_work_unit_name") or ""),
                             candidates=stamps,
+                            verification=verification.get("candidate_work_unit_stamp"),
                         )
                     ],
                     effective_items,
@@ -194,18 +268,21 @@ class RewardReviewService:
                             label="姓名",
                             observed=observed_fields.get("name", ""),
                             expected=str(target_values.get("name") or ""),
+                            verification=verification.get("name"),
                         ),
                         self._compare_field(
                             item="contributor_db_work_unit_consistency",
                             label="工作单位",
                             observed=observed_fields.get("work_unit", ""),
                             expected=str(target_values.get("work_unit") or ""),
+                            verification=verification.get("work_unit"),
                         ),
                         self._compare_field(
                             item="contributor_db_completion_unit_consistency",
                             label="完成单位",
                             observed=observed_fields.get("completion_unit", ""),
                             expected=str(target_values.get("completion_unit") or ""),
+                            verification=verification.get("completion_unit"),
                         ),
                     ],
                     effective_items,
@@ -220,12 +297,14 @@ class RewardReviewService:
                             label="单位名称",
                             observed=observed_fields.get("unit_name", ""),
                             expected=str(target_values.get("unit_name") or ""),
+                            verification=verification.get("unit_name"),
                         ),
                         self._compare_field(
                             item="completion_unit_legal_representative_consistency",
                             label="法定代表人",
                             observed=observed_fields.get("legal_representative", ""),
                             expected=str(target_values.get("legal_representative") or ""),
+                            verification=verification.get("legal_representative"),
                         ),
                     ],
                     effective_items,
@@ -240,12 +319,21 @@ class RewardReviewService:
                             label="单位名称",
                             observed=observed_fields.get("unit_name", ""),
                             expected=str(target_values.get("unit_name") or ""),
+                            verification=verification.get("unit_name"),
                         ),
                     ],
                     effective_items,
                 )
             )
 
+        self._apply_verification_to_existing_results(
+            result=result,
+            doc_type=normalized_doc_type,
+            target_values=target_values,
+            observed_fields=observed_fields,
+            signatures=signatures,
+            verification=verification,
+        )
         result.results.extend(extras)
         result.summary = self._generate_summary(result.results)
         result.suggestions = self._generate_suggestions(result.results)
@@ -255,6 +343,7 @@ class RewardReviewService:
             observed_fields=observed_fields,
             signatures=signatures,
             stamps=stamps,
+            verification=verification,
         )
         return result
 
@@ -269,10 +358,16 @@ class RewardReviewService:
         signature_info = {
             "recognized": self._collect_signature_texts(result),
             "result": self._extract_item_evidence(result, "signature"),
+            "verification": (result.extracted_data or {}).get("reward_verification", {}).get("signature_for_name"),
         }
         stamp_info = {
             "recognized": self._collect_stamp_texts(result),
             "result": self._extract_item_evidence(result, "stamp"),
+            "verification": {
+                key: value
+                for key, value in ((result.extracted_data or {}).get("reward_verification", {}) or {}).items()
+                if "stamp" in str(key)
+            },
         }
 
         sql = """
@@ -361,10 +456,10 @@ class RewardReviewService:
             rows = reward_execute(
                 "xmsbnew",
                 """
-                SELECT gg.*, td.*
-                FROM t_xm_ggjbxx gg
-                LEFT JOIN t_xm_tjdwxx td ON td.TJDWBH = gg.TJDWBH AND td.ND = gg.ND
-                WHERE gg.XMBH = %s
+                SELECT cl.*, td.*
+                FROM t_xm_cl cl
+                LEFT JOIN t_xm_tjdwxx td ON td.TJDWBH = cl.TJDWBH AND td.ND = cl.ND
+                WHERE cl.XMBH = %s
                 LIMIT 1
                 """,
                 (project_id,),
@@ -453,19 +548,47 @@ class RewardReviewService:
         llm_analysis = result.llm_analysis or {}
         payload = llm_analysis.get("award_contributor_analysis") or {}
         if isinstance(payload, dict):
-            values.extend([str(item).strip() for item in payload.get("signature_names", []) if str(item).strip()])
+            values.extend(
+                [
+                    _clean_signature_text(item)
+                    for item in payload.get("signature_names", [])
+                    if _clean_signature_text(item)
+                ]
+            )
 
         signatures_result = llm_analysis.get("signatures_result") or {}
         if isinstance(signatures_result, dict):
             for item in signatures_result.get("signatures", []):
                 if isinstance(item, dict):
-                    values.append(str(item.get("text") or "").strip())
+                    candidate = _clean_signature_text(item.get("text") or item.get("name") or "")
+                    if candidate:
+                        values.append(candidate)
 
         for item in result.extracted_data.get("signatures", []):
             if isinstance(item, dict):
-                values.append(str(item.get("text") or "").strip())
+                candidate = _clean_signature_text(item.get("text") or item.get("name") or "")
+                if candidate:
+                    values.append(candidate)
             else:
-                values.append(str(item).strip())
+                candidate = _clean_signature_text(item)
+                if candidate:
+                    values.append(candidate)
+
+        for check in result.results:
+            if getattr(check, "item", "") != "signature":
+                continue
+            evidence = getattr(check, "evidence", {}) or {}
+            if not isinstance(evidence, dict):
+                continue
+            for item in evidence.get("signatures", []):
+                if isinstance(item, dict):
+                    candidate = _clean_signature_text(item.get("text") or item.get("name") or "")
+                    if candidate:
+                        values.append(candidate)
+                else:
+                    candidate = _clean_signature_text(item)
+                    if candidate:
+                        values.append(candidate)
         return _dedup(values)
 
     def _collect_stamp_texts(self, result: ReviewResult) -> List[str]:
@@ -488,64 +611,308 @@ class RewardReviewService:
                 values.append(str(item.get("text") or item.get("unit") or "").strip())
             else:
                 values.append(str(item).strip())
+
+        for check in result.results:
+            if getattr(check, "item", "") != "stamp":
+                continue
+            evidence = getattr(check, "evidence", {}) or {}
+            if not isinstance(evidence, dict):
+                continue
+            for item in evidence.get("stamps", []):
+                if isinstance(item, dict):
+                    values.append(str(item.get("text") or item.get("unit") or "").strip())
+                else:
+                    values.append(str(item).strip())
         return _dedup(values)
 
-    def _compare_field(self, item: str, label: str, observed: str, expected: str) -> CheckResult:
+    def _collect_verification_result(
+        self,
+        result: ReviewResult,
+        file_data: Optional[bytes],
+        doc_type: str,
+        target_values: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        llm_analysis = result.llm_analysis or {}
+        if doc_type in {"wcr", "wjwcr"}:
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                return {
+                    "name": self._normalize_verification_entry(payload.get("name")),
+                    "signature_for_name": self._normalize_verification_entry(payload.get("signature_for_name")),
+                    "work_unit": self._normalize_verification_entry(payload.get("work_unit")),
+                    "completion_unit": self._normalize_verification_entry(payload.get("completion_unit")),
+                    "work_unit_stamp": self._normalize_verification_entry(payload.get("work_unit_stamp")),
+                    "completion_unit_stamp": self._normalize_verification_entry(payload.get("completion_unit_stamp")),
+                }
+            return {}
+        return self._build_verification_result(file_data=file_data, doc_type=doc_type, target_values=target_values)
+
+    def _build_verification_result(
+        self,
+        file_data: Optional[bytes],
+        doc_type: str,
+        target_values: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not file_data or not target_values:
+            return {}
+        try:
+            return self._verify_generic_reward_doc(file_data, doc_type, target_values)
+        except Exception:
+            logger.exception("奖励材料定向验证失败: doc_type=%s", doc_type)
+            return {}
+
+    def _verify_generic_reward_doc(self, file_data: bytes, doc_type: str, target_values: Dict[str, Any]) -> Dict[str, Any]:
+        image_data = self._pdf_to_image(file_data)
+        if doc_type == "tjdwyj":
+            prompt = """请只根据图像判断：页面中是否存在与目标单位一致的红色公章。
+目标单位：%s
+
+返回严格 JSON：
+{"nomination_unit_stamp": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示可以清晰确认红章与目标单位一致。
+2. no 表示未见对应红章或可清晰确认不一致。
+3. uncertain 表示看不清。""" % (str(target_values.get("nomination_unit_name") or "").strip() or "空")
+            payload = self._run_multimodal_json(image_data, prompt)
+            return {"nomination_unit_stamp": self._normalize_verification_entry(payload.get("nomination_unit_stamp"))}
+
+        if doc_type == "gzdwyj":
+            prompt = """请只根据图像判断：页面中是否存在与目标单位一致的红色公章。
+目标单位：%s
+
+返回严格 JSON：
+{"candidate_work_unit_stamp": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则同上，只判断红章，不要把打印文字当公章。""" % (
+                str(target_values.get("candidate_work_unit_name") or "").strip() or "空"
+            )
+            payload = self._run_multimodal_json(image_data, prompt)
+            return {"candidate_work_unit_stamp": self._normalize_verification_entry(payload.get("candidate_work_unit_stamp"))}
+
+        if doc_type == "wcdw":
+            prompt = """请只根据图像判断下列字段是否与目标值一致：
+- 单位名称：%s
+- 法定代表人：%s
+
+返回严格 JSON：
+{
+  "unit_name": {"status": "yes|no|uncertain", "reason": ""},
+  "legal_representative": {"status": "yes|no|uncertain", "reason": ""}
+}
+
+规则：
+1. yes 仅表示可以清晰确认字段值一致。
+2. no 表示可清晰确认不一致或未见该字段值。
+3. uncertain 表示看不清。""" % (
+                str(target_values.get("unit_name") or "").strip() or "空",
+                str(target_values.get("legal_representative") or "").strip() or "空",
+            )
+            payload = self._run_multimodal_json(image_data, prompt)
+            return {
+                "unit_name": self._normalize_verification_entry(payload.get("unit_name")),
+                "legal_representative": self._normalize_verification_entry(payload.get("legal_representative")),
+            }
+
+        if doc_type == "hzdw":
+            prompt = """请只根据图像判断下列字段是否与目标值一致：
+目标单位名称：%s
+
+返回严格 JSON：
+{"unit_name": {"status": "yes|no|uncertain", "reason": ""}}""" % (
+                str(target_values.get("unit_name") or "").strip() or "空"
+            )
+            payload = self._run_multimodal_json(image_data, prompt)
+            return {"unit_name": self._normalize_verification_entry(payload.get("unit_name"))}
+
+        return {}
+
+    def _pdf_to_image(self, file_data: bytes) -> bytes:
+        if not file_data.startswith(b"%PDF"):
+            return file_data
+        try:
+            import fitz
+
+            doc = fitz.open(stream=file_data, filetype="pdf")
+            if doc.page_count <= 0:
+                return file_data
+            page = doc.load_page(0)
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+            image_data = pix.tobytes("png")
+            doc.close()
+            return image_data
+        except Exception:
+            return file_data
+
+    def _run_multimodal_json(self, image_data: bytes, prompt: str) -> Dict[str, Any]:
+        async def _run() -> str:
+            from src.common.llm import get_default_llm_client
+            from src.common.vision.multimodal import MultimodalLLM
+
+            llm = MultimodalLLM(get_default_llm_client())
+            return await asyncio.wait_for(llm.analyze_image(image_data, prompt), timeout=45)
+
+        raw = asyncio.run(_run())
+        return self._parse_json_object(raw)
+
+    def _parse_json_object(self, raw_text: Any) -> Dict[str, Any]:
+        text = str(raw_text or "").strip()
+        if not text:
+            return {}
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            if len(parts) >= 2:
+                text = parts[1]
+                if text.startswith("json"):
+                    text = text[4:]
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _normalize_verification_entry(self, payload: Any) -> Dict[str, str]:
+        if isinstance(payload, str):
+            status = str(payload or "").strip().lower()
+            if status in {"yes", "no", "uncertain"}:
+                return {"status": status, "reason": ""}
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        status = str(payload.get("status") or "").strip().lower()
+        if status not in {"yes", "no", "uncertain"}:
+            return {}
+        return {
+            "status": status,
+            "reason": str(payload.get("reason") or "").strip(),
+        }
+
+    def _verification_status(self, entry: Any) -> str:
+        if isinstance(entry, dict):
+            status = str(entry.get("status") or "").strip().lower()
+            if status in {"yes", "no", "uncertain"}:
+                return status
+        return ""
+
+    def _compare_field(
+        self,
+        item: str,
+        label: str,
+        observed: str,
+        expected: str,
+        verification: Optional[Dict[str, str]] = None,
+    ) -> CheckResult:
+        verification_status = self._verification_status(verification)
+        raw_state = _raw_field_state(expected, observed)
+        evidence = {
+            "observed": observed,
+            "expected": expected,
+            "raw_state": raw_state,
+            "verification_status": verification_status,
+        }
+        if verification:
+            evidence["verification"] = verification
         if not expected:
             return CheckResult(
                 item=item,
                 status=CheckStatus.WARNING,
                 message=f"奖励库未提供可核验的{label}",
-                evidence={"observed": observed, "expected": expected},
+                evidence=evidence,
             )
-        if not observed:
+        if raw_state == "match":
+            if verification_status in {"", "yes"}:
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.PASSED,
+                    message=f"表单{label}与奖励库记录一致",
+                    evidence=evidence,
+                )
             return CheckResult(
                 item=item,
                 status=CheckStatus.WARNING,
-                message=f"未识别到表单中的{label}",
-                evidence={"observed": observed, "expected": expected},
+                message=f"表单{label}结果需复核",
+                evidence=evidence,
             )
-        if not _matches(expected, [observed]):
+        if raw_state == "mismatch":
+            if verification_status == "no":
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.FAILED,
+                    message=f"表单{label}与奖励库记录不一致",
+                    evidence=evidence,
+                )
             return CheckResult(
                 item=item,
-                status=CheckStatus.FAILED,
-                message=f"表单{label}与奖励库记录不一致",
-                evidence={"observed": observed, "expected": expected},
+                status=CheckStatus.WARNING,
+                message=f"表单{label}疑似与奖励库记录不一致，请复核",
+                evidence=evidence,
             )
         return CheckResult(
             item=item,
-            status=CheckStatus.PASSED,
-            message=f"表单{label}与奖励库记录一致",
-            evidence={"observed": observed, "expected": expected},
+            status=CheckStatus.WARNING,
+            message=f"表单{label}结果需复核" if verification_status == "yes" else f"表单{label}疑似与奖励库记录不一致，请复核",
+            evidence=evidence,
         )
 
-    def _compare_candidates(self, item: str, label: str, expected: str, candidates: List[str]) -> CheckResult:
+    def _compare_candidates(
+        self,
+        item: str,
+        label: str,
+        expected: str,
+        candidates: List[str],
+        verification: Optional[Dict[str, str]] = None,
+    ) -> CheckResult:
+        verification_status = self._verification_status(verification)
+        raw_state = _raw_candidate_state(expected, candidates)
+        evidence = {
+            "expected": expected,
+            "candidates": candidates,
+            "raw_state": raw_state,
+            "verification_status": verification_status,
+        }
+        if verification:
+            evidence["verification"] = verification
         if not expected:
             return CheckResult(
                 item=item,
                 status=CheckStatus.WARNING,
                 message=f"奖励库未提供可核验的{label}",
-                evidence={"expected": expected, "candidates": candidates},
+                evidence=evidence,
             )
-        if not candidates:
+        if raw_state == "match":
+            if verification_status in {"", "yes"}:
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.PASSED,
+                    message=f"{label}与奖励库记录一致",
+                    evidence=evidence,
+                )
             return CheckResult(
                 item=item,
-                status=CheckStatus.FAILED,
-                message=f"未识别到可用于核验的{label}文字",
-                evidence={"expected": expected, "candidates": candidates},
+                status=CheckStatus.WARNING,
+                message=f"{label}结果需复核",
+                evidence=evidence,
             )
-        if not _matches(expected, candidates):
+        if raw_state == "mismatch":
+            if verification_status == "no":
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.FAILED,
+                    message=f"{label}与奖励库记录不一致",
+                    evidence=evidence,
+                )
             return CheckResult(
                 item=item,
-                status=CheckStatus.FAILED,
-                message=f"{label}与奖励库记录不一致",
-                evidence={"expected": expected, "candidates": candidates},
+                status=CheckStatus.WARNING,
+                message=f"{label}疑似与奖励库记录不一致，请复核",
+                evidence=evidence,
             )
         return CheckResult(
             item=item,
-            status=CheckStatus.PASSED,
-            message=f"{label}与奖励库记录一致",
-            evidence={"expected": expected, "candidates": candidates},
+            status=CheckStatus.WARNING,
+            message=f"{label}结果需复核" if verification_status == "yes" else f"{label}疑似与奖励库记录不一致，请复核",
+            evidence=evidence,
         )
 
     def _extract_item_status(self, result: ReviewResult, item_name: str) -> int:
@@ -562,6 +929,223 @@ class RewardReviewService:
             if item.item == item_name:
                 return dict(item.evidence or {})
         return {}
+
+    def _replace_result_item(self, result: ReviewResult, item_name: str, replacement: CheckResult) -> None:
+        for index, item in enumerate(result.results):
+            if item.item == item_name:
+                result.results[index] = replacement
+                return
+
+    def _compare_award_contributor_signature(
+        self,
+        expected_name: str,
+        contributor_name: str,
+        signature_names: List[str],
+        verification: Optional[Dict[str, str]] = None,
+    ) -> CheckResult:
+        verification_status = self._verification_status(verification)
+        contributor_state = _raw_field_state(expected_name, contributor_name)
+        signature_state = _raw_candidate_state(expected_name, signature_names)
+        if contributor_state == "match" and signature_state == "match":
+            raw_state = "match"
+        elif contributor_state == "mismatch" or signature_state == "mismatch":
+            raw_state = "mismatch"
+        else:
+            raw_state = "unknown"
+        evidence: Dict[str, Any] = {
+            "expected_name": expected_name,
+            "contributor_name": contributor_name,
+            "signature_names": signature_names,
+            "raw_state": raw_state,
+            "verification_status": verification_status,
+        }
+        if verification:
+            evidence["verification"] = verification
+
+        if raw_state == "match" and verification_status in {"", "yes"}:
+            return CheckResult(
+                item="award_contributor_signature_consistency",
+                status=CheckStatus.PASSED,
+                message=f"完成人“{expected_name}”与本人签名一致",
+                evidence=evidence,
+            )
+        if raw_state == "match":
+            return CheckResult(
+                item="award_contributor_signature_consistency",
+                status=CheckStatus.WARNING,
+                message=f"完成人“{expected_name}”与本人签名结果需复核",
+                evidence=evidence,
+            )
+        if raw_state == "mismatch" and verification_status == "no":
+            return CheckResult(
+                item="award_contributor_signature_consistency",
+                status=CheckStatus.FAILED,
+                message=f"完成人“{expected_name or contributor_name}”与本人签名不一致",
+                evidence=evidence,
+            )
+        if raw_state == "mismatch":
+            return CheckResult(
+                item="award_contributor_signature_consistency",
+                status=CheckStatus.WARNING,
+                message=f"完成人“{expected_name}”与本人签名疑似不一致，请复核",
+                evidence=evidence,
+            )
+        return CheckResult(
+            item="award_contributor_signature_consistency",
+            status=CheckStatus.WARNING,
+            message=f"完成人“{expected_name or contributor_name}”与本人签名结果需复核"
+            if verification_status == "yes"
+            else f"完成人“{expected_name or contributor_name}”与本人签名疑似不一致，请复核",
+            evidence=evidence,
+        )
+
+    def _compare_role_stamp_consistency(
+        self,
+        item: str,
+        role_label: str,
+        expected_unit: str,
+        role_units: List[str],
+        verification: Optional[Dict[str, str]] = None,
+    ) -> CheckResult:
+        verification_status = self._verification_status(verification)
+        raw_state = _raw_candidate_state(expected_unit, role_units)
+        evidence: Dict[str, Any] = {
+            "expected_unit": expected_unit,
+            "role_stamp_units": role_units,
+            "raw_state": raw_state,
+            "verification_status": verification_status,
+        }
+        if verification:
+            evidence["verification"] = verification
+
+        if raw_state == "match" and verification_status in {"", "yes"}:
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{role_label}“{expected_unit}”与对应公章一致",
+                evidence=evidence,
+            )
+        if raw_state == "match":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"{role_label}“{expected_unit}”与对应公章结果需复核",
+                evidence=evidence,
+            )
+        if raw_state == "mismatch" and verification_status == "no":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.FAILED,
+                message=f"{role_label}“{expected_unit}”与对应公章不一致",
+                evidence=evidence,
+            )
+        if raw_state == "mismatch":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"{role_label}“{expected_unit}”与对应公章疑似不一致，请复核",
+                evidence=evidence,
+            )
+        return CheckResult(
+            item=item,
+            status=CheckStatus.WARNING,
+            message=f"{role_label}“{expected_unit}”与对应公章结果需复核"
+            if verification_status == "yes"
+            else f"{role_label}“{expected_unit}”与对应公章疑似不一致，请复核",
+            evidence=evidence,
+        )
+
+    def _apply_wcr_recognition_overrides(self, result: ReviewResult, verification: Dict[str, Any]) -> None:
+        signature_item = self._extract_item_evidence(result, "signature")
+        signature_verification = verification.get("signature_for_name")
+        signature_verification_status = self._verification_status(signature_verification)
+        for check in result.results:
+            if check.item != "signature":
+                continue
+            evidence = dict(signature_item or check.evidence or {})
+            if signature_verification:
+                evidence["verification"] = signature_verification
+            if check.status == CheckStatus.FAILED and signature_verification_status in {"yes", "uncertain"}:
+                check.status = CheckStatus.WARNING
+                check.message = "签字识别结果需复核"
+                check.evidence = evidence
+            elif check.status == CheckStatus.PASSED and signature_verification_status == "no":
+                check.status = CheckStatus.WARNING
+                check.message = "签字识别结果疑似不一致，请复核"
+                check.evidence = evidence
+            break
+
+        stamp_verifications = {
+            key: value
+            for key, value in {
+                "work_unit_stamp": verification.get("work_unit_stamp"),
+                "completion_unit_stamp": verification.get("completion_unit_stamp"),
+            }.items()
+            if value
+        }
+        stamp_verification_statuses = {self._verification_status(value) for value in stamp_verifications.values()}
+        for check in result.results:
+            if check.item != "stamp":
+                continue
+            evidence = dict(check.evidence or {})
+            if stamp_verifications:
+                evidence["verification"] = stamp_verifications
+            if check.status == CheckStatus.FAILED and ("yes" in stamp_verification_statuses or "uncertain" in stamp_verification_statuses):
+                check.status = CheckStatus.WARNING
+                check.message = "印章识别结果需复核"
+                check.evidence = evidence
+            elif check.status == CheckStatus.PASSED and "no" in stamp_verification_statuses:
+                check.status = CheckStatus.WARNING
+                check.message = "印章识别结果疑似不一致，请复核"
+                check.evidence = evidence
+            break
+
+    def _apply_verification_to_existing_results(
+        self,
+        result: ReviewResult,
+        doc_type: str,
+        target_values: Dict[str, Any],
+        observed_fields: Dict[str, str],
+        signatures: List[str],
+        verification: Dict[str, Any],
+    ) -> None:
+        if doc_type not in {"wcr", "wjwcr"}:
+            return
+
+        expected_name = str(target_values.get("name") or "").strip()
+        contributor_name = str(observed_fields.get("name") or "").strip()
+        signature_result = self._compare_award_contributor_signature(
+            expected_name=expected_name,
+            contributor_name=contributor_name,
+            signature_names=signatures,
+            verification=verification.get("signature_for_name"),
+        )
+        self._replace_result_item(result, "award_contributor_signature_consistency", signature_result)
+
+        work_item = self._extract_item_evidence(result, "award_contributor_work_unit_stamp_consistency")
+        work_units = _dedup([str(item).strip() for item in (work_item.get("role_stamp_units") or []) if str(item).strip()])
+        work_result = self._compare_role_stamp_consistency(
+            item="award_contributor_work_unit_stamp_consistency",
+            role_label="工作单位",
+            expected_unit=str(target_values.get("work_unit") or "").strip(),
+            role_units=work_units,
+            verification=verification.get("work_unit_stamp"),
+        )
+        work_result.evidence.update({"same_unit": bool(work_item.get("same_unit"))})
+        self._replace_result_item(result, "award_contributor_work_unit_stamp_consistency", work_result)
+
+        completion_item = self._extract_item_evidence(result, "award_contributor_completion_unit_stamp_consistency")
+        completion_units = _dedup([str(item).strip() for item in (completion_item.get("role_stamp_units") or []) if str(item).strip()])
+        completion_result = self._compare_role_stamp_consistency(
+            item="award_contributor_completion_unit_stamp_consistency",
+            role_label="完成单位",
+            expected_unit=str(target_values.get("completion_unit") or "").strip(),
+            role_units=completion_units,
+            verification=verification.get("completion_unit_stamp"),
+        )
+        completion_result.evidence.update({"same_unit": bool(completion_item.get("same_unit"))})
+        self._replace_result_item(result, "award_contributor_completion_unit_stamp_consistency", completion_result)
+        self._apply_wcr_recognition_overrides(result, verification)
 
     def _filter_items(self, results: List[CheckResult], effective_items: set[str]) -> List[CheckResult]:
         if not effective_items:
@@ -590,6 +1174,7 @@ class RewardReviewService:
         observed_fields: Dict[str, str],
         signatures: List[str],
         stamps: List[str],
+        verification: Dict[str, Any],
     ) -> Dict[str, Any]:
         normalized_doc_type = normalize_doc_type(result.doc_type)
         target_values = context.get("target_values", {}) or {}
@@ -617,6 +1202,7 @@ class RewardReviewService:
                 if isinstance(llm_analysis.get("award_contributor_analysis"), dict)
                 else [],
             },
+            "verification": verification,
             "db_binding": {
                 "project_id": context.get("project_id", ""),
                 "matched_attachment": bool(attachment),

@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from docx import Document
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 # 存储审查结果（生产环境应使用数据库）
 _review_results: dict[str, ReviewResult] = {}
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_REVIEW_RESULT_DIR = _PROJECT_ROOT / "data" / "review_results"
 
 
 class ReviewRequest(BaseModel):
@@ -66,6 +68,67 @@ class ReviewPathRequest(BaseModel):
     @classmethod
     def _normalize_doc_type(cls, value: Any) -> str:
         return normalize_doc_type(str(value or ""))
+
+
+def _parse_query_check_items(value: Optional[str]) -> Optional[List[str]]:
+    """解析 query 中的检查项。"""
+    if value is None:
+        return None
+    items = [item.strip() for item in str(value).split(",") if item.strip()]
+    return items or None
+
+
+def _parse_query_metadata(value: Optional[str]) -> Dict[str, Any]:
+    """解析 query 中的 metadata JSON。"""
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="metadata 必须是有效的 JSON 字符串") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="metadata 必须是 JSON 对象")
+    return parsed
+
+
+def _build_review_path_request(
+    request: Optional["ReviewPathRequest"],
+    project_id: Optional[str],
+    doc_type: Optional[str],
+    file_path: Optional[str],
+    check_items: Optional[str],
+    enable_llm_analysis: Optional[bool],
+    metadata: Optional[str],
+) -> ReviewPathRequest:
+    """兼容 JSON body 和 query 参数两种传法。"""
+    payload: Dict[str, Any] = {}
+    if request is not None:
+        payload.update(request.model_dump(mode="python", exclude_none=True))
+
+    if project_id is not None:
+        payload["project_id"] = project_id
+    if doc_type is not None:
+        payload["doc_type"] = doc_type
+    if file_path is not None:
+        payload["file_path"] = file_path
+    parsed_check_items = _parse_query_check_items(check_items)
+    if parsed_check_items is not None:
+        payload["check_items"] = parsed_check_items
+    if enable_llm_analysis is not None:
+        payload["enable_llm_analysis"] = enable_llm_analysis
+    parsed_metadata = _parse_query_metadata(metadata)
+    if parsed_metadata:
+        merged_metadata = dict(payload.get("metadata") or {})
+        merged_metadata.update(parsed_metadata)
+        payload["metadata"] = merged_metadata
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="请求体或 query 参数至少提供一组审查参数")
+
+    try:
+        return ReviewPathRequest.model_validate(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class DocumentTypeInfo(BaseModel):
@@ -118,14 +181,108 @@ def _resolve_effective_check_items(doc_type: str, requested_items: Optional[List
     return normalized
 
 
-def _compact_check_result(item: CheckResult) -> Dict[str, Any]:
+def _compact_check_result(item: CheckResult, include_evidence: bool = False) -> Dict[str, Any]:
     """压缩单条检查结果，供非 debug 响应使用。"""
-    return {
+    payload = {
         "code": item.item,
         "status": item.status.value,
         "message": item.message,
-        "evidence": dict(item.evidence or {}),
     }
+    if include_evidence:
+        payload["evidence"] = dict(item.evidence or {})
+    return payload
+
+
+def _compact_verification(structured: Dict[str, Any]) -> Dict[str, Any]:
+    verification = structured.get("verification") or {}
+    if not isinstance(verification, dict):
+        return {}
+
+    compact: Dict[str, Any] = {}
+    for key, value in verification.items():
+        if isinstance(value, dict):
+            status = str(value.get("status") or "").strip()
+            if not status:
+                continue
+            reason = str(value.get("reason") or "").strip()
+            compact[key] = {"status": status} if not reason else {"status": status, "reason": reason}
+        else:
+            status = str(value or "").strip()
+            if status:
+                compact[key] = status
+    return compact
+
+
+def _compact_db_binding(structured: Dict[str, Any]) -> Dict[str, Any]:
+    binding = structured.get("db_binding") or {}
+    if not isinstance(binding, dict):
+        return {}
+
+    attachment = binding.get("attachment") or {}
+    compact: Dict[str, Any] = {
+        "project_id": binding.get("project_id", ""),
+        "matched_attachment": bool(binding.get("matched_attachment")),
+    }
+    if isinstance(attachment, dict) and attachment:
+        compact["attachment"] = {
+            "file_name": attachment.get("file_name", ""),
+            "title": attachment.get("title", ""),
+            "lx": attachment.get("lx", ""),
+        }
+    errors = [str(item) for item in binding.get("errors", []) if str(item).strip()]
+    if errors:
+        compact["errors"] = errors
+    return compact
+
+
+def _compact_structured_checks(structured: Dict[str, Any]) -> Dict[str, Any]:
+    checks = structured.get("checks") or {}
+    if not isinstance(checks, dict):
+        return {}
+
+    compact: Dict[str, Any] = {}
+    for group, items in checks.items():
+        if not isinstance(items, list) or not items:
+            continue
+        compact[group] = [
+            {
+                "code": str(item.get("code") or ""),
+                "label": str(item.get("label") or ""),
+                "status": str(item.get("status") or ""),
+                "message": str(item.get("message") or ""),
+            }
+            for item in items
+        ]
+    return compact
+
+
+def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
+    compact: Dict[str, Any] = {}
+
+    recognized = structured.get("recognized") or {}
+    if isinstance(recognized, dict) and recognized:
+        compact["recognized"] = {
+            "signatures": list(recognized.get("signatures") or []),
+            "stamps": list(recognized.get("stamps") or []),
+            "fields": dict(recognized.get("fields") or {}),
+        }
+        notes = [str(item) for item in recognized.get("notes", []) if str(item).strip()]
+        if notes:
+            compact["recognized"]["notes"] = notes
+
+    verification = _compact_verification(structured)
+    if verification:
+        compact["verification"] = verification
+
+    db_binding = _compact_db_binding(structured)
+    if db_binding:
+        compact["db_binding"] = db_binding
+
+    compact_checks = _compact_structured_checks(structured)
+    if compact_checks:
+        compact["checks"] = compact_checks
+
+    return compact
 
 
 def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dict[str, Any]:
@@ -143,7 +300,7 @@ def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dic
 
     structured = dict(result.structured_result or {})
     if structured:
-        data.update(structured)
+        data.update(_compact_structured_result(structured))
     else:
         data["checks"] = [_compact_check_result(item) for item in result.results]
 
@@ -153,7 +310,7 @@ def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dic
     if debug:
         data["debug"] = {
             "doc_type_raw": result.doc_type_raw,
-            "results": [_compact_check_result(item) for item in result.results],
+            "results": [_compact_check_result(item, include_evidence=True) for item in result.results],
             "structured_result": structured,
             "extracted_data": result.extracted_data,
             "llm_analysis": result.llm_analysis,
@@ -163,6 +320,69 @@ def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dic
         }
 
     return data
+
+
+def _review_result_path(review_id: str) -> Path:
+    """返回审查结果文件路径。"""
+    safe_review_id = re.sub(r"[^a-zA-Z0-9_.-]", "_", str(review_id or "").strip())
+    return _REVIEW_RESULT_DIR / f"{safe_review_id}.json"
+
+
+def _persist_review_result(result: ReviewResult) -> None:
+    """将审查结果落盘，避免进程重启后丢失。"""
+    try:
+        _REVIEW_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+        payload = result.model_dump(mode="json")
+        _review_result_path(result.id).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        logger.exception("审查结果落盘失败: %s", result.id)
+
+
+def _load_persisted_review_result(review_id: str) -> Optional[ReviewResult]:
+    """从磁盘加载已持久化的审查结果。"""
+    path = _review_result_path(review_id)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return ReviewResult.model_validate(payload)
+    except Exception:
+        logger.exception("审查结果读取失败: %s", review_id)
+        return None
+
+
+def _build_review_response(review_id: str, debug: bool = False) -> Response:
+    """构造审查结果查询响应。"""
+    result = _review_results.get(review_id)
+    persisted = _load_persisted_review_result(review_id)
+
+    if result and persisted:
+        memory_status = str(result.status or "").strip().lower()
+        persisted_status = str(persisted.status or "").strip().lower()
+        if (
+            (memory_status == "processing" and persisted_status != "processing")
+            or (
+                str(persisted.processed_at or "").strip()
+                and str(persisted.processed_at or "").strip() > str(result.processed_at or "").strip()
+            )
+        ):
+            result = persisted
+            _review_results[review_id] = persisted
+    elif not result and persisted:
+        result = persisted
+        _review_results[review_id] = persisted
+    elif not result:
+        raise HTTPException(status_code=404, detail="审查结果不存在")
+
+    payload = ApiResponse(
+        status="success",
+        data=_build_compact_review_data(result, debug=debug),
+    )
+    body = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    return Response(content=body, media_type="application/json; charset=utf-8")
 
 
 def _build_placeholder_result(review_id: str, doc_type: str) -> ReviewResult:
@@ -215,7 +435,8 @@ async def _run_review_job(
     check_items: List[str],
     enable_llm_analysis: bool,
     metadata: Dict[str, Any],
-) -> None:
+    persist_result: bool = True,
+) -> ReviewResult:
     """执行后台审查任务。"""
     start_time = time.time()
     agent = ReviewAgent()
@@ -229,15 +450,23 @@ async def _run_review_job(
             metadata=metadata,
             review_id=review_id,
         )
-        _review_results[review_id] = result
+        if persist_result:
+            _review_results[review_id] = result
+            _persist_review_result(result)
+        return result
     except Exception as e:
         logger.exception("Review job failed: %s", review_id)
-        _review_results[review_id] = _build_failure_result(
+        failure = _build_failure_result(
             review_id=review_id,
             doc_type=doc_type,
             error=e,
             start_time=start_time,
         )
+        if persist_result:
+            _review_results[review_id] = failure
+            _persist_review_result(failure)
+            return failure
+        raise
 
 
 def _read_docx_paragraphs(docx_path: Path, max_paragraphs: int = 1200) -> List[str]:
@@ -663,6 +892,7 @@ async def submit_review(
         review_id = f"review_{int(time.time() * 1000)}"
         placeholder = _build_placeholder_result(review_id, selected_doc_type)
         _review_results[review_id] = placeholder
+        _persist_review_result(placeholder)
 
         async def _run_review() -> None:
             await _run_review_job(
@@ -687,14 +917,33 @@ async def submit_review(
 
 
 @router.post("/path")
-async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[ReviewResult]:
+async def submit_review_by_path(
+    request: Optional[ReviewPathRequest] = Body(None),
+    project_id: Optional[str] = Query(None),
+    doc_type: Optional[str] = Query(None),
+    file_path: Optional[str] = Query(None),
+    check_items: Optional[str] = Query(None),
+    enable_llm_analysis: Optional[bool] = Query(None),
+    metadata: Optional[str] = Query(None),
+) -> ApiResponse[ReviewResult]:
     """按 SMB 路径提交文件进行形式审查。"""
+    request = _build_review_path_request(
+        request=request,
+        project_id=project_id,
+        doc_type=doc_type,
+        file_path=file_path,
+        check_items=check_items,
+        enable_llm_analysis=enable_llm_analysis,
+        metadata=metadata,
+    )
+
     review_id = f"review_{int(time.time() * 1000)}"
     normalized_doc_type = normalize_doc_type(request.doc_type)
     if normalized_doc_type in REWARD_PATH_DOC_TYPES and not str(request.project_id or "").strip():
         raise HTTPException(status_code=400, detail="奖励平台材料必须传入 project_id")
     placeholder = _build_placeholder_result(review_id, normalized_doc_type)
     _review_results[review_id] = placeholder
+    _persist_review_result(placeholder)
     items = _resolve_effective_check_items(normalized_doc_type, request.check_items)
     start_time = time.time()
 
@@ -721,7 +970,7 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
                 )
                 metadata["reward_review_context"] = reward_context
 
-            await _run_review_job(
+            current = await _run_review_job(
                 review_id=review_id,
                 file_data=file_data,
                 filename=filename,
@@ -729,26 +978,30 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
                 check_items=items,
                 enable_llm_analysis=request.enable_llm_analysis,
                 metadata=metadata,
+                persist_result=False,
             )
             if reward_service and reward_context:
-                current = _review_results.get(review_id)
                 if current and current.status == "done":
                     current = await asyncio.to_thread(
                         reward_service.enrich_result,
                         current,
                         reward_context,
                         items,
+                        file_data,
                     )
-                    _review_results[review_id] = current
                     await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)
+            _review_results[review_id] = current
+            _persist_review_result(current)
         except Exception as e:
             logger.exception("SMB review job failed: %s", review_id)
-            _review_results[review_id] = _build_failure_result(
+            failure = _build_failure_result(
                 review_id=review_id,
                 doc_type=normalized_doc_type,
                 error=e,
                 start_time=start_time,
             )
+            _review_results[review_id] = failure
+            _persist_review_result(failure)
 
     asyncio.create_task(_run_review_from_smb())
 
@@ -757,6 +1010,12 @@ async def submit_review_by_path(request: ReviewPathRequest) -> ApiResponse[Revie
         data=placeholder,
         message="已提交路径审查任务，请稍后使用 review_id 查询结果",
     )
+
+
+@router.get("")
+async def get_review_by_query(review_id: str = Query(...), debug: bool = False) -> Response:
+    """兼容 query 参数方式查询审查结果。"""
+    return _build_review_response(review_id, debug=debug)
 
 
 @router.get("/{review_id}")
@@ -769,16 +1028,7 @@ async def get_review(review_id: str, debug: bool = False) -> Response:
     Returns:
         审查结果
     """
-    result = _review_results.get(review_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="审查结果不存在")
-
-    payload = ApiResponse(
-        status="success",
-        data=_build_compact_review_data(result, debug=debug),
-    )
-    body = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2)
-    return Response(content=body, media_type="application/json; charset=utf-8")
+    return _build_review_response(review_id, debug=debug)
 
 
 @router.get("/document-types")
