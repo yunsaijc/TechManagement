@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from src.common.llm import get_default_llm_client
+from src.common.llm import get_review_llm_client
 from src.common.models import CheckResult, CheckStatus, ReviewResult
 from src.common.vision.multimodal import MultimodalLLM
 from src.services.review.doc_types import normalize_doc_type
@@ -35,7 +35,7 @@ class ReviewAgent:
             document_parser: 文档解析器
             rule_registry: 规则注册表
         """
-        self.llm = llm or get_default_llm_client()
+        self.llm = llm or get_review_llm_client()
         self.parser = document_parser
         self.rule_registry = rule_registry
         self.extractor = DocumentExtractor(self.llm)
@@ -84,19 +84,35 @@ class ReviewAgent:
 
         # 3. LLM 深度分析（可选，提前到规则之前，用于规则使用）
         llm_analysis = None
+        llm_analysis_error = ""
         auto_llm_analysis = bool(DOCUMENT_CONFIG.get(normalized_doc_type, {}).get("auto_llm_analysis"))
         if enable_llm_analysis or auto_llm_analysis:
             logger.info("[REVIEW] Step2.5 LLM深度分析开始（提前到规则前）")
             print("[REVIEW] Step2.5 LLM深度分析开始（提前到规则前）", flush=True)
-            llm_analysis = await self._do_llm_analysis(file_data, extracted, normalized_doc_type)
+            try:
+                llm_analysis = await self._do_llm_analysis(
+                    file_data,
+                    extracted,
+                    normalized_doc_type,
+                    kwargs.get("metadata", {}),
+                )
+            except Exception as exc:
+                llm_analysis_error = str(exc)
+                logger.warning("[REVIEW] Step2.5 LLM深度分析降级: %s", llm_analysis_error)
+                print(f"[REVIEW] Step2.5 LLM深度分析降级: {llm_analysis_error}", flush=True)
+                llm_analysis = {
+                    "error": llm_analysis_error,
+                    "document_type_llm": normalized_doc_type,
+                }
             # 存到 extracted 里，供规则使用
             extracted.set("llm_analysis", llm_analysis)
-            self._hydrate_extracted_from_llm_analysis(
-                extracted=extracted,
-                llm_analysis=llm_analysis,
-                doc_type=normalized_doc_type,
-                file_data=file_data,
-            )
+            if not llm_analysis_error:
+                self._hydrate_extracted_from_llm_analysis(
+                    extracted=extracted,
+                    llm_analysis=llm_analysis,
+                    doc_type=normalized_doc_type,
+                    file_data=file_data,
+                )
             logger.info("[REVIEW] Step2.5 LLM深度分析完成")
             print("[REVIEW] Step2.5 LLM深度分析完成", flush=True)
 
@@ -123,6 +139,15 @@ class ReviewAgent:
 
         # 4. 结果聚合（LLM分析已在Step2.5提前执行）
         all_results = rule_results + llm_results
+        if llm_analysis_error:
+            all_results.append(
+                CheckResult(
+                    item="system",
+                    status=CheckStatus.WARNING,
+                    message=f"LLM深度分析已降级：{llm_analysis_error}",
+                    evidence={"stage": "llm_analysis"},
+                )
+            )
 
         # 7. 如果是 unknown 类型，添加警告并提示管理员
         if normalized_doc_type == "unknown":
@@ -581,6 +606,7 @@ class ReviewAgent:
         file_data: bytes,
         extracted: Any,
         doc_type: str = "unknown",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """LLM 深度分析（用于调试 OCR 效果）
         
@@ -593,7 +619,7 @@ class ReviewAgent:
             LLM 分析结果
         """
         if normalize_doc_type(doc_type) in {"wcr", "wjwcr"}:
-            return await self._do_award_contributor_llm_analysis(file_data, doc_type)
+            return await self._do_award_contributor_llm_analysis(file_data, doc_type, metadata or {})
 
         multi_llm = MultimodalLLM(self.llm)
         logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
@@ -715,6 +741,7 @@ class ReviewAgent:
         self,
         file_data: bytes,
         doc_type: str,
+        metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         """主要完成人情况表专项结构化分析。"""
         multi_llm = MultimodalLLM(self.llm)
@@ -722,13 +749,63 @@ class ReviewAgent:
         print(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}", flush=True)
 
         image_data = self._build_award_contributor_analysis_image(file_data)
-        prompt = """这是“主要完成人情况表”的 4 个局部截图：
-- A 字段区：姓名、工作单位、完成单位
-- B 签名区：只看本人签名
-- C 工作单位公章区
-- D 完成单位公章区
+        reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
+        target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
+        expected_name = str((target_values or {}).get("name") or "").strip()
+        expected_work_unit = str((target_values or {}).get("work_unit") or "").strip()
+        expected_completion_unit = str((target_values or {}).get("completion_unit") or "").strip()
 
-只基于清晰可见内容返回严格 JSON：
+        if expected_name or expected_work_unit or expected_completion_unit:
+            prompt = """4 个局部图：
+A 字段区
+B 签名区
+C 工作单位公章区
+D 完成单位公章区
+
+目标值：
+姓名=%s
+工作单位=%s
+完成单位=%s
+
+只返回 JSON：
+{
+  "raw": {
+    "contributor_name": "",
+    "work_unit": "",
+    "completion_unit": "",
+    "signature_name": "",
+    "work_unit_stamp_unit": "",
+    "completion_unit_stamp_unit": ""
+  },
+  "verify": {
+    "name": "yes|no|uncertain",
+    "signature_for_name": "yes|no|uncertain",
+    "work_unit": "yes|no|uncertain",
+    "completion_unit": "yes|no|uncertain",
+    "work_unit_stamp": "yes|no|uncertain",
+    "completion_unit_stamp": "yes|no|uncertain"
+  }
+}
+
+规则：
+1. raw 只能写图中直接看到的原始内容，看不清留空，不能按目标值补全。
+2. verify 只能填 yes/no/uncertain。
+3. yes=清晰确认与目标一致；no=清晰确认不一致或未见；uncertain=看不清。
+4. C 区只判断工作单位公章，D 区只判断完成单位公章，禁止跨区借用另一块区域的文字或公章。
+5. 公章只看红章，不要把打印文字当公章。
+6. 只返回 JSON，不要解释。""" % (
+                expected_name or "空",
+                expected_work_unit or "空",
+                expected_completion_unit or "空",
+            )
+        else:
+            prompt = """4 个局部图：
+A 字段区
+B 签名区
+C 工作单位公章区
+D 完成单位公章区
+
+只返回 JSON：
 {
   "contributor_name": "",
   "work_unit": "",
@@ -738,17 +815,18 @@ class ReviewAgent:
   "completion_unit_stamp_unit": ""
 }
 
-要求：
-1. 看不清就留空，不要猜。
-2. 只识别对应区域，不要把别处文字带进来。
-3. 只返回 JSON，不要解释，不要代码块。"""
+规则：
+1. 只基于清晰可见内容填写，看不清留空，不要猜。
+2. C 区只识别工作单位公章，D 区只识别完成单位公章，禁止跨区借字。
+3. 只识别对应区域，不要把别处文字带进来。
+4. 只返回 JSON，不要解释。"""
 
         raw = await self._analyze_image_with_timeout(
             multi_llm,
             image_data,
             prompt,
             "主要完成人情况表专项分析",
-            timeout_sec=60,
+            timeout_sec=90,
         )
         payload = self._parse_award_contributor_analysis(raw)
 
@@ -795,6 +873,7 @@ class ReviewAgent:
             "stamps_result": stamps_result,
             "signatures_result": signatures_result,
             "signatures_description": signatures_description,
+            "verification_result": payload.get("verification", {}),
             "award_contributor_analysis": payload,
         }
 
@@ -825,15 +904,30 @@ class ReviewAgent:
             text = _clean_text(value)
             return [text] if text else []
 
+        raw_payload = payload.get("raw") if isinstance(payload.get("raw"), dict) else payload
+        verify_payload = payload.get("verify") if isinstance(payload.get("verify"), dict) else {}
+
+        def _clean_verify(value: Any) -> str:
+            text = _clean_text(value).lower()
+            return text if text in {"yes", "no", "uncertain"} else ""
+
         return {
-            "contributor_name": _clean_text(payload.get("contributor_name")),
-            "work_unit": _clean_text(payload.get("work_unit")),
-            "completion_unit": _clean_text(payload.get("completion_unit")),
-            "signature_names": _clean_list(payload.get("signature_names") or payload.get("signature_name")),
-            "work_unit_stamp_units": _clean_list(payload.get("work_unit_stamp_units") or payload.get("work_unit_stamp_unit")),
-            "completion_unit_stamp_units": _clean_list(payload.get("completion_unit_stamp_units") or payload.get("completion_unit_stamp_unit")),
+            "contributor_name": _clean_text(raw_payload.get("contributor_name")),
+            "work_unit": _clean_text(raw_payload.get("work_unit")),
+            "completion_unit": _clean_text(raw_payload.get("completion_unit")),
+            "signature_names": _clean_list(raw_payload.get("signature_names") or raw_payload.get("signature_name")),
+            "work_unit_stamp_units": _clean_list(raw_payload.get("work_unit_stamp_units") or raw_payload.get("work_unit_stamp_unit")),
+            "completion_unit_stamp_units": _clean_list(raw_payload.get("completion_unit_stamp_units") or raw_payload.get("completion_unit_stamp_unit")),
             "all_stamp_units": [],
-            "notes": _clean_list(payload.get("notes")),
+            "verification": {
+                "name": _clean_verify(verify_payload.get("name")),
+                "signature_for_name": _clean_verify(verify_payload.get("signature_for_name")),
+                "work_unit": _clean_verify(verify_payload.get("work_unit")),
+                "completion_unit": _clean_verify(verify_payload.get("completion_unit")),
+                "work_unit_stamp": _clean_verify(verify_payload.get("work_unit_stamp")),
+                "completion_unit_stamp": _clean_verify(verify_payload.get("completion_unit_stamp")),
+            },
+            "notes": _clean_list(raw_payload.get("notes") or payload.get("notes")),
             "raw_response": raw_text,
         }
     

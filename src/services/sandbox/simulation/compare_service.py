@@ -43,7 +43,7 @@ _TOPIC_PREFIX_PATTERN = re.compile(r"^[A-Za-z0-9_]{6,}$")
 
 def compare_result(result: SimulationResult) -> SimulationComparison:
     impacts = list(result.impacts)
-    topic_count = len({_topic_label_key(item) for item in impacts})
+    topic_count = len({_topic_identity_key(item) for item in impacts})
 
     avg_delta_application_count = _avg(item.delta_application_count for item in impacts)
     avg_delta_funded_count = _avg(item.delta_funded_count for item in impacts)
@@ -157,7 +157,7 @@ def build_management_summary(
     side_effect_topics = _top_unique_layers(side_effect_topics, limit=5)
     observe_count = len(
         {
-            _topic_label_key_from_layer(layer)
+            _topic_identity_key_from_layer(layer)
             for layer in topic_layers
             if layer["management_action"] == "observe"
         }
@@ -470,7 +470,7 @@ def _build_executive_summary(
     side_effect_topics: list[dict[str, object]],
     observe_count: int,
 ) -> list[str]:
-    total_topics = len({_topic_label_key_from_layer(layer) for layer in topic_layers})
+    total_topics = len({_topic_identity_key_from_layer(layer) for layer in topic_layers})
     return [
         (
             f"本次推演覆盖 {total_topics} 个主题。"
@@ -564,7 +564,7 @@ def _top_unique_impacts(
     selected: list[SimulationTopicImpact] = []
     seen: set[str] = set()
     for item in ranked:
-        key = _topic_label_key(item)
+        key = _topic_identity_key(item)
         if key in seen:
             continue
         selected.append(item)
@@ -582,7 +582,7 @@ def _top_unique_layers(
     selected: list[dict[str, object]] = []
     seen: set[str] = set()
     for layer in layers:
-        key = _topic_label_key_from_layer(layer)
+        key = _topic_identity_key_from_layer(layer)
         if key in seen:
             continue
         selected.append(layer)
@@ -597,7 +597,7 @@ def _unique_sample_topics(topic_layers: list[dict[str, object]], limit: int = 3)
     seen: set[str] = set()
     for layer in topic_layers:
         label = _topic_label_from_layer(layer)
-        key = _topic_label_key_from_layer(layer)
+        key = _topic_identity_key_from_layer(layer)
         if key in seen:
             continue
         output.append(label)
@@ -614,7 +614,10 @@ def _topic_label(item: SimulationTopicImpact | SimulationComparisonTopic) -> str
     return _fallback_topic_label(str(getattr(item, "topic_id", "") or ""))
 
 
-def _topic_label_key(item: SimulationTopicImpact | SimulationComparisonTopic) -> str:
+def _topic_identity_key(item: SimulationTopicImpact | SimulationComparisonTopic) -> str:
+    topic_id = str(getattr(item, "topic_id", "") or "").strip()
+    if topic_id:
+        return topic_id
     return _normalize_topic_label(_topic_label(item))
 
 
@@ -625,7 +628,10 @@ def _topic_label_from_layer(layer: dict[str, object]) -> str:
     return _fallback_topic_label(str(layer.get("topic_id") or ""))
 
 
-def _topic_label_key_from_layer(layer: dict[str, object]) -> str:
+def _topic_identity_key_from_layer(layer: dict[str, object]) -> str:
+    topic_id = str(layer.get("topic_id") or "").strip()
+    if topic_id:
+        return topic_id
     return _normalize_topic_label(_topic_label_from_layer(layer))
 
 

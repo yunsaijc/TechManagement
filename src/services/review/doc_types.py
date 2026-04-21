@@ -147,7 +147,6 @@ DOC_TYPE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "aliases": ["10.1", "提名单位意见表", "tjdwyj"],
         "legacy_doc_kind": "tjdwyj",
         "rules": [
-            "signature",
             "stamp",
             "nomination_unit_stamp_consistency",
         ],
@@ -163,7 +162,6 @@ DOC_TYPE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "aliases": ["10.2", "候选人工作单位意见", "gzdwyj"],
         "legacy_doc_kind": "gzdwyj",
         "rules": [
-            "signature",
             "stamp",
             "candidate_work_unit_stamp_consistency",
         ],
@@ -231,7 +229,6 @@ DOC_TYPE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "aliases": ["10.4", "主要完成单位情况表", "wcdw"],
         "legacy_doc_kind": "wcdw",
         "rules": [
-            "signature",
             "stamp",
             "completion_unit_name_consistency",
             "completion_unit_legal_representative_consistency",
@@ -249,7 +246,6 @@ DOC_TYPE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "aliases": ["10.5", "河北省内主要合作单位情况表", "hzdw"],
         "legacy_doc_kind": "hzdw",
         "rules": [
-            "signature",
             "stamp",
             "cooperation_unit_name_consistency",
         ],

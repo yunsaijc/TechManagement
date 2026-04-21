@@ -505,8 +505,7 @@ def _normalize_topic_label(topic_key: object, topic_label: object) -> str:
     label = _clean_topic_label(topic_label)
     if not label:
         return _fallback_topic_label(key)
-    _, remainder = _split_topic_label_prefix(label)
-    return remainder
+    return label
 
 
 def _split_topic_label_prefix(label: str) -> tuple[str | None, str]:

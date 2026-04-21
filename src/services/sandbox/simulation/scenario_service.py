@@ -73,9 +73,18 @@ def run_scenario_contract(
     result = run_scenario(
         scenario=compiled.scenario_definition,
         baseline=resolved_baseline,
-        persist=persist,
+        persist=False,
         require_supported_baseline=require_supported_baseline,
     )
+    if persist:
+        repository.save_scenario_definition(compiled.scenario_definition)
+        repository.save_scenario_result(
+            result,
+            baseline=resolved_baseline,
+            scenario=compiled.scenario_definition,
+            contract=contract,
+            compiled=compiled,
+        )
     return ScenarioExecutionBundle(
         baseline=resolved_baseline,
         compiled=compiled,

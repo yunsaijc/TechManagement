@@ -12,7 +12,6 @@ from typing import Dict, List, Optional, Any
 from PIL import Image
 import numpy as np
 
-from src.common.llm import get_default_llm_client
 from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
@@ -467,17 +466,11 @@ class FieldExtractor:
         return score
 
     def _get_llm(self):
-        """获取 LLM 客户端（temperature=0.5.5 稳定输出）"""
+        """获取 review 场景专用 LLM 客户端（temperature=0）。"""
         if self._llm_client is None:
-            from src.common.llm import get_llm_client, llm_config
-            self._llm_client = get_llm_client(
-                provider=llm_config.provider or "openai",
-                model=llm_config.model or None,
-                api_key=llm_config.api_key or None,
-                base_url=llm_config.base_url or None,
-                temperature=0.5,  # 固定为 0，bbox 提取更稳定
-                max_tokens=llm_config.max_tokens,
-            )
+            from src.common.llm import get_review_llm_client
+
+            self._llm_client = get_review_llm_client()
         return self._llm_client
 
 

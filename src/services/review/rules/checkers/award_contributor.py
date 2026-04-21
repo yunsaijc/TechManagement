@@ -59,7 +59,15 @@ class _BaseAwardContributorRule(BaseRule):
     def _payload(self, context: ReviewContext) -> Dict[str, Any]:
         return _load_award_contributor_payload(context)
 
-    def _missing_analysis_result(self) -> CheckResult:
+    def _missing_analysis_result(self, context: ReviewContext) -> CheckResult:
+        llm_analysis = context.extracted.get("llm_analysis") if context.extracted else {}
+        if isinstance(llm_analysis, dict) and llm_analysis.get("error"):
+            return CheckResult(
+                item=self.name,
+                status=CheckStatus.WARNING,
+                message=f"主要完成人情况表专项分析已降级：{llm_analysis.get('error')}",
+                evidence={"stage": "llm_analysis"},
+            )
         return CheckResult(
             item=self.name,
             status=CheckStatus.WARNING,
@@ -79,7 +87,7 @@ class AwardContributorSignatureConsistencyRule(_BaseAwardContributorRule):
     async def check(self, context: ReviewContext) -> CheckResult:
         payload = self._payload(context)
         if not payload:
-            return self._missing_analysis_result()
+            return self._missing_analysis_result(context)
 
         contributor_name = str(payload.get("contributor_name") or "").strip()
         signature_names = _dedup_texts([str(item) for item in payload.get("signature_names", []) if str(item).strip()])
@@ -156,7 +164,7 @@ class _BaseAwardContributorStampRule(_BaseAwardContributorRule):
     async def check(self, context: ReviewContext) -> CheckResult:
         payload = self._payload(context)
         if not payload:
-            return self._missing_analysis_result()
+            return self._missing_analysis_result(context)
 
         expected_unit = self._expected_unit(payload)
         if not expected_unit:
