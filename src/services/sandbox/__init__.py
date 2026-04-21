@@ -2,7 +2,7 @@
 
 
 def run_neo4j_gds_preflight() -> None:
-    from .neo4j_gds_preflight import main
+    from .neo4j_gds_preflight_step1 import main
 
     main()
 

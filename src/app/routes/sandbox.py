@@ -644,7 +644,7 @@ async def sandbox_health() -> dict[str, str]:
 @router.post("/step1/preflight")
 async def run_step1_preflight() -> dict[str, object]:
     """执行 Step1：Neo4j + GDS 预检。"""
-    from src.services.sandbox.neo4j_gds_preflight import main as step1_main
+    from src.services.sandbox.neo4j_gds_preflight_step1 import main as step1_main
 
     return await run_in_threadpool(_run_step, "step1_preflight", step1_main)
 

@@ -1,0 +1,609 @@
+{
+  "generatedAt": "2026-04-21T03:44:30.077440+00:00",
+  "sourceOutputPath": "/home/tdkx/malin/TechManagement/src/services/sandbox/output/step3/macro_insight_2023_2023_to_2024_2024.json",
+  "summary": {
+    "cards": [
+      {
+        "label": "主题数(窗口A)",
+        "value": 115
+      },
+      {
+        "label": "主题数(窗口B)",
+        "value": 171
+      },
+      {
+        "label": "发现总数",
+        "value": 152
+      },
+      {
+        "label": "高风险",
+        "value": 76
+      },
+      {
+        "label": "中风险",
+        "value": 76
+      }
+    ],
+    "groupCounts": {
+      "risk": 29,
+      "opportunity": 1,
+      "talent": 84,
+      "conversion": 38
+    },
+    "riskTypes": [
+      "backbone_absent_risk",
+      "conversion_efficiency_gap",
+      "conversion_recovery_signal",
+      "low_conversion_after_growth",
+      "persistent_low_conversion",
+      "senior_talent_shortage",
+      "talent_structure_gap",
+      "zero_output_high_heat"
+    ]
+  },
+  "overview": {
+    "windowA": {
+      "start": 2023,
+      "end": 2023
+    },
+    "windowB": {
+      "start": 2024,
+      "end": 2024
+    },
+    "topicExpr": "coalesce(p.guideName, p.department, p.office, '<未知主题>')",
+    "analysisBoundary": {
+      "positioning": "governance_only",
+      "owns": [
+        "conversion",
+        "output_quality",
+        "talent_structure",
+        "collaboration",
+        "knowledge_semantics"
+      ],
+      "excludes": [
+        "community_detection",
+        "hotspot_migration"
+      ],
+      "heatOnlySignalsEnabled": false,
+      "disabledRuleTypes": [
+        "application_growth_spike",
+        "application_shrink_alert"
+      ]
+    },
+    "fastMode": {
+      "enabled": true,
+      "projectLimit": 30000,
+      "focusTopics": 80,
+      "collabEnabled": false
+    }
+  },
+  "briefing": {
+    "headline": "发现 76 个高风险主题，建议优先收敛申报增长快但转化弱的方向。",
+    "keyPoints": [
+      {
+        "topic": "1010101-面上项目",
+        "severity": "high",
+        "type": "backbone_absent_risk",
+        "evidence": {
+          "people": 572,
+          "backbone": 0,
+          "senior": 0
+        },
+        "managementEvidence": {
+          "people": 572,
+          "backbone": 0,
+          "senior": 0
+        },
+        "knowledgeSemantics": {
+          "topic": "1010101-面上项目",
+          "semanticTokens": [
+            "1010101-面上项目"
+          ],
+          "conceptLinks": 0,
+          "uniqueConcepts": 0,
+          "semanticStrength": "low"
+        },
+        "suggestion": "该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。"
+      },
+      {
+        "topic": "1010101-面上项目",
+        "severity": "high",
+        "type": "low_conversion_after_growth",
+        "evidence": {
+          "applicationsA": 313,
+          "applicationsB": 582,
+          "growthRate": 0.8594,
+          "conversionA": 0.0,
+          "conversionB": 0.0
+        },
+        "managementEvidence": {
+          "applicationsA": 313,
+          "applicationsB": 582,
+          "growthRate": 0.8594,
+          "conversionA": 0.0,
+          "conversionB": 0.0
+        },
+        "knowledgeSemantics": {
+          "topic": "1010101-面上项目",
+          "semanticTokens": [
+            "1010101-面上项目"
+          ],
+          "conceptLinks": 0,
+          "uniqueConcepts": 0,
+          "semanticStrength": "low"
+        },
+        "suggestion": "该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。"
+      },
+      {
+        "topic": "1010101-面上项目",
+        "severity": "high",
+        "type": "persistent_low_conversion",
+        "evidence": {
+          "applicationsA": 313,
+          "applicationsB": 582,
+          "conversionA": 0.0,
+          "conversionB": 0.0
+        },
+        "managementEvidence": {
+          "applicationsA": 313,
+          "applicationsB": 582,
+          "conversionA": 0.0,
+          "conversionB": 0.0
+        },
+        "knowledgeSemantics": {
+          "topic": "1010101-面上项目",
+          "semanticTokens": [
+            "1010101-面上项目"
+          ],
+          "conceptLinks": 0,
+          "uniqueConcepts": 0,
+          "semanticStrength": "low"
+        },
+        "suggestion": "该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。"
+      }
+    ],
+    "actions": [
+      "优先压缩高增长低转化主题的申报扩张，改为聚焦示范性落地项目。",
+      "对高风险主题增加中期验收门槛和过程审查频次。",
+      "补充中坚骨干和跨团队协作机制，避免主题做大后能力跟不上。",
+      "对人才结构偏弱主题建立联合攻关和导师制支持。"
+    ]
+  },
+  "topFindings": [
+    {
+      "topic": "1010101-面上项目",
+      "severity": "high",
+      "type": "backbone_absent_risk",
+      "suggestion": "该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。",
+      "evidence": {
+        "people": 572,
+        "backbone": 0,
+        "senior": 0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "people",
+          "label": "参与人员数",
+          "value": "572",
+          "explanation": "窗口B内参与该主题项目的去重人员数。"
+        },
+        {
+          "field": "backbone",
+          "label": "骨干人数",
+          "value": "0",
+          "explanation": "标题中包含“副”等中坚骨干特征的人员数。"
+        },
+        {
+          "field": "senior",
+          "label": "高级人才数",
+          "value": "0",
+          "explanation": "标题中包含“教授”“研究员”“高工”等高级职称特征的人员数。"
+        }
+      ]
+    },
+    {
+      "topic": "1010101-面上项目",
+      "severity": "high",
+      "type": "low_conversion_after_growth",
+      "suggestion": "该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。",
+      "evidence": {
+        "applicationsA": 313,
+        "applicationsB": 582,
+        "growthRate": 0.8594,
+        "conversionA": 0.0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsA",
+          "label": "窗口A申报量",
+          "value": "313",
+          "explanation": "窗口A内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "582",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "growthRate",
+          "label": "申报量增长率",
+          "value": "0.8594",
+          "explanation": "申报量增长率，按 (B-A)/A 计算；A 为 0 且 B 大于 0 时按新增长记为 1.0。"
+        },
+        {
+          "field": "conversionA",
+          "label": "窗口A转化率",
+          "value": "0.0",
+          "explanation": "窗口A转化率，按 outputs/applications 计算。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010101-面上项目",
+      "severity": "high",
+      "type": "persistent_low_conversion",
+      "suggestion": "该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。",
+      "evidence": {
+        "applicationsA": 313,
+        "applicationsB": 582,
+        "conversionA": 0.0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsA",
+          "label": "窗口A申报量",
+          "value": "313",
+          "explanation": "窗口A内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "582",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "conversionA",
+          "label": "窗口A转化率",
+          "value": "0.0",
+          "explanation": "窗口A转化率，按 outputs/applications 计算。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010101-面上项目",
+      "severity": "high",
+      "type": "zero_output_high_heat",
+      "suggestion": "该主题在较高申报规模下仍无成果输出，建议专项核查立项质量与执行机制。",
+      "evidence": {
+        "applicationsB": 582,
+        "outputsB": 0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "582",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "outputsB",
+          "label": "窗口B产出量",
+          "value": "0",
+          "explanation": "窗口B内该主题关联的成果产出数量。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010201-青年科学基金项目（A类）",
+      "severity": "high",
+      "type": "backbone_absent_risk",
+      "suggestion": "该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。",
+      "evidence": {
+        "people": 447,
+        "backbone": 0,
+        "senior": 0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "people",
+          "label": "参与人员数",
+          "value": "447",
+          "explanation": "窗口B内参与该主题项目的去重人员数。"
+        },
+        {
+          "field": "backbone",
+          "label": "骨干人数",
+          "value": "0",
+          "explanation": "标题中包含“副”等中坚骨干特征的人员数。"
+        },
+        {
+          "field": "senior",
+          "label": "高级人才数",
+          "value": "0",
+          "explanation": "标题中包含“教授”“研究员”“高工”等高级职称特征的人员数。"
+        }
+      ]
+    },
+    {
+      "topic": "1010201-青年科学基金项目（A类）",
+      "severity": "high",
+      "type": "low_conversion_after_growth",
+      "suggestion": "该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。",
+      "evidence": {
+        "applicationsA": 0,
+        "applicationsB": 450,
+        "growthRate": 1.0,
+        "conversionA": 0.0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsA",
+          "label": "窗口A申报量",
+          "value": "0",
+          "explanation": "窗口A内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "450",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "growthRate",
+          "label": "申报量增长率",
+          "value": "1.0",
+          "explanation": "申报量增长率，按 (B-A)/A 计算；A 为 0 且 B 大于 0 时按新增长记为 1.0。"
+        },
+        {
+          "field": "conversionA",
+          "label": "窗口A转化率",
+          "value": "0.0",
+          "explanation": "窗口A转化率，按 outputs/applications 计算。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010201-青年科学基金项目（A类）",
+      "severity": "high",
+      "type": "persistent_low_conversion",
+      "suggestion": "该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。",
+      "evidence": {
+        "applicationsA": 0,
+        "applicationsB": 450,
+        "conversionA": 0.0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsA",
+          "label": "窗口A申报量",
+          "value": "0",
+          "explanation": "窗口A内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "450",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "conversionA",
+          "label": "窗口A转化率",
+          "value": "0.0",
+          "explanation": "窗口A转化率，按 outputs/applications 计算。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010201-青年科学基金项目（A类）",
+      "severity": "high",
+      "type": "zero_output_high_heat",
+      "suggestion": "该主题在较高申报规模下仍无成果输出，建议专项核查立项质量与执行机制。",
+      "evidence": {
+        "applicationsB": 450,
+        "outputsB": 0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "450",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "outputsB",
+          "label": "窗口B产出量",
+          "value": "0",
+          "explanation": "窗口B内该主题关联的成果产出数量。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010202-青年科学基金项目（B类）",
+      "severity": "high",
+      "type": "backbone_absent_risk",
+      "suggestion": "该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。",
+      "evidence": {
+        "people": 30,
+        "backbone": 0,
+        "senior": 0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "people",
+          "label": "参与人员数",
+          "value": "30",
+          "explanation": "窗口B内参与该主题项目的去重人员数。"
+        },
+        {
+          "field": "backbone",
+          "label": "骨干人数",
+          "value": "0",
+          "explanation": "标题中包含“副”等中坚骨干特征的人员数。"
+        },
+        {
+          "field": "senior",
+          "label": "高级人才数",
+          "value": "0",
+          "explanation": "标题中包含“教授”“研究员”“高工”等高级职称特征的人员数。"
+        }
+      ]
+    },
+    {
+      "topic": "1010202-青年科学基金项目（B类）",
+      "severity": "high",
+      "type": "low_conversion_after_growth",
+      "suggestion": "该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。",
+      "evidence": {
+        "applicationsA": 0,
+        "applicationsB": 30,
+        "growthRate": 1.0,
+        "conversionA": 0.0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsA",
+          "label": "窗口A申报量",
+          "value": "0",
+          "explanation": "窗口A内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "30",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "growthRate",
+          "label": "申报量增长率",
+          "value": "1.0",
+          "explanation": "申报量增长率，按 (B-A)/A 计算；A 为 0 且 B 大于 0 时按新增长记为 1.0。"
+        },
+        {
+          "field": "conversionA",
+          "label": "窗口A转化率",
+          "value": "0.0",
+          "explanation": "窗口A转化率，按 outputs/applications 计算。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010202-青年科学基金项目（B类）",
+      "severity": "high",
+      "type": "persistent_low_conversion",
+      "suggestion": "该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。",
+      "evidence": {
+        "applicationsA": 0,
+        "applicationsB": 30,
+        "conversionA": 0.0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsA",
+          "label": "窗口A申报量",
+          "value": "0",
+          "explanation": "窗口A内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "30",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "conversionA",
+          "label": "窗口A转化率",
+          "value": "0.0",
+          "explanation": "窗口A转化率，按 outputs/applications 计算。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    },
+    {
+      "topic": "1010202-青年科学基金项目（B类）",
+      "severity": "high",
+      "type": "zero_output_high_heat",
+      "suggestion": "该主题在较高申报规模下仍无成果输出，建议专项核查立项质量与执行机制。",
+      "evidence": {
+        "applicationsB": 30,
+        "outputsB": 0,
+        "conversionB": 0.0
+      },
+      "evidenceExplanation": [
+        {
+          "field": "applicationsB",
+          "label": "窗口B申报量",
+          "value": "30",
+          "explanation": "窗口B内按主题归并后的项目申报数量。"
+        },
+        {
+          "field": "outputsB",
+          "label": "窗口B产出量",
+          "value": "0",
+          "explanation": "窗口B内该主题关联的成果产出数量。"
+        },
+        {
+          "field": "conversionB",
+          "label": "窗口B转化率",
+          "value": "0.0",
+          "explanation": "窗口B转化率，按 outputs/applications 计算。"
+        }
+      ]
+    }
+  ]
+}

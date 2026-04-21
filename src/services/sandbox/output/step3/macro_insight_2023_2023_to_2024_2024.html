@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>宏观治理研判简报</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f1ea; color: #1c1917; }
+    .page { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .hero { background: linear-gradient(135deg, #fffdf8 0%, #f7efe3 100%); border: 1px solid #eadfce; border-radius: 20px; padding: 24px; box-shadow: 0 10px 28px rgba(56, 38, 17, 0.06); }
+    .title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+    .subtitle { margin-top: 8px; font-size: 13px; color: #57534e; }
+    .headline { margin-top: 12px; font-size: 18px; line-height: 1.7; color: #7c2d12; font-weight: 700; }
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .stat { background: rgba(255,255,255,0.92); border: 1px solid #eadfce; border-radius: 16px; padding: 14px 16px; }
+    .stat-label { font-size: 12px; color: #78716c; }
+    .stat-value { margin-top: 6px; font-size: 24px; font-weight: 800; color: #9a3412; }
+    .section { margin-top: 18px; background: #ffffff; border: 1px solid #e7e5e4; border-radius: 18px; padding: 18px 20px; box-shadow: 0 10px 24px rgba(56, 38, 17, 0.04); }
+    .section-title { font-size: 16px; font-weight: 800; margin-bottom: 12px; }
+    .overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .overview-item { background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px; padding: 12px 14px; }
+    .overview-label { font-size: 11px; color: #78716c; }
+    .overview-value { margin-top: 6px; font-size: 14px; font-weight: 700; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .pill-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #ffedd5; color: #9a3412; font-size: 12px; }
+    .insight-list, .action-list { display: grid; gap: 10px; }
+    .insight-item, .action-item { background: #fafaf9; border: 1px solid #e7e5e4; border-radius: 12px; padding: 12px 14px; line-height: 1.7; }
+    .two-col { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 10px; border-top: 1px solid #e7e5e4; vertical-align: top; text-align: left; }
+    th { font-size: 12px; color: #78716c; }
+    td { font-size: 13px; line-height: 1.7; }
+    .severity-high { color: #b91c1c; font-weight: 800; }
+    .severity-medium { color: #b45309; font-weight: 800; }
+    .empty { color: #a8a29e; font-size: 13px; padding: 8px 0; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; font-size: 12px; }
+    .evidence-box { display: grid; gap: 8px; }
+    .evidence-note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 10px; }
+    .evidence-note-title { font-size: 12px; font-weight: 700; color: #9a3412; margin-bottom: 6px; }
+    .evidence-note-list { display: grid; gap: 6px; }
+    .evidence-note-item { font-size: 12px; line-height: 1.6; color: #7c2d12; }
+    @media (max-width: 1080px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .overview-grid { grid-template-columns: 1fr; }
+      .two-col { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 720px) {
+      .page { padding: 14px; }
+      .stats { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="title">宏观治理研判简报</div>
+      <div class="subtitle">生成时间 2026-04-21T03:44:30.077440+00:00 | 来源 /home/tdkx/malin/TechManagement/src/services/sandbox/output/step3/macro_insight_2023_2023_to_2024_2024.json</div>
+      <div class="headline">发现 76 个高风险主题，建议优先收敛申报增长快但转化弱的方向。</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-label">主题数(窗口A)</div><div class="stat-value">115</div></div><div class="stat"><div class="stat-label">主题数(窗口B)</div><div class="stat-value">171</div></div><div class="stat"><div class="stat-label">发现总数</div><div class="stat-value">152</div></div><div class="stat"><div class="stat-label">高风险</div><div class="stat-value">76</div></div><div class="stat"><div class="stat-label">中风险</div><div class="stat-value">76</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">分析说明</div>
+      <div class="overview-grid">
+        <div class="overview-item"><div class="overview-label">窗口A</div><div class="overview-value">{&#x27;start&#x27;: 2023, &#x27;end&#x27;: 2023}</div></div>
+        <div class="overview-item"><div class="overview-label">窗口B</div><div class="overview-value">{&#x27;start&#x27;: 2024, &#x27;end&#x27;: 2024}</div></div>
+        <div class="overview-item"><div class="overview-label">主题口径</div><div class="overview-value">coalesce(p.guideName, p.department, p.office, &#x27;&lt;未知主题&gt;&#x27;)</div></div>
+        <div class="overview-item"><div class="overview-label">边界定位</div><div class="overview-value">governance_only</div></div>
+        <div class="overview-item"><div class="overview-label">负责内容</div><div class="overview-value">[&#x27;conversion&#x27;, &#x27;output_quality&#x27;, &#x27;talent_structure&#x27;, &#x27;collaboration&#x27;, &#x27;knowledge_semantics&#x27;]</div></div>
+        <div class="overview-item"><div class="overview-label">排除内容</div><div class="overview-value">[&#x27;community_detection&#x27;, &#x27;hotspot_migration&#x27;]</div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">风险分布</div>
+      <div class="two-col">
+        <div class="insight-list">
+          <div class="insight-item"><strong>risk</strong>：29</div><div class="insight-item"><strong>opportunity</strong>：1</div><div class="insight-item"><strong>talent</strong>：84</div><div class="insight-item"><strong>conversion</strong>：38</div>
+        </div>
+        <div>
+          <div class="section-title" style="margin-bottom: 10px;">风险类型</div>
+          <div class="pill-wrap">
+            <span class="pill">backbone_absent_risk</span><span class="pill">conversion_efficiency_gap</span><span class="pill">conversion_recovery_signal</span><span class="pill">low_conversion_after_growth</span><span class="pill">persistent_low_conversion</span><span class="pill">senior_talent_shortage</span><span class="pill">talent_structure_gap</span><span class="pill">zero_output_high_heat</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">治理动作</div>
+      <div class="action-list">
+        <div class="action-item">优先压缩高增长低转化主题的申报扩张，改为聚焦示范性落地项目。</div><div class="action-item">对高风险主题增加中期验收门槛和过程审查频次。</div><div class="action-item">补充中坚骨干和跨团队协作机制，避免主题做大后能力跟不上。</div><div class="action-item">对人才结构偏弱主题建立联合攻关和导师制支持。</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">重点发现</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>主题</th>
+              <th>级别</th>
+              <th>类型</th>
+              <th>证据</th>
+              <th>建议</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1010101-面上项目</td><td class="severity-high">high</td><td>backbone_absent_risk</td><td><div class="evidence-box"><pre>{
+  &quot;people&quot;: 572,
+  &quot;backbone&quot;: 0,
+  &quot;senior&quot;: 0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>参与人员数</strong>：窗口B内参与该主题项目的去重人员数。</div><div class="evidence-note-item"><strong>骨干人数</strong>：标题中包含“副”等中坚骨干特征的人员数。</div><div class="evidence-note-item"><strong>高级人才数</strong>：标题中包含“教授”“研究员”“高工”等高级职称特征的人员数。</div></div></div></div></td><td>该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。</td></tr><tr><td>1010101-面上项目</td><td class="severity-high">high</td><td>low_conversion_after_growth</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsA&quot;: 313,
+  &quot;applicationsB&quot;: 582,
+  &quot;growthRate&quot;: 0.8594,
+  &quot;conversionA&quot;: 0.0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口A申报量</strong>：窗口A内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>申报量增长率</strong>：申报量增长率，按 (B-A)/A 计算；A 为 0 且 B 大于 0 时按新增长记为 1.0。</div><div class="evidence-note-item"><strong>窗口A转化率</strong>：窗口A转化率，按 outputs/applications 计算。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。</td></tr><tr><td>1010101-面上项目</td><td class="severity-high">high</td><td>persistent_low_conversion</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsA&quot;: 313,
+  &quot;applicationsB&quot;: 582,
+  &quot;conversionA&quot;: 0.0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口A申报量</strong>：窗口A内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口A转化率</strong>：窗口A转化率，按 outputs/applications 计算。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。</td></tr><tr><td>1010101-面上项目</td><td class="severity-high">high</td><td>zero_output_high_heat</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsB&quot;: 582,
+  &quot;outputsB&quot;: 0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B产出量</strong>：窗口B内该主题关联的成果产出数量。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题在较高申报规模下仍无成果输出，建议专项核查立项质量与执行机制。</td></tr><tr><td>1010201-青年科学基金项目（A类）</td><td class="severity-high">high</td><td>backbone_absent_risk</td><td><div class="evidence-box"><pre>{
+  &quot;people&quot;: 447,
+  &quot;backbone&quot;: 0,
+  &quot;senior&quot;: 0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>参与人员数</strong>：窗口B内参与该主题项目的去重人员数。</div><div class="evidence-note-item"><strong>骨干人数</strong>：标题中包含“副”等中坚骨干特征的人员数。</div><div class="evidence-note-item"><strong>高级人才数</strong>：标题中包含“教授”“研究员”“高工”等高级职称特征的人员数。</div></div></div></div></td><td>该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。</td></tr><tr><td>1010201-青年科学基金项目（A类）</td><td class="severity-high">high</td><td>low_conversion_after_growth</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsA&quot;: 0,
+  &quot;applicationsB&quot;: 450,
+  &quot;growthRate&quot;: 1.0,
+  &quot;conversionA&quot;: 0.0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口A申报量</strong>：窗口A内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>申报量增长率</strong>：申报量增长率，按 (B-A)/A 计算；A 为 0 且 B 大于 0 时按新增长记为 1.0。</div><div class="evidence-note-item"><strong>窗口A转化率</strong>：窗口A转化率，按 outputs/applications 计算。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。</td></tr><tr><td>1010201-青年科学基金项目（A类）</td><td class="severity-high">high</td><td>persistent_low_conversion</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsA&quot;: 0,
+  &quot;applicationsB&quot;: 450,
+  &quot;conversionA&quot;: 0.0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口A申报量</strong>：窗口A内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口A转化率</strong>：窗口A转化率，按 outputs/applications 计算。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。</td></tr><tr><td>1010201-青年科学基金项目（A类）</td><td class="severity-high">high</td><td>zero_output_high_heat</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsB&quot;: 450,
+  &quot;outputsB&quot;: 0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B产出量</strong>：窗口B内该主题关联的成果产出数量。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题在较高申报规模下仍无成果输出，建议专项核查立项质量与执行机制。</td></tr><tr><td>1010202-青年科学基金项目（B类）</td><td class="severity-high">high</td><td>backbone_absent_risk</td><td><div class="evidence-box"><pre>{
+  &quot;people&quot;: 30,
+  &quot;backbone&quot;: 0,
+  &quot;senior&quot;: 0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>参与人员数</strong>：窗口B内参与该主题项目的去重人员数。</div><div class="evidence-note-item"><strong>骨干人数</strong>：标题中包含“副”等中坚骨干特征的人员数。</div><div class="evidence-note-item"><strong>高级人才数</strong>：标题中包含“教授”“研究员”“高工”等高级职称特征的人员数。</div></div></div></div></td><td>该主题团队缺少中坚骨干，建议针对性补强学术带头人与项目经理型人才。</td></tr><tr><td>1010202-青年科学基金项目（B类）</td><td class="severity-high">high</td><td>low_conversion_after_growth</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsA&quot;: 0,
+  &quot;applicationsB&quot;: 30,
+  &quot;growthRate&quot;: 1.0,
+  &quot;conversionA&quot;: 0.0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口A申报量</strong>：窗口A内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>申报量增长率</strong>：申报量增长率，按 (B-A)/A 计算；A 为 0 且 B 大于 0 时按新增长记为 1.0。</div><div class="evidence-note-item"><strong>窗口A转化率</strong>：窗口A转化率，按 outputs/applications 计算。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。</td></tr><tr><td>1010202-青年科学基金项目（B类）</td><td class="severity-high">high</td><td>persistent_low_conversion</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsA&quot;: 0,
+  &quot;applicationsB&quot;: 30,
+  &quot;conversionA&quot;: 0.0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口A申报量</strong>：窗口A内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口A转化率</strong>：窗口A转化率，按 outputs/applications 计算。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题连续两个周期处于低转化状态，建议执行退出评估或重构支持方式。</td></tr><tr><td>1010202-青年科学基金项目（B类）</td><td class="severity-high">high</td><td>zero_output_high_heat</td><td><div class="evidence-box"><pre>{
+  &quot;applicationsB&quot;: 30,
+  &quot;outputsB&quot;: 0,
+  &quot;conversionB&quot;: 0.0
+}</pre><div class="evidence-note"><div class="evidence-note-title">证据解释</div><div class="evidence-note-list"><div class="evidence-note-item"><strong>窗口B申报量</strong>：窗口B内按主题归并后的项目申报数量。</div><div class="evidence-note-item"><strong>窗口B产出量</strong>：窗口B内该主题关联的成果产出数量。</div><div class="evidence-note-item"><strong>窗口B转化率</strong>：窗口B转化率，按 outputs/applications 计算。</div></div></div></div></td><td>该主题在较高申报规模下仍无成果输出，建议专项核查立项质量与执行机制。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""第三步：宏观研判规则引擎（最小闭环）。
+"""第三步：宏观治理研判规则引擎（最小闭环）。
 
 能力：
-1. 通用主题维度下的增长-转化风险识别（不限于某两个示例领域）。
+1. 通用主题维度下的治理风险识别，重点覆盖转化、产出质量与人才结构。
 2. 人才结构断层识别（人员规模、骨干占比、协作强度）。
 3. 输出结构化 findings，供前端、报告生成和 LLM 研判复用。
+
+边界：
+- Step3 不负责热点社区发现和迁移流识别；这些内容由 Step2 承担。
+- 纯规模涨跌信号默认关闭，避免与 Step2 的热点迁移判断重叠。
 """
 
 from __future__ import annotations
@@ -23,8 +27,58 @@ except ModuleNotFoundError:
         return False
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
+from src.services.sandbox.macro_insight_report_builder import (
+    MacroInsightReportBuilder,
+    build_macro_insight_lite_payload,
+)
 
-load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+# 从 Step2 读取主题数据
+def load_step2_topics(step2_output_path: str | None = None) -> dict[str, list[str]]:
+    """从 Step2 的输出文件中读取主题数据"""
+    if not step2_output_path:
+        # 尝试默认路径
+        default_step2_output = SANDBOX_DIR / "output" / "step2" / f"hotspot_migration_{DEFAULT_YEAR_A_START}_{DEFAULT_YEAR_A_END}_to_{DEFAULT_YEAR_B_START}_{DEFAULT_YEAR_B_END}.json"
+        if default_step2_output.exists():
+            step2_output_path = str(default_step2_output)
+        else:
+            return {}
+    
+    try:
+        with open(step2_output_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # 提取两个时间窗的主题
+        topics_a = []
+        topics_b = []
+        
+        # 从 communities 中提取主题
+        if "communities" in data:
+            if "windowA" in data["communities"]:
+                for community in data["communities"]["windowA"]:
+                    if "keywords" in community:
+                        topics_a.extend(community["keywords"])
+            if "windowB" in data["communities"]:
+                for community in data["communities"]["windowB"]:
+                    if "keywords" in community:
+                        topics_b.extend(community["keywords"])
+        
+        # 去重
+        topics_a = list(set(topics_a))
+        topics_b = list(set(topics_b))
+        
+        return {
+            "windowA": topics_a,
+            "windowB": topics_b
+        }
+    except Exception as e:
+        print(f"[WARN] 读取 Step2 输出文件失败: {e}")
+        return {}
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SANDBOX_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_DIR = SANDBOX_DIR / "output" / "step3"
+
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 DEFAULT_YEAR_A_START = 2023
@@ -55,6 +109,7 @@ DEFAULT_FAST_MODE = True
 DEFAULT_FAST_PROJECT_LIMIT = 30000
 DEFAULT_FAST_FOCUS_TOPICS = 80
 DEFAULT_FAST_ENABLE_COLLAB = False
+DEFAULT_ENABLE_HEAT_ONLY_SIGNALS = False
 
 RULE_GROUP_MAP = {
     "low_conversion_after_growth": "risk",
@@ -99,6 +154,8 @@ class InsightConfig:
     fast_project_limit: int
     fast_focus_topics: int
     fast_enable_collab: bool
+    enable_heat_only_signals: bool
+    step2_output_path: str | None
     output_path: str
 
 
@@ -125,9 +182,9 @@ def build_config() -> InsightConfig:
     if year_a_end < year_a_start or year_b_end < year_b_start:
         raise ValueError("年份区间非法：结束年份不能小于开始年份")
 
-    default_output = (
-        f"debug_sandbox/macro_insight_{year_a_start}_{year_a_end}_"
-        f"to_{year_b_start}_{year_b_end}.json"
+    default_output = str(
+        DEFAULT_OUTPUT_DIR
+        / f"macro_insight_{year_a_start}_{year_a_end}_to_{year_b_start}_{year_b_end}.json"
     )
 
     return InsightConfig(
@@ -150,13 +207,24 @@ def build_config() -> InsightConfig:
         fast_mode=env_bool("INSIGHT_FAST_MODE", DEFAULT_FAST_MODE),
         fast_project_limit=max(1000, int(os.getenv("INSIGHT_FAST_PROJECT_LIMIT", str(DEFAULT_FAST_PROJECT_LIMIT)))),
         fast_focus_topics=max(10, int(os.getenv("INSIGHT_FAST_FOCUS_TOPICS", str(DEFAULT_FAST_FOCUS_TOPICS)))),
-        fast_enable_collab=env_bool("INSIGHT_FAST_ENABLE_COLLAB", DEFAULT_FAST_ENABLE_COLLAB),
+        fast_enable_collab=env_bool("INSIGHT_ENABLE_COLLAB", DEFAULT_FAST_ENABLE_COLLAB),
+        enable_heat_only_signals=env_bool("INSIGHT_ENABLE_HEAT_ONLY_SIGNALS", DEFAULT_ENABLE_HEAT_ONLY_SIGNALS),
+        step2_output_path=os.getenv("INSIGHT_STEP2_OUTPUT_PATH"),
         output_path=os.getenv("INSIGHT_OUTPUT_PATH", default_output),
     )
 
 
 def ensure_output_dir(path: str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+
+def build_companion_output_paths(output_path: str) -> dict[str, str]:
+    path = Path(output_path)
+    stem = path.stem
+    return {
+        "lite_json": str(path.with_name(f"{stem}.lite.json")),
+        "html": str(path.with_name(f"{stem}.html")),
+    }
 
 
 def _topic_metrics_query(topic_expr: str, fast_mode: bool) -> str:
@@ -397,7 +465,7 @@ def build_findings(
                 "该主题呈现高增速低转化，建议下一周期指南进行结构性收敛，并提高落地指标权重。",
             )
 
-        if app_b >= cfg.min_applications and growth >= DEFAULT_SPIKE_GROWTH_THRESHOLD:
+        if cfg.enable_heat_only_signals and app_b >= cfg.min_applications and growth >= DEFAULT_SPIKE_GROWTH_THRESHOLD:
             add_finding(
                 "application_growth_spike",
                 "medium",
@@ -410,7 +478,7 @@ def build_findings(
                 "该主题申报规模出现激增，建议增加过程复核，避免短期跟风扩张。",
             )
 
-        if app_a >= cfg.min_applications and growth <= DEFAULT_SHRINK_ALERT_THRESHOLD:
+        if cfg.enable_heat_only_signals and app_a >= cfg.min_applications and growth <= DEFAULT_SHRINK_ALERT_THRESHOLD:
             add_finding(
                 "application_shrink_alert",
                 "medium",
@@ -696,6 +764,11 @@ def build_briefing(cfg: InsightConfig, findings: list[dict[str, Any]], summary: 
 def run(cfg: InsightConfig) -> dict[str, Any]:
     driver = GraphDatabase.driver(cfg.uri, auth=(cfg.user, cfg.password))
     try:
+        # 加载 Step2 的主题数据
+        step2_topics = load_step2_topics(cfg.step2_output_path)
+        step2_topics_a = step2_topics.get("windowA", [])
+        step2_topics_b = step2_topics.get("windowB", [])
+        
         with driver.session(database=cfg.database) as session:
             metrics_a = fetch_window_topic_metrics(session, cfg, cfg.year_a_start, cfg.year_a_end)
             metrics_b = fetch_window_topic_metrics(session, cfg, cfg.year_b_start, cfg.year_b_end)
@@ -730,19 +803,36 @@ def run(cfg: InsightConfig) -> dict[str, Any]:
                 print(f"[WARN] 知识层语义检索失败，已降级为空结果继续产出: {exc}")
                 knowledge = {}
 
-        findings = build_findings(cfg, metrics_a, metrics_b, talent, knowledge)
+        # 放宽 opportunity 部分的规则阈值
+        # 创建一个临时配置，修改相关阈值
+        from dataclasses import replace
+        relaxed_cfg = replace(cfg,
+            # 降低新兴主题的申报数要求
+            min_applications=15,
+            # 降低高转化的阈值
+            low_conversion_threshold=0.08,
+            # 降低新兴主题的转化要求
+            growth_alert_threshold=0.20
+        )
+        
+        # 构建 findings
+        findings = build_findings(relaxed_cfg, metrics_a, metrics_b, talent, knowledge)
         grouped_findings = group_findings(findings)
 
+        # 计算主题数（优先使用 Step2 的数据）
+        total_topics_a = len(step2_topics_a) if step2_topics_a else len(metrics_a)
+        total_topics_b = len(step2_topics_b) if step2_topics_b else len(metrics_b)
+
         summary = {
-            "totalTopicsA": len(metrics_a),
-            "totalTopicsB": len(metrics_b),
+            "totalTopicsA": total_topics_a,
+            "totalTopicsB": total_topics_b,
             "totalFindings": len(findings),
             "highRisk": sum(1 for f in findings if f["severity"] == "high"),
             "mediumRisk": sum(1 for f in findings if f["severity"] == "medium"),
             "riskTypes": sorted({str(f.get("type", "")) for f in findings if f.get("type")}),
             "groupCounts": {k: len(v) for k, v in grouped_findings.items()},
         }
-        briefing = build_briefing(cfg, findings, summary)
+        briefing = build_briefing(relaxed_cfg, findings, summary)
 
         return {
             "meta": {
@@ -751,9 +841,9 @@ def run(cfg: InsightConfig) -> dict[str, Any]:
                 "windowB": {"start": cfg.year_b_start, "end": cfg.year_b_end},
                 "topicExpr": cfg.topic_expr,
                 "threshold": {
-                    "minApplications": cfg.min_applications,
-                    "growthAlert": cfg.growth_alert_threshold,
-                    "lowConversion": cfg.low_conversion_threshold,
+                    "minApplications": relaxed_cfg.min_applications,
+                    "growthAlert": relaxed_cfg.growth_alert_threshold,
+                    "lowConversion": relaxed_cfg.low_conversion_threshold,
                     "talentMinPeople": cfg.talent_min_people,
                     "talentBackboneRatio": cfg.talent_backbone_ratio_threshold,
                     "talentCollabRatio": cfg.talent_collab_ratio_threshold,
@@ -764,9 +854,24 @@ def run(cfg: InsightConfig) -> dict[str, Any]:
                     "focusTopics": cfg.fast_focus_topics,
                     "collabEnabled": cfg.fast_enable_collab,
                 },
+                "analysisBoundary": {
+                    "positioning": "governance_only",
+                    "owns": ["conversion", "output_quality", "talent_structure", "collaboration", "knowledge_semantics"],
+                    "excludes": ["community_detection", "hotspot_migration"],
+                    "heatOnlySignalsEnabled": cfg.enable_heat_only_signals,
+                    "disabledRuleTypes": ([] if cfg.enable_heat_only_signals else [
+                        "application_growth_spike",
+                        "application_shrink_alert",
+                    ]),
+                },
                 "evidenceLayers": {
                     "managementLayer": ["applications", "outputs", "conversion", "talent", "collab"],
                     "knowledgeLayer": ["topic_semantics", "involves_concept", "concept_links"],
+                },
+                "step2Integration": {
+                    "enabled": bool(step2_topics),
+                    "topicsA": len(step2_topics_a),
+                    "topicsB": len(step2_topics_b),
                 },
             },
             "summary": summary,
@@ -778,6 +883,7 @@ def run(cfg: InsightConfig) -> dict[str, Any]:
                 "windowB": metrics_b,
                 "talent": talent,
                 "knowledge": knowledge,
+                "step2Topics": step2_topics,
             },
         }
     finally:
@@ -797,8 +903,20 @@ def main() -> int:
         with open(cfg.output_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
 
+        companion_paths = build_companion_output_paths(cfg.output_path)
+        lite_result = build_macro_insight_lite_payload(result, cfg.output_path)
+
+        ensure_output_dir(companion_paths["lite_json"])
+        with open(companion_paths["lite_json"], "w", encoding="utf-8") as f:
+            json.dump(lite_result, f, ensure_ascii=False, indent=2)
+
+        ensure_output_dir(companion_paths["html"])
+        MacroInsightReportBuilder().build_from_payload(lite_result, companion_paths["html"])
+
         print("[SUCCESS] 第三步完成：通用宏观研判引擎已跑通")
         print(f"[OUTPUT] {cfg.output_path}")
+        print(f"[OUTPUT_LITE_JSON] {companion_paths['lite_json']}")
+        print(f"[OUTPUT_HTML] {companion_paths['html']}")
         print(f"[SUMMARY] findings={result['summary']['totalFindings']} high={result['summary']['highRisk']} medium={result['summary']['mediumRisk']}")
         print(f"[BRIEF] {result['briefing']['headline']}")
         return 0

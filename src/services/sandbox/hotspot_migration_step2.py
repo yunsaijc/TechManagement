@@ -41,7 +41,7 @@ SESSION_KWARGS = {
 }
 
 SANDBOX_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT_DIR = SANDBOX_DIR / "output"
+DEFAULT_OUTPUT_DIR = SANDBOX_DIR / "output" / "step2"
 
 DEFAULT_YEAR_A_START = 2023
 DEFAULT_YEAR_A_END = 2023
@@ -55,7 +55,7 @@ DEFAULT_TOP_COMMUNITIES = 8
 DEFAULT_OUTPUT_PATH = str(DEFAULT_OUTPUT_DIR / "hotspot_migration_real_schema_2023_to_2024.json")
 DEFAULT_COMMUNITY_EDGE_THRESHOLD = 200000
 FAST_ATTRIBUTE_GROUP_CAP = 320
-ATTRIBUTE_GROUP_CAP = 350
+ATTRIBUTE_GROUP_CAP = 250
 FORCED_COMMUNITY_TARGET_MIN = 150
 FORCED_COMMUNITY_TARGET_MAX = 200
 FORCED_COMMUNITY_TARGET_IDEAL = 175
@@ -1471,8 +1471,6 @@ def build_companion_output_paths(output_path: str) -> dict[str, str]:
     path = Path(output_path)
     stem = path.stem
     return {
-        "lite_json": str(path.with_name(f"{stem}.lite.json")),
-        "lite_html": str(path.with_name(f"{stem}.lite.html")),
         "cluster_nodes_html": str(path.with_name(f"{stem}.cluster_nodes.html")),
     }
 
@@ -1668,14 +1666,6 @@ def main() -> int:
 
         companion_paths = build_companion_output_paths(cfg.output_path)
         lite_result = build_lite_result(result, cfg.output_path)
-        log_progress("main", "write lite output json", output=companion_paths["lite_json"])
-        with open(companion_paths["lite_json"], "w", encoding="utf-8") as f:
-            json.dump(lite_result, f, ensure_ascii=False, indent=2)
-
-        from src.services.sandbox.hotspot_migration_report_builder import HotspotMigrationReportBuilder
-
-        log_progress("main", "write lite output html", output=companion_paths["lite_html"])
-        HotspotMigrationReportBuilder().build_from_payload(lite_result, companion_paths["lite_html"])
 
         from src.services.sandbox.hotspot_migration_cluster_node_builder import (
             build_cluster_node_html_from_result,
@@ -1690,8 +1680,6 @@ def main() -> int:
 
         print("[SUCCESS] 第二步完成：热点迁移最小闭环已跑通")
         print(f"[OUTPUT] {cfg.output_path}")
-        print(f"[OUTPUT_LITE_JSON] {companion_paths['lite_json']}")
-        print(f"[OUTPUT_LITE_HTML] {companion_paths['lite_html']}")
         print(f"[OUTPUT_CLUSTER_HTML] {companion_paths['cluster_nodes_html']}")
         for line in result.get("insightDraft", []):
             print(f"[INSIGHT] {line}")
