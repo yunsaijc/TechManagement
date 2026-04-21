@@ -43,10 +43,34 @@ def get_default_llm_client():
     )
 
 
+def get_review_llm_client():
+    """获取 review 场景专用 LLM 客户端。
+
+    review 审查链路更看重可复现性而不是发散性，统一固定 temperature=0。
+    """
+    api_key = (
+        llm_config.api_key
+        or os.getenv("apikey")
+        or os.getenv("API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
+    return get_llm_client(
+        provider=llm_config.provider or "openai",
+        model=llm_config.model or None,
+        api_key=api_key or None,
+        base_url=llm_config.base_url or None,
+        temperature=0.0,
+        max_tokens=llm_config.max_tokens,
+        timeout=llm_config.timeout,
+        max_retries=llm_config.max_retries,
+    )
+
+
 __all__ = [
     "get_llm_client",
     "LLMConfig",
     "get_default_llm_client",
+    "get_review_llm_client",
     "llm_config",
     "get_embedding_client",
     "get_default_embedding_client",

@@ -625,6 +625,40 @@ class RewardReviewService:
                     values.append(str(item).strip())
         return _dedup(values)
 
+    def _collect_wcr_role_stamp_texts(self, result: ReviewResult) -> Dict[str, List[str]]:
+        role_values: Dict[str, List[str]] = {
+            "work_unit_stamps": [],
+            "completion_unit_stamps": [],
+        }
+        llm_analysis = result.llm_analysis or {}
+        payload = llm_analysis.get("award_contributor_analysis") or {}
+        if isinstance(payload, dict):
+            role_values["work_unit_stamps"].extend(
+                [str(item).strip() for item in payload.get("work_unit_stamp_units", []) if str(item).strip()]
+            )
+            role_values["completion_unit_stamps"].extend(
+                [str(item).strip() for item in payload.get("completion_unit_stamp_units", []) if str(item).strip()]
+            )
+
+        for check in result.results:
+            if getattr(check, "item", "") == "award_contributor_work_unit_stamp_consistency":
+                evidence = getattr(check, "evidence", {}) or {}
+                if isinstance(evidence, dict):
+                    role_values["work_unit_stamps"].extend(
+                        [str(item).strip() for item in (evidence.get("role_stamp_units") or []) if str(item).strip()]
+                    )
+            elif getattr(check, "item", "") == "award_contributor_completion_unit_stamp_consistency":
+                evidence = getattr(check, "evidence", {}) or {}
+                if isinstance(evidence, dict):
+                    role_values["completion_unit_stamps"].extend(
+                        [str(item).strip() for item in (evidence.get("role_stamp_units") or []) if str(item).strip()]
+                    )
+
+        return {
+            "work_unit_stamps": _dedup(role_values["work_unit_stamps"]),
+            "completion_unit_stamps": _dedup(role_values["completion_unit_stamps"]),
+        }
+
     def _collect_verification_result(
         self,
         result: ReviewResult,
@@ -746,10 +780,10 @@ class RewardReviewService:
 
     def _run_multimodal_json(self, image_data: bytes, prompt: str) -> Dict[str, Any]:
         async def _run() -> str:
-            from src.common.llm import get_default_llm_client
+            from src.common.llm import get_review_llm_client
             from src.common.vision.multimodal import MultimodalLLM
 
-            llm = MultimodalLLM(get_default_llm_client())
+            llm = MultimodalLLM(get_review_llm_client())
             return await asyncio.wait_for(llm.analyze_image(image_data, prompt), timeout=45)
 
         raw = asyncio.run(_run())
@@ -962,27 +996,32 @@ class RewardReviewService:
         if verification:
             evidence["verification"] = verification
 
-        if raw_state == "match" and verification_status in {"", "yes"}:
+        # 条件串行：
+        # 1. 先用抽取结果直接和奖励库比，命中就直接通过；
+        # 2. 只有抽取没过时，才使用“是否是 xxx”的定向验证兜底。
+        if raw_state == "match":
             return CheckResult(
                 item="award_contributor_signature_consistency",
                 status=CheckStatus.PASSED,
                 message=f"完成人“{expected_name}”与本人签名一致",
                 evidence=evidence,
             )
-        if raw_state == "match":
+
+        if verification_status == "yes":
             return CheckResult(
                 item="award_contributor_signature_consistency",
-                status=CheckStatus.WARNING,
-                message=f"完成人“{expected_name}”与本人签名结果需复核",
+                status=CheckStatus.PASSED,
+                message=f"完成人“{expected_name}”与本人签名一致",
                 evidence=evidence,
             )
-        if raw_state == "mismatch" and verification_status == "no":
+        if verification_status == "no":
             return CheckResult(
                 item="award_contributor_signature_consistency",
                 status=CheckStatus.FAILED,
                 message=f"完成人“{expected_name or contributor_name}”与本人签名不一致",
                 evidence=evidence,
             )
+
         if raw_state == "mismatch":
             return CheckResult(
                 item="award_contributor_signature_consistency",
@@ -993,9 +1032,7 @@ class RewardReviewService:
         return CheckResult(
             item="award_contributor_signature_consistency",
             status=CheckStatus.WARNING,
-            message=f"完成人“{expected_name or contributor_name}”与本人签名结果需复核"
-            if verification_status == "yes"
-            else f"完成人“{expected_name or contributor_name}”与本人签名疑似不一致，请复核",
+            message=f"完成人“{expected_name or contributor_name}”与本人签名结果需复核",
             evidence=evidence,
         )
 
@@ -1187,6 +1224,18 @@ class RewardReviewService:
             "warning": sum(1 for item in result.results if item.status == CheckStatus.WARNING),
         }
 
+        recognized: Dict[str, Any] = {
+            "signatures": signatures,
+            "fields": observed_fields,
+            "notes": list((llm_analysis.get("award_contributor_analysis") or {}).get("notes", []))
+            if isinstance(llm_analysis.get("award_contributor_analysis"), dict)
+            else [],
+        }
+        if normalized_doc_type in {"wcr", "wjwcr"}:
+            recognized.update(self._collect_wcr_role_stamp_texts(result))
+        else:
+            recognized["stamps"] = stamps
+
         return {
             "overview": {
                 "doc_type": normalized_doc_type,
@@ -1194,14 +1243,7 @@ class RewardReviewService:
                 "summary": result.summary,
                 "status_counts": counts,
             },
-            "recognized": {
-                "signatures": signatures,
-                "stamps": stamps,
-                "fields": observed_fields,
-                "notes": list((llm_analysis.get("award_contributor_analysis") or {}).get("notes", []))
-                if isinstance(llm_analysis.get("award_contributor_analysis"), dict)
-                else [],
-            },
+            "recognized": recognized,
             "verification": verification,
             "db_binding": {
                 "project_id": context.get("project_id", ""),

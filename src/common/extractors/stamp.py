@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageOps
 
-from src.common.llm import get_default_llm_client
+from src.common.llm import get_review_llm_client
 from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ class StampExtractor:
     def _get_llm_client(self):
         """获取 LLM 客户端"""
         if self._llm_client is None:
-            self._llm_client = get_default_llm_client()
+            self._llm_client = get_review_llm_client()
         return self._llm_client
 
     def _empty_award_result(self) -> Dict[str, Any]:

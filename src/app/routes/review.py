@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 _review_results: dict[str, ReviewResult] = {}
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _REVIEW_RESULT_DIR = _PROJECT_ROOT / "data" / "review_results"
+_REVIEW_MAX_RETRIES = 3
 
 
 class ReviewRequest(BaseModel):
@@ -263,9 +264,13 @@ def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(recognized, dict) and recognized:
         compact["recognized"] = {
             "signatures": list(recognized.get("signatures") or []),
-            "stamps": list(recognized.get("stamps") or []),
             "fields": dict(recognized.get("fields") or {}),
         }
+        if "work_unit_stamps" in recognized or "completion_unit_stamps" in recognized:
+            compact["recognized"]["work_unit_stamps"] = list(recognized.get("work_unit_stamps") or [])
+            compact["recognized"]["completion_unit_stamps"] = list(recognized.get("completion_unit_stamps") or [])
+        else:
+            compact["recognized"]["stamps"] = list(recognized.get("stamps") or [])
         notes = [str(item) for item in recognized.get("notes", []) if str(item).strip()]
         if notes:
             compact["recognized"]["notes"] = notes
@@ -281,6 +286,14 @@ def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
     compact_checks = _compact_structured_checks(structured)
     if compact_checks:
         compact["checks"] = compact_checks
+
+    retry = structured.get("retry") or {}
+    if isinstance(retry, dict) and retry:
+        compact["retry"] = {
+            "attempts": int(retry.get("attempts") or 0),
+            "used_retries": int(retry.get("used_retries") or 0),
+            "stop_reason": str(retry.get("stop_reason") or ""),
+        }
 
     return compact
 
@@ -424,6 +437,95 @@ def _build_failure_result(review_id: str, doc_type: str, error: Exception, start
         summary=f"审查失败：{error}",
         suggestions=[],
         processing_time=time.time() - start_time,
+    )
+
+
+def _result_status_counts(result: ReviewResult) -> Dict[str, int]:
+    counts = {"passed": 0, "failed": 0, "warning": 0}
+    for item in result.results:
+        status = str(item.status.value if hasattr(item.status, "value") else item.status).strip().lower()
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _is_full_pass(result: ReviewResult) -> bool:
+    counts = _result_status_counts(result)
+    return str(result.status or "").strip().lower() == "done" and counts["failed"] == 0 and counts["warning"] == 0
+
+
+def _result_rank(result: ReviewResult) -> tuple[int, int, int, int, float]:
+    counts = _result_status_counts(result)
+    not_done_penalty = 0 if str(result.status or "").strip().lower() == "done" else 1
+    return (
+        counts["failed"],
+        counts["warning"],
+        not_done_penalty,
+        -counts["passed"],
+        float(result.processing_time or 0.0),
+    )
+
+
+def _attach_retry_metadata(
+    result: ReviewResult,
+    attempts: int,
+    used_retries: int,
+    stop_reason: str,
+    total_elapsed: float,
+) -> ReviewResult:
+    retry_info = {
+        "attempts": attempts,
+        "used_retries": used_retries,
+        "stop_reason": stop_reason,
+    }
+    result.processing_time = total_elapsed
+    result.extracted_data = dict(result.extracted_data or {})
+    result.extracted_data["retry"] = retry_info
+    structured = dict(result.structured_result or {})
+    structured["retry"] = retry_info
+    result.structured_result = structured
+    return result
+
+
+async def _run_with_retries(
+    review_id: str,
+    doc_type: str,
+    run_attempt,
+    start_time: float,
+) -> ReviewResult:
+    best_result: Optional[ReviewResult] = None
+    attempts = _REVIEW_MAX_RETRIES + 1
+    completed_attempts = 0
+    stop_reason = "max_retries_reached"
+
+    for attempt in range(1, attempts + 1):
+        completed_attempts = attempt
+        try:
+            current = await run_attempt(attempt)
+        except Exception as exc:
+            logger.exception("Review attempt failed: %s attempt=%s", review_id, attempt)
+            current = _build_failure_result(
+                review_id=review_id,
+                doc_type=doc_type,
+                error=exc,
+                start_time=start_time,
+            )
+
+        if best_result is None or _result_rank(current) < _result_rank(best_result):
+            best_result = current
+
+        if _is_full_pass(current):
+            best_result = current
+            stop_reason = "full_pass"
+            break
+
+    assert best_result is not None
+    return _attach_retry_metadata(
+        best_result,
+        attempts=completed_attempts,
+        used_retries=max(0, completed_attempts - 1),
+        stop_reason=stop_reason,
+        total_elapsed=time.time() - start_time,
     )
 
 
@@ -895,15 +997,23 @@ async def submit_review(
         _persist_review_result(placeholder)
 
         async def _run_review() -> None:
-            await _run_review_job(
+            final = await _run_with_retries(
                 review_id=review_id,
-                file_data=file_data,
-                filename=file.filename or "upload.pdf",
                 doc_type=selected_doc_type,
-                check_items=items,
-                enable_llm_analysis=enable_llm_analysis,
-                metadata=meta_dict,
+                start_time=time.time(),
+                run_attempt=lambda _attempt: _run_review_job(
+                    review_id=review_id,
+                    file_data=file_data,
+                    filename=file.filename or "upload.pdf",
+                    doc_type=selected_doc_type,
+                    check_items=items,
+                    enable_llm_analysis=enable_llm_analysis,
+                    metadata=meta_dict,
+                    persist_result=False,
+                ),
             )
+            _review_results[review_id] = final
+            _persist_review_result(final)
 
         asyncio.create_task(_run_review())
 
@@ -970,18 +1080,18 @@ async def submit_review_by_path(
                 )
                 metadata["reward_review_context"] = reward_context
 
-            current = await _run_review_job(
-                review_id=review_id,
-                file_data=file_data,
-                filename=filename,
-                doc_type=normalized_doc_type,
-                check_items=items,
-                enable_llm_analysis=request.enable_llm_analysis,
-                metadata=metadata,
-                persist_result=False,
-            )
-            if reward_service and reward_context:
-                if current and current.status == "done":
+            async def _run_single_attempt(_attempt: int) -> ReviewResult:
+                current = await _run_review_job(
+                    review_id=review_id,
+                    file_data=file_data,
+                    filename=filename,
+                    doc_type=normalized_doc_type,
+                    check_items=items,
+                    enable_llm_analysis=request.enable_llm_analysis,
+                    metadata=metadata,
+                    persist_result=False,
+                )
+                if reward_service and reward_context and current and current.status == "done":
                     current = await asyncio.to_thread(
                         reward_service.enrich_result,
                         current,
@@ -989,7 +1099,16 @@ async def submit_review_by_path(
                         items,
                         file_data,
                     )
-                    await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)
+                return current
+
+            current = await _run_with_retries(
+                review_id=review_id,
+                doc_type=normalized_doc_type,
+                start_time=start_time,
+                run_attempt=_run_single_attempt,
+            )
+            if reward_service and reward_context and current.status == "done":
+                await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)
             _review_results[review_id] = current
             _persist_review_result(current)
         except Exception as e:

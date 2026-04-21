@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Dict, List, Optional, Any
 
-from src.common.llm import get_default_llm_client
+from src.common.llm import get_review_llm_client
 from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
@@ -139,7 +139,7 @@ class SignatureExtractor:
     def _get_llm_client(self):
         """获取 LLM 客户端"""
         if self._llm_client is None:
-            self._llm_client = get_default_llm_client()
+            self._llm_client = get_review_llm_client()
         return self._llm_client
 
     def _parse_signature_coords(self, text: str) -> List[Dict]:

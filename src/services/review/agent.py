@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from src.common.llm import get_default_llm_client
+from src.common.llm import get_review_llm_client
 from src.common.models import CheckResult, CheckStatus, ReviewResult
 from src.common.vision.multimodal import MultimodalLLM
 from src.services.review.doc_types import normalize_doc_type
@@ -35,7 +35,7 @@ class ReviewAgent:
             document_parser: 文档解析器
             rule_registry: 规则注册表
         """
-        self.llm = llm or get_default_llm_client()
+        self.llm = llm or get_review_llm_client()
         self.parser = document_parser
         self.rule_registry = rule_registry
         self.extractor = DocumentExtractor(self.llm)
@@ -284,11 +284,11 @@ class ReviewAgent:
         def _enhance_region(img: Image.Image) -> Image.Image:
             out = img.convert("RGB")
             out = ImageOps.autocontrast(out, cutoff=1)
-            out = ImageEnhance.Color(out).enhance(1.05)
-            out = ImageEnhance.Contrast(out).enhance(1.18)
-            out = ImageEnhance.Sharpness(out).enhance(1.1)
-            out = out.filter(ImageFilter.UnsharpMask(radius=1.0, percent=100, threshold=2))
-            out = out.resize((max(1, int(out.width * 1.35)), max(1, int(out.height * 1.35))), Image.LANCZOS)
+            out = ImageEnhance.Color(out).enhance(1.1)
+            out = ImageEnhance.Contrast(out).enhance(1.22)
+            out = ImageEnhance.Sharpness(out).enhance(1.2)
+            out = out.filter(ImageFilter.UnsharpMask(radius=1.1, percent=110, threshold=2))
+            out = out.resize((max(1, int(out.width * 1.6)), max(1, int(out.height * 1.6))), Image.LANCZOS)
             border = max(10, min(out.size) // 20)
             return ImageOps.expand(out, border=border, fill="white")
 
@@ -313,11 +313,10 @@ class ReviewAgent:
             draw.text((14, 14), label, fill="black", font=font)
             return panel_with_header
 
-        fields_panel = _panel(_crop_ratio((0.04, 0.08, 0.96, 0.48)), "A 字段区", (620, 280), enhance=True)
-        signature_panel = _panel(_crop_ratio((0.02, 0.60, 0.46, 0.97)), "B 签名区", (300, 240), enhance=True)
-        # C/D 两个公章区使用互斥的左右落款区域，避免同一枚公章被重复借给两个角色。
-        completion_panel = _panel(_crop_ratio((0.06, 0.60, 0.50, 0.97)), "D 完成单位公章区", (300, 240), enhance=True)
-        work_panel = _panel(_crop_ratio((0.50, 0.60, 0.94, 0.97)), "C 工作单位公章区", (300, 240), enhance=True)
+        fields_panel = _panel(_crop_ratio((0.04, 0.06, 0.96, 0.52)), "A 字段区", (760, 360), enhance=True)
+        signature_panel = _panel(_crop_ratio((0.02, 0.58, 0.46, 0.97)), "B 签名区", (360, 300), enhance=True)
+        work_panel = _panel(_crop_ratio((0.44, 0.58, 0.76, 0.97)), "C 工作单位公章区", (360, 300), enhance=True)
+        completion_panel = _panel(_crop_ratio((0.60, 0.58, 0.98, 0.97)), "D 完成单位公章区", (360, 300), enhance=True)
 
         gap = 18
         canvas_w = fields_panel.width + signature_panel.width + gap
@@ -329,7 +328,7 @@ class ReviewAgent:
         canvas.paste(completion_panel, (work_panel.width + gap, fields_panel.height + gap))
 
         buf = io.BytesIO()
-        canvas.save(buf, format="JPEG", quality=84, optimize=True)
+        canvas.save(buf, format="PNG", optimize=True)
         return buf.getvalue()
 
     def _compress_image_for_llm(self, img_data: bytes, max_size: int = 2000000) -> bytes:
