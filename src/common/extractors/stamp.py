@@ -6,6 +6,7 @@
 1. 通用整页印章提取
 2. 面向固定表单的锚点约束局部印章提取
 """
+import asyncio
 import io
 import json
 import logging
@@ -13,7 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageOps
 
-from src.common.llm import get_review_llm_client
+from src.common.llm import get_llm_client, llm_config
+from src.common.review_runtime import ReviewRuntime
 from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
@@ -100,36 +102,49 @@ class StampExtractor:
     ) -> Dict[str, Any]:
         """专项：主要完成人情况表的锚点约束印章提取。"""
         image_data = self._pdf_to_image(file_data)
+        anchors = await self.locate_award_contributor_stamp_anchors(file_data)
+        return await self.extract_award_contributor_stamps_from_anchors(file_data, anchors, image_data=image_data)
+
+    async def locate_award_contributor_stamp_anchors(
+        self,
+        file_data: bytes,
+    ) -> Dict[str, Dict[str, float]]:
+        """只定位主要完成人表公章锚点。"""
+        image_data = self._pdf_to_image(file_data)
+        return await self._locate_award_contributor_anchor_regions(image_data)
+
+    async def extract_award_contributor_stamps_from_anchors(
+        self,
+        file_data: bytes,
+        anchors: Optional[Dict[str, Dict[str, float]]] = None,
+        image_data: Optional[bytes] = None,
+    ) -> Dict[str, Any]:
+        """基于已知锚点提取主要完成人表公章。"""
+        if image_data is None:
+            image_data = self._pdf_to_image(file_data)
         page_image = self._load_image(image_data)
         if page_image is None:
             return self._empty_award_result()
 
-        anchors = await self._locate_award_contributor_anchor_regions(image_data)
-        regions: List[Dict[str, Any]] = []
-        role_results: Dict[str, Dict[str, Any]] = {}
-        for role_key, role_label in (
+        if not isinstance(anchors, dict):
+            anchors = {}
+        role_specs = (
             ("work_unit", "工作单位（公章）"),
             ("completion_unit", "完成单位（公章）"),
-        ):
-            bbox = anchors.get(role_key)
-            if bbox is None:
-                bbox = self._default_award_stamp_bbox(role_key)
-            crop_bytes, crop_bbox = self._crop_with_margin(page_image, bbox, margin_ratio=0.12)
-            crop_result = await self._extract_stamps_from_region(
-                image_data=crop_bytes,
-                region_name=role_label,
-                hint=f"这是一张从“主要完成人情况表”中裁剪出的局部区域，请只识别 {role_label} 附近印章内部的文字。",
-            )
-            role_results[role_key] = crop_result
-            regions.append(
-                {
-                    "role": role_key,
-                    "label": role_label,
-                    "bbox": crop_bbox,
-                    "stamps": crop_result.get("stamps", []),
-                    "raw": crop_result.get("raw", ""),
-                }
-            )
+        )
+        role_outputs = await asyncio.gather(
+            *[
+                self._extract_award_contributor_stamp_role(
+                    page_image=page_image,
+                    anchors=anchors,
+                    role_key=role_key,
+                    role_label=role_label,
+                )
+                for role_key, role_label in role_specs
+            ]
+        )
+        role_results: Dict[str, Dict[str, Any]] = {item["role"]: item["result"] for item in role_outputs}
+        regions: List[Dict[str, Any]] = [item["region"] for item in role_outputs]
 
         page_stamps: Dict[str, Any] = {"stamps": [], "raw": ""}
         if not role_results.get("work_unit", {}).get("stamps") and not role_results.get("completion_unit", {}).get("stamps"):
@@ -170,10 +185,53 @@ class StampExtractor:
             },
         }
 
+    async def _extract_award_contributor_stamp_role(
+        self,
+        page_image: Image.Image,
+        anchors: Dict[str, Dict[str, float]],
+        role_key: str,
+        role_label: str,
+    ) -> Dict[str, Any]:
+        """并行提取单个公章角色区域。"""
+        bbox = anchors.get(role_key)
+        if bbox is None:
+            bbox = self._default_award_stamp_bbox(role_key)
+        crop_bytes, crop_bbox = self._crop_with_margin(page_image, bbox, margin_ratio=0.12)
+        crop_result = await self._extract_stamps_from_region(
+            image_data=crop_bytes,
+            region_name=role_label,
+            hint=f"这是一张从“主要完成人情况表”中裁剪出的局部区域，请只识别 {role_label} 附近印章内部的文字。",
+        )
+        return {
+            "role": role_key,
+            "result": crop_result,
+            "region": {
+                "role": role_key,
+                "label": role_label,
+                "bbox": crop_bbox,
+                "stamps": crop_result.get("stamps", []),
+                "raw": crop_result.get("raw", ""),
+            },
+        }
+
     def _get_llm_client(self):
         """获取 LLM 客户端"""
         if self._llm_client is None:
-            self._llm_client = get_review_llm_client()
+            extra_body = None
+            if llm_config.provider == "qwen" and llm_config.model.startswith("qwen3.5"):
+                # 印章/锚点属于纯识别任务，不需要 thinking，避免兼容接口在非流式下长耗时。
+                extra_body = {"enable_thinking": False}
+            self._llm_client = get_llm_client(
+                provider=llm_config.provider or "openai",
+                model=llm_config.model or None,
+                api_key=llm_config.api_key or None,
+                base_url=llm_config.base_url or None,
+                temperature=0.0,
+                max_tokens=llm_config.max_tokens,
+                timeout=llm_config.timeout,
+                max_retries=0,
+                extra_body=extra_body,
+            )
         return self._llm_client
 
     def _empty_award_result(self) -> Dict[str, Any]:
@@ -276,9 +334,10 @@ class StampExtractor:
         except Exception:
             return {}
 
+        image_size = self._get_llm_image_size(image_data)
         out: Dict[str, Dict[str, float]] = {}
         for key in ("work_unit", "completion_unit"):
-            bbox = self._normalize_bbox(data.get(key))
+            bbox = self._normalize_bbox(data.get(key), image_size=image_size)
             if bbox:
                 out[key] = bbox
         return out
@@ -315,16 +374,32 @@ class StampExtractor:
         parsed["raw"] = raw
         return parsed
 
-    def _normalize_bbox(self, bbox: Any) -> Optional[Dict[str, float]]:
+    def _normalize_bbox(
+        self,
+        bbox: Any,
+        image_size: Optional[Tuple[int, int]] = None,
+    ) -> Optional[Dict[str, float]]:
         if not isinstance(bbox, dict):
             return None
         try:
-            x1 = max(0.0, min(1.0, float(bbox.get("x1"))))
-            y1 = max(0.0, min(1.0, float(bbox.get("y1"))))
-            x2 = max(0.0, min(1.0, float(bbox.get("x2"))))
-            y2 = max(0.0, min(1.0, float(bbox.get("y2"))))
+            x1 = float(bbox.get("x1"))
+            y1 = float(bbox.get("y1"))
+            x2 = float(bbox.get("x2"))
+            y2 = float(bbox.get("y2"))
         except Exception:
             return None
+        if image_size and max(x1, y1, x2, y2) > 1.0:
+            width, height = image_size
+            if width <= 0 or height <= 0:
+                return None
+            x1 /= width
+            x2 /= width
+            y1 /= height
+            y2 /= height
+        x1 = max(0.0, min(1.0, x1))
+        y1 = max(0.0, min(1.0, y1))
+        x2 = max(0.0, min(1.0, x2))
+        y2 = max(0.0, min(1.0, y2))
         if x2 <= x1 or y2 <= y1:
             return None
         return {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
@@ -335,6 +410,18 @@ class StampExtractor:
             return ImageOps.exif_transpose(image).convert("RGB")
         except Exception:
             return None
+
+    def _get_llm_image_size(self, image_data: bytes) -> Optional[Tuple[int, int]]:
+        image = self._load_image(image_data)
+        if image is None:
+            return None
+        max_dim = max(768, int(ReviewRuntime.ATTACHMENT_LLM_MAX_DIM))
+        width, height = image.size
+        if max(width, height) > max_dim:
+            ratio = max_dim / max(width, height)
+            width = int(width * ratio)
+            height = int(height * ratio)
+        return (width, height)
 
     def _crop_with_margin(
         self,

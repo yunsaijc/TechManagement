@@ -748,94 +748,51 @@ class ReviewAgent:
         logger.info(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}")
         print(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}", flush=True)
 
-        image_data = self._build_award_contributor_analysis_image(file_data)
-        reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
-        target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
-        expected_name = str((target_values or {}).get("name") or "").strip()
-        expected_work_unit = str((target_values or {}).get("work_unit") or "").strip()
-        expected_completion_unit = str((target_values or {}).get("completion_unit") or "").strip()
-
-        if expected_name or expected_work_unit or expected_completion_unit:
-            prompt = """4 个局部图：
-A 字段区
-B 签名区
-C 工作单位公章区
-D 完成单位公章区
-
-目标值：
-姓名=%s
-工作单位=%s
-完成单位=%s
-
-只返回 JSON：
-{
-  "raw": {
-    "contributor_name": "",
-    "work_unit": "",
-    "completion_unit": "",
-    "signature_name": "",
-    "work_unit_stamp_unit": "",
-    "completion_unit_stamp_unit": ""
-  },
-  "verify": {
-    "name": "yes|no|uncertain",
-    "signature_for_name": "yes|no|uncertain",
-    "work_unit": "yes|no|uncertain",
-    "completion_unit": "yes|no|uncertain",
-    "work_unit_stamp": "yes|no|uncertain",
-    "completion_unit_stamp": "yes|no|uncertain"
-  }
-}
-
-规则：
-1. raw 只能写图中直接看到的原始内容，看不清留空，不能按目标值补全。
-2. verify 只能填 yes/no/uncertain。
-3. yes=清晰确认与目标一致；no=清晰确认不一致或未见；uncertain=看不清。
-4. C 区只判断工作单位公章，D 区只判断完成单位公章，禁止跨区借用另一块区域的文字或公章。
-5. 公章只看红章，不要把打印文字当公章。
-6. 只返回 JSON，不要解释。""" % (
-                expected_name or "空",
-                expected_work_unit or "空",
-                expected_completion_unit or "空",
-            )
-        else:
-            prompt = """4 个局部图：
-A 字段区
-B 签名区
-C 工作单位公章区
-D 完成单位公章区
-
-只返回 JSON：
-{
-  "contributor_name": "",
-  "work_unit": "",
-  "completion_unit": "",
-  "signature_name": "",
-  "work_unit_stamp_unit": "",
-  "completion_unit_stamp_unit": ""
-}
-
-规则：
-1. 只基于清晰可见内容填写，看不清留空，不要猜。
-2. C 区只识别工作单位公章，D 区只识别完成单位公章，禁止跨区借字。
-3. 只识别对应区域，不要把别处文字带进来。
-4. 只返回 JSON，不要解释。"""
-
-        raw = await self._analyze_image_with_timeout(
-            multi_llm,
-            image_data,
-            prompt,
-            "主要完成人情况表专项分析",
-            timeout_sec=90,
+        field_values, signatures_result, stamp_anchors = await asyncio.gather(
+            self._extract_award_contributor_fields_with_ocr(file_data, doc_type),
+            self._extract_award_contributor_signatures(file_data),
+            self._locate_award_contributor_stamp_anchors(file_data),
         )
-        payload = self._parse_award_contributor_analysis(raw)
+        signature_names = [
+            str(item.get("text") or "").strip()
+            for item in signatures_result.get("signatures", [])
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        payload = {
+            "signature_names": signature_names,
+            "work_unit_stamp_units": [],
+            "completion_unit_stamp_units": [],
+            "all_stamp_units": [],
+            "raw_response": "",
+        }
+        payload["contributor_name"] = field_values.get("姓名", "")
+        payload["work_unit"] = field_values.get("工作单位", "")
+        payload["completion_unit"] = field_values.get("完成单位", "")
+        payload["field_ocr_result"] = field_values
+        payload["stamp_regions"] = []
+        payload["stamp_anchor_regions"] = dict(stamp_anchors or {})
+
+        image_data = self._build_award_contributor_analysis_image(file_data)
+        stamp_result, verification_result = await asyncio.gather(
+            self._extract_award_contributor_stamps(file_data, anchors=stamp_anchors),
+            self._verify_award_contributor_signature_if_needed(
+                multi_llm=multi_llm,
+                image_data=image_data,
+                metadata=metadata,
+                payload=payload,
+            ),
+        )
+        payload["work_unit_stamp_units"] = list(stamp_result.get("work_unit_stamp_units", []))
+        payload["completion_unit_stamp_units"] = list(stamp_result.get("completion_unit_stamp_units", []))
+        payload["all_stamp_units"] = list(stamp_result.get("all_stamp_units", []))
+        payload["stamp_regions"] = list(stamp_result.get("regions", []))
+        payload["stamp_anchor_regions"] = dict(stamp_result.get("anchor_regions", {}))
 
         extracted_fields = {
             "姓名": payload.get("contributor_name", ""),
             "工作单位": payload.get("work_unit", ""),
             "完成单位": payload.get("completion_unit", ""),
         }
-        signature_names = payload.get("signature_names", [])
         work_stamp_units = payload.get("work_unit_stamp_units", [])
         completion_stamp_units = payload.get("completion_unit_stamp_units", [])
         all_stamp_units = []
@@ -843,25 +800,7 @@ D 完成单位公章区
             text = str(unit or "").strip()
             if text and text not in all_stamp_units:
                 all_stamp_units.append(text)
-        signatures_result = {
-            "signatures": [
-                {"text": name, "bbox": None, "confidence": 0.9}
-                for name in signature_names
-            ]
-        }
-        stamps_result = {
-            "stamps": [
-                {"unit": unit, "text": unit, "location": "工作单位（公章）", "bbox": None, "confidence": 0.9}
-                for unit in work_stamp_units
-            ] + [
-                {"unit": unit, "text": unit, "location": "完成单位（公章）", "bbox": None, "confidence": 0.9}
-                for unit in completion_stamp_units
-            ] + [
-                {"unit": unit, "text": unit, "location": "页面印章", "bbox": None, "confidence": 0.8}
-                for unit in all_stamp_units
-                if unit not in set(work_stamp_units + completion_stamp_units)
-            ]
-        }
+        stamps_result = stamp_result
 
         signatures_description = "；".join(signature_names) if signature_names else "未检测到签字"
         stamps_description = "；".join(all_stamp_units) if all_stamp_units else "未检测到印章"
@@ -873,9 +812,182 @@ D 完成单位公章区
             "stamps_result": stamps_result,
             "signatures_result": signatures_result,
             "signatures_description": signatures_description,
-            "verification_result": payload.get("verification", {}),
+            "verification_result": verification_result,
             "award_contributor_analysis": payload,
         }
+
+    async def _extract_award_contributor_signatures(self, file_data: bytes) -> Dict[str, Any]:
+        """主要完成人签字：统一走 SignatureExtractor。"""
+        try:
+            from src.common.extractors import SignatureExtractor
+            from src.common.extractors.signature import normalize_signature_entries
+
+            extractor = SignatureExtractor()
+            result = await extractor.extract(file_data)
+            signatures = normalize_signature_entries((result or {}).get("signatures", []))
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人签字提取失败: %s", exc)
+            signatures = []
+
+        return {"signatures": signatures}
+
+    async def _locate_award_contributor_stamp_anchors(self, file_data: bytes) -> Dict[str, Any]:
+        """主要完成人公章锚点定位。"""
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            result = await extractor.locate_award_contributor_stamp_anchors(file_data)
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人公章锚点定位失败: %s", exc)
+            result = {}
+
+        return dict(result or {})
+
+    async def _extract_award_contributor_stamps(
+        self,
+        file_data: bytes,
+        anchors: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """主要完成人公章：统一走 StampExtractor。"""
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            if anchors is None:
+                result = await extractor.extract_award_contributor_stamps(file_data)
+            else:
+                result = await extractor.extract_award_contributor_stamps_from_anchors(file_data, anchors)
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人公章提取失败: %s", exc)
+            result = {}
+
+        if not isinstance(result, dict):
+            result = {}
+        return {
+            "stamps": list(result.get("stamps", [])),
+            "work_unit_stamp_units": list(result.get("work_unit_stamp_units", [])),
+            "completion_unit_stamp_units": list(result.get("completion_unit_stamp_units", [])),
+            "all_stamp_units": list(result.get("all_stamp_units", [])),
+            "anchor_regions": dict(result.get("anchor_regions", {})),
+            "regions": list(result.get("regions", [])),
+            "raw": result.get("raw", {}),
+        }
+
+    async def _extract_award_contributor_fields_with_ocr(self, file_data: bytes, doc_type: str) -> Dict[str, str]:
+        """主要完成人表单字段：定位值区域后裁剪 OCR。"""
+        field_names = ["姓名", "工作单位", "完成单位"]
+        try:
+            from src.common.extractors import FieldExtractor
+
+            extractor = FieldExtractor()
+            fields = await extractor.extract(
+                file_data=file_data,
+                document_type=doc_type,
+                configured_fields=field_names,
+            )
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人字段 OCR 提取失败: %s", exc)
+            fields = {}
+
+        if not isinstance(fields, dict):
+            fields = {}
+        return {
+            name: str(fields.get(name) or "").strip()
+            for name in field_names
+        }
+
+    async def _verify_award_contributor_signature_if_needed(
+        self,
+        multi_llm: MultimodalLLM,
+        image_data: bytes,
+        metadata: Dict[str, Any],
+        payload: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """仅在签字 raw 对比未通过时，使用目标姓名做定向兜底。"""
+        reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
+        target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
+        expected_name = str((target_values or {}).get("name") or "").strip()
+        if not expected_name:
+            return {}
+
+        contributor_name = str(payload.get("contributor_name") or "").strip()
+        signature_names = [str(item).strip() for item in payload.get("signature_names", []) if str(item).strip()]
+        if self._award_text_matches(expected_name, [contributor_name]) and self._award_text_matches(expected_name, signature_names):
+            return {}
+
+        prompt = """4 个局部图：
+A 字段区
+B 签名区
+C 工作单位公章区
+D 完成单位公章区
+
+只判断 B 签名区里的手写签字是否可以清晰确认是目标姓名。
+目标姓名：%s
+
+返回严格 JSON：
+{"signature_for_name": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示 B 区手写签字可清晰确认是目标姓名。
+2. no 表示 B 区未见签字，或可清晰确认不是目标姓名。
+3. uncertain 表示签字存在但看不清或无法确认。
+4. 不要判断 A/C/D 区，不要判断工作单位、完成单位或公章。
+5. 只返回 JSON，不要解释。""" % expected_name
+
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            image_data,
+            prompt,
+            "主要完成人签字定向验证",
+            timeout_sec=45,
+        )
+        entry = self._parse_award_signature_verification(raw)
+        return {"signature_for_name": entry["status"]} if entry.get("status") else {}
+
+    def _award_text_matches(self, expected: str, candidates: List[str]) -> bool:
+        """轻量文本匹配，用于决定是否需要签字兜底。"""
+        import re
+
+        def _normalize(value: str) -> str:
+            return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", str(value or "")).lower()
+
+        left = _normalize(expected)
+        if not left:
+            return False
+        for item in candidates:
+            right = _normalize(item)
+            if right and (left == right or left in right or right in left):
+                return True
+        return False
+
+    def _parse_award_signature_verification(self, raw_text: str) -> Dict[str, str]:
+        """解析签字兜底验证 JSON。"""
+        import json
+        import re
+
+        text = str(raw_text or "").strip()
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            if len(parts) >= 2:
+                text = parts[1]
+                if text.startswith("json"):
+                    text = text[4:]
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+        entry = payload.get("signature_for_name") if isinstance(payload, dict) else {}
+        if isinstance(entry, str):
+            status = entry.strip().lower()
+            return {"status": status if status in {"yes", "no", "uncertain"} else "", "reason": ""}
+        if not isinstance(entry, dict):
+            return {}
+        status = str(entry.get("status") or "").strip().lower()
+        if status not in {"yes", "no", "uncertain"}:
+            return {}
+        return {"status": status, "reason": str(entry.get("reason") or "").strip()}
 
     def _parse_award_contributor_analysis(self, raw_text: str) -> Dict[str, Any]:
         """解析主要完成人情况表专项 JSON。"""

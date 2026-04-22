@@ -110,7 +110,8 @@ class EvaluationScorer:
         self,
         dimension_scores: List[DimensionScore],
         overall_score: float,
-        grade: str
+        grade: str,
+        check_results: Optional[List[CheckResult]] = None,
     ) -> str:
         """生成综合意见
         
@@ -159,12 +160,19 @@ class EvaluationScorer:
         # 不足维度
         if low_scores:
             parts.append(f"在{chr(12289).join(low_scores)}等方面存在明显不足，需要重点关注。")
+
+        evidence_caution_dimensions = self._get_evidence_caution_dimensions(check_results or [])
+        if evidence_caution_dimensions:
+            parts.append(
+                f"其中{chr(12289).join(evidence_caution_dimensions)}等维度证据仍不充分，当前结论按已提供材料做保守判断。"
+            )
         
         return "".join(parts)
     
     def generate_recommendations(
         self,
-        dimension_scores: List[DimensionScore]
+        dimension_scores: List[DimensionScore],
+        check_results: Optional[List[CheckResult]] = None,
     ) -> List[str]:
         """生成修改建议
         
@@ -182,9 +190,15 @@ class EvaluationScorer:
                 issues_str = "；".join(dim.issues[:3]) if dim.issues else "需要进一步改进"
                 recommendations.append(f"【{dim.dimension_name}】{issues_str}")
         
-        # 如果没有明显问题，给出整体建议
-        if not recommendations:
+        evidence_recommendations = self._build_evidence_recommendations(check_results or [])
+
+        # 如果没有明显问题且证据也充分，给出整体建议
+        if not recommendations and not evidence_recommendations:
             recommendations.append("项目整体表现良好，建议进一步完善细节，提高各项指标的先进性。")
+
+        for evidence_recommendation in evidence_recommendations:
+            if evidence_recommendation not in recommendations:
+                recommendations.append(evidence_recommendation)
         
         return recommendations
     
@@ -223,10 +237,18 @@ class EvaluationScorer:
         grade = self.determine_grade(overall_score)
         
         # 生成综合意见
-        summary = self.generate_summary(dimension_scores, overall_score, grade)
+        summary = self.generate_summary(
+            dimension_scores,
+            overall_score,
+            grade,
+            check_results=check_results,
+        )
         
         # 生成建议
-        recommendations = self.generate_recommendations(dimension_scores)
+        recommendations = self.generate_recommendations(
+            dimension_scores,
+            check_results=check_results,
+        )
         
         return EvaluationResult(
             project_id=project_id,
@@ -237,3 +259,43 @@ class EvaluationScorer:
             summary=summary,
             recommendations=recommendations,
         )
+
+    def _get_evidence_caution_dimensions(self, check_results: List[CheckResult]) -> List[str]:
+        """收集需要在总评中提示证据不足的维度"""
+        dimensions: List[str] = []
+        for check in check_results:
+            details = check.details or {}
+            evidence_pack = details.get("evidence_pack") if isinstance(details, dict) else {}
+            if not isinstance(evidence_pack, dict):
+                continue
+            if evidence_pack.get("evidence_sufficient", True):
+                continue
+            dimension_name = check.dimension_name or check.dimension
+            if dimension_name not in dimensions:
+                dimensions.append(dimension_name)
+        return dimensions
+
+    def _build_evidence_recommendations(self, check_results: List[CheckResult]) -> List[str]:
+        """基于证据充分性生成补充材料建议"""
+        recommendations: List[str] = []
+        for check in check_results:
+            details = check.details or {}
+            if not isinstance(details, dict):
+                continue
+            evidence_pack = details.get("evidence_pack")
+            rubric = details.get("rubric")
+            if not isinstance(evidence_pack, dict) or evidence_pack.get("evidence_sufficient", True):
+                continue
+
+            required_sections = list((rubric or {}).get("required_sections") or [])
+            alternative_sections = list((rubric or {}).get("alternative_sections") or [])
+            section_candidates = required_sections[:2] or alternative_sections[:2]
+            if section_candidates:
+                recommendations.append(
+                    f"【{check.dimension_name or check.dimension}】建议补充{chr(12289).join(section_candidates)}等相关材料，以提高评审依据充分性。"
+                )
+            else:
+                recommendations.append(
+                    f"【{check.dimension_name or check.dimension}】建议补充更直接的支撑材料，以提高评审依据充分性。"
+                )
+        return recommendations

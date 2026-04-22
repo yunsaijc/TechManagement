@@ -8,6 +8,7 @@ from .profile_config import (
     PROFILE_TECH_RND,
 )
 from .project_profiler import ProjectProfileResult, ProjectProfiler
+from .rubric_manager import RubricManager
 
 __all__ = [
     "PROFILE_DEMONSTRATION",
@@ -17,4 +18,5 @@ __all__ = [
     "PROFILE_TECH_RND",
     "ProjectProfileResult",
     "ProjectProfiler",
+    "RubricManager",
 ]

@@ -1,6 +1,8 @@
 """划重点提取器"""
+from __future__ import annotations
+
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.common.models.evaluation import EvidenceItem, StructuredHighlights
 
@@ -189,8 +191,10 @@ class HighlightExtractor:
         sections: Dict[str, str],
         page_chunks: List[Dict[str, Any]],
         file_name: str,
+        preferred_sections_by_category: Optional[Dict[str, Dict[str, str]]] = None,
     ) -> Tuple[StructuredHighlights, List[EvidenceItem]]:
         """提取结构化摘要与证据"""
+        preferred_sections_by_category = preferred_sections_by_category or {}
         project_profile = self._infer_project_profile(sections)
         goals = self._collect_points(
             sections,
@@ -199,6 +203,7 @@ class HighlightExtractor:
             self.GOAL_HINTS,
             allow_hint_fallback=True,
             category="goal",
+            preferred_sections=preferred_sections_by_category.get("goal"),
         )
         innovations = self._collect_points(
             sections,
@@ -207,6 +212,7 @@ class HighlightExtractor:
             self.INNOVATION_HINTS,
             allow_hint_fallback=True,
             category="innovation",
+            preferred_sections=preferred_sections_by_category.get("innovation"),
         )
         routes = self._collect_points(
             sections,
@@ -215,6 +221,7 @@ class HighlightExtractor:
             self.ROUTE_HINTS,
             allow_hint_fallback=False,
             category="route",
+            preferred_sections=preferred_sections_by_category.get("route"),
         )
 
         highlights = StructuredHighlights(
@@ -242,12 +249,18 @@ class HighlightExtractor:
         hints: List[str],
         allow_hint_fallback: bool,
         category: str,
+        preferred_sections: Optional[Dict[str, str]] = None,
     ) -> List[str]:
         """优先按章节提取，缺失时回退到切片"""
         candidates: List[str] = []
+        preferred_sections = preferred_sections or {}
 
-        for section_name, section_text in self._select_sections(sections, section_keys):
+        for section_name, section_text in preferred_sections.items():
             candidates.extend(self._extract_candidates(section_name, section_text, category))
+
+        if not candidates:
+            for section_name, section_text in self._select_sections(sections, section_keys):
+                candidates.extend(self._extract_candidates(section_name, section_text, category))
 
         if not candidates and allow_hint_fallback:
             for section_name, section_text in sections.items():

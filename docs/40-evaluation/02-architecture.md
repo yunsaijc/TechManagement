@@ -8,6 +8,7 @@
 - 同次请求内完成划重点、指南贴合、技术摸底
 - 支持评审后专家问答（带页码证据）
 - 输出一份统一 `EvaluationResult`
+- 保持现有聊天问答主链路稳定，只在其前后增加轻量增强层
 
 ## 整体架构
 
@@ -19,18 +20,23 @@
                                 │
 ┌───────────────────────────────▼──────────────────────────────────┐
 │ EvaluationAgent (Orchestrator)                                   │
-│  1) 输入归一化  2) 并行调度  3) 结果合并  4) 存储落盘            │
+│  1) 输入归一化  2) 画像路由  3) 并行调度  4) 结果合并            │
 └───────┬──────────────┬──────────────┬──────────────┬─────────────┘
         │              │              │              │
         ▼              ▼              ▼              ▼
-  Doc Indexer      Highlight      Industry Fit     9D Checkers
-  (页码切片/索引)   (目标/创新/路线) (指南匹配/缺口)  (原有维度评审)
-        │
-        ▼
-   Chat QA Runtime  <---- Benchmark (文献/专利检索 + 对比)
-        │
-        ▼
- ToolGateway (doc_search / guide_search / tech_search)
+  Doc Indexer     Rubric Manager  Evidence Builder   9D Checkers
+  (页码切片/索引)  (类型口径/权重)  (维度证据包)      (基于证据判断)
+        │              │              │              │
+        └──────────────┴──────────────┴──────────────┘
+                               │
+                               ▼
+                    Highlight / Industry Fit / Benchmark
+                               │
+                               ▼
+                         Chat QA Runtime
+                               │
+                               ▼
+             ToolGateway (doc_search / guide_search / tech_search)
 ```
 
 ## 分层说明
@@ -51,6 +57,8 @@
 ### Layer 3: 评审与增强能力层
 
 - 九维检查器：`src/services/evaluation/checkers/`
+- Rubric 管理：按 `project_profile` 输出维度解释口径、必要项、缺失容忍规则
+- 证据包构建：为评分、摘要、总评、问答提供统一 `evidence pack`
 - 划重点：`src/services/evaluation/highlight/`
 - 指南贴合：`src/services/evaluation/highlight/industry_fit.py`
 - 技术摸底：`src/services/evaluation/benchmark/`
@@ -72,15 +80,17 @@
 
 ### 阶段划分
 
-1. 阶段 A（关键路径）：文档解析与页码索引
-2. 阶段 B（并行）：九维评审、划重点、指南贴合、技术摸底
-3. 阶段 C（合并）：统一打分、总结、证据去重与落盘
+1. 阶段 A（关键路径）：文档解析、页码索引、项目画像识别
+2. 阶段 B（关键路径）：按画像生成 `rubric` 并构建维度级 `evidence pack`
+3. 阶段 C（并行）：九维评审、划重点、指南贴合、技术摸底
+4. 阶段 D（合并）：统一打分、总结、证据去重与落盘
 
 ### 并发策略
 
 - 使用 `asyncio.gather` + `Semaphore`
 - 每个子任务单独超时
 - 单任务失败不阻断总流程，结果标记 `partial=true`
+- 聊天链路不参与本次评审并行重构，保持独立运行时入口，避免影响现有时延与稳定性
 
 ## 工具调用策略（关键说明）
 
@@ -103,6 +113,11 @@
 - `partial`
 - `errors`
 
+其中结果生成原则为：
+
+- 评分、摘要、总评优先消费统一 `evidence pack`
+- 聊天继续消费 `page_chunks/chat index`，只允许增加轻量问题路由与证据整理，不替换主回答链
+
 ## 存储与追溯
 
 - 结果落盘仍用 `src/services/evaluation/storage/storage.py`
@@ -117,6 +132,7 @@
 - 外部搜索不可用：禁用 `benchmark` 的在线检索，保留本地评审结果
 - 指南库不可用：返回“待核验”并降低相关置信度
 - 解析失败：返回可定位错误信息与可恢复建议
+- 若 `rubric` 所需证据不足，不强行输出确定性高分结论，应转为保守评分或标记材料不足
 
 ## 目录规划（融合后）
 

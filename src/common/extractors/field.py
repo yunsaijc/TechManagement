@@ -3,20 +3,23 @@
 职责：从文档中提取表格/表单字段的值
 流程：Step1 识别字段 → Step2 定位 bbox → Step3 OCR 转写
 """
+import asyncio
+import base64
 import io
+import json
 import logging
+import math
 import os
 import re
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from PIL import Image
-import numpy as np
+import requests
+from PIL import Image, ImageDraw, ImageOps
 
+from src.common.llm import llm_config
 from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
-
-_BOUNDARY_FALLBACK_FIELDS = {"工作单位", "完成单位"}
 
 
 class FieldExtractor:
@@ -24,6 +27,8 @@ class FieldExtractor:
 
     def __init__(self):
         self._llm_client = None
+        self._last_page_ocr_result: Dict[str, Any] = {}
+        self._last_page_words: List[Dict[str, Any]] = []
 
     @property
     def ocr(self):
@@ -165,29 +170,37 @@ class FieldExtractor:
             return None
 
     async def _locate_fields(self, image_data: bytes, field_names: List[str]) -> Optional[Dict[str, tuple]]:
-        """Step2: 定位字段值区域"""
-        llm = self._get_llm()
-        multi_llm = MultimodalLLM(llm)
-
-        prompt = f"""请在图片中找出以下字段的【填写内容】区域（不是字段名，是实际填写文字的区域，要尽量小，只包含文字）：
-
-{chr(10).join(field_names)}
-
-返回格式（每行）：
-字段名: x1,y1,x2,y2 （归一化坐标0-1）"""
-
+        """Step2: 用原生 Qwen-OCR 识别整页文字和坐标，再映射到目标字段。"""
         try:
-            result_text = await multi_llm.analyze_image(image_data, prompt)
-
-            # 解析坐标
+            img = Image.open(io.BytesIO(image_data)).convert("RGB")
+            img_w, img_h = img.size
+            ocr_result = await self._run_qwen_ocr(
+                image_data=image_data,
+                prompt="请对这张中文表单执行 OCR，返回所有文字及其位置。",
+                debug_name="page_ocr",
+            )
+            words = list(ocr_result.get("words_info") or [])
+            self._last_page_ocr_result = ocr_result
+            self._last_page_words = words
             field_coords = {}
-            for line in result_text.strip().split('\n'):
-                match = re.match(r'(.+?):\s*([\d.]+),([\d.]+),([\d.]+),([\d.]+)', line)
-                if match:
-                    fname = match.group(1).strip()
-                    x1, y1, x2, y2 = float(match.group(2)), float(match.group(3)), float(match.group(4)), float(match.group(5))
-                    field_coords[fname] = (x1, y1, x2, y2)
-
+            debug_rows: Dict[str, Any] = {}
+            for fname in field_names:
+                label_word = self._match_field_label(words, fname)
+                value_words = self._select_field_value_words(words, label_word, field_names)
+                value_bbox = self._merge_word_bboxes(value_words)
+                if not value_bbox:
+                    continue
+                x1 = value_bbox["x1"] / max(img_w, 1)
+                y1 = value_bbox["y1"] / max(img_h, 1)
+                x2 = value_bbox["x2"] / max(img_w, 1)
+                y2 = value_bbox["y2"] / max(img_h, 1)
+                field_coords[fname] = (x1, y1, x2, y2)
+                debug_rows[fname] = {
+                    "label": label_word,
+                    "value_words": value_words,
+                    "normalized_bbox": [x1, y1, x2, y2],
+                }
+            self._save_qwen_page_debug(img, field_names, debug_rows, words)
             logger.info(f"[FieldExtractor] 定位到 {len(field_coords)} 个字段区域")
             return field_coords if field_coords else None
         except Exception as e:
@@ -202,36 +215,31 @@ class FieldExtractor:
         field_names: List[str],
         field_coords: Dict[str, tuple],
     ) -> Dict[str, Any]:
-        """Step3: 裁剪 + OCR 转写"""
-        import logging as _logging
-        _logging.getLogger("ppocr").setLevel(_logging.ERROR)
-
-        # 使用全局 OCR 实例
-        paddle_ocr = self.ocr
-
+        """Step3: 裁剪 + 原生 Qwen-OCR 二次转写"""
         fields = {"__fields": field_names}
-        llm = self._get_llm()
-        multi_llm = MultimodalLLM(llm)
 
         for i, fname in enumerate(field_names):
             if fname not in field_coords:
                 fields[fname] = "未定位"
                 continue
 
-            x1, y1, x2, y2 = field_coords[fname]
-            
-            # 扩展边距（按 bbox 宽度的比例）
-            margin_ratio = 0.10  # 10% 宽度
-            width = x2 - x1
-            height = y2 - y1
-            margin_x = width * margin_ratio
-            margin_y = height * margin_ratio
-            x1, y1 = max(0, x1 - margin_x), max(0, y1 - margin_y)
-            x2, y2 = min(1, x2 + margin_x), min(1, y2 + margin_y)
+            raw_bbox = field_coords[fname]
+            x1, y1, x2, y2 = self._expand_field_bbox(
+                self._normalize_field_bbox(raw_bbox, img_w, img_h)
+            )
 
-            # 检查区域是否有效
-            if x2 - x1 < 0.005 or y2 - y1 < 0.005:
+            if x2 <= x1 or y2 <= y1:
                 logger.warning(f"[FieldExtractor] 字段{fname}区域太小，跳过")
+                self._save_field_debug_crop(
+                    img=img,
+                    img_w=img_w,
+                    img_h=img_h,
+                    fname=fname,
+                    index=i,
+                    bbox=(x1, y1, x2, y2),
+                    suffix="invalid",
+                    metadata={"raw_bbox": raw_bbox, "prepared_bbox": (x1, y1, x2, y2)},
+                )
                 fields[fname] = "区域太小"
                 continue
 
@@ -243,230 +251,393 @@ class FieldExtractor:
 
             if right - left < 5 or bottom - top < 5:
                 logger.warning(f"[FieldExtractor] 字段{fname}裁剪区域太小")
-                fields[fname] = "裁剪区域太小"
-                continue
-
-            # 裁剪
-            cropped_img = img.crop((left, top, right, bottom))
-            
-            # 放大
-            size_ratio = 1
-            cropped_img = cropped_img.resize(
-                (cropped_img.width * size_ratio, cropped_img.height * size_ratio), Image.LANCZOS
-            )
-            
-            # 四周加白色 padding（帮助 OCR 识别边缘，按图片尺寸比例）
-            from PIL import ImageOps
-            pad_ratio = 0.15  # 15% 边距
-            padding = int(min(cropped_img.width, cropped_img.height) * pad_ratio)
-            cropped_img = ImageOps.expand(cropped_img, border=padding, fill='white')
-            
-            # 保存裁剪图片用于调试（保存放大后的）
-            debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
-            os.makedirs(debug_dir, exist_ok=True)
-            debug_path = f"{debug_dir}/{fname}_{i+1}.png"
-            cropped_img.save(debug_path)
-            
-            # OCR 转写 - 根据配置决定是否使用 OCR
-            use_ocr = os.getenv("LLM_USE_OCR_FOR_FIELDS", "true").lower() == "true"
-            
-            trans = ""
-            if use_ocr:
-                try:
-                    cropped_np = np.array(cropped_img)
-                    ocr_result = paddle_ocr.ocr(cropped_np)
-                    
-                    # 兼容 PaddleOCR 不同版本的返回格式
-                    if ocr_result and ocr_result[0]:
-                        first_page = ocr_result[0]
-                        first_item = first_page[0] if isinstance(first_page, list) and first_page else first_page
-                        
-                        # v5 常见格式: {'rec_texts': [...]} / {'text': ...}
-                        if isinstance(first_item, dict):
-                            rec_texts = first_item.get("rec_texts") or first_item.get("text") or []
-                            if isinstance(rec_texts, list):
-                                # 拼接所有文本行（处理 OCR 合并到一个 box 但包含多行文字的情况）
-                                trans = "".join(rec_texts) if rec_texts else ""
-                            else:
-                                trans = str(rec_texts).strip()
-                        # 旧格式常见: [[box], ('text', score)]
-                        elif (
-                            isinstance(first_item, (list, tuple))
-                            and len(first_item) >= 2
-                            and isinstance(first_item[1], (list, tuple))
-                            and len(first_item[1]) >= 1
-                        ):
-                            trans = str(first_item[1][0]).strip()
-                        
-                        logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:30]}...")
-                except Exception as e:
-                    logger.warning(f"[FieldExtractor] OCR 识别失败: {e}")
-
-            # OCR 失败则用 LLM
-            if not trans.strip():
-                trans = await self._llm_transcribe(multi_llm, cropped_img, i, len(field_names), fname)
-
-            if fname in _BOUNDARY_FALLBACK_FIELDS:
-                trans = await self._retry_if_boundary_truncated(
+                self._save_field_debug_crop(
                     img=img,
                     img_w=img_w,
                     img_h=img_h,
                     fname=fname,
-                    bbox=(x1, y1, x2, y2),
-                    current_text=trans.strip(),
-                    current_img=cropped_img,
-                    multi_llm=multi_llm,
                     index=i,
-                    total=len(field_names),
+                    bbox=(x1, y1, x2, y2),
+                    suffix="too_small",
+                    metadata={
+                        "raw_bbox": raw_bbox,
+                        "prepared_bbox": (x1, y1, x2, y2),
+                        "pixel_box": (left, top, right, bottom),
+                    },
                 )
+                fields[fname] = "裁剪区域太小"
+                continue
 
+            cropped_img = img.crop((left, top, right, bottom))
+            final_crop = self._prepare_crop_for_ocr(cropped_img)
+            self._save_field_debug_assets(
+                fname=fname,
+                index=i,
+                raw_crop=cropped_img,
+                final_crop=final_crop,
+                metadata={
+                    "raw_bbox": raw_bbox,
+                    "normalized_bbox": (x1, y1, x2, y2),
+                    "pixel_box": (left, top, right, bottom),
+                    "page_ocr_value_words": self._get_last_page_value_words(fname),
+                },
+            )
+            trans = await self._qwen_transcribe_crop(final_crop, fname=fname, index=i)
+            logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:30]}...")
             fields[fname] = trans.strip()
 
         return fields
 
-    async def _llm_transcribe(
+    def _normalize_field_bbox(
         self,
-        multi_llm: MultimodalLLM,
-        cropped_img: Image.Image,
-        index: int,
-        total: int,
-        fname: str,
-    ) -> str:
-        """LLM 转写（OCR 失败时的后备）"""
-        prompt = """【重要】请原封不动抄写图中文字，不要纠正任何错误！
-
-即使看到错别字也要原样抄写。
-直接返回文字，不要其他内容。"""
-
-        try:
-            # 转 base64（压缩图片避免超过 LLM 10MB 限制）
-            buf = io.BytesIO()
-            cropped_img.save(buf, format="JPEG", quality=85, optimize=True)
-            img_base64 = base64.b64encode(buf.getvalue()).decode()
-
-            result = await multi_llm.generate([
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}},
-                {"type": "text", "text": prompt}
-            ])
-            return result.content if hasattr(result, 'content') else str(result)
-        except Exception as e:
-            logger.warning(f"[FieldExtractor] LLM 转写失败: {e}")
-            return ""
-
-    async def _retry_if_boundary_truncated(
-        self,
-        img: Image.Image,
+        bbox: tuple,
         img_w: int,
         img_h: int,
-        fname: str,
-        bbox: tuple,
-        current_text: str,
-        current_img: Image.Image,
-        multi_llm: MultimodalLLM,
-        index: int,
-        total: int,
-    ) -> str:
-        """对边界贴边的长字段做最小兜底重试。"""
-        directions = self._detect_boundary_touches(current_img)
-        if not any(directions.values()):
-            return current_text
+    ) -> tuple[float, float, float, float]:
+        """兼容 LLM 偶发返回像素坐标或百分比坐标。"""
+        try:
+            x1, y1, x2, y2 = [float(item) for item in bbox]
+        except Exception:
+            return 0.0, 0.0, 0.0, 0.0
 
-        candidate_boxes = [self._expand_bbox(bbox, directions)]
-        best_text = current_text
-        best_score = self._score_field_candidate(current_text, directions)
+        max_abs = max(abs(x1), abs(y1), abs(x2), abs(y2))
+        if max_abs <= 1.0:
+            return x1, y1, x2, y2
+        if max_abs <= 100.0:
+            return x1 / 100.0, y1 / 100.0, x2 / 100.0, y2 / 100.0
+        return x1 / max(img_w, 1), y1 / max(img_h, 1), x2 / max(img_w, 1), y2 / max(img_h, 1)
 
-        for candidate_bbox in candidate_boxes:
-            candidate_img = self._crop_with_bbox(img, img_w, img_h, candidate_bbox)
-            if candidate_img is None:
-                continue
-            candidate_text = await self._llm_transcribe(multi_llm, candidate_img, index, total, fname)
-            candidate_score = self._score_field_candidate(
-                candidate_text.strip(),
-                self._detect_boundary_touches(candidate_img),
-            )
-            if candidate_score > best_score:
-                best_text = candidate_text.strip()
-                best_score = candidate_score
-
-        return best_text
-
-    def _detect_boundary_touches(self, cropped_img: Image.Image) -> Dict[str, bool]:
-        """检测文字是否贴近裁剪图四边。"""
-        gray = cropped_img.convert("L")
-        arr = np.array(gray)
-        if arr.size == 0:
-            return {"left": False, "right": False, "top": False, "bottom": False}
-
-        foreground = arr < 245
-        h, w = foreground.shape
-        band_w = max(1, int(w * 0.05))
-        band_h = max(1, int(h * 0.05))
-
-        def dense(region: np.ndarray) -> bool:
-            if region.size == 0:
-                return False
-            return float(region.mean()) >= 0.02
-
-        return {
-            "left": dense(foreground[:, :band_w]),
-            "right": dense(foreground[:, w - band_w:]),
-            "top": dense(foreground[:band_h, :]),
-            "bottom": dense(foreground[h - band_h:, :]),
-        }
-
-    def _expand_bbox(self, bbox: tuple, directions: Dict[str, bool]) -> tuple:
-        """按贴边方向最小扩展 bbox。"""
+    def _expand_field_bbox(
+        self,
+        bbox: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        """对齐 2026-03-20 风格：仅做轻量扩边。"""
         x1, y1, x2, y2 = bbox
         width = x2 - x1
         height = y2 - y1
+        margin_ratio = 0.10
+        margin_x = width * margin_ratio
+        margin_y = height * margin_ratio
+        x1 = max(0.0, x1 - margin_x)
+        y1 = max(0.0, y1 - margin_y)
+        x2 = min(1.0, x2 + margin_x)
+        y2 = min(1.0, y2 + margin_y)
+        return x1, y1, x2, y2
 
-        if directions.get("right"):
-            x2 = min(1.0, x2 + width * 0.3)
-        if directions.get("bottom"):
-            y2 = min(1.0, y2 + height * 0.5)
-        if directions.get("left"):
-            x1 = max(0.0, x1 - width * 0.12)
-        if directions.get("top"):
-            y1 = max(0.0, y1 - height * 0.12)
+    def _prepare_crop_for_ocr(self, cropped_img: Image.Image) -> Image.Image:
+        """对齐 2026-03-20 风格：适当放大并补白边。"""
+        scale = max(1, min(4, math.ceil(72 / max(1, cropped_img.height))))
+        prepared = cropped_img.resize(
+            (max(1, cropped_img.width * scale), max(1, cropped_img.height * scale)),
+            Image.LANCZOS,
+        )
+        padding = int(min(prepared.width, prepared.height) * 0.15)
+        return ImageOps.expand(prepared, border=padding, fill="white")
 
-        return (x1, y1, x2, y2)
-
-    def _crop_with_bbox(
+    def _save_field_debug_crop(
         self,
         img: Image.Image,
         img_w: int,
         img_h: int,
-        bbox: tuple,
-    ) -> Optional[Image.Image]:
-        """按 bbox 裁剪并复用现有 padding 逻辑。"""
+        fname: str,
+        index: int,
+        bbox: tuple[float, float, float, float],
+        suffix: str,
+        metadata: Dict[str, Any],
+    ) -> None:
+        """保存字段裁剪调试图和坐标信息。"""
+        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
+        os.makedirs(debug_dir, exist_ok=True)
+
+        safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(fname or "field"))
+        meta_path = f"{debug_dir}/{safe_name}_{index + 1}_{suffix}.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+
         x1, y1, x2, y2 = bbox
-        if x2 - x1 < 0.005 or y2 - y1 < 0.005:
+        left = int(max(0.0, min(1.0, x1)) * img_w)
+        top = int(max(0.0, min(1.0, y1)) * img_h)
+        right = int(max(0.0, min(1.0, x2)) * img_w)
+        bottom = int(max(0.0, min(1.0, y2)) * img_h)
+        if right <= left or bottom <= top:
+            return
+
+        crop = img.crop((left, top, right, bottom))
+        crop.save(f"{debug_dir}/{safe_name}_{index + 1}_{suffix}.png")
+
+    def _save_field_debug_assets(
+        self,
+        fname: str,
+        index: int,
+        raw_crop: Image.Image,
+        final_crop: Image.Image,
+        metadata: Dict[str, Any],
+    ) -> None:
+        """保存字段原始裁剪图、最终 OCR 图和坐标信息。"""
+        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
+        os.makedirs(debug_dir, exist_ok=True)
+
+        safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(fname or "field"))
+        with open(f"{debug_dir}/{safe_name}_{index + 1}.json", "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        raw_crop.save(f"{debug_dir}/{safe_name}_{index + 1}_raw.png")
+        final_crop.save(f"{debug_dir}/{safe_name}_{index + 1}.png")
+
+    async def _qwen_transcribe_crop(
+        self,
+        cropped_img: Image.Image,
+        fname: str,
+        index: int,
+    ) -> str:
+        """crop 后再走一次原生 Qwen-OCR，最终值只认第二次 OCR 结果。"""
+        buf = io.BytesIO()
+        cropped_img.save(buf, format="PNG")
+        result = await self._run_qwen_ocr(
+            image_data=buf.getvalue(),
+            prompt="请对这张字段小图执行 OCR，只返回图片中实际可见文字，不要纠错，不要补全。",
+            debug_name=f"{re.sub(r'[^\w\u4e00-\u9fff.-]+', '_', str(fname or 'field'))}_{index + 1}_ocr",
+        )
+        texts = self._extract_ordered_texts(result.get("words_info") or [])
+        if texts:
+            return "".join(texts).strip()
+        processed_text = str(result.get("processed_text") or "").strip()
+        if not processed_text:
+            return ""
+        parsed_lines = self._parse_processed_text_entries(processed_text)
+        return "".join(item.get("text", "") for item in parsed_lines).strip()
+
+    async def _run_qwen_ocr(
+        self,
+        image_data: bytes,
+        prompt: str,
+        debug_name: str,
+    ) -> Dict[str, Any]:
+        """调用 Qwen-OCR 原生 advanced_recognition。"""
+        api_key = str(llm_config.api_key or "").strip()
+        if not api_key:
+            raise RuntimeError("LLM_API_KEY 未配置，无法调用 Qwen-OCR")
+
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+        payload = {
+            "model": "qwen-vl-ocr-latest",
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "image": f"data:image/png;base64,{image_b64}",
+                                "min_pixels": 28 * 28 * 256,
+                                "max_pixels": 28 * 28 * 1600,
+                            },
+                            {"text": prompt},
+                        ],
+                    }
+                ]
+            },
+            "parameters": {
+                "ocr_options": {
+                    "task": "advanced_recognition",
+                    "enable_table": False,
+                    "enable_rotate": True,
+                }
+            },
+        }
+        response = await asyncio.to_thread(
+            requests.post,
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=90,
+        )
+        response.raise_for_status()
+        data = response.json()
+        self._save_qwen_ocr_debug_response(debug_name, data)
+        return self._extract_qwen_ocr_result(data)
+
+    def _extract_qwen_ocr_result(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            content = payload["output"]["choices"][0]["message"]["content"][0]["ocr_result"]
+        except Exception as exc:
+            raise RuntimeError(f"Qwen-OCR 返回结构异常: {exc}") from exc
+        words_info = list(content.get("words_info") or [])
+        processed_text = str(content.get("processed_text") or "")
+        return {"words_info": words_info, "processed_text": processed_text}
+
+    def _save_qwen_ocr_debug_response(self, debug_name: str, payload: Dict[str, Any]) -> None:
+        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
+        os.makedirs(debug_dir, exist_ok=True)
+        safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(debug_name or "qwen_ocr"))
+        with open(f"{debug_dir}/{safe_name}.json", "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    def _match_field_label(self, words: List[Dict[str, Any]], field_name: str) -> Optional[Dict[str, Any]]:
+        target = self._normalize_text(field_name)
+        exact = [word for word in words if self._normalize_text(word.get("text")) == target]
+        if exact:
+            return sorted(exact, key=lambda item: self._word_bbox(item)["x1"])[0]
+        fuzzy = [word for word in words if target in self._normalize_text(word.get("text"))]
+        if fuzzy:
+            return sorted(fuzzy, key=lambda item: self._word_bbox(item)["x1"])[0]
+        return None
+
+    def _select_field_value_words(
+        self,
+        words: List[Dict[str, Any]],
+        label_word: Optional[Dict[str, Any]],
+        field_names: List[str],
+    ) -> List[Dict[str, Any]]:
+        if not label_word:
+            return []
+        label_box = self._word_bbox(label_word)
+        label_center_y = (label_box["y1"] + label_box["y2"]) / 2.0
+        label_height = max(1.0, label_box["y2"] - label_box["y1"])
+        blocked = {self._normalize_text(item) for item in field_names}
+        candidates: List[Dict[str, Any]] = []
+        for word in words:
+            if word is label_word:
+                continue
+            text_norm = self._normalize_text(word.get("text"))
+            if not text_norm or text_norm in blocked:
+                continue
+            box = self._word_bbox(word)
+            center_y = (box["y1"] + box["y2"]) / 2.0
+            if box["x1"] < label_box["x2"] - 8:
+                continue
+            if abs(center_y - label_center_y) > max(24.0, label_height * 1.2):
+                continue
+            candidates.append(word)
+        if not candidates:
+            return []
+        candidates = sorted(candidates, key=lambda item: self._word_bbox(item)["x1"])
+        cluster = [candidates[0]]
+        current_box = self._word_bbox(candidates[0])
+        max_gap = max(24.0, (current_box["x2"] - current_box["x1"]) * 1.5)
+        for word in candidates[1:]:
+            box = self._word_bbox(word)
+            gap = box["x1"] - current_box["x2"]
+            if gap > max_gap:
+                break
+            cluster.append(word)
+            current_box = self._merge_word_bboxes(cluster) or current_box
+        return cluster
+
+    def _word_bbox(self, word: Dict[str, Any]) -> Dict[str, float]:
+        location = word.get("location") or []
+        if isinstance(location, list) and len(location) >= 8:
+            xs = [float(location[i]) for i in range(0, len(location), 2)]
+            ys = [float(location[i]) for i in range(1, len(location), 2)]
+            return {"x1": min(xs), "y1": min(ys), "x2": max(xs), "y2": max(ys)}
+        rotate_rect = word.get("rotate_rect") or []
+        if isinstance(rotate_rect, list) and len(rotate_rect) >= 4:
+            cx, cy, h, w = [float(item) for item in rotate_rect[:4]]
+            return {
+                "x1": cx - w / 2.0,
+                "y1": cy - h / 2.0,
+                "x2": cx + w / 2.0,
+                "y2": cy + h / 2.0,
+            }
+        return {"x1": 0.0, "y1": 0.0, "x2": 0.0, "y2": 0.0}
+
+    def _merge_word_bboxes(self, words: List[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+        if not words:
             return None
+        boxes = [self._word_bbox(word) for word in words]
+        return {
+            "x1": min(box["x1"] for box in boxes),
+            "y1": min(box["y1"] for box in boxes),
+            "x2": max(box["x2"] for box in boxes),
+            "y2": max(box["y2"] for box in boxes),
+        }
 
-        left = int(x1 * img_w)
-        top = int(y1 * img_h)
-        right = int(x2 * img_w)
-        bottom = int(y2 * img_h)
-        if right - left < 5 or bottom - top < 5:
-            return None
+    def _extract_ordered_texts(self, words: List[Dict[str, Any]]) -> List[str]:
+        ranked = []
+        for word in words:
+            text = str(word.get("text") or "").strip()
+            if not text:
+                continue
+            box = self._word_bbox(word)
+            ranked.append((box["y1"], box["x1"], text))
+        ranked.sort()
+        return [text for _, _, text in ranked]
 
-        cropped_img = img.crop((left, top, right, bottom))
-        from PIL import ImageOps
-        padding = int(min(cropped_img.width, cropped_img.height) * 0.15)
-        return ImageOps.expand(cropped_img, border=padding, fill='white')
+    def _parse_processed_text_entries(self, processed_text: str) -> List[Dict[str, Any]]:
+        cleaned = processed_text.strip()
+        fence = chr(96) * 3
+        if cleaned.startswith(fence):
+            parts = cleaned.split(fence)
+            if len(parts) >= 2:
+                cleaned = parts[1]
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:]
+        start = cleaned.find("[")
+        end = cleaned.rfind("]")
+        if start < 0 or end <= start:
+            return []
+        try:
+            payload = json.loads(cleaned[start:end + 1])
+        except Exception:
+            return []
+        return payload if isinstance(payload, list) else []
 
-    def _score_field_candidate(self, text: str, touches: Dict[str, bool]) -> float:
-        """候选文本打分：优先不贴边，其次更完整。"""
-        text = (text or "").strip()
-        if not text:
-            return -1.0
+    def _save_qwen_page_debug(
+        self,
+        img: Image.Image,
+        field_names: List[str],
+        debug_rows: Dict[str, Any],
+        words: List[Dict[str, Any]],
+    ) -> None:
+        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
+        os.makedirs(debug_dir, exist_ok=True)
+        with open(f"{debug_dir}/field_page_ocr_selected.json", "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "fields": field_names,
+                    "selected": debug_rows,
+                    "words_count": len(words),
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+        canvas = img.copy()
+        draw = ImageDraw.Draw(canvas)
+        for index, fname in enumerate(field_names, start=1):
+            row = debug_rows.get(fname) or {}
+            label = row.get("label")
+            if label:
+                box = self._word_bbox(label)
+                draw.rectangle((box["x1"], box["y1"], box["x2"], box["y2"]), outline="orange", width=3)
+            value_bbox = self._merge_word_bboxes(row.get("value_words") or [])
+            if value_bbox:
+                draw.rectangle(
+                    (value_bbox["x1"], value_bbox["y1"], value_bbox["x2"], value_bbox["y2"]),
+                    outline="green",
+                    width=4,
+                )
+                draw.text((value_bbox["x1"], max(0, value_bbox["y1"] - 20)), f"{index}:{fname}", fill="green")
+        canvas.save(f"{debug_dir}/field_page_boxes.png")
 
-        score = float(len(text))
-        score -= 5.0 * sum(1 for touched in touches.values() if touched)
-        return score
+    def _get_last_page_value_words(self, fname: str) -> List[Dict[str, Any]]:
+        selected_path = "/home/tdkx/workspace/tech/debug_cropped/field_page_ocr_selected.json"
+        try:
+            with open(selected_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return []
+        selected = payload.get("selected") or {}
+        row = selected.get(fname) or {}
+        return list(row.get("value_words") or [])
+
+    def _normalize_text(self, text: Any) -> str:
+        value = str(text or "")
+        return re.sub(r"\s+", "", value)
 
     def _get_llm(self):
-        """获取 review 场景专用 LLM 客户端（temperature=0）。"""
+        """获取 review 场景专用 LLM 客户端（temperature=0.7）。"""
         if self._llm_client is None:
             from src.common.llm import get_review_llm_client
 
@@ -475,4 +646,3 @@ class FieldExtractor:
 
 
 # 兼容旧代码
-import base64
