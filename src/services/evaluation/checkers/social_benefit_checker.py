@@ -50,6 +50,7 @@ class SocialBenefitChecker(BaseChecker):
                 self.PROJECT_PROFILE_TECH_RND,
                 self.PROJECT_PROFILE_PLATFORM,
                 self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                "demonstration",
             ):
                 alternative_sections = self._extract_sections(
                     content,
@@ -63,8 +64,9 @@ class SocialBenefitChecker(BaseChecker):
                         content,
                         self.PROJECT_PROFILE_PLATFORM,
                         self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                        "demonstration",
                     ):
-                        opinion = "该项目更偏平台建设或科普实施类，已基于普及前景、推广范围和服务覆盖内容进行基础社会效益判断，不再强制要求独立社会效益章节。"
+                        opinion = "该项目更偏平台建设、科普实施或示范应用类，已基于普及前景、推广范围和服务覆盖内容进行基础社会效益判断，不再强制要求独立社会效益章节。"
                         issue = "未设置独立社会效益章节，已按推广应用与社会覆盖相关内容替代评估"
                     return CheckResult(
                         dimension=self.dimension,

@@ -6,6 +6,7 @@ import re
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -294,6 +295,14 @@ def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
             "used_retries": int(retry.get("used_retries") or 0),
             "stop_reason": str(retry.get("stop_reason") or ""),
         }
+        if "max_attempts" in retry:
+            compact["retry"]["max_attempts"] = int(retry.get("max_attempts") or 0)
+        if "stage" in retry:
+            compact["retry"]["stage"] = str(retry.get("stage") or "")
+        if "in_progress" in retry:
+            compact["retry"]["in_progress"] = bool(retry.get("in_progress"))
+        if "last_summary" in retry:
+            compact["retry"]["last_summary"] = str(retry.get("last_summary") or "")
 
     return compact
 
@@ -472,11 +481,14 @@ def _attach_retry_metadata(
     used_retries: int,
     stop_reason: str,
     total_elapsed: float,
+    max_attempts: Optional[int] = None,
 ) -> ReviewResult:
     retry_info = {
         "attempts": attempts,
         "used_retries": used_retries,
         "stop_reason": stop_reason,
+        "max_attempts": int(max_attempts or attempts),
+        "in_progress": False,
     }
     result.processing_time = total_elapsed
     result.extracted_data = dict(result.extracted_data or {})
@@ -485,6 +497,43 @@ def _attach_retry_metadata(
     structured["retry"] = retry_info
     result.structured_result = structured
     return result
+
+
+def _update_processing_retry_status(
+    review_id: str,
+    doc_type: str,
+    attempt: int,
+    max_attempts: int,
+    stage: str,
+    last_result: Optional[ReviewResult] = None,
+) -> None:
+    """在重试/复核期间把可见状态写回内存和磁盘。"""
+    current = _review_results.get(review_id)
+    if current is None:
+        current = _build_placeholder_result(review_id, doc_type)
+
+    used_retries = max(0, attempt - 1)
+    current.status = "processing"
+    current.doc_type = doc_type
+    current.summary = f"正在复核第 {attempt} 次（共 {max_attempts} 次）" if max_attempts > 1 else "处理中"
+    if stage:
+        current.summary = f"{current.summary}：{stage}"
+    current.processed_at = datetime.now()
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    retry_info = {
+        "attempts": attempt,
+        "used_retries": used_retries,
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+    }
+    if last_result is not None:
+        retry_info["last_summary"] = str(last_result.summary or "")
+    current.extracted_data["retry"] = retry_info
+    current.structured_result["retry"] = retry_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
 
 
 async def _run_with_retries(
@@ -500,6 +549,14 @@ async def _run_with_retries(
 
     for attempt in range(1, attempts + 1):
         completed_attempts = attempt
+        _update_processing_retry_status(
+            review_id=review_id,
+            doc_type=doc_type,
+            attempt=attempt,
+            max_attempts=attempts,
+            stage="开始审查" if attempt == 1 else "开始复核",
+            last_result=best_result,
+        )
         try:
             current = await run_attempt(attempt)
         except Exception as exc:
@@ -519,6 +576,16 @@ async def _run_with_retries(
             stop_reason = "full_pass"
             break
 
+        if attempt < attempts:
+            _update_processing_retry_status(
+                review_id=review_id,
+                doc_type=doc_type,
+                attempt=attempt + 1,
+                max_attempts=attempts,
+                stage=f"第 {attempt} 次结果需复核，准备重试",
+                last_result=current,
+            )
+
     assert best_result is not None
     return _attach_retry_metadata(
         best_result,
@@ -526,6 +593,7 @@ async def _run_with_retries(
         used_retries=max(0, completed_attempts - 1),
         stop_reason=stop_reason,
         total_elapsed=time.time() - start_time,
+        max_attempts=attempts,
     )
 
 

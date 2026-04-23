@@ -396,6 +396,57 @@ def test_report_generator_build_from_debug_file_injects_workspace_project_nav(
     assert 'id="report-chat"' in html
 
 
+def test_report_generator_workspace_nav_ignores_hash_docx_project_name(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """左侧项目栏不应把 hash docx 文件名当成项目名称"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["result"]["project_name"] = "示例项目"
+    payload["meta"] = {
+        "file_name": "demo.pdf",
+        "file_path": str(tmp_path / "demo.pdf"),
+        "page_estimated": False,
+        "page_count": 1,
+    }
+    debug_json = tmp_path / "EVAL_demo-project.json"
+    output_html = tmp_path / "EVAL_demo-project.html"
+    debug_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _write_pdf(tmp_path / "demo.pdf", "项目目标：建设智能化服务平台。")
+
+    other_payload = _build_debug_payload()
+    other_payload["project_name"] = "ffb75a4c639d4ebab2c33e21d75d7bac.docx"
+    other_payload["result"]["project_id"] = "ffb75a4c639d4ebab2c33e21d75d7bac"
+    other_payload["result"]["project_name"] = "ffb75a4c639d4ebab2c33e21d75d7bac.docx"
+    other_payload["sections"] = {
+        "概述": (
+            "河北省创新能力提升计划项目申报书 "
+            "项 目 名 称 ：生殖健康科普示范基地标准化建设与创新模式探索 "
+            "承 担 单 位 ：河北医科大学第四医院"
+        )
+    }
+    (tmp_path / "EVAL_ffb75a4c639d4ebab2c33e21d75d7bac.json").write_text(
+        json.dumps(other_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    async def fake_parse(self, file_path: str, source_name: str = ""):
+        return {
+            "page_chunks": payload["page_chunks"],
+            "meta": payload["meta"],
+        }
+
+    monkeypatch.setattr(DocumentParser, "parse", fake_parse)
+
+    generator.build_from_debug_file(debug_json, output_html, debug_mode=False)
+
+    html = output_html.read_text(encoding="utf-8")
+    assert "生殖健康科普示范基地标准化建设与创新模式探索" in html
+    assert '<div class="project-link-title">ffb75a4c639d4ebab2c33e21d75d7bac.docx</div>' not in html
+
+
 def test_report_generator_build_from_debug_file_backfills_packet_assets(tmp_path: Path):
     """旧 debug JSON 缺少 packet 资产时，应自动回源生成统一材料 viewer"""
     generator = ReportGenerator()
@@ -461,3 +512,6 @@ def test_report_generator_build_index_html_creates_multi_project_workspace():
     assert 'data-project-html="EVAL_demo-project-b.html"' in html
     assert 'id="evaluation-workspace-frame"' in html
     assert 'src="EVAL_demo-project-a.html"' in html
+    assert "左侧切项目，右侧查看该项目完整评审报告。" not in html
+    assert "project-item-summary" not in html
+    assert "project-item-links" not in html

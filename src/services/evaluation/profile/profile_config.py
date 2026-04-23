@@ -139,6 +139,66 @@ PROFILE_DIMENSION_OVERRIDES: Dict[str, Dict[str, Dict[str, Any]]] = {
             ],
         },
     },
+    PROFILE_DEMONSTRATION: {
+        EvaluationDimension.FEASIBILITY.value: {
+            "relax_missing_sections": True,
+            "alternative_sections": [
+                "项目实施内容、技术路线及创新点",
+                "主要内容及实施地点",
+                "应用示范方案",
+                "推广应用",
+                "示范场景",
+            ],
+        },
+        EvaluationDimension.SCHEDULE.value: {
+            "relax_missing_sections": True,
+            "alternative_sections": [
+                "进度安排",
+                "项目实施的预期绩效目标",
+                "应用示范方案",
+                "推广应用",
+                "项目组织实施机制",
+            ],
+        },
+        EvaluationDimension.RISK_CONTROL.value: {
+            "relax_missing_sections": True,
+            "alternative_sections": [
+                "技术风险",
+                "市场风险",
+                "政策风险",
+                "实施制约因素",
+                "项目组织实施机制",
+            ],
+        },
+        EvaluationDimension.OUTCOME.value: {
+            "relax_missing_sections": True,
+            "alternative_sections": [
+                "项目实施的预期绩效目标",
+                "项目实施的预期经济社会效益目标",
+                "主要指标、效益",
+                "推广应用",
+                "应用示范方案",
+            ],
+        },
+        EvaluationDimension.SOCIAL_BENEFIT.value: {
+            "relax_missing_sections": True,
+            "alternative_sections": [
+                "项目实施的预期经济社会效益目标",
+                "推广应用",
+                "应用示范方案",
+                "示范场景",
+            ],
+        },
+        EvaluationDimension.ECONOMIC_BENEFIT.value: {
+            "relax_missing_sections": True,
+            "alternative_sections": [
+                "项目实施的预期经济社会效益目标",
+                "推广应用",
+                "应用示范方案",
+                "示范场景",
+            ],
+        },
+    },
 }
 
 

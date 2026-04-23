@@ -45,7 +45,8 @@ class EvaluationPacketBuilder:
             path = Path(str(item.get("source_file") or "").strip())
             if not path.exists() or not path.is_file():
                 continue
-            merged_doc, merge_mode = self._open_mergeable_document(path)
+            merge_path = self._resolve_merge_path(path, str(item.get("source_kind") or "attachment"))
+            merged_doc, merge_mode = self._open_mergeable_document(merge_path)
             if merged_doc is None or merged_doc.page_count <= 0:
                 continue
 
@@ -100,6 +101,18 @@ class EvaluationPacketBuilder:
             "viewer_file": viewer_assets.get("viewer_file", ""),
             "page_images": viewer_assets.get("page_images", []),
         }
+
+    def _resolve_merge_path(self, path: Path, source_kind: str) -> Path:
+        """解析实际参与 packet 合并的文件路径"""
+        if source_kind != "proposal":
+            return path
+        if path.suffix.lower() != ".docx":
+            return path
+
+        sibling_pdf = path.with_suffix(".pdf")
+        if sibling_pdf.exists() and sibling_pdf.is_file():
+            return sibling_pdf
+        return path
 
     def _collect_sources(
         self,
@@ -476,7 +489,6 @@ class EvaluationPacketBuilder:
         cursor = 0
         while cursor < len(lines):
             page = doc.new_page(width=page_width, height=page_height)
-            text_page = page.new_text_page()
             batch = lines[cursor:cursor + max_lines]
             for index, line in enumerate(batch):
                 page.insert_text(

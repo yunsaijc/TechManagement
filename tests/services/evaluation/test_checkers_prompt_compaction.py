@@ -24,3 +24,22 @@ def test_compliance_checker_compacts_long_budget_tables_for_prompt():
     assert prompt.count("\n## 政策依据") + prompt.count("\n## 经费预算") + prompt.count("\n## 伦理审查") + prompt.count("\n## 预算说明") <= checker.MAX_PROMPT_SECTIONS
     assert "[表格行1]" not in prompt
     assert "[内容已截断]" in prompt
+
+
+def test_compliance_checker_keeps_semantic_table_values_after_compaction():
+    """表格压缩后仍应保留可用于判断的关键预算语义"""
+    checker = ComplianceChecker(llm=object())
+
+    prompt = checker._build_prompt(
+        {
+            "经费预算": (
+                "[表格表头1] 序号 | 预算科目名称 | 金额\n"
+                "[表格行1] 序号:1 ; 预算科目名称:设备费 ; 金额:500.00\n"
+                "[表格行2] 序号:2 ; 预算科目名称:业务费 ; 金额:112.00"
+            )
+        }
+    )
+
+    assert "[表格行1]" not in prompt
+    assert "预算科目名称: 设备费" in prompt
+    assert "金额: 500.00" in prompt

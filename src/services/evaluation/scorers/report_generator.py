@@ -23,6 +23,8 @@ from src.services.evaluation.storage.project_repo import EvaluationProjectReposi
 class ReportGenerator:
     """评审报告生成器"""
 
+    HASH_SOURCE_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(?:pdf|docx)$", re.IGNORECASE)
+
     SECTION_PREVIEW_SKIP_PATTERNS = [
         r"附件",
         r"预算",
@@ -1581,20 +1583,11 @@ class ReportGenerator:
         default_score = ""
         for index, record in enumerate(records):
             payload = record.get("payload") or {}
-            sections = payload.get("sections") if isinstance(payload, dict) else {}
-            result = payload.get("result") if isinstance(payload, dict) else {}
             preferred_name = self._extract_project_name_from_payload(payload)
             project_name = preferred_name or str(record.get("project_name") or record.get("project_id") or "未命名项目")
-            project_id = str(record.get("project_id") or "-")
             grade = str(record.get("grade") or "-")
             score = str(record.get("overall_score") or "-")
             html_file = str(record.get("html_file") or "#")
-            debug_html_file = str(record.get("debug_html_file") or "#")
-            json_file = str(record.get("json_file") or "#")
-            summary = ""
-            if isinstance(result, dict):
-                summary = str(result.get("summary") or "").strip()
-            summary = summary[:48] + ("..." if len(summary) > 48 else "")
             score_text = f"{score} / {grade}"
             active_class = " is-active" if index == 0 else ""
             if index == 0:
@@ -1614,13 +1607,6 @@ class ReportGenerator:
                     <div class="project-item-title">{html.escape(project_name)}</div>
                     <div class="project-item-score">{html.escape(score)} / {html.escape(grade)}</div>
                   </div>
-                  <div class="project-item-meta">{html.escape(project_id)}</div>
-                  <div class="project-item-summary">{html.escape(summary or '暂无摘要')}</div>
-                  <div class="project-item-links">
-                    <a href="{html.escape(html_file)}" target="evaluation-workspace-frame">正式</a>
-                    <a href="{html.escape(debug_html_file)}" target="_blank" rel="noopener noreferrer">调试</a>
-                    <a href="{html.escape(json_file)}" target="_blank" rel="noopener noreferrer">JSON</a>
-                  </div>
                 </button>
                 """
             )
@@ -1632,7 +1618,6 @@ class ReportGenerator:
               <aside class="project-rail">
                 <div class="project-rail-head">
                   <h1>项目评审工作台</h1>
-                  <div class="project-rail-sub">左侧切项目，右侧查看该项目完整评审报告。</div>
                 </div>
                 <div class="project-list">
                   {''.join(project_items)}
@@ -1696,14 +1681,9 @@ class ReportGenerator:
       border-bottom: 1px solid #e6edf4;
     }}
     .project-rail-head h1 {{
-      margin: 0 0 6px;
+      margin: 0;
       font-size: 20px;
       line-height: 1.4;
-    }}
-    .project-rail-sub {{
-      color: #66758a;
-      font-size: 13px;
-      line-height: 1.7;
     }}
     .project-list {{
       min-height: 0;
@@ -1722,7 +1702,7 @@ class ReportGenerator:
       padding: 10px 11px;
       cursor: pointer;
       display: grid;
-      gap: 4px;
+      gap: 0;
       box-shadow: 0 4px 12px rgba(18, 31, 53, 0.035);
     }}
     .project-item:hover,
@@ -1750,34 +1730,6 @@ class ReportGenerator:
       border-radius: 999px;
       padding: 2px 7px;
       background: #f5f8fb;
-    }}
-    .project-item-meta {{
-      color: #66758a;
-      font-size: 11px;
-      line-height: 1.45;
-      word-break: break-all;
-    }}
-    .project-item-summary {{
-      color: #334155;
-      font-size: 12px;
-      line-height: 1.5;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
-      overflow: hidden;
-    }}
-    .project-item-links {{
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }}
-    .project-item-links a {{
-      color: #1d3c61;
-      font-size: 11px;
-      font-weight: 700;
-      text-decoration: none;
-      position: relative;
-      z-index: 1;
     }}
     .workspace-main {{
       min-height: 0;
@@ -3625,7 +3577,7 @@ class ReportGenerator:
         root_name = str(payload.get("project_name") or "").strip()
         result_name = str((payload.get("result") or {}).get("project_name") or "").strip()
         for value in (root_name, result_name):
-            if value and not value.lower().endswith(".pdf"):
+            if value and not self.HASH_SOURCE_NAME_RE.match(value):
                 return value
 
         for text in candidates:

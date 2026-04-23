@@ -187,7 +187,13 @@ class FieldExtractor:
             for fname in field_names:
                 label_word = self._match_field_label(words, fname)
                 value_words = self._select_field_value_words(words, label_word, field_names)
-                value_bbox = self._merge_word_bboxes(value_words)
+                value_bbox = self._build_field_value_bbox(
+                    words=words,
+                    label_word=label_word,
+                    value_words=value_words,
+                    field_names=field_names,
+                    image_size=(img_w, img_h),
+                )
                 if not value_bbox:
                     continue
                 x1 = value_bbox["x1"] / max(img_w, 1)
@@ -198,6 +204,7 @@ class FieldExtractor:
                 debug_rows[fname] = {
                     "label": label_word,
                     "value_words": value_words,
+                    "value_bbox": value_bbox,
                     "normalized_bbox": [x1, y1, x2, y2],
                 }
             self._save_qwen_page_debug(img, field_names, debug_rows, words)
@@ -315,9 +322,8 @@ class FieldExtractor:
         x1, y1, x2, y2 = bbox
         width = x2 - x1
         height = y2 - y1
-        margin_ratio = 0.10
-        margin_x = width * margin_ratio
-        margin_y = height * margin_ratio
+        margin_x = width * 0.04
+        margin_y = height * 0.10
         x1 = max(0.0, x1 - margin_x)
         y1 = max(0.0, y1 - margin_y)
         x2 = min(1.0, x2 + margin_x)
@@ -509,21 +515,141 @@ class FieldExtractor:
                 continue
             if abs(center_y - label_center_y) > max(24.0, label_height * 1.2):
                 continue
+            # 不跨到下一个单元格列头。优先限制在 label 右侧约 1.6 倍字段名宽度内。
+            if box["x1"] - label_box["x2"] > max(180.0, (label_box["x2"] - label_box["x1"]) * 1.6):
+                continue
             candidates.append(word)
         if not candidates:
             return []
         candidates = sorted(candidates, key=lambda item: self._word_bbox(item)["x1"])
-        cluster = [candidates[0]]
-        current_box = self._word_bbox(candidates[0])
-        max_gap = max(24.0, (current_box["x2"] - current_box["x1"]) * 1.5)
-        for word in candidates[1:]:
+        leftmost_x = self._word_bbox(candidates[0])["x1"]
+        near_left_candidates = [
+            item
+            for item in candidates
+            if self._word_bbox(item)["x1"] <= leftmost_x + 24.0
+        ]
+        best = max(
+            near_left_candidates,
+            key=lambda item: (
+                self._word_bbox(item)["x2"] - self._word_bbox(item)["x1"],
+                len(self._normalize_text(item.get("text"))),
+            ),
+        )
+        return [best]
+
+    def _build_field_value_bbox(
+        self,
+        words: List[Dict[str, Any]],
+        label_word: Optional[Dict[str, Any]],
+        value_words: List[Dict[str, Any]],
+        field_names: List[str],
+        image_size: tuple[int, int],
+    ) -> Optional[Dict[str, float]]:
+        """优先按整格推断字段值区域，覆盖多行单元格；失败时回退到 value words bbox。"""
+        if not label_word:
+            return self._merge_word_bboxes(value_words)
+
+        label_box = self._word_bbox(label_word)
+        label_height = max(1.0, label_box["y2"] - label_box["y1"])
+        merged_value_bbox = self._merge_word_bboxes(value_words)
+        img_w, img_h = image_size
+        row_top, row_bottom = self._estimate_row_band(words, label_word, img_h)
+        right_boundary = self._estimate_next_column_left(words, label_box, row_top, row_bottom, img_w)
+
+        left = max(label_box["x2"] + 4.0, 0.0)
+        right = min(right_boundary - 6.0, float(img_w))
+        top = max(row_top + 2.0, 0.0)
+        bottom = min(row_bottom - 2.0, float(img_h))
+
+        if merged_value_bbox:
+            value_height = max(1.0, merged_value_bbox["y2"] - merged_value_bbox["y1"])
+            left = max(left, merged_value_bbox["x1"] - 8.0)
+            right = min(right, merged_value_bbox["x2"] + max(28.0, value_height * 1.2))
+            top = min(top, max(0.0, merged_value_bbox["y1"] - max(12.0, label_height * 0.35)))
+            bottom = min(bottom, merged_value_bbox["y2"] + max(24.0, value_height * 1.8))
+
+        if right - left >= 12.0 and bottom - top >= 12.0:
+            return {"x1": left, "y1": top, "x2": right, "y2": bottom}
+        return merged_value_bbox
+
+    def _estimate_row_band(
+        self,
+        words: List[Dict[str, Any]],
+        label_word: Dict[str, Any],
+        img_h: int,
+    ) -> tuple[float, float]:
+        """根据左列标签的上下邻居估计整行边界，避免只截到单行文字。"""
+        label_box = self._word_bbox(label_word)
+        label_center_y = (label_box["y1"] + label_box["y2"]) / 2.0
+        label_height = max(1.0, label_box["y2"] - label_box["y1"])
+
+        left_column_words: List[Dict[str, Any]] = []
+        for word in words:
             box = self._word_bbox(word)
-            gap = box["x1"] - current_box["x2"]
-            if gap > max_gap:
+            center_x = (box["x1"] + box["x2"]) / 2.0
+            if center_x > label_box["x2"] + 40.0:
+                continue
+            if box["x1"] > label_box["x1"] + 80.0:
+                continue
+            text_norm = self._normalize_text(word.get("text"))
+            if not text_norm:
+                continue
+            left_column_words.append(word)
+
+        left_column_words = sorted(
+            left_column_words,
+            key=lambda item: ((self._word_bbox(item)["y1"] + self._word_bbox(item)["y2"]) / 2.0, self._word_bbox(item)["x1"]),
+        )
+        prev_center_y: Optional[float] = None
+        next_center_y: Optional[float] = None
+        for word in left_column_words:
+            if word is label_word:
+                continue
+            box = self._word_bbox(word)
+            center_y = (box["y1"] + box["y2"]) / 2.0
+            if center_y < label_center_y - 2.0:
+                prev_center_y = center_y
+            elif center_y > label_center_y + 2.0 and next_center_y is None:
+                next_center_y = center_y
                 break
-            cluster.append(word)
-            current_box = self._merge_word_bboxes(cluster) or current_box
-        return cluster
+
+        top = max(0.0, (prev_center_y + label_center_y) / 2.0) if prev_center_y is not None else max(0.0, label_box["y1"] - label_height * 1.4)
+        bottom = (
+            min(float(img_h), (label_center_y + next_center_y) / 2.0)
+            if next_center_y is not None
+            else min(float(img_h), label_box["y2"] + label_height * 1.8)
+        )
+        if bottom <= top:
+            return label_box["y1"], label_box["y2"]
+        return top, bottom
+
+    def _estimate_next_column_left(
+        self,
+        words: List[Dict[str, Any]],
+        label_box: Dict[str, float],
+        row_top: float,
+        row_bottom: float,
+        img_w: int,
+    ) -> float:
+        """寻找本行右侧下一列的起点，尽量裁成完整 cell。"""
+        label_width = max(1.0, label_box["x2"] - label_box["x1"])
+        threshold_x = label_box["x2"] + max(120.0, label_width * 1.3)
+        best_left: Optional[float] = None
+        for word in words:
+            box = self._word_bbox(word)
+            text_norm = self._normalize_text(word.get("text"))
+            if not text_norm:
+                continue
+            overlap_y = min(box["y2"], row_bottom) - max(box["y1"], row_top)
+            if overlap_y < max(8.0, (row_bottom - row_top) * 0.18):
+                continue
+            if box["x1"] <= threshold_x:
+                continue
+            if best_left is None or box["x1"] < best_left:
+                best_left = box["x1"]
+        if best_left is not None:
+            return best_left
+        return float(img_w) - 8.0
 
     def _word_bbox(self, word: Dict[str, Any]) -> Dict[str, float]:
         location = word.get("location") or []
@@ -611,7 +737,7 @@ class FieldExtractor:
             if label:
                 box = self._word_bbox(label)
                 draw.rectangle((box["x1"], box["y1"], box["x2"], box["y2"]), outline="orange", width=3)
-            value_bbox = self._merge_word_bboxes(row.get("value_words") or [])
+            value_bbox = row.get("value_bbox") or self._merge_word_bboxes(row.get("value_words") or [])
             if value_bbox:
                 draw.rectangle(
                     (value_bbox["x1"], value_bbox["y1"], value_bbox["x2"], value_bbox["y2"]),

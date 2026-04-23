@@ -54,6 +54,13 @@ from .tools import ToolGateway, ToolUnavailableError
 class EvaluationAgent:
     """正文评审编排器"""
 
+    HASH_SOURCE_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(?:pdf|docx)$", re.IGNORECASE)
+    PROJECT_NAME_PATTERNS = [
+        r"项\s*目\s*名\s*称\s*[：:]\s*(.+?)(?:申\s*报\s*单\s*位|承\s*担\s*单\s*位|合\s*作\s*单\s*位|项目负责人|$)",
+        r"项目名称\s*\|\s*(.+?)\s*\|\s*所属专项",
+        r"项目名称\s+(.+?)\s+所属专项",
+    ]
+
     EXPERT_QA_QUESTIONS = [
         "这个项目的研究目标是什么？",
         "这个项目的创新点是什么？",
@@ -137,6 +144,14 @@ class EvaluationAgent:
         sections = parsed.get("sections", {})
         page_chunks = parsed.get("page_chunks", [])
         meta = parsed.get("meta", {})
+        project_name = self._resolve_project_name(
+            sections=sections,
+            meta=meta,
+            project_id=request.project_id,
+            source_name=source_name,
+        )
+        if project_name and not sections.get("项目名称"):
+            sections["项目名称"] = project_name
 
         if request.include_sections:
             sections = self._filter_sections(sections, request.include_sections)
@@ -175,7 +190,7 @@ class EvaluationAgent:
         check_results = module_outputs.get("checks", [])
         result = self.scorer.build_result(
             project_id=request.project_id,
-            project_name=sections.get("项目名称") or meta.get("file_name") or None,
+            project_name=project_name or sections.get("项目名称") or meta.get("file_name") or None,
             check_results=check_results,
             weights=normalized_weights,
         )
@@ -864,6 +879,75 @@ class EvaluationAgent:
 
         return filtered or sections
 
+    def _resolve_project_name(
+        self,
+        sections: Dict[str, Any],
+        meta: Dict[str, Any],
+        project_id: str,
+        source_name: str,
+    ) -> str:
+        """统一解析项目名称，避免回退成哈希文件名"""
+        direct_candidates = [
+            sections.get("项目名称"),
+            meta.get("project_name"),
+            source_name,
+            meta.get("file_name"),
+        ]
+        for candidate in direct_candidates:
+            cleaned = self._clean_project_name(candidate)
+            if cleaned:
+                return cleaned
+
+        preferred_keys = ["概述", "项目基本信息", "项目简介", "项目概况", "申报书摘要"]
+        searched_sections: List[str] = []
+        for key in preferred_keys:
+            value = sections.get(key)
+            if isinstance(value, str) and value.strip():
+                searched_sections.append(value)
+
+        for key, value in sections.items():
+            if key in preferred_keys:
+                continue
+            if isinstance(value, str) and value.strip():
+                searched_sections.append(value)
+
+        for text in searched_sections:
+            extracted = self._extract_project_name_from_text(text)
+            if extracted:
+                return extracted
+
+        return str(project_id or "").strip()
+
+    def _extract_project_name_from_text(self, text: str) -> str:
+        """从正文文本中提取项目名称"""
+        normalized_text = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not normalized_text:
+            return ""
+
+        for pattern in self.PROJECT_NAME_PATTERNS:
+            match = re.search(pattern, normalized_text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            cleaned = self._clean_project_name(match.group(1))
+            if cleaned:
+                return cleaned
+        return ""
+
+    def _clean_project_name(self, value: Any) -> str:
+        """清洗候选项目名称，并过滤掉哈希文件名/说明性文案"""
+        text = str(value or "").replace("\r", "")
+        text = re.sub(r"\s*\n\s*", "", text)
+        text = re.sub(r"\s+", " ", text).strip(" :：|\t")
+        if not text:
+            return ""
+        if self.HASH_SOURCE_NAME_RE.match(text):
+            return ""
+        if any(marker in text for marker in ("[表格", "项目名称:", "指南代码")):
+            return ""
+        if any(marker in text for marker in ("要求简练", "字数不宜过多", "项目申报书分为")):
+            return ""
+        return text
+
     def _merge_evidence(self, outputs: Dict[str, Any]) -> List:
         """合并并去重证据"""
         merged = []
@@ -1064,11 +1148,12 @@ class EvaluationAgent:
             result = payload.get("result") or {}
             if not isinstance(result, dict):
                 continue
+            project_name = self.report_generator._extract_project_name_from_payload(payload) or result.get("project_name")
             records.append(
                 {
                     "created_at": result.get("created_at"),
                     "project_id": result.get("project_id"),
-                    "project_name": result.get("project_name"),
+                    "project_name": project_name,
                     "source_name": payload.get("source_name"),
                     "overall_score": result.get("overall_score"),
                     "grade": result.get("grade"),

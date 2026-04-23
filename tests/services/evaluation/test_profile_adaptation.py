@@ -152,3 +152,47 @@ async def test_science_popularization_profile_relaxes_outcome_and_benefit_dimens
     assert "未找到社会效益相关内容" not in scores["social_benefit"].opinion
     assert scores["economic_benefit"].score > 5.0
     assert "未找到经济效益相关内容" not in scores["economic_benefit"].opinion
+
+
+@pytest.mark.asyncio
+async def test_demonstration_profile_relaxes_missing_sections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """示范应用类项目未单列相关章节时，应按示范与推广内容替代评估"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    result = await agent.evaluate(
+        request=EvaluationRequest(
+            project_id="demo-application",
+            dimensions=["feasibility", "outcome", "risk_control", "schedule"],
+            enable_highlight=False,
+            enable_industry_fit=False,
+            enable_benchmark=False,
+            enable_chat_index=False,
+        ),
+        content={
+            "sections": {
+                "应用示范方案": "围绕低空巡检场景开展多区域应用示范。",
+                "推广应用": "形成分阶段推广机制和示范路线。",
+                "项目实施的预期绩效目标": "明确年度示范覆盖范围与绩效指标。",
+                "技术风险": "极端天气下稳定性不足，需要冗余验证。",
+                "项目组织实施机制": "建立多单位协同推进与保障机制。",
+            },
+            "page_chunks": [],
+            "meta": {"file_name": "demo-application.pdf"},
+        },
+        source_name="demo-application.pdf",
+    )
+
+    scores = {item.dimension: item for item in result.dimension_scores}
+    assert scores["feasibility"].score > 5.0
+    assert "未找到技术路线相关内容" not in scores["feasibility"].opinion
+    assert scores["outcome"].score > 5.0
+    assert "未找到预期成果相关内容" not in scores["outcome"].opinion
+    assert scores["risk_control"].score > 5.0
+    assert "未找到风险控制相关内容" not in scores["risk_control"].opinion
+    assert scores["schedule"].score > 5.0
+    assert "未找到进度安排相关内容" not in scores["schedule"].opinion

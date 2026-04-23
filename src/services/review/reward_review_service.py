@@ -33,6 +33,22 @@ def _normalize_text(value: Any) -> str:
     return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", text).lower()
 
 
+def _is_exact_match(left: str, right: str) -> bool:
+    normalized_left = _normalize_text(left)
+    normalized_right = _normalize_text(right)
+    return bool(normalized_left) and normalized_left == normalized_right
+
+
+def _is_partial_match(left: str, right: str) -> bool:
+    normalized_left = _normalize_text(left)
+    normalized_right = _normalize_text(right)
+    if not normalized_left or not normalized_right:
+        return False
+    if normalized_left == normalized_right:
+        return False
+    return normalized_left in normalized_right or normalized_right in normalized_left
+
+
 def _matches(expected: str, candidates: List[str]) -> bool:
     left = _normalize_text(expected)
     if not left:
@@ -73,6 +89,18 @@ def _raw_candidate_state(expected: str, candidates: List[str]) -> str:
     if not expected_text or not normalized_candidates:
         return "unknown"
     return "match" if _matches(expected_text, normalized_candidates) else "mismatch"
+
+
+def _raw_db_field_state(expected: str, observed: str) -> str:
+    expected_text = str(expected or "").strip()
+    observed_text = str(observed or "").strip()
+    if not expected_text or not observed_text:
+        return "unknown"
+    if _is_exact_match(expected_text, observed_text):
+        return "match"
+    if _is_partial_match(expected_text, observed_text):
+        return "partial_match"
+    return "mismatch"
 
 
 def _clean_signature_text(value: Any) -> str:
@@ -838,7 +866,7 @@ class RewardReviewService:
         verification: Optional[Dict[str, str]] = None,
     ) -> CheckResult:
         verification_status = self._verification_status(verification)
-        raw_state = _raw_field_state(expected, observed)
+        raw_state = _raw_db_field_state(expected, observed)
         evidence = {
             "observed": observed,
             "expected": expected,
@@ -880,6 +908,13 @@ class RewardReviewService:
                 item=item,
                 status=CheckStatus.WARNING,
                 message=f"表单{label}疑似与奖励库记录不一致，请复核",
+                evidence=evidence,
+            )
+        if raw_state == "partial_match":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"表单{label}仅部分匹配奖励库记录，请复核",
                 evidence=evidence,
             )
         return CheckResult(
