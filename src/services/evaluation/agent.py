@@ -48,7 +48,7 @@ from .packet_builder import EvaluationPacketBuilder
 from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler, RubricManager
 from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
-from .tools import ToolGateway, ToolUnavailableError
+from .tools import EvaluationSearchClient, ToolGateway, ToolUnavailableError
 
 
 class EvaluationAgent:
@@ -93,10 +93,16 @@ class EvaluationAgent:
         self.project_repo = EvaluationProjectRepository()
         self.packet_builder = EvaluationPacketBuilder()
 
-        self.tool_gateway = ToolGateway()
+        self.search_client = EvaluationSearchClient()
+        self.tool_gateway = ToolGateway(
+            tech_search_handler=self.search_client.tech_search_handler,
+        )
         self.highlight_extractor = HighlightExtractor()
         self.industry_fit_analyzer = IndustryFitAnalyzer(self.tool_gateway)
-        self.benchmark_analyzer = BenchmarkAnalyzer(BenchmarkRetriever(self.tool_gateway))
+        self.benchmark_analyzer = BenchmarkAnalyzer(
+            BenchmarkRetriever(self.tool_gateway),
+            patent_search_enabled=False,
+        )
         self.chat_indexer = ChatIndexer()
         self.qa_agent = EvaluationQAAgent(llm=self.llm, indexer=self.chat_indexer)
         self.project_profiler = ProjectProfiler()
@@ -571,7 +577,7 @@ class EvaluationAgent:
                     outputs["benchmark"] = BenchmarkResult(
                         novelty_level="unknown",
                         literature_position="技术摸底工具不可用",
-                        patent_overlap="技术摸底工具不可用",
+                        patent_overlap="专利对比待接入",
                         conclusion="当前仅基于申报书内容，外部对比结论待补充",
                         references=[],
                     )

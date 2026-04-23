@@ -10,8 +10,9 @@ from .retrievers import BenchmarkRetriever
 class BenchmarkAnalyzer:
     """结合检索结果生成技术水平分析"""
 
-    def __init__(self, retriever: BenchmarkRetriever):
+    def __init__(self, retriever: BenchmarkRetriever, patent_search_enabled: bool = False):
         self.retriever = retriever
+        self.patent_search_enabled = patent_search_enabled
 
     async def analyze(
         self,
@@ -98,6 +99,8 @@ class BenchmarkAnalyzer:
 
     def _describe_patent_overlap(self, references: List) -> str:
         """描述专利重叠风险"""
+        if not self.patent_search_enabled:
+            return "专利对比待接入"
         patents = [ref for ref in references if "patent" in ref.source.lower() or "专利" in ref.source]
         if not patents:
             return "未检索到直接专利重叠证据"

@@ -6,8 +6,8 @@
 在原有 9 维评分基础上，融合以下能力：
 
 - 一键划重点：提取研究目标、创新点、技术路线
-- 产业指南贴合度评估：判断项目与省级产业指南匹配程度
-- 技术水平摸底：结合文献/专利检索生成对比结论
+- 技术水平摸底：先接入 OpenAlex 公开论文检索生成对比结论
+- 产业指南贴合度评估：因当前无法可靠建立项目与指南正文的可核验关联，暂不作为主链路展示
 - 专家问答：专家可直接就申报书提问，答案附页码证据
 - 报告可视化：评审完成后生成专家阅览版 HTML，并单独保留 debug HTML
 - 交互式问答前端：正式报告页内嵌聊天面板，直接调用 `/api/v1/evaluation/chat/ask`
@@ -36,8 +36,8 @@
 ### 2. 融合增强能力
 
 - 划重点结构化摘要：`research_goals / innovations / technical_route`
-- 指南贴合度：`matched / gaps / suggestions / fit_score`
-- 技术摸底：`literature/patent` 对比分析与水平定位
+- 技术摸底：`literature` 公开论文对比分析与水平定位
+- 指南贴合度：保留模型与降级代码，待指南数据源可核验后恢复
 - 对话问答：按 `evaluation_id` 查询，回答中返回 `file + page + snippet`
 - HTML 报告：正式报告升级为审阅工作台，左侧展示正文，右侧展示摘要、维度结论、专家关注问答；调试信息单独输出到 debug 页面
 
@@ -48,7 +48,7 @@
 
 ### 3. 并行执行
 
-同一次评审中，文档索引、九维检查、划重点、指南匹配、技术摸底采用并发任务执行，最后统一合并。
+同一次评审中，文档索引、九维检查、划重点、技术摸底采用并发任务执行，最后统一合并。指南贴合在数据源未确认前默认不启用。
 
 ### 4. 项目画像自适应
 
@@ -82,7 +82,8 @@
 ## API 与工具调用说明
 
 - 当前服务通过普通 LLM API 调用模型，不会“自动”调用工具。
-- 若要使用搜索（文献/专利/指南），需由服务端 `ToolGateway` 执行工具并回注结果给模型。
+- 若要使用搜索，需由服务端 `ToolGateway` 执行工具并回注结果给模型。
+- 当前已规划的真实搜索为 `tech_search -> OpenAlex` 公开论文检索；`guide_search` 暂不启用，专利检索暂列 TODO。
 - 因此“API 模式”可以做工具调用，但必须在后端编排，不是模型自行联网。
 - 对齐外部最佳实践时，当前只吸收 `rubric-first / evidence-first / type-adaptive` 方法，不引入会破坏现有聊天时延和稳定性的复杂 agent 套娃
 
@@ -93,7 +94,7 @@
 - `project_id`、`zndm` 或上传文件
 - `dimensions`、`weights`、`include_sections`
 - `enable_highlight`
-- `enable_industry_fit`
+- `enable_industry_fit`（暂不启用）
 - `enable_benchmark`
 - `enable_chat_index`
 
@@ -107,7 +108,7 @@
 
 - `overall_score`、`grade`、`dimension_scores`
 - `highlights`
-- `industry_fit`
+- `industry_fit`（暂不作为正式报告主展示）
 - `benchmark`
 - `evidence`
 - `chat_ready`

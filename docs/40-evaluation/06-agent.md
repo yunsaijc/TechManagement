@@ -11,7 +11,7 @@
 3. 项目画像识别：在九维检查前推断 `project_profile` 与维度覆盖规则  
 4. Rubric 选择：按画像输出维度口径、缺失项容忍规则和必要证据要求  
 5. 证据包构建：为评分、摘要、总评生成统一 `evidence pack`  
-6. 并发调度：并行执行九维检查、划重点、指南贴合、技术摸底  
+6. 并发调度：并行执行九维检查、划重点、技术摸底；指南贴合能力保留但默认不启用  
 7. 结果合并：统一评分、总结、证据去重、异常归并  
 8. 报告产物：输出正式审阅工作台 HTML 与 debug HTML  
 9. 持久化：写入评审结果与证据链
@@ -47,8 +47,9 @@ Step 8 写入 storage 并返回结果
 涉及检索时走服务端 `ToolGateway`：
 
 - `doc_search`：申报书页码检索
-- `guide_search`：产业指南检索
 - `tech_search`：文献/专利检索
+- `guide_search`：产业指南检索（当前默认不启用）
+- `tech_search`：当前先接 OpenAlex 公开论文检索，专利检索待补充
 
 Agent 只接收结构化检索结果并完成分析与合并。
 
@@ -148,7 +149,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 
 - `dimension_scores`、`overall_score`、`grade`
 - `highlights`
-- `industry_fit`
+- `industry_fit`（保留字段，默认不启用）
 - `benchmark`
 - `evidence`（`file/page/snippet/source`）
 - `chat_ready`
@@ -188,7 +189,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - `benchmark` 字段填充占位结论：
   - `novelty_level=unknown`
   - `literature_position=技术摸底工具不可用`
-  - `patent_overlap=技术摸底工具不可用`
+  - `patent_overlap=专利对比待接入`
   - `conclusion=当前仅基于申报书内容，外部对比结论待补充`
 
 当前 `industry_fit` 降级语义：
@@ -201,6 +202,11 @@ Agent 只接收结构化检索结果并完成分析与合并。
   - `matched=[]`
   - `gaps=["产业指南检索不可用，结果待核验"]`
   - `suggestions=["待检索工具恢复后补充指南映射"]`
+
+当前能力约束补充：
+
+- 由于暂无法在本地数据中可靠建立项目与指南正文的可核验关联，`industry_fit` 不作为正式报告主展示能力
+- `benchmark` 当前优先消费公开论文检索结果，不把“未做专利检索”误写成“无专利重叠风险”
 
 ## 代码锚点
 

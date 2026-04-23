@@ -5,7 +5,7 @@
 在现有评审服务内“融合”新能力，而不是外挂新服务：
 
 - 保留九维评审主链路
-- 同次请求内完成划重点、指南贴合、技术摸底
+- 同次请求内完成划重点、技术摸底；指南贴合能力保留但默认不启用
 - 支持评审后专家问答（带页码证据）
 - 输出一份统一 `EvaluationResult`
 - 保持现有聊天问答主链路稳定，只在其前后增加轻量增强层
@@ -30,7 +30,7 @@
         └──────────────┴──────────────┴──────────────┘
                                │
                                ▼
-                    Highlight / Industry Fit / Benchmark
+                    Highlight / Benchmark
                                │
                                ▼
                          Chat QA Runtime
@@ -60,7 +60,6 @@
 - Rubric 管理：按 `project_profile` 输出维度解释口径、必要项、缺失容忍规则
 - 证据包构建：为评分、摘要、总评、问答提供统一 `evidence pack`
 - 划重点：`src/services/evaluation/highlight/`
-- 指南贴合：`src/services/evaluation/highlight/industry_fit.py`
 - 技术摸底：`src/services/evaluation/benchmark/`
 - 问答能力：`src/services/evaluation/chat/`
 
@@ -70,6 +69,7 @@
 - 职责：
   - 统一调用 `doc_search / guide_search / tech_search`
   - 统一返回结构化证据，避免各模块各自接工具
+  - 当前真实检索接线优先启用 `tech_search -> OpenAlex`
 
 ### Layer 5: 基础设施层
 
@@ -82,7 +82,7 @@
 
 1. 阶段 A（关键路径）：文档解析、页码索引、项目画像识别
 2. 阶段 B（关键路径）：按画像生成 `rubric` 并构建维度级 `evidence pack`
-3. 阶段 C（并行）：九维评审、划重点、指南贴合、技术摸底
+3. 阶段 C（并行）：九维评审、划重点、技术摸底
 4. 阶段 D（合并）：统一打分、总结、证据去重与落盘
 
 ### 并发策略
@@ -106,7 +106,7 @@
 主结果保持 `EvaluationResult`，扩展字段：
 
 - `highlights`
-- `industry_fit`
+- `industry_fit`（保留字段，默认不启用）
 - `benchmark`
 - `evidence`
 - `chat_ready`
@@ -124,13 +124,14 @@
 - 每次评审保存：
   - 评分结果
   - 结构化摘要
-  - 指南匹配与摸底结论
+  - 技术摸底结论
+  - 指南匹配结果（若显式启用）
   - 证据链（`file/page/snippet/source`）
 
 ## 降级策略
 
 - 外部搜索不可用：禁用 `benchmark` 的在线检索，保留本地评审结果
-- 指南库不可用：返回“待核验”并降低相关置信度
+- 指南正文不可可靠映射：不启用 `industry_fit` 主能力展示
 - 解析失败：返回可定位错误信息与可恢复建议
 - 若 `rubric` 所需证据不足，不强行输出确定性高分结论，应转为保守评分或标记材料不足
 
@@ -153,5 +154,6 @@ src/services/evaluation/
 │   ├── indexer.py
 │   └── qa_agent.py
 └── tools/
-    └── gateway.py
+    ├── gateway.py
+    └── search_client.py
 ```

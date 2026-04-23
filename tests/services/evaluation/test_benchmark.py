@@ -8,6 +8,7 @@ from src.services.evaluation.agent import EvaluationAgent
 from src.services.evaluation.benchmark import BenchmarkAnalyzer, BenchmarkRetriever
 from src.services.evaluation.storage.storage import EvaluationStorage
 from src.services.evaluation.tools.gateway import ToolGateway
+from src.services.evaluation.tools.search_client import EvaluationSearchClient
 
 
 @pytest.mark.asyncio
@@ -77,7 +78,10 @@ async def test_benchmark_analyzer_builds_result_from_references():
             },
         ]
 
-    analyzer = BenchmarkAnalyzer(BenchmarkRetriever(ToolGateway(tech_search_handler=fake_tech_search)))
+    analyzer = BenchmarkAnalyzer(
+        BenchmarkRetriever(ToolGateway(tech_search_handler=fake_tech_search)),
+        patent_search_enabled=True,
+    )
     highlights = StructuredHighlights(
         research_goals=["构建原创多模态智能问答平台"],
         innovations=["形成原创交互机制", "突破知识服务闭环"],
@@ -146,7 +150,61 @@ async def test_evaluation_agent_benchmark_degrades_when_tool_unavailable(
     assert result.benchmark is not None
     assert result.benchmark.novelty_level == "unknown"
     assert result.benchmark.literature_position == "技术摸底工具不可用"
+    assert result.benchmark.patent_overlap == "专利对比待接入"
     assert result.benchmark.conclusion == "当前仅基于申报书内容，外部对比结论待补充"
     assert result.errors
     assert result.errors[0].code == "TOOL_UNAVAILABLE"
     assert result.errors[0].module == "benchmark"
+
+
+def test_openalex_search_client_maps_works(monkeypatch: pytest.MonkeyPatch):
+    """OpenAlex 结果应映射为统一论文条目"""
+    monkeypatch.setenv("EVALUATION_OPENALEX_ENABLED", "1")
+    monkeypatch.setenv("EVALUATION_OPENALEX_MAILTO", "review@example.com")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "results": [
+                    {
+                        "id": "https://openalex.org/W1",
+                        "display_name": "Graph neural networks for scheduling",
+                        "publication_year": 2024,
+                        "relevance_score": 9.5,
+                        "abstract_inverted_index": {
+                            "Graph": [0],
+                            "methods": [1],
+                            "improve": [2],
+                            "scheduling": [3],
+                        },
+                    }
+                ]
+            }
+
+    def fake_get(url, params, timeout):
+        assert url == "https://api.openalex.org/works"
+        assert params["search"] == "graph scheduling"
+        assert params["per-page"] == 3
+        assert params["mailto"] == "review@example.com"
+        assert timeout == 12.0
+        return FakeResponse()
+
+    monkeypatch.setattr("src.services.evaluation.tools.search_client.requests.get", fake_get)
+
+    client = EvaluationSearchClient()
+    results = client._search_openalex("graph scheduling", 3)
+
+    assert results == [
+        {
+            "type": "literature",
+            "source": "openalex",
+            "title": "Graph neural networks for scheduling",
+            "snippet": "Graph methods improve scheduling",
+            "year": 2024,
+            "url": "https://openalex.org/W1",
+            "score": 9.5,
+        }
+    ]

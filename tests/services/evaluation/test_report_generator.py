@@ -98,6 +98,8 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert 'id="document-rail"' not in html
     assert 'id="result-tabs"' in html
     assert 'data-tab-target="report-chat"' in html
+    assert 'data-tab-target="report-fit"' not in html
+    assert 'data-tab-target="report-benchmark"' not in html
     assert 'id="report-chat"' in html
     assert 'id="chat-form"' in html
     assert "/api/v1/evaluation/chat/ask" in html
@@ -108,7 +110,8 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert "return window.location.origin;" in html
     assert "研究目标是什么" in html
     assert 'id="dimension-accordion"' in html
-    assert 'class="score-item is-open"' in html
+    assert 'id="dimension-radar-svg"' in html
+    assert 'class="dimension-detail-item is-active"' in html
     assert "风险控制" in html
     assert 'class="content-grid workspace-layout"' in html
     assert "hero-nav" not in html
@@ -142,19 +145,154 @@ def test_report_generator_debug_html_hides_interactive_chat_panel():
     assert 'id="result-tabs"' not in html
 
 
-def test_report_generator_dimension_accordion_opens_lowest_score_by_default():
-    """维度评分应默认展开最低分项，避免整屏平铺"""
+def test_report_generator_dimension_dashboard_defaults_to_lowest_score_item():
+    """维度评分应默认选中最低分维度"""
     generator = ReportGenerator()
 
     html = generator.build_html(_build_debug_payload(), debug_mode=False)
 
+    active_index = html.find('class="dimension-detail-item is-active"')
     risk_index = html.find("风险控制")
     innovation_index = html.find("创新性")
-    first_open_index = html.find('class="score-item is-open"')
 
-    assert first_open_index != -1
+    assert active_index != -1
     assert risk_index != -1 and innovation_index != -1
-    assert abs(first_open_index - risk_index) < abs(first_open_index - innovation_index)
+    assert abs(active_index - risk_index) < abs(active_index - innovation_index)
+
+
+def test_report_generator_dimension_dashboard_uses_radar_and_single_detail_panel():
+    """维度评分应展示雷达图和单一详情面板，而不是旧 accordion 和条子导航"""
+    generator = ReportGenerator()
+
+    html = generator.build_html(_build_debug_payload(), debug_mode=False)
+
+    assert 'class="dimension-radar-svg"' in html
+    assert 'class="dimension-radar-sector"' in html
+    assert 'class="dimension-detail-item"' in html
+    assert 'class="dimension-nav-item"' not in html
+    assert 'class="score-item is-open"' not in html
+    assert "展开详情" not in html
+
+
+def test_report_generator_dimension_detail_uses_structured_blocks():
+    """维度详情应拆成判断、依据、优势、短板和建议动作"""
+    generator = ReportGenerator()
+
+    html = generator.build_html(_build_debug_payload(), debug_mode=False)
+
+    assert 'class="dimension-detail-blocks"' in html
+    assert "一句话判断" in html
+    assert "主要依据" in html
+    assert "优势" in html
+    assert "短板 / 待补充" in html
+    assert "建议动作" in html
+
+
+def test_report_generator_dimension_detail_filters_neutral_notes_from_issues_and_actions():
+    """中性替代评估说明不应被当成短板和建议动作重复展示"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["result"]["dimension_scores"] = [
+        {
+            "dimension": "feasibility",
+            "dimension_name": "技术可行性",
+            "score": 6.5,
+            "weight": 0.12,
+            "opinion": "该项目更偏平台建设或科普实施类，当前未命中独立技术路线章节，已基于科普基础设施建设、科普内容产出、科普活动开展等替代材料进行基础可行性判断，不再强制要求独立技术路线章节。",
+            "issues": ["未设置独立技术路线章节，已按科普基础设施建设、科普内容产出等替代内容评估"],
+            "highlights": ["已识别章节：科普基础设施建设", "已识别章节：科普内容产出"],
+        }
+    ]
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert "暂无明显短板" in html
+    assert "暂无明确建议动作" in html
+    assert "明确未设置独立技术路线章节" not in html
+    assert "已识别章节：" not in html
+    assert "已覆盖科普基础设施建设、科普内容产出等实施内容" in html
+
+
+def test_report_generator_formal_html_flattens_result_panel_shells():
+    """正式报告右侧结果区不应再叠加多层 panel 容器"""
+    generator = ReportGenerator()
+
+    html = generator.build_html(_build_debug_payload(), debug_mode=False)
+    normalized = " ".join(html.split())
+
+    assert '<section class="panel result-shell" id="result-shell">' in html
+    assert '<section class="result-panel is-active" id="report-overview"> <section class="panel">' not in normalized
+    assert '<section class="result-panel" id="report-dimensions"> <section class="panel">' not in normalized
+    assert '<section class="result-panel" id="report-chat"> <section class="panel">' not in normalized
+
+
+def test_report_generator_formal_html_locks_outer_scroll_and_keeps_inner_scroll_regions():
+    """正式报告应固定整体视口，仅让中右栏内部滚动"""
+    generator = ReportGenerator()
+
+    html = generator.build_html(_build_debug_payload(), debug_mode=False)
+
+    assert "height: 100dvh;" in html
+    assert ".workspace-layout {\n      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);\n      overflow: hidden;" in html
+    assert ".result-panels {\n      min-height: 0;\n      height: 100%;\n      overflow: auto;" in html
+
+
+def test_report_generator_formal_html_renders_highlights_as_flat_blocks():
+    """划重点应以扁平段落块展示，不再套有序列表"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["result"]["evidence"] = [
+        {
+            "source": "结构化摘要",
+            "file": "demo.pdf",
+            "page": 5,
+            "snippet": "项目目标：建设智能化服务平台。",
+            "category": "goal",
+            "target": "建设智能化服务平台。",
+        }
+    ]
+    payload["result"]["highlights"] = {
+        "research_goals": ["建设智能化服务平台。"],
+        "innovations": [],
+        "technical_route": [],
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert 'class="highlight-list"' in html
+    assert 'class="highlight-item-text"' in html
+    assert 'class="highlight-item-evidence"' in html
+    assert '<ol class="list">' not in html
+
+
+def test_report_generator_formal_html_renders_fit_and_benchmark_as_flat_sections():
+    """指南贴合与技术摸底应采用扁平分组，不再输出表格"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["result"]["industry_fit"] = {
+        "fit_score": 0.82,
+        "matched": ["契合指南方向A"],
+        "gaps": ["缺少方向B支撑"],
+        "suggestions": ["补充方向B论证"],
+    }
+    payload["result"]["benchmark"] = {
+        "novelty_level": "中等偏上",
+        "literature_position": "有一定差异化",
+        "patent_overlap": "低",
+        "conclusion": "具备一定创新空间",
+        "references": [{"source": "论文", "title": "示例文献", "year": 2024}],
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert 'class="flat-stack"' in html
+    assert 'class="flat-section"' in html
+    assert 'class="flat-label">贴合度<' in html
+    assert 'class="flat-label">综合结论<' in html
+    assert '<table class="kv-table">' not in html
 
 
 def test_report_generator_chat_panel_allows_first_ask_when_chat_not_ready():
@@ -515,3 +653,6 @@ def test_report_generator_build_index_html_creates_multi_project_workspace():
     assert "左侧切项目，右侧查看该项目完整评审报告。" not in html
     assert "project-item-summary" not in html
     assert "project-item-links" not in html
+    assert "height: 100dvh;" in html
+    assert "overflow: hidden;" in html
+    assert "html, body {" in html

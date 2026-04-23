@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -63,6 +64,56 @@ class ReportGenerator:
         r"项目名称\s*\|\s*(.+?)\s*\|\s*所属专项",
         r"项目名称\s+(.+?)\s+所属专项",
     ]
+    DIMENSION_SECTORS = (
+        {
+            "id": "value",
+            "label": "项目价值",
+            "color": "#c8defd",
+            "accent": "#2563a6",
+            "dimensions": {"innovation", "创新性", "outcome", "预期成果", "social_benefit", "社会效益", "economic_benefit", "经济效益"},
+        },
+        {
+            "id": "execution",
+            "label": "实施基础",
+            "color": "#cfe8d9",
+            "accent": "#2d7a4f",
+            "dimensions": {"feasibility", "技术可行性", "team", "团队能力", "schedule", "进度合理性"},
+        },
+        {
+            "id": "risk",
+            "label": "风险规范",
+            "color": "#ffd8bb",
+            "accent": "#b8631b",
+            "dimensions": {"risk", "风险控制", "compliance", "合规性"},
+        },
+        {
+            "id": "other",
+            "label": "其他维度",
+            "color": "#d9e3ef",
+            "accent": "#54657b",
+            "dimensions": set(),
+        },
+    )
+    DIMENSION_ORDER = {
+        "innovation": 0,
+        "创新性": 0,
+        "outcome": 1,
+        "预期成果": 1,
+        "social_benefit": 2,
+        "社会效益": 2,
+        "economic_benefit": 3,
+        "经济效益": 3,
+        "feasibility": 4,
+        "技术可行性": 4,
+        "team": 5,
+        "团队能力": 5,
+        "schedule": 6,
+        "进度合理性": 6,
+        "risk": 7,
+        "风险控制": 7,
+        "compliance": 8,
+        "合规性": 8,
+    }
 
     def build_from_debug_file(
         self,
@@ -242,6 +293,41 @@ class ReportGenerator:
         project_nav = self._render_project_nav(workspace_projects, debug_mode)
         document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode)
         layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
+        result_tabs = [
+            ("report-overview", "评审结论"),
+            ("report-dimensions", "维度评分"),
+            ("report-chat", "专家聊天"),
+        ]
+        if industry_fit:
+            result_tabs.append(("report-fit", "指南贴合"))
+        if benchmark:
+            result_tabs.append(("report-benchmark", "技术摸底"))
+        result_tabs_html = ""
+        if not debug_mode:
+            result_tabs_html = (
+                '<div class="result-tabs" id="result-tabs">'
+                + "".join(
+                    (
+                        f'<button type="button" class="result-tab{" is-active" if index == 0 else ""}" '
+                        f'data-tab-target="{tab_id}">{label}</button>'
+                    )
+                    for index, (tab_id, label) in enumerate(result_tabs)
+                )
+                + "</div>"
+            )
+        optional_panels = ""
+        if industry_fit:
+            optional_panels += f"""
+              <section class="result-panel" id="report-fit">
+                {self._render_industry_fit(industry_fit)}
+              </section>
+"""
+        if benchmark:
+            optional_panels += f"""
+              <section class="result-panel" id="report-benchmark">
+                {self._render_benchmark(benchmark)}
+              </section>
+"""
 
         if debug_mode:
             left_tail = f"""
@@ -320,7 +406,8 @@ class ReportGenerator:
       width: 100%;
       margin: 0 auto;
       padding: 20px;
-      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
     }}
@@ -429,9 +516,11 @@ class ReportGenerator:
     }}
     .workspace-layout {{
       grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
+      overflow: hidden;
     }}
     .debug-layout {{
       grid-template-columns: minmax(0, 1fr) 360px;
+      overflow: hidden;
     }}
     .project-stack,
     .nav-stack,
@@ -750,23 +839,56 @@ class ReportGenerator:
       font-size: 15px;
       line-height: 1.9;
     }}
+    .summary-block {{
+      padding: 14px 16px;
+      border: 1px solid #d9e4ef;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fb 100%);
+    }}
     .highlight-grid {{
       display: grid;
-      gap: 12px;
+      gap: 14px;
       margin-top: 18px;
     }}
     .highlight-card {{
-      padding: 16px;
-      background: var(--panel-soft);
-      border: 1px solid var(--line);
-      border-radius: 14px;
+      padding: 14px 0 0;
+      border-top: 1px solid var(--line);
+    }}
+    .highlight-grid .highlight-card:first-child {{
+      padding-top: 0;
+      border-top: 0;
     }}
     .highlight-label {{
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       color: var(--brand);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
       letter-spacing: 0.02em;
+    }}
+    .highlight-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .highlight-item {{
+      display: grid;
+      gap: 8px;
+      padding: 12px 14px;
+      border: 1px solid #dfe8f1;
+      border-radius: 14px;
+      background: #fbfcfe;
+    }}
+    .highlight-item-text {{
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }}
+    .highlight-item-evidence {{
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+      word-break: break-word;
+      padding-top: 6px;
+      border-top: 1px dashed #d7e0ea;
     }}
     .list {{
       margin: 0;
@@ -778,77 +900,185 @@ class ReportGenerator:
     }}
     .score-list {{
       display: grid;
+      gap: 16px;
+    }}
+    .dimension-dashboard {{
+      display: grid;
+      gap: 16px;
+    }}
+    .dimension-radar-card {{
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+    }}
+    .dimension-radar-wrap {{
+      display: grid;
       gap: 14px;
     }}
-    .score-accordion {{
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: var(--panel);
-      overflow: hidden;
-    }}
-    .score-item + .score-item {{
-      border-top: 1px solid var(--line);
-    }}
-    .score-trigger {{
+    .dimension-radar-svg {{
       width: 100%;
-      border: 0;
-      background: transparent;
-      color: inherit;
-      padding: 16px 18px;
-      text-align: left;
+      height: auto;
+      display: block;
+    }}
+    .dimension-radar-sector {{
+      opacity: 0.96;
+    }}
+    .dimension-radar-ring {{
+      fill: none;
+      stroke: #aebfd2;
+      stroke-width: 1.2;
+    }}
+    .dimension-radar-axis {{
+      stroke: #b4c4d5;
+      stroke-width: 1.2;
+    }}
+    .dimension-radar-area {{
+      fill: rgba(29, 60, 97, 0.14);
+      stroke: #1d3c61;
+      stroke-width: 2;
+    }}
+    .dimension-radar-point {{
+      stroke: #fff;
+      stroke-width: 2;
       cursor: pointer;
+      transition: transform 0.16s ease;
+    }}
+    .dimension-radar-point.is-active {{
+      stroke: #111827;
+      stroke-width: 3;
+    }}
+    .dimension-radar-label {{
+      fill: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }}
+    .dimension-radar-label.is-active {{
+      font-weight: 700;
+      fill: var(--brand);
+    }}
+    .dimension-sector-row {{
       display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: flex-start;
-    }}
-    .score-trigger:hover {{
-      background: var(--panel-soft);
-    }}
-    .score-trigger-main {{
-      display: grid;
-      gap: 6px;
-      min-width: 0;
-    }}
-    .score-trigger-sub {{
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.7;
-    }}
-    .score-trigger-meta {{
-      display: grid;
-      justify-items: end;
+      flex-wrap: wrap;
       gap: 8px;
-      flex-shrink: 0;
     }}
-    .score-pill {{
-      padding: 6px 10px;
+    .dimension-sector-chip {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
       border-radius: 999px;
-      background: var(--brand-soft);
-      color: var(--brand);
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--sector-accent) 12%, #ffffff);
+      color: #334155;
       font-size: 12px;
       font-weight: 700;
     }}
-    .score-chevron {{
+    .dimension-sector-chip::before {{
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--sector-accent);
+      flex-shrink: 0;
+    }}
+    .dimension-body {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+      min-height: 0;
+    }}
+    .dimension-detail-stage {{
+      min-height: 0;
+      margin-top: 16px;
+    }}
+    .dimension-detail-item {{
+      display: none;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      padding: 18px;
+    }}
+    .dimension-detail-item.is-active {{
+      display: grid;
+      border-color: var(--sector-accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--sector-accent) 16%, transparent);
+    }}
+    .dimension-detail-kicker {{
       color: var(--muted);
       font-size: 12px;
-      transition: transform 0.2s ease;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
     }}
-    .score-item.is-open .score-chevron {{
-      transform: rotate(180deg);
+    .dimension-detail-meter {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0 14px;
     }}
-    .score-body {{
-      display: none;
-      padding: 0 18px 18px;
+    .dimension-detail-meter-track {{
+      height: 10px;
+      border-radius: 999px;
+      background: #e8eef5;
+      overflow: hidden;
     }}
-    .score-item.is-open .score-body {{
-      display: block;
+    .dimension-detail-meter-fill {{
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--sector-accent) 46%, #ffffff) 0%, var(--sector-accent) 100%);
     }}
-    .score-detail-card {{
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: var(--panel-soft);
+    .dimension-detail-meter-value {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }}
+    .dimension-empty {{
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }}
+    .dimension-detail-blocks {{
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }}
+    .dimension-detail-block {{
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }}
+    .dimension-detail-block:first-child {{
+      padding-top: 0;
+      border-top: 0;
+    }}
+    .dimension-detail-label {{
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }}
+    .dimension-detail-summary {{
+      font-size: 15px;
+      line-height: 1.8;
+      color: var(--ink);
+    }}
+    .dimension-detail-list {{
+      display: grid;
+      gap: 6px;
+    }}
+    .dimension-detail-list-item {{
+      font-size: 14px;
+      line-height: 1.8;
+      color: var(--ink);
+      word-break: break-word;
+    }}
+    .dimension-detail-list-item::before {{
+      content: "• ";
+      color: var(--sector-accent);
     }}
     .score-card-head {{
       display: flex;
@@ -869,18 +1099,17 @@ class ReportGenerator:
       line-height: 1.6;
     }}
     .tag-row {{
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 12px;
+      display: grid;
+      gap: 6px;
     }}
     .tag {{
-      padding: 5px 10px;
-      border-radius: 999px;
-      background: var(--brand-soft);
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--ink);
+    }}
+    .tag-strong {{
       color: var(--brand);
-      font-size: 12px;
-      line-height: 1.6;
+      font-weight: 700;
     }}
     .subtle {{
       color: var(--muted);
@@ -929,23 +1158,42 @@ class ReportGenerator:
       font-size: 13px;
       line-height: 1.7;
     }}
-    .kv-table {{
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
+    .flat-stack {{
+      display: grid;
+      gap: 14px;
     }}
-    .kv-table th,
-    .kv-table td {{
-      padding: 12px 10px;
+    .flat-section {{
+      padding-top: 12px;
       border-top: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-      line-height: 1.8;
     }}
-    .kv-table th {{
-      width: 110px;
+    .flat-stack .flat-section:first-child {{
+      padding-top: 0;
+      border-top: 0;
+    }}
+    .flat-label {{
+      margin-bottom: 6px;
       color: var(--muted);
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }}
+    .flat-value {{
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }}
+    .flat-list {{
+      display: grid;
+      gap: 6px;
+    }}
+    .flat-item {{
+      font-size: 14px;
+      line-height: 1.8;
+      word-break: break-word;
+    }}
+    .flat-item::before {{
+      content: "• ";
+      color: var(--brand);
     }}
     details {{
       border: 1px solid var(--line);
@@ -1010,10 +1258,8 @@ class ReportGenerator:
       gap: 14px;
     }}
     .chat-progress {{
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(180deg, #fbfdff 0%, #f4f8fc 100%);
-      padding: 12px 14px;
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--line);
       display: grid;
       gap: 10px;
     }}
@@ -1043,10 +1289,9 @@ class ReportGenerator:
       position: relative;
       display: grid;
       gap: 4px;
-      padding: 10px 10px 10px 12px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.86);
+      padding: 8px 8px 8px 12px;
+      border-radius: 10px;
+      background: #f8fbfe;
       color: var(--muted);
       transition: all 160ms ease;
     }}
@@ -1062,15 +1307,14 @@ class ReportGenerator:
     }}
     .chat-progress-step.is-active {{
       color: var(--ink);
-      border-color: #c8d7e6;
-      box-shadow: 0 10px 24px rgba(9, 30, 66, 0.06);
+      box-shadow: inset 0 0 0 1px #c8d7e6;
     }}
     .chat-progress-step.is-active::before {{
       background: var(--brand);
     }}
     .chat-progress-step.is-done {{
       color: var(--ink);
-      background: #fff;
+      background: #fbfcfe;
     }}
     .chat-progress-step.is-done::before {{
       background: #4c7f58;
@@ -1111,23 +1355,26 @@ class ReportGenerator:
       padding-right: 4px;
     }}
     .chat-empty {{
-      padding: 18px;
-      border: 1px dashed var(--line);
-      border-radius: 14px;
-      background: var(--panel-soft);
+      padding: 14px 0;
+      border-top: 1px dashed var(--line);
+      border-bottom: 1px dashed var(--line);
       color: var(--muted);
       font-size: 13px;
       line-height: 1.8;
     }}
     .chat-msg {{
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 14px;
-      background: var(--panel);
+      padding: 0;
+      background: transparent;
+    }}
+    .chat-msg + .chat-msg {{
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
     }}
     .chat-msg-user {{
+      padding: 14px;
+      border: 1px solid #c9d9ea;
+      border-radius: 14px;
       background: var(--brand-soft);
-      border-color: #c9d9ea;
     }}
     .chat-role {{
       color: var(--brand);
@@ -1171,26 +1418,20 @@ class ReportGenerator:
       font-size: 12px;
     }}
     .chat-answer-block {{
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #fff;
-      overflow: hidden;
+      padding-left: 12px;
+      border-left: 2px solid #d7e1eb;
     }}
     .chat-answer-block-primary {{
-      border-color: #c9d9ea;
-      box-shadow: 0 12px 28px rgba(9, 30, 66, 0.05);
+      border-left-color: #9eb6cf;
     }}
     .chat-answer-head {{
-      padding: 9px 12px;
-      border-bottom: 1px solid var(--line);
-      background: #f5f8fb;
+      margin-bottom: 6px;
       color: var(--brand);
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.04em;
     }}
     .chat-answer-text {{
-      padding: 12px;
       font-size: 14px;
       line-height: 1.85;
       white-space: pre-wrap;
@@ -1225,10 +1466,10 @@ class ReportGenerator:
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 8px 10px;
+      padding: 6px 10px;
       border-radius: 999px;
       background: #f8fbfe;
-      border: 1px solid var(--line);
+      border: 1px solid #dde7f0;
       font-size: 12px;
       line-height: 1;
     }}
@@ -1362,12 +1603,10 @@ class ReportGenerator:
       height: 100%;
       min-height: 0;
       overflow: hidden;
-    }}
-    .result-shell > .panel-inner {{
-      height: 100%;
-      min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
+      padding: 18px 18px 16px;
+      gap: 14px;
     }}
     .result-tabs {{
       display: flex;
@@ -1392,17 +1631,17 @@ class ReportGenerator:
     }}
     .result-panels {{
       min-height: 0;
+      height: 100%;
       overflow: auto;
       padding-right: 4px;
     }}
     .result-panel {{
       display: none;
+      padding-right: 2px;
     }}
     .result-panel.is-active {{
-      display: block;
-    }}
-    .result-panel > .panel {{
-      box-shadow: none;
+      display: grid;
+      gap: 16px;
     }}
     @media (max-width: 1320px) {{
       body {{
@@ -1463,8 +1702,9 @@ class ReportGenerator:
       .score-card-head {{
         display: grid;
       }}
-      .score-trigger-meta {{
-        justify-items: start;
+      .dimension-radar-card,
+      .dimension-detail-item {{
+        padding: 14px;
       }}
     }}
   </style>
@@ -1494,77 +1734,47 @@ class ReportGenerator:
 
         <aside class="side-stack">
           <section class="panel result-shell" id="result-shell">
-            <div class="panel-inner">
-              <div class="workspace-head">
-                <h2>{report_title}</h2>
-                {"" if debug_mode else """
-                <div class="result-tabs" id="result-tabs">
-                  <button type="button" class="result-tab is-active" data-tab-target="report-overview">评审结论</button>
-                  <button type="button" class="result-tab" data-tab-target="report-dimensions">维度评分</button>
-                  <button type="button" class="result-tab" data-tab-target="report-chat">专家聊天</button>
-                  <button type="button" class="result-tab" data-tab-target="report-fit">指南贴合</button>
-                  <button type="button" class="result-tab" data-tab-target="report-benchmark">技术摸底</button>
+            <div class="workspace-head">
+              <h2>{report_title}</h2>
+              {result_tabs_html}
+            </div>
+            <div class="result-panels">
+              <section class="result-panel is-active" id="report-overview">
+                <div class="summary-block">
+                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
                 </div>
-                """}
-              </div>
-              <div class="result-panels">
-                <section class="result-panel is-active" id="report-overview">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-                      <div class="highlight-grid">
-                        <div class="highlight-card">
-                          <div class="highlight-label">研究目标</div>
-                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
-                        </div>
-                        <div class="highlight-card">
-                          <div class="highlight-label">创新点</div>
-                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
-                        </div>
-                        <div class="highlight-card">
-                          <div class="highlight-label">技术路线</div>
-                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                </section>
+                <div class="highlight-grid">
+                  <div class="highlight-card">
+                    <div class="highlight-label">研究目标</div>
+                    {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">创新点</div>
+                    {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">技术路线</div>
+                    {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
+                  </div>
+                </div>
+              </section>
 
-                <section class="result-panel" id="report-dimensions">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      <div class="score-list">
-                        {self._render_dimension_scores(dimension_scores)}
-                      </div>
-                    </div>
-                  </section>
-                </section>
+              <section class="result-panel" id="report-dimensions">
+                <div class="score-list">
+                  {self._render_dimension_scores(dimension_scores)}
+                </div>
+              </section>
 
-                {self._render_chat_panel(
-                    evaluation_id=evaluation_id,
-                    chat_ready=bool(result.get("chat_ready")),
-                    expert_qna=expert_qna,
-                    debug_mode=debug_mode,
-                )}
+              {self._render_chat_panel(
+                  evaluation_id=evaluation_id,
+                  chat_ready=bool(result.get("chat_ready")),
+                  expert_qna=expert_qna,
+                  debug_mode=debug_mode,
+              )}
 
-                <section class="result-panel" id="report-fit">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      {self._render_industry_fit(industry_fit)}
-                    </div>
-                  </section>
-                </section>
+              {optional_panels}
 
-                <section class="result-panel" id="report-benchmark">
-                  <section class="panel">
-                    <div class="panel-inner">
-                      {self._render_benchmark(benchmark)}
-                    </div>
-                  </section>
-                </section>
-
-                {right_tail}
-              </div>
+              {right_tail}
             </div>
           </section>
         </aside>
@@ -1664,7 +1874,8 @@ class ReportGenerator:
       overflow: hidden;
     }}
     .workspace-shell {{
-      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
       display: grid;
       grid-template-columns: 252px minmax(0, 1fr);
       gap: 0;
@@ -1736,6 +1947,7 @@ class ReportGenerator:
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
       background: #eef2f6;
+      overflow: hidden;
     }}
     .workspace-head {{
       display: flex;
@@ -1764,6 +1976,8 @@ class ReportGenerator:
     .workspace-frame {{
       width: 100%;
       height: 100%;
+      min-height: 0;
+      display: block;
       border: 0;
       background: #eef2f6;
     }}
@@ -1816,12 +2030,17 @@ class ReportGenerator:
           }}
           const styleId = "embedded-workspace-override";
           let style = doc.getElementById(styleId);
-          if (!style) {{
-            style = doc.createElement("style");
-            style.id = styleId;
-            style.textContent = `
+            if (!style) {{
+              style = doc.createElement("style");
+              style.id = styleId;
+              style.textContent = `
+              html, body {{
+                height: 100% !important;
+                overflow: hidden !important;
+              }}
               .workspace-layout {{
                 grid-template-columns: minmax(0, 1.55fr) minmax(430px, 1.08fr) !important;
+                overflow: hidden !important;
               }}
               .project-stack {{
                 display: none !important;
@@ -1831,9 +2050,27 @@ class ReportGenerator:
               }}
               .page {{
                 padding-top: 0 !important;
+                height: 100% !important;
+                min-height: 0 !important;
+                overflow: hidden !important;
               }}
               .page-stack {{
                 grid-template-rows: minmax(0, 1fr) !important;
+                height: 100% !important;
+                min-height: 0 !important;
+              }}
+              .main-stack,
+              .side-stack,
+              .doc-panel,
+              .result-shell,
+              .result-panels {{
+                min-height: 0 !important;
+              }}
+              .main-stack,
+              .side-stack,
+              .doc-panel,
+              .result-shell {{
+                overflow: hidden !important;
               }}
             `;
             doc.head.appendChild(style);
@@ -1873,62 +2110,48 @@ class ReportGenerator:
         if not dimension_scores:
             return '<div class="empty">暂无维度评分</div>'
 
-        default_open_index = self._pick_default_dimension_index(dimension_scores)
-        cards: List[str] = []
-        for index, score in enumerate(dimension_scores):
-            issues = score.get("issues") or []
-            highlights = score.get("highlights") or []
-            is_open = index == default_open_index
-            open_class = " is-open" if is_open else ""
-            summary = str(score.get("opinion") or "暂无意见")
-            cards.append(
-                f"""
-                <div class="score-item{open_class}">
-                  <button class="score-trigger" type="button">
-                    <div class="score-trigger-main">
-                      <div class="score-card-title">{html.escape(str(score.get("dimension_name") or score.get("dimension") or "-"))}</div>
-                      <div class="score-trigger-sub">{html.escape(summary[:72] + ("..." if len(summary) > 72 else ""))}</div>
-                    </div>
-                    <div class="score-trigger-meta">
-                      <div class="score-pill">得分 {html.escape(str(score.get("score", "-")))}</div>
-                      <div class="score-chevron">展开详情</div>
-                    </div>
-                  </button>
-                  <div class="score-body">
-                    <div class="score-detail-card">
-                      <div class="score-card-head">
-                        <div class="score-card-title">{html.escape(str(score.get("dimension_name") or score.get("dimension") or "-"))}</div>
-                        <div class="score-card-meta">得分 {html.escape(str(score.get("score", "-")))} / 权重 {html.escape(str(score.get("weight", "-")))}</div>
-                      </div>
-                      <div class="subtle">{html.escape(summary)}</div>
-                      <div class="tag-row">
-                        {''.join(f'<span class="tag">亮点：{html.escape(str(item))}</span>' for item in highlights[:3])}
-                        {''.join(f'<span class="tag">问题：{html.escape(str(item))}</span>' for item in issues[:3])}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                """
-            )
+        items = self._build_dimension_dashboard_items(dimension_scores)
+        default_index = self._pick_default_dimension_index(items)
+        sector_html = "".join(
+            f'<div class="dimension-sector-chip" style="--sector-accent:{html.escape(str(sector["accent"]))}">{html.escape(str(sector["label"]))}</div>'
+            for sector in self.DIMENSION_SECTORS
+            if any(item.get("sector_id") == sector["id"] for item in items)
+        )
+        detail_html = self._render_dimension_detail(items, default_index)
+        radar_html = self._render_dimension_radar(items, default_index)
         script = """
         <script>
           (() => {
             const root = document.getElementById("dimension-accordion");
             if (!root) return;
-            const items = Array.from(root.querySelectorAll(".score-item"));
-            items.forEach((item) => {
-              const trigger = item.querySelector(".score-trigger");
-              if (!trigger) return;
-              trigger.addEventListener("click", () => {
-                items.forEach((current) => {
-                  current.classList.toggle("is-open", current === item ? !current.classList.contains("is-open") : false);
-                });
+            const points = Array.from(root.querySelectorAll("[data-dimension-index]"));
+            const detailItems = Array.from(root.querySelectorAll(".dimension-detail-item"));
+            const activate = (index) => {
+              points.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+              });
+              detailItems.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+                if (node.dataset.dimensionIndex === index) {
+                  node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+              });
+            };
+            points.forEach((node) => {
+              node.addEventListener("click", () => {
+                activate(node.dataset.dimensionIndex);
               });
             });
+            activate(root.dataset.defaultIndex || "0");
           })();
         </script>
         """
-        return f'<div class="score-accordion" id="dimension-accordion">{"".join(cards)}</div>{script}'
+        return (
+            f'<div class="dimension-dashboard" id="dimension-accordion" data-default-index="{default_index}">'
+            f'<section class="dimension-radar-card"><div class="dimension-radar-wrap">{radar_html}<div class="dimension-sector-row">{sector_html}</div></div></section>'
+            f'<div class="dimension-body">{detail_html}</div>'
+            f'</div>{script}'
+        )
 
     def _pick_default_dimension_index(self, dimension_scores: List[Dict[str, Any]]) -> int:
         """默认展开最低分维度；同分时优先有问题项的维度"""
@@ -1946,6 +2169,297 @@ class ReportGenerator:
                 best_key = key
                 best_index = index
         return best_index
+
+    def _build_dimension_dashboard_items(self, dimension_scores: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """构建维度评分面板所需的视图数据"""
+        items: List[Dict[str, Any]] = []
+        for index, score in enumerate(dimension_scores):
+            name = str(score.get("dimension_name") or score.get("dimension") or f"维度{index + 1}")
+            dimension = str(score.get("dimension") or "").strip()
+            raw_score = score.get("score", "-")
+            try:
+                score_value = float(raw_score)
+            except (TypeError, ValueError):
+                score_value = 0.0
+            sector = self._get_dimension_sector_meta(dimension=dimension, dimension_name=name)
+            items.append(
+                {
+                    "name": name,
+                    "dimension": dimension,
+                    "score": raw_score,
+                    "score_value": score_value,
+                    "weight": score.get("weight", "-"),
+                    "opinion": str(score.get("opinion") or "暂无意见"),
+                    "issues": score.get("issues") or [],
+                    "highlights": score.get("highlights") or [],
+                    "sector_id": sector["id"],
+                    "sector_label": sector["label"],
+                    "sector_color": sector["color"],
+                    "sector_accent": sector["accent"],
+                    "original_index": index,
+                }
+            )
+        items.sort(key=self._dimension_dashboard_sort_key)
+        for index, item in enumerate(items):
+            item["dashboard_index"] = index
+            item["meter_percent"] = max(0.0, min(float(item["score_value"]) / 10.0, 1.0)) * 100.0
+        return items
+
+    def _dimension_dashboard_sort_key(self, item: Dict[str, Any]) -> tuple[int, int, int]:
+        sector_order = next(
+            (index for index, sector in enumerate(self.DIMENSION_SECTORS) if sector["id"] == item.get("sector_id")),
+            len(self.DIMENSION_SECTORS),
+        )
+        dimension_order = self.DIMENSION_ORDER.get(str(item.get("dimension") or ""), self.DIMENSION_ORDER.get(str(item.get("name") or ""), 999))
+        return sector_order, dimension_order, int(item.get("original_index") or 0)
+
+    def _get_dimension_sector_meta(self, dimension: str, dimension_name: str) -> Dict[str, Any]:
+        """根据维度归属子扇区"""
+        for sector in self.DIMENSION_SECTORS:
+            dimensions = sector.get("dimensions") or set()
+            if dimension in dimensions or dimension_name in dimensions:
+                return sector
+        return self.DIMENSION_SECTORS[-1]
+
+    def _render_dimension_detail(self, items: List[Dict[str, Any]], default_index: int) -> str:
+        details: List[str] = []
+        for item in items:
+            active_class = " is-active" if item["dashboard_index"] == default_index else ""
+            summary, basis = self._split_dimension_opinion(str(item["opinion"]))
+            highlights = self._normalize_dimension_highlight_items(item.get("highlights") or [])
+            issues = self._filter_dimension_issue_items(item.get("issues") or [])
+            actions = self._build_dimension_action_items(issues)
+            details.append(
+                f"""
+                <section
+                  class="dimension-detail-item{active_class}"
+                  data-dimension-index="{item['dashboard_index']}"
+                  style="--sector-accent:{html.escape(str(item['sector_accent']))};"
+                >
+                  <div class="dimension-detail-kicker">{html.escape(str(item["sector_label"]))}</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">{html.escape(str(item["name"]))}</div>
+                    <div class="score-card-meta">得分 {html.escape(str(item["score"]))} / 权重 {html.escape(str(item["weight"]))}</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:{item['meter_percent']:.1f}%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">{html.escape(str(item["score"]))} / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    {self._render_dimension_text_block("一句话判断", [summary], "暂无判断")}
+                    {self._render_dimension_text_block("主要依据", basis, "暂无明确依据")}
+                    {self._render_dimension_text_block("优势", highlights[:4], "暂无明显优势")}
+                    {self._render_dimension_text_block("短板 / 待补充", issues[:4], "暂无明显短板")}
+                    {self._render_dimension_text_block("建议动作", actions[:3], "暂无明确建议动作")}
+                  </div>
+                </section>
+                """
+            )
+        return f'<section class="dimension-detail-stage">{"".join(details)}</section>'
+
+    def _split_dimension_opinion(self, opinion: str) -> tuple[str, List[str]]:
+        """将维度长评语拆成一句话判断和依据列表"""
+        text = re.sub(r"\s+", " ", str(opinion or "")).strip()
+        if not text:
+            return "暂无判断", []
+
+        parts = [part.strip() for part in re.split(r"(?<=[。！？；])", text) if part.strip()]
+        if not parts:
+            return text, []
+
+        summary = parts[0]
+        basis = [part for part in parts[1:4] if self._normalize_text_for_compare(part) != self._normalize_text_for_compare(summary)]
+        if not basis and len(summary) > 80:
+            basis = []
+        return summary, basis
+
+    def _filter_dimension_issue_items(self, issues: List[Any]) -> List[str]:
+        """过滤不应作为短板展示的中性说明"""
+        filtered: List[str] = []
+        for issue in issues:
+            text = str(issue).strip()
+            if not text:
+                continue
+            if self._is_neutral_dimension_note(text):
+                continue
+            if self._normalize_text_for_compare(text) in {self._normalize_text_for_compare(item) for item in filtered}:
+                continue
+            filtered.append(text)
+        return filtered
+
+    def _normalize_dimension_highlight_items(self, highlights: List[Any]) -> List[str]:
+        """优化亮点表述，避免出现调试味的章节识别文案"""
+        chapter_names: List[str] = []
+        normalized: List[str] = []
+        for raw in highlights:
+            text = str(raw).strip()
+            if not text:
+                continue
+            if text.startswith("已识别章节："):
+                chapter_name = text.split("：", 1)[-1].strip()
+                if chapter_name:
+                    chapter_names.append(chapter_name)
+                continue
+            if self._normalize_text_for_compare(text) not in {self._normalize_text_for_compare(item) for item in normalized}:
+                normalized.append(text)
+        if chapter_names:
+            normalized.insert(0, f"已覆盖{chr(12289).join(chapter_names[:4])}等实施内容")
+        return normalized
+
+    def _is_neutral_dimension_note(self, text: str) -> bool:
+        """识别“已按替代材料评估”等中性说明，避免误判为短板"""
+        value = re.sub(r"\s+", "", str(text or ""))
+        neutral_patterns = [
+            "不再强制要求",
+            "已按",
+            "已基于",
+            "已识别",
+            "替代内容评估",
+            "替代材料进行",
+            "更偏平台建设",
+            "科普实施类",
+        ]
+        problem_keywords = ["缺少", "缺乏", "不足", "未提供", "未说明", "不清晰", "偏弱", "风险", "无法"]
+        if any(keyword in value for keyword in neutral_patterns) and not any(keyword in value for keyword in problem_keywords):
+            return True
+        if "未设置独立技术路线章节" in value and ("已按" in value or "替代" in value):
+            return True
+        return False
+
+    def _build_dimension_action_items(self, issues: List[str]) -> List[str]:
+        """根据短板生成可执行的补充动作"""
+        actions: List[str] = []
+        for issue in issues:
+            text = str(issue).strip()
+            if not text:
+                continue
+            if self._is_neutral_dimension_note(text):
+                continue
+            normalized = re.sub(r"^(问题[:：]?|缺少|缺乏|不足|未提及|不够|偏弱|需|需要|建议)", "", text).strip(" ，。；;")
+            if not normalized:
+                normalized = text
+            normalized = re.sub(r"已按.+$", "", normalized).strip(" ，。；;")
+            normalized = re.sub(r"已基于.+$", "", normalized).strip(" ，。；;")
+            if not normalized:
+                continue
+            if any(keyword in text for keyword in ["缺少", "缺乏", "未提及", "不足"]):
+                action = f"补充{normalized}"
+            elif any(keyword in text for keyword in ["不够", "不清晰", "偏弱"]):
+                action = f"完善{normalized}"
+            else:
+                action = f"明确{normalized}"
+            if self._normalize_text_for_compare(action) not in {self._normalize_text_for_compare(item) for item in actions}:
+                actions.append(action)
+        return actions
+
+    def _normalize_text_for_compare(self, value: str) -> str:
+        """规范化文本用于去重比较"""
+        return re.sub(r"\W+", "", str(value or "")).lower()
+
+    def _render_dimension_text_block(self, label: str, items: List[str], empty_text: str) -> str:
+        """渲染维度详情中的结构化文本块"""
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            body = f'<div class="dimension-empty">{html.escape(empty_text)}</div>'
+        elif len(cleaned) == 1:
+            body = f'<div class="dimension-detail-summary">{html.escape(cleaned[0])}</div>'
+        else:
+            body = (
+                '<div class="dimension-detail-list">'
+                + "".join(f'<div class="dimension-detail-list-item">{html.escape(item)}</div>' for item in cleaned)
+                + "</div>"
+            )
+        return (
+            '<section class="dimension-detail-block">'
+            f'<div class="dimension-detail-label">{html.escape(label)}</div>'
+            f'{body}'
+            '</section>'
+        )
+
+    def _render_dimension_radar(self, items: List[Dict[str, Any]], default_index: int) -> str:
+        center_x = 240.0
+        center_y = 190.0
+        radius = 118.0
+        label_radius = 158.0
+        rings = [0.2, 0.4, 0.6, 0.8, 1.0]
+        count = max(len(items), 1)
+        step = 360.0 / count
+
+        sector_paths: List[str] = []
+        for sector in self.DIMENSION_SECTORS:
+            sector_items = [item for item in items if item.get("sector_id") == sector["id"]]
+            if not sector_items:
+                continue
+            start_index = int(sector_items[0]["dashboard_index"])
+            end_index = int(sector_items[-1]["dashboard_index"])
+            start_angle = -90.0 + start_index * step - step / 2.0
+            end_angle = -90.0 + end_index * step + step / 2.0
+            sector_paths.append(
+                f'<path class="dimension-radar-sector" d="{self._describe_radar_wedge(center_x, center_y, radius, start_angle, end_angle)}" fill="{html.escape(str(sector["color"]))}"></path>'
+            )
+
+        ring_html = []
+        for ratio in rings:
+            ring_radius = radius * ratio
+            ring_html.append(f'<circle class="dimension-radar-ring" cx="{center_x:.1f}" cy="{center_y:.1f}" r="{ring_radius:.1f}"></circle>')
+
+        axis_html: List[str] = []
+        point_values: List[str] = []
+        point_html: List[str] = []
+        label_html: List[str] = []
+        for item in items:
+            index = int(item["dashboard_index"])
+            angle = -90.0 + index * step
+            outer_x, outer_y = self._polar_to_cartesian(center_x, center_y, radius, angle)
+            point_x, point_y = self._polar_to_cartesian(center_x, center_y, radius * float(item["meter_percent"]) / 100.0, angle)
+            label_x, label_y = self._polar_to_cartesian(center_x, center_y, label_radius, angle)
+            text_anchor = "middle"
+            if label_x > center_x + 18:
+                text_anchor = "start"
+            elif label_x < center_x - 18:
+                text_anchor = "end"
+            active_class = " is-active" if index == default_index else ""
+            axis_html.append(f'<line class="dimension-radar-axis" x1="{center_x:.1f}" y1="{center_y:.1f}" x2="{outer_x:.1f}" y2="{outer_y:.1f}"></line>')
+            point_values.append(f"{point_x:.1f},{point_y:.1f}")
+            point_html.append(
+                f'<circle class="dimension-radar-point{active_class}" data-dimension-index="{index}" cx="{point_x:.1f}" cy="{point_y:.1f}" r="5.8" fill="{html.escape(str(item["sector_accent"]))}"></circle>'
+            )
+            label_html.append(
+                f'<text class="dimension-radar-label{active_class}" data-dimension-index="{index}" x="{label_x:.1f}" y="{label_y:.1f}" text-anchor="{text_anchor}" dominant-baseline="middle">{html.escape(str(item["name"]))}</text>'
+            )
+
+        area_html = f'<polygon class="dimension-radar-area" points="{" ".join(point_values)}"></polygon>'
+        return (
+            '<svg class="dimension-radar-svg" id="dimension-radar-svg" viewBox="0 0 480 380" role="img" aria-label="维度评分雷达图">'
+            + "".join(sector_paths)
+            + "".join(ring_html)
+            + "".join(axis_html)
+            + area_html
+            + "".join(point_html)
+            + "".join(label_html)
+            + "</svg>"
+        )
+
+    def _polar_to_cartesian(self, center_x: float, center_y: float, radius: float, angle_deg: float) -> tuple[float, float]:
+        """极坐标转平面坐标，雷达图专用"""
+        angle_rad = math.radians(angle_deg)
+        return center_x + radius * math.cos(angle_rad), center_y + radius * math.sin(angle_rad)
+
+    def _describe_radar_wedge(self, center_x: float, center_y: float, radius: float, start_angle: float, end_angle: float) -> str:
+        """生成雷达图扇区背景路径"""
+        normalized_end = end_angle
+        while normalized_end <= start_angle:
+            normalized_end += 360.0
+        start_x, start_y = self._polar_to_cartesian(center_x, center_y, radius, start_angle)
+        end_x, end_y = self._polar_to_cartesian(center_x, center_y, radius, normalized_end)
+        large_arc = 1 if normalized_end - start_angle > 180.0 else 0
+        return (
+            f"M {center_x:.1f} {center_y:.1f} "
+            f"L {start_x:.1f} {start_y:.1f} "
+            f"A {radius:.1f} {radius:.1f} 0 {large_arc} 1 {end_x:.1f} {end_y:.1f} Z"
+        )
 
     def _render_document_panel(
         self,
@@ -2465,16 +2979,14 @@ class ReportGenerator:
 
         return f"""
         <section class="result-panel" id="report-chat">
-          <section class="panel">
-            <div class="panel-inner">
-            <div
-              class="chat-shell"
-              id="chat-shell"
-              data-evaluation-id="{escaped_eval_id}"
-              data-chat-ready="{str(chat_ready).lower()}"
-              data-default-api-base="{escaped_default_api_base}"
-              data-default-port="{escaped_default_port}"
-            >
+          <div
+            class="chat-shell"
+            id="chat-shell"
+            data-evaluation-id="{escaped_eval_id}"
+            data-chat-ready="{str(chat_ready).lower()}"
+            data-default-api-base="{escaped_default_api_base}"
+            data-default-port="{escaped_default_port}"
+          >
               <div class="chat-progress" id="chat-progress">
                 <div class="chat-progress-head">
                   <div class="chat-progress-title">问答生成过程</div>
@@ -2517,9 +3029,7 @@ class ReportGenerator:
                   <button id="chat-submit" class="chat-submit" type="submit" {submit_disabled}>发送问题</button>
                 </div>
               </form>
-            </div>
-            </div>
-          </section>
+          </div>
         </section>
         <script>
           (() => {{
@@ -3627,49 +4137,63 @@ class ReportGenerator:
                 page = evidence.get("page")
                 snippet = evidence.get("snippet") or ""
                 meta_html = (
-                    f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
+                    f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
                     f'<div class="jump-link-row">{self._render_jump_link(page, snippet, str(evidence.get("file") or ""), packet_assets)}</div>'
                 )
-            rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
-        return "<ol class=\"list\">" + "".join(rows) + "</ol>"
+            rows.append(
+                f"""
+                <div class="highlight-item">
+                  <div class="highlight-item-text">{html.escape(text)}</div>
+                  {meta_html}
+                </div>
+                """
+            )
+        return '<div class="highlight-list">' + "".join(rows) + "</div>"
+
+    def _render_flat_list(self, items: List[Any], empty_text: str) -> str:
+        """渲染扁平条目列表"""
+        if not items:
+            return f'<div class="empty">{html.escape(empty_text)}</div>'
+
+        rows = [f'<div class="flat-item">{html.escape(str(item))}</div>' for item in items if str(item).strip()]
+        if not rows:
+            return f'<div class="empty">{html.escape(empty_text)}</div>'
+        return '<div class="flat-list">' + "".join(rows) + "</div>"
 
     def _render_industry_fit(self, industry_fit: Dict[str, Any] | None) -> str:
         if not industry_fit:
             return '<div class="empty">未启用或暂无结果</div>'
         return (
-            '<table class="kv-table">'
-            f"<tr><th>贴合度</th><td>{html.escape(str(industry_fit.get('fit_score', '-')))}</td></tr>"
-            f"<tr><th>匹配项</th><td>{self._render_list(industry_fit.get('matched') or [], '暂无')}</td></tr>"
-            f"<tr><th>差距项</th><td>{self._render_list(industry_fit.get('gaps') or [], '暂无')}</td></tr>"
-            f"<tr><th>建议</th><td>{self._render_list(industry_fit.get('suggestions') or [], '暂无')}</td></tr>"
-            '</table>'
+            '<div class="flat-stack">'
+            f'<section class="flat-section"><div class="flat-label">贴合度</div><div class="flat-value">{html.escape(str(industry_fit.get("fit_score", "-")))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">匹配项</div>{self._render_flat_list(industry_fit.get("matched") or [], "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">差距项</div>{self._render_flat_list(industry_fit.get("gaps") or [], "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">建议</div>{self._render_flat_list(industry_fit.get("suggestions") or [], "暂无")}</section>'
+            '</div>'
         )
 
     def _render_benchmark(self, benchmark: Dict[str, Any] | None) -> str:
         if not benchmark:
             return '<div class="empty">未启用或暂无结果</div>'
         refs = benchmark.get("references") or []
-        ref_html = self._render_list(
-            [
-                " / ".join(
-                    part for part in [
-                        str(item.get("source") or ""),
-                        str(item.get("title") or ""),
-                        str(item.get("year") or ""),
-                    ] if part
-                )
-                for item in refs
-            ],
-            "暂无参考条目",
-        )
+        ref_items = [
+            " / ".join(
+                part for part in [
+                    str(item.get("source") or ""),
+                    str(item.get("title") or ""),
+                    str(item.get("year") or ""),
+                ] if part
+            )
+            for item in refs
+        ]
         return (
-            '<table class="kv-table">'
-            f"<tr><th>新颖性</th><td>{html.escape(str(benchmark.get('novelty_level') or '-'))}</td></tr>"
-            f"<tr><th>文献定位</th><td>{html.escape(str(benchmark.get('literature_position') or '-'))}</td></tr>"
-            f"<tr><th>专利重叠</th><td>{html.escape(str(benchmark.get('patent_overlap') or '-'))}</td></tr>"
-            f"<tr><th>综合结论</th><td>{html.escape(str(benchmark.get('conclusion') or '-'))}</td></tr>"
-            f"<tr><th>参考条目</th><td>{ref_html}</td></tr>"
-            '</table>'
+            '<div class="flat-stack">'
+            f'<section class="flat-section"><div class="flat-label">新颖性</div><div class="flat-value">{html.escape(str(benchmark.get("novelty_level") or "-"))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">文献定位</div><div class="flat-value">{html.escape(str(benchmark.get("literature_position") or "-"))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">专利重叠</div><div class="flat-value">{html.escape(str(benchmark.get("patent_overlap") or "-"))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">综合结论</div><div class="flat-value">{html.escape(str(benchmark.get("conclusion") or "-"))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">参考条目</div>{self._render_flat_list(ref_items, "暂无参考条目")}</section>'
+            '</div>'
         )
 
     def _render_errors(self, errors: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
