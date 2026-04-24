@@ -28,6 +28,11 @@ from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
 
+try:
+    from src.common.database import get_xkfl_repo
+except ModuleNotFoundError:
+    get_xkfl_repo = None  # type: ignore[assignment]
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -47,7 +52,7 @@ DEFAULT_YEAR_A_START = 2023
 DEFAULT_YEAR_A_END = 2023
 DEFAULT_YEAR_B_START = 2024
 DEFAULT_YEAR_B_END = 2024
-DEFAULT_PREFERRED_STRATEGY = "project_guide_name_fast"
+DEFAULT_PREFERRED_STRATEGY = "project_topic_signature_fast"
 DEFAULT_MIN_OVERLAP = 1
 DEFAULT_MIN_JACCARD = 0.01
 DEFAULT_MAX_EDGES = 150000
@@ -121,6 +126,161 @@ PROJECT1_YEAR_EXPR = (
 PROJECT2_YEAR_EXPR = (
     "toInteger(p2.year_norm)"
 )
+
+
+def _subject_code_expr(var_name: str) -> str:
+    return (
+        f"CASE "
+        f"WHEN {var_name}.ssxk1 IS NOT NULL AND trim(toString({var_name}.ssxk1)) <> '' "
+        f"THEN trim(toString({var_name}.ssxk1)) "
+        f"WHEN {var_name}.ssxk2 IS NOT NULL AND trim(toString({var_name}.ssxk2)) <> '' "
+        f"THEN trim(toString({var_name}.ssxk2)) "
+        f"ELSE NULL END"
+    )
+
+
+PROJECT_SUBJECT_CODE_EXPR = _subject_code_expr("p")
+PROJECT1_SUBJECT_CODE_EXPR = _subject_code_expr("p1")
+PROJECT2_SUBJECT_CODE_EXPR = _subject_code_expr("p2")
+
+_SUBJECT_CACHE: dict[str, str] | None = None
+
+
+def _project_text_expr(var_name: str) -> str:
+    return (
+        "toLower("
+        "coalesce("
+        f"toString({var_name}.projectName), '') + ' ' + "
+        f"coalesce(toString({var_name}.`项目简介`), '') + ' ' + "
+        f"coalesce(toString({var_name}.`研究内容`), '') + ' ' + "
+        f"coalesce(toString({var_name}.guideName), '') + ' ' + "
+        f"coalesce(toString({var_name}.name), '') + ' ' + "
+        f"coalesce(toString({var_name}.title), '')"
+        ")"
+        ")"
+    )
+
+
+def _broad_subject_expr(var_name: str) -> str:
+    text_expr = _project_text_expr(var_name)
+    return (
+        "CASE "
+        f"WHEN {text_expr} CONTAINS '中医' OR {text_expr} CONTAINS '中药' OR {text_expr} CONTAINS '医方' "
+        f"OR {text_expr} CONTAINS '针灸' "
+        "THEN '中医药' "
+        f"WHEN {text_expr} CONTAINS '癌' OR {text_expr} CONTAINS '肿瘤' OR {text_expr} CONTAINS '细胞' "
+        f"OR {text_expr} CONTAINS '免疫' OR {text_expr} CONTAINS '临床' OR {text_expr} CONTAINS '疾病' "
+        f"OR {text_expr} CONTAINS '病理' OR {text_expr} CONTAINS '药效' OR {text_expr} CONTAINS '肝' "
+        f"OR {text_expr} CONTAINS '胃' OR {text_expr} CONTAINS '关节炎' OR {text_expr} CONTAINS '神经' "
+        f"OR {text_expr} CONTAINS '帕金森' OR {text_expr} CONTAINS '纤维化' OR {text_expr} CONTAINS '炎症' "
+        f"OR {text_expr} CONTAINS '巨噬细胞' "
+        "THEN '医学' "
+        f"WHEN {text_expr} CONTAINS '农业' OR {text_expr} CONTAINS '作物' OR {text_expr} CONTAINS '种质' "
+        f"OR {text_expr} CONTAINS '育种' OR {text_expr} CONTAINS '畜禽' OR {text_expr} CONTAINS '绵羊' "
+        f"OR {text_expr} CONTAINS '植物' OR {text_expr} CONTAINS '林业' "
+        "THEN '农业' "
+        f"WHEN {text_expr} CONTAINS '地理' OR {text_expr} CONTAINS '遥感' OR {text_expr} CONTAINS '测绘' "
+        f"OR {text_expr} CONTAINS '地球' OR {text_expr} CONTAINS '地质' OR {text_expr} CONTAINS '气象' "
+        f"OR {text_expr} CONTAINS '海洋' OR {text_expr} CONTAINS '水文' OR {text_expr} CONTAINS '流域' "
+        f"OR {text_expr} CONTAINS '冰川' OR {text_expr} CONTAINS '土壤' "
+        "THEN '地理' "
+        f"WHEN {text_expr} CONTAINS '环境' OR {text_expr} CONTAINS '生态' OR {text_expr} CONTAINS '污染' "
+        f"OR {text_expr} CONTAINS '碳' OR {text_expr} CONTAINS '减排' "
+        "THEN '环境' "
+        f"WHEN {text_expr} CONTAINS '化学' OR {text_expr} CONTAINS '催化' "
+        f"OR {text_expr} CONTAINS '合成' OR {text_expr} CONTAINS '电化学' OR {text_expr} CONTAINS '有机' "
+        f"OR {text_expr} CONTAINS '无机' "
+        "THEN '化学' "
+        f"WHEN {text_expr} CONTAINS '材料' OR {text_expr} CONTAINS '纳米' OR {text_expr} CONTAINS '薄膜' "
+        f"OR {text_expr} CONTAINS '晶体' OR {text_expr} CONTAINS '陶瓷' OR {text_expr} CONTAINS '复合' "
+        f"OR {text_expr} CONTAINS '涂层' "
+        "THEN '材料' "
+        f"WHEN {text_expr} CONTAINS '物理' OR {text_expr} CONTAINS '量子' OR {text_expr} CONTAINS '光学' "
+        f"OR {text_expr} CONTAINS '激光' OR {text_expr} CONTAINS '磁' OR {text_expr} CONTAINS '等离子' "
+        "THEN '物理' "
+        f"WHEN {text_expr} CONTAINS '数学' OR {text_expr} CONTAINS '统计' OR {text_expr} CONTAINS '代数' "
+        f"OR {text_expr} CONTAINS '几何' OR {text_expr} CONTAINS '拓扑' OR {text_expr} CONTAINS '微分方程' "
+        f"OR {text_expr} CONTAINS '小波' OR {text_expr} CONTAINS '算子' "
+        "THEN '数学' "
+        f"WHEN {text_expr} CONTAINS '人工智能' OR {text_expr} CONTAINS 'ai' OR {text_expr} CONTAINS '算法' "
+        f"OR {text_expr} CONTAINS '数据' OR {text_expr} CONTAINS '软件' OR {text_expr} CONTAINS '计算机' "
+        f"OR {text_expr} CONTAINS '网络' OR {text_expr} CONTAINS '信息' OR {text_expr} CONTAINS '模型' "
+        "THEN '信息' "
+        f"WHEN {text_expr} CONTAINS '电子' OR {text_expr} CONTAINS '通信' OR {text_expr} CONTAINS '传感' "
+        f"OR {text_expr} CONTAINS '芯片' OR {text_expr} CONTAINS '半导体' OR {text_expr} CONTAINS '电路' "
+        "THEN '电子' "
+        f"WHEN {text_expr} CONTAINS '机械' OR {text_expr} CONTAINS '制造' OR {text_expr} CONTAINS '装备' "
+        f"OR {text_expr} CONTAINS '工程' OR {text_expr} CONTAINS '结构' OR {text_expr} CONTAINS '控制' "
+        f"OR {text_expr} CONTAINS '机器人' "
+        "THEN '工程' "
+        f"WHEN {text_expr} CONTAINS '能源' OR {text_expr} CONTAINS '电池' OR {text_expr} CONTAINS '储能' "
+        f"OR {text_expr} CONTAINS '光伏' OR {text_expr} CONTAINS '氢能' OR {text_expr} CONTAINS '燃料电池' "
+        "THEN '能源' "
+        f"WHEN {text_expr} CONTAINS '经济' OR {text_expr} CONTAINS '管理' OR {text_expr} CONTAINS '金融' "
+        f"OR {text_expr} CONTAINS '政策' OR {text_expr} CONTAINS '治理' OR {text_expr} CONTAINS '转移转化' "
+        "THEN '管理' "
+        "ELSE '其他' END"
+    )
+
+
+def _topic_signature_expr(var_name: str) -> str:
+    text_expr = _project_text_expr(var_name)
+    return (
+        "CASE "
+        f"WHEN {text_expr} CONTAINS '蜘蛛' THEN '蜘蛛多样性' "
+        f"WHEN {text_expr} CONTAINS '生物多样性' THEN '生物多样性' "
+        f"WHEN {text_expr} CONTAINS '生态安全' THEN '生态安全' "
+        f"WHEN {text_expr} CONTAINS '生态评估' THEN '生态评估' "
+        f"WHEN {text_expr} CONTAINS '碳收支' THEN '碳收支' "
+        f"WHEN {text_expr} CONTAINS '遥感' THEN '遥感' "
+        f"WHEN {text_expr} CONTAINS '土壤' THEN '土壤' "
+        f"WHEN {text_expr} CONTAINS '气候' THEN '气候' "
+        f"WHEN {text_expr} CONTAINS '湿地' THEN '湿地生态' "
+        f"WHEN {text_expr} CONTAINS '流域' THEN '流域生态' "
+        f"WHEN {text_expr} CONTAINS '中药材' THEN '中药材' "
+        f"WHEN {text_expr} CONTAINS '胃癌' THEN '胃癌' "
+        f"WHEN {text_expr} CONTAINS '食管癌' THEN '食管癌' "
+        f"WHEN {text_expr} CONTAINS '乳腺癌' THEN '乳腺癌' "
+        f"WHEN {text_expr} CONTAINS '肝细胞癌' THEN '肝癌' "
+        f"WHEN {text_expr} CONTAINS '肿瘤' THEN '肿瘤' "
+        f"WHEN {text_expr} CONTAINS '中医药' OR {text_expr} CONTAINS '中医' THEN '中医药' "
+        f"WHEN {text_expr} CONTAINS '免疫' THEN '免疫' "
+        f"WHEN {text_expr} CONTAINS '细胞' THEN '细胞' "
+        f"WHEN {text_expr} CONTAINS '外泌体' THEN '外泌体' "
+        f"WHEN {text_expr} CONTAINS '炎症' THEN '炎症' "
+        f"WHEN {text_expr} CONTAINS '纤维化' THEN '纤维化' "
+        f"WHEN {text_expr} CONTAINS '帕金森' THEN '帕金森病' "
+        f"WHEN {text_expr} CONTAINS '脑损伤' THEN '脑损伤修复' "
+        f"WHEN {text_expr} CONTAINS '诊断' THEN '智能诊断' "
+        f"WHEN {text_expr} CONTAINS '人工智能' OR {text_expr} CONTAINS ' ai' OR {text_expr} CONTAINS 'ai ' THEN '人工智能' "
+        f"WHEN {text_expr} CONTAINS '算法' THEN '算法模型' "
+        f"WHEN {text_expr} CONTAINS '数据' THEN '数据分析' "
+        f"WHEN {text_expr} CONTAINS '纳米' THEN '纳米材料' "
+        f"WHEN {text_expr} CONTAINS '材料' THEN '材料' "
+        f"WHEN {text_expr} CONTAINS '半导体' THEN '半导体' "
+        f"WHEN {text_expr} CONTAINS '芯片' THEN '芯片' "
+        f"WHEN {text_expr} CONTAINS '光伏' THEN '光伏' "
+        f"WHEN {text_expr} CONTAINS '电池' THEN '电池储能' "
+        f"WHEN {text_expr} CONTAINS '储能' THEN '储能' "
+        f"WHEN {text_expr} CONTAINS '量子' THEN '量子物理' "
+        f"WHEN {text_expr} CONTAINS '激光' THEN '激光光学' "
+        f"WHEN {text_expr} CONTAINS '算子' THEN '算子理论' "
+        f"WHEN {text_expr} CONTAINS '小波' THEN '小波分析' "
+        f"WHEN {text_expr} CONTAINS '统计' THEN '统计数学' "
+        f"WHEN {text_expr} CONTAINS '绵羊' THEN '绵羊育种' "
+        f"WHEN {text_expr} CONTAINS '育种' THEN '育种' "
+        f"WHEN {text_expr} CONTAINS '作物' THEN '作物科学' "
+        f"WHEN {text_expr} CONTAINS '污染' THEN '污染治理' "
+        f"WHEN {text_expr} CONTAINS '生态' THEN '生态研究' "
+        f"WHEN {text_expr} CONTAINS '地理' THEN '地理研究' "
+        f"WHEN {text_expr} CONTAINS '化学' THEN '化学研究' "
+        f"WHEN {text_expr} CONTAINS '管理' OR {text_expr} CONTAINS '治理' OR {text_expr} CONTAINS '转移转化' THEN '科技治理' "
+        f"ELSE {_broad_subject_expr(var_name)} END"
+    )
+
+
+PROJECT_BROAD_SUBJECT_EXPR = f"({_broad_subject_expr('p')})"
+PROJECT_TOPIC_SIGNATURE_EXPR = f"({_topic_signature_expr('p')})"
 
 DEFAULT_NODE_TEMPLATE = (
     "MATCH (f:`Fund/Program`)<-[:funded_by]-(p:Project) "
@@ -278,6 +438,239 @@ def env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def load_subject_cache() -> dict[str, str]:
+    global _SUBJECT_CACHE
+    if _SUBJECT_CACHE is not None:
+        return _SUBJECT_CACHE
+
+    subject_cache: dict[str, str] = {}
+    if get_xkfl_repo is None:
+        _SUBJECT_CACHE = subject_cache
+        return subject_cache
+
+    try:
+        repo = get_xkfl_repo()
+        for row in repo.list_all_zrjj():
+            code = str(row.get("code") or "").strip()
+            name = str(row.get("name") or "").strip()
+            if code and name:
+                subject_cache[code] = name
+
+        for row in repo.list_all():
+            code = str(row.get("code") or "").strip()
+            name = str(row.get("name") or "").strip()
+            if code and name and code not in subject_cache:
+                subject_cache[code] = name
+    except Exception as exc:
+        log_progress("subject", "subject cache load failed", error=str(exc))
+
+    _SUBJECT_CACHE = subject_cache
+    return subject_cache
+
+
+def resolve_subject_name(code: str | None) -> str:
+    value = str(code or "").strip()
+    if not value:
+        return ""
+    return load_subject_cache().get(value, value)
+
+
+def format_subject_display(code: str | None) -> str:
+    value = str(code or "").strip()
+    if not value:
+        return ""
+    name = resolve_subject_name(value)
+    return f"{value}-{name}" if name and name != value else value
+
+
+def _normalize_project_text(*values: Any) -> str:
+    return " ".join(str(value or "").strip().lower() for value in values if str(value or "").strip())
+
+
+TOPIC_SIGNATURE_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("生物多样性", ("生物多样性",)),
+    ("生物多样性", ("蜘蛛",)),
+    ("生态安全评估", ("生态安全",)),
+    ("生态评估", ("生态评估",)),
+    ("碳收支", ("碳收支",)),
+    ("遥感空间分析", ("遥感",)),
+    ("土壤环境评估", ("土壤",)),
+    ("气候变化", ("气候",)),
+    ("湿地生态保护", ("湿地",)),
+    ("流域生态评估", ("流域",)),
+    ("中药材开发", ("中药材",)),
+    ("胃癌", ("胃癌",)),
+    ("食管癌", ("食管癌",)),
+    ("乳腺癌", ("乳腺癌",)),
+    ("肝癌", ("肝细胞癌",)),
+    ("肿瘤发生机制", ("肿瘤",)),
+    ("中医药", ("中医药", "中医", "中药", "医方", "针灸")),
+    ("免疫调控", ("免疫",)),
+    ("细胞机制", ("细胞",)),
+    ("外泌体", ("外泌体",)),
+    ("炎症调控", ("炎症",)),
+    ("纤维化", ("纤维化",)),
+    ("帕金森病", ("帕金森",)),
+    ("脑损伤修复", ("脑损伤",)),
+    ("分子诊断", ("诊断",)),
+    ("人工智能", ("人工智能", " ai", "ai ", "ai辅助")),
+    ("预测建模", ("算法",)),
+    ("数据分析", ("数据",)),
+    ("纳米材料制备", ("纳米",)),
+    ("半导体器件", ("半导体",)),
+    ("芯片设计", ("芯片",)),
+    ("光伏材料", ("光伏",)),
+    ("电池储能", ("电池",)),
+    ("储能技术", ("储能",)),
+    ("量子计算", ("量子",)),
+    ("激光光学", ("激光",)),
+    ("算子理论", ("算子",)),
+    ("小波分析", ("小波",)),
+    ("统计建模", ("统计",)),
+    ("绵羊育种", ("绵羊",)),
+    ("作物育种", ("育种",)),
+    ("作物科学", ("作物",)),
+    ("污染治理", ("污染",)),
+    ("生态评估", ("生态",)),
+    ("地表过程建模", ("地理",)),
+    ("有机合成", ("化学",)),
+    ("科技治理", ("管理", "治理", "转移转化")),
+]
+
+BROAD_SUBJECT_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("中医药", ("中医", "中药", "医方", "针灸")),
+    ("疾病机制", ("癌", "肿瘤", "细胞", "免疫", "临床", "疾病", "病理", "药效", "肝", "胃", "关节炎", "神经", "帕金森", "纤维化", "炎症", "巨噬细胞")),
+    ("农业育种", ("农业", "作物", "种质", "育种", "畜禽", "绵羊", "植物", "林业")),
+    ("自然地理过程", ("地理", "遥感", "测绘", "地球", "地质", "气象", "海洋", "水文", "流域", "冰川", "土壤")),
+    ("生态环境治理", ("环境", "生态", "污染", "碳", "减排")),
+    ("催化反应机理", ("化学", "催化", "合成", "电化学", "有机", "无机")),
+    ("材料制备", ("材料", "纳米", "薄膜", "晶体", "陶瓷", "复合", "涂层")),
+    ("量子光学", ("物理", "量子", "光学", "激光", "磁", "等离子")),
+    ("数学建模", ("数学", "统计", "代数", "几何", "拓扑", "微分方程", "小波", "算子")),
+    ("人工智能", ("人工智能", "ai", "算法", "数据", "软件", "计算机", "网络", "信息", "模型")),
+    ("电子器件", ("电子", "通信", "传感", "芯片", "半导体", "电路")),
+    ("智能装备", ("机械", "制造", "装备", "工程", "结构", "控制", "机器人")),
+    ("储能材料", ("能源", "电池", "储能", "光伏", "氢能", "燃料电池")),
+    ("科技治理", ("经济", "管理", "金融", "政策", "治理", "转移转化")),
+]
+
+
+def infer_project_broad_subject(text: str) -> str:
+    normalized = _normalize_project_text(text)
+    for label, keywords in BROAD_SUBJECT_RULES:
+        if any(keyword in normalized for keyword in keywords):
+            return label
+    return "其他"
+
+
+def infer_project_topic_signature(text: str) -> str:
+    normalized = _normalize_project_text(text)
+    for label, keywords in TOPIC_SIGNATURE_RULES:
+        if any(keyword in normalized for keyword in keywords):
+            return label
+    return infer_project_broad_subject(normalized)
+
+
+def _collect_python_group_projection(
+    session: Any,
+    start: int,
+    end: int,
+    classifier: Any,
+    group_cap: int,
+) -> tuple[list[int], list[dict[str, float]]]:
+    rows = session.run(
+        """
+        MATCH (p:Project)
+        WITH p, toInteger(p.year_norm) AS y
+        WHERE y >= $start_year AND y <= $end_year
+        RETURN id(p) AS node_id,
+               p.projectName AS project_name,
+               p.guideName AS guide_name,
+               p.`项目简介` AS project_intro,
+               p.`研究内容` AS research_content
+        """,
+        {"start_year": start, "end_year": end},
+    )
+
+    groups: dict[str, list[int]] = {}
+    node_ids: list[int] = []
+    for row in rows:
+        node_id = int(row["node_id"])
+        node_ids.append(node_id)
+        text = _normalize_project_text(
+            row["project_name"],
+            row["project_intro"],
+            row["research_content"],
+            row["guide_name"],
+        )
+        group_name = classifier(text)
+        groups.setdefault(group_name, []).append(node_id)
+
+    edges: list[dict[str, float]] = []
+    for ids in groups.values():
+        limited = ids[:group_cap]
+        for i in range(len(limited) - 1):
+            for j in range(i + 1, len(limited)):
+                edges.append({"source": limited[i], "target": limited[j], "weight": 1.0})
+
+    return sorted(set(node_ids)), edges
+
+
+def aggregate_projects_by_topic_signature(
+    session: Any,
+    start: int,
+    end: int,
+    top_community_count: int,
+) -> tuple[dict[int, dict[str, Any]], dict[str, int]]:
+    rows = session.run(
+        """
+        MATCH (p:Project)
+        WITH p, toInteger(p.year_norm) AS y
+        WHERE y >= $start_year AND y <= $end_year
+        RETURN id(p) AS node_id,
+               p.projectName AS project_name,
+               p.`项目简介` AS project_intro,
+               p.`研究内容` AS research_content,
+               p.guideName AS guide_name
+        """,
+        {"start_year": start, "end_year": end},
+    )
+
+    groups: dict[str, list[int]] = {}
+    for row in rows:
+        node_id = int(row["node_id"])
+        text = _normalize_project_text(
+            row["project_name"],
+            row["project_intro"],
+            row["research_content"],
+            row["guide_name"],
+        )
+        topic_signature = infer_project_topic_signature(text)
+        groups.setdefault(topic_signature, []).append(node_id)
+
+    ranked = sorted(groups.items(), key=lambda item: (-len(item[1]), item[0]))
+    summary: dict[int, dict[str, Any]] = {}
+    synthetic_edge_count = 0
+    for idx, (topic_signature, node_ids) in enumerate(ranked):
+        unique_nodes = sorted(set(node_ids))
+        size = len(unique_nodes)
+        synthetic_edge_count += size * max(0, size - 1) // 2
+        summary[idx + 1] = {
+            "communityId": idx + 1,
+            "size": size,
+            "nodeIds": unique_nodes,
+            "keywordSet": [topic_signature],
+            "topKeywords": [topic_signature],
+            "rank": idx + 1,
+            "isTopCommunity": idx < top_community_count,
+        }
+
+    return summary, {
+        "nodeCount": sum(len(set(node_ids)) for node_ids in groups.values()),
+        "relationshipCount": int(synthetic_edge_count),
+    }
 
 
 def build_config() -> HotspotConfig:
@@ -469,6 +862,132 @@ def collect_dual_layer_profile(session: Any) -> dict[str, Any]:
 def build_strategy_catalog() -> list[ProjectionStrategy]:
     return [
         ProjectionStrategy(
+            name="project_topic_signature_fast",
+            description="快速模式：按项目标题与简介提炼细粒度主题签名，并按主题签名聚合热点迁移。",
+            node_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_TOPIC_SIGNATURE_EXPR} AS topic_signature "
+                "WHERE y >= {start_year} AND y <= {end_year} AND topic_signature IS NOT NULL "
+                "RETURN DISTINCT id(p) AS id"
+            ),
+            rel_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_TOPIC_SIGNATURE_EXPR} AS topic_signature "
+                "WHERE y >= {start_year} AND y <= {end_year} AND topic_signature IS NOT NULL "
+                f"WITH topic_signature AS grp, collect(id(p))[0..{FAST_ATTRIBUTE_GROUP_CAP}] AS ids "
+                "WHERE size(ids) > 1 "
+                "UNWIND range(0, size(ids) - 2) AS i "
+                "UNWIND range(i + 1, size(ids) - 1) AS j "
+                "RETURN ids[i] AS source, ids[j] AS target, 1.0 AS weight"
+            ),
+            node_label_fields=["projectName", "guideName", "项目简介", "研究内容"],
+        ),
+        ProjectionStrategy(
+            name="project_topic_signature",
+            description="按项目标题与简介提炼细粒度主题签名，并按主题签名聚合热点迁移。",
+            node_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_TOPIC_SIGNATURE_EXPR} AS topic_signature "
+                "WHERE y >= {start_year} AND y <= {end_year} AND topic_signature IS NOT NULL "
+                "RETURN DISTINCT id(p) AS id"
+            ),
+            rel_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_TOPIC_SIGNATURE_EXPR} AS topic_signature "
+                "WHERE y >= {start_year} AND y <= {end_year} AND topic_signature IS NOT NULL "
+                f"WITH topic_signature AS grp, collect(id(p))[0..{ATTRIBUTE_GROUP_CAP}] AS ids "
+                "WHERE size(ids) > 1 "
+                "UNWIND range(0, size(ids) - 2) AS i "
+                "UNWIND range(i + 1, size(ids) - 1) AS j "
+                "RETURN ids[i] AS source, ids[j] AS target, 1.0 AS weight"
+            ),
+            node_label_fields=["projectName", "guideName", "项目简介", "研究内容"],
+        ),
+        ProjectionStrategy(
+            name="project_broad_subject_fast",
+            description="快速模式：按项目名称与指南文本推断大类学科，并按大类学科聚合热点迁移。",
+            node_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_BROAD_SUBJECT_EXPR} AS broad_subject "
+                "WHERE y >= {start_year} AND y <= {end_year} AND broad_subject IS NOT NULL "
+                "RETURN DISTINCT id(p) AS id"
+            ),
+            rel_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_BROAD_SUBJECT_EXPR} AS broad_subject "
+                "WHERE y >= {start_year} AND y <= {end_year} AND broad_subject IS NOT NULL "
+                f"WITH broad_subject AS grp, collect(id(p))[0..{FAST_ATTRIBUTE_GROUP_CAP}] AS ids "
+                "WHERE size(ids) > 1 "
+                "UNWIND range(0, size(ids) - 2) AS i "
+                "UNWIND range(i + 1, size(ids) - 1) AS j "
+                "RETURN ids[i] AS source, ids[j] AS target, 1.0 AS weight"
+            ),
+            node_label_fields=["projectName", "guideName", "department", "office"],
+        ),
+        ProjectionStrategy(
+            name="project_broad_subject",
+            description="按项目名称与指南文本推断大类学科，并按大类学科聚合热点迁移。",
+            node_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_BROAD_SUBJECT_EXPR} AS broad_subject "
+                "WHERE y >= {start_year} AND y <= {end_year} AND broad_subject IS NOT NULL "
+                "RETURN DISTINCT id(p) AS id"
+            ),
+            rel_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_BROAD_SUBJECT_EXPR} AS broad_subject "
+                "WHERE y >= {start_year} AND y <= {end_year} AND broad_subject IS NOT NULL "
+                f"WITH broad_subject AS grp, collect(id(p))[0..{ATTRIBUTE_GROUP_CAP}] AS ids "
+                "WHERE size(ids) > 1 "
+                "UNWIND range(0, size(ids) - 2) AS i "
+                "UNWIND range(i + 1, size(ids) - 1) AS j "
+                "RETURN ids[i] AS source, ids[j] AS target, 1.0 AS weight"
+            ),
+            node_label_fields=["projectName", "guideName", "department", "office"],
+        ),
+        ProjectionStrategy(
+            name="project_subject_code_fast",
+            description="快速模式：按 Project.ssxk1/ssxk2 学科代码共现构图，适合按学科领域聚合热点迁移。",
+            node_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_SUBJECT_CODE_EXPR} AS subject_code "
+                "WHERE y >= {start_year} AND y <= {end_year} AND subject_code IS NOT NULL "
+                "RETURN DISTINCT id(p) AS id"
+            ),
+            rel_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_SUBJECT_CODE_EXPR} AS subject_code "
+                "WHERE y >= {start_year} AND y <= {end_year} AND subject_code IS NOT NULL "
+                f"WITH subject_code AS grp, collect(id(p))[0..{FAST_ATTRIBUTE_GROUP_CAP}] AS ids "
+                "WHERE size(ids) > 1 "
+                "UNWIND range(0, size(ids) - 2) AS i "
+                "UNWIND range(i + 1, size(ids) - 1) AS j "
+                "RETURN ids[i] AS source, ids[j] AS target, 1.0 AS weight"
+            ),
+            node_label_fields=["ssxk1", "ssxk2", "projectName", "guideName"],
+        ),
+        ProjectionStrategy(
+            name="project_subject_code",
+            description="按 Project.ssxk1/ssxk2 学科代码共现构图，适合按学科领域聚合热点迁移。",
+            node_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_SUBJECT_CODE_EXPR} AS subject_code "
+                "WHERE y >= {start_year} AND y <= {end_year} AND subject_code IS NOT NULL "
+                "RETURN DISTINCT id(p) AS id"
+            ),
+            rel_query_template=(
+                "MATCH (p:Project) "
+                f"WITH p, {PROJECT_YEAR_EXPR} AS y, {PROJECT_SUBJECT_CODE_EXPR} AS subject_code "
+                "WHERE y >= {start_year} AND y <= {end_year} AND subject_code IS NOT NULL "
+                f"WITH subject_code AS grp, collect(id(p))[0..{ATTRIBUTE_GROUP_CAP}] AS ids "
+                "WHERE size(ids) > 1 "
+                "UNWIND range(0, size(ids) - 2) AS i "
+                "UNWIND range(i + 1, size(ids) - 1) AS j "
+                "RETURN ids[i] AS source, ids[j] AS target, 1.0 AS weight"
+            ),
+            node_label_fields=["ssxk1", "ssxk2", "projectName", "guideName"],
+        ),
+        ProjectionStrategy(
             name="project_guide_name_fast",
             description="快速模式：按 Project.guideName 共现构图，并将组内规模控制在约 300-350 项目的粗粒度范围，兼顾速度与簇规模。",
             node_query_template=(
@@ -611,18 +1130,33 @@ def build_projection(
         start=start,
         end=end,
     )
-    node_query = strategy.node_query_template.format(start_year=start, end_year=end)
-    rel_query_base = strategy.rel_query_template.format(start_year=start, end_year=end)
-
-    # 统一关系采样上限，避免大图投影在关系侧失控。
-    if cfg.max_edges > 0:
+    python_group_projection = strategy.name.startswith("project_topic_signature") or strategy.name.startswith("project_broad_subject")
+    if python_group_projection:
+        classifier = infer_project_topic_signature if strategy.name.startswith("project_topic_signature") else infer_project_broad_subject
+        group_cap = FAST_ATTRIBUTE_GROUP_CAP if strategy.name.endswith("_fast") else ATTRIBUTE_GROUP_CAP
+        node_ids, rel_rows = _collect_python_group_projection(session, start, end, classifier, group_cap)
+        if cfg.max_edges > 0:
+            rel_rows = rel_rows[: cfg.max_edges]
+        node_query = "UNWIND $node_ids AS id RETURN id"
         rel_query = (
-            "CALL { "
-            + rel_query_base
-            + f" }} RETURN source, target, weight LIMIT {cfg.max_edges}"
+            "UNWIND $rel_rows AS rel "
+            "RETURN toInteger(rel.source) AS source, toInteger(rel.target) AS target, toFloat(rel.weight) AS weight"
         )
+        projection_params = {"graph_name": graph_name, "node_ids": node_ids, "rel_rows": rel_rows}
     else:
-        rel_query = rel_query_base
+        node_query = strategy.node_query_template.format(start_year=start, end_year=end)
+        rel_query_base = strategy.rel_query_template.format(start_year=start, end_year=end)
+
+        # 统一关系采样上限，避免大图投影在关系侧失控。
+        if cfg.max_edges > 0:
+            rel_query = (
+                "CALL { "
+                + rel_query_base
+                + f" }} RETURN source, target, weight LIMIT {cfg.max_edges}"
+            )
+        else:
+            rel_query = rel_query_base
+        projection_params = {"graph_name": graph_name}
 
     drop_graph_if_exists(session, graph_name)
 
@@ -657,7 +1191,7 @@ def build_projection(
     try:
         row = session.run(
             projection_query,
-            {"graph_name": graph_name},
+            projection_params,
         ).single()
     except Neo4jError as exc:
         # 兼容旧版 GDS，避免升级窗口期功能中断。
@@ -677,6 +1211,8 @@ def build_projection(
                 "graph_name": graph_name,
                 "node_query": node_query,
                 "rel_query": rel_query,
+                "node_ids": projection_params.get("node_ids"),
+                "rel_rows": projection_params.get("rel_rows"),
             },
         ).single()
 
@@ -713,6 +1249,12 @@ def select_strategy(
         preferred = [item for item in catalog if item.name == cfg.preferred_strategy]
         if preferred:
             fast_fallback_names = [
+                "project_topic_signature_fast",
+                "project_topic_signature",
+                "project_broad_subject_fast",
+                "project_broad_subject",
+                "project_subject_code_fast",
+                "project_subject_code",
                 "project_guide_name_fast",
                 "project_guide_name",
                 "project_department",
@@ -727,6 +1269,12 @@ def select_strategy(
             ordered = preferred + fast_fallbacks
     else:
         attrs = [
+            catalog_by_name["project_topic_signature_fast"],
+            catalog_by_name["project_topic_signature"],
+            catalog_by_name["project_broad_subject_fast"],
+            catalog_by_name["project_broad_subject"],
+            catalog_by_name["project_subject_code_fast"],
+            catalog_by_name["project_subject_code"],
             catalog_by_name["project_guide_name_fast"],
             catalog_by_name["project_guide_name"],
             catalog_by_name["project_department"],
@@ -742,14 +1290,17 @@ def select_strategy(
         window_stats: list[dict[str, Any]] = []
         try:
             for start, end in windows:
-                graph_name = f"hotspot_probe_{strategy.name}_{start}_{end}_{uuid.uuid4().hex[:6]}"
-                stats = build_projection(session, cfg, graph_name, strategy, start, end)
+                if strategy.name.startswith("project_topic_signature"):
+                    _, stats = aggregate_projects_by_topic_signature(session, start, end, cfg.top_community_count)
+                else:
+                    graph_name = f"hotspot_probe_{strategy.name}_{start}_{end}_{uuid.uuid4().hex[:6]}"
+                    stats = build_projection(session, cfg, graph_name, strategy, start, end)
+                    drop_graph_if_exists(session, graph_name)
                 window_stats.append({
                     "window": {"start": start, "end": end},
                     "nodeCount": stats["nodeCount"],
                     "relationshipCount": stats["relationshipCount"],
                 })
-                drop_graph_if_exists(session, graph_name)
 
             attempts.append({"strategy": strategy.name, "windows": window_stats})
             if all(item["nodeCount"] > 0 and item["relationshipCount"] > 0 for item in window_stats):
@@ -839,6 +1390,76 @@ def run_community_detection(session: Any, graph_name: str, prefer_louvain: bool 
 def fetch_node_names(session: Any, node_ids: list[int], strategy: ProjectionStrategy) -> dict[int, str]:
     if not node_ids:
         return {}
+
+    if strategy.name.startswith("project_topic_signature"):
+        rows = session.run(
+            """
+            UNWIND $ids AS nid
+            MATCH (n:Project)
+            WHERE id(n) = nid
+            RETURN nid AS node_id,
+                   n.projectName AS project_name,
+                   n.`项目简介` AS project_intro,
+                   n.`研究内容` AS research_content,
+                   n.guideName AS guide_name
+            """,
+            {"ids": node_ids},
+        )
+        result: dict[int, str] = {}
+        for row in rows:
+            result[int(row["node_id"])] = infer_project_topic_signature(
+                _normalize_project_text(
+                    row["project_name"],
+                    row["project_intro"],
+                    row["research_content"],
+                    row["guide_name"],
+                )
+            )
+        return result
+
+    if strategy.name.startswith("project_broad_subject"):
+        rows = session.run(
+            """
+            UNWIND $ids AS nid
+            MATCH (n:Project)
+            WHERE id(n) = nid
+            RETURN nid AS node_id,
+                   n.projectName AS project_name,
+                   n.`项目简介` AS project_intro,
+                   n.`研究内容` AS research_content,
+                   n.guideName AS guide_name
+            """,
+            {"ids": node_ids},
+        )
+        result: dict[int, str] = {}
+        for row in rows:
+            result[int(row["node_id"])] = infer_project_broad_subject(
+                _normalize_project_text(
+                    row["project_name"],
+                    row["project_intro"],
+                    row["research_content"],
+                    row["guide_name"],
+                )
+            )
+        return result
+
+    if strategy.name.startswith("project_subject_code"):
+        query = f"""
+            UNWIND $ids AS nid
+            MATCH (n:Project)
+            WHERE id(n) = nid
+            RETURN nid AS node_id,
+                   {_subject_code_expr("n")} AS subject_code,
+                   coalesce(n.projectName, n.guideName, toString(id(n))) AS fallback_name
+        """
+        rows = session.run(query, {"ids": node_ids})
+        result: dict[int, str] = {}
+        for row in rows:
+            node_id = int(row["node_id"])
+            subject_code = str(row["subject_code"] or "").strip()
+            fallback_name = str(row["fallback_name"] or node_id)
+            result[node_id] = format_subject_display(subject_code) or fallback_name
+        return result
 
     fields = [
         *strategy.node_label_fields,
@@ -1130,14 +1751,38 @@ def build_migration(
             if jaccard < min_jaccard:
                 continue
 
+            weighted_overlap = overlap
+            weighted_jaccard = jaccard
+            source_size_metric = len(set_a)
+            target_size_metric = len(set_b)
+
+            # 快速主题直聚合模式下，每个簇通常只有一个主题标签。
+            # 这里把边强度提升为两年该主题的项目规模，避免所有边都退化成 1。
+            if (
+                basis == "keywordSet"
+                and len(set_a) == 1
+                and len(set_b) == 1
+                and next(iter(set_a)) == next(iter(set_b))
+            ):
+                source_comm_size = int(info_a.get("size", 0) or 0)
+                target_comm_size = int(info_b.get("size", 0) or 0)
+                weighted_overlap = max(1, min(source_comm_size, target_comm_size))
+                weighted_jaccard = (
+                    weighted_overlap / max(source_comm_size, target_comm_size)
+                    if max(source_comm_size, target_comm_size) > 0
+                    else 0.0
+                )
+                source_size_metric = source_comm_size
+                target_size_metric = target_comm_size
+
             links.append(
                 {
                     "source": str(cid_a),
                     "target": str(cid_b),
-                    "overlap": overlap,
-                    "jaccard": round(jaccard, 4),
-                    "sourceSize": len(set_a),
-                    "targetSize": len(set_b),
+                    "overlap": int(weighted_overlap),
+                    "jaccard": round(weighted_jaccard, 4),
+                    "sourceSize": int(source_size_metric),
+                    "targetSize": int(target_size_metric),
                     "basis": basis,
                 }
             )
@@ -1531,30 +2176,62 @@ def run(cfg: HotspotConfig) -> dict[str, Any]:
                 strategy=selected_strategy.name,
             )
 
-            log_progress("run", "build projection for window A", graph=graph_a)
-            proj_a = build_projection(session, cfg, graph_a, selected_strategy, cfg.year_a_start, cfg.year_a_end)
-            log_progress("run", "build projection for window B", graph=graph_b)
-            proj_b = build_projection(session, cfg, graph_b, selected_strategy, cfg.year_b_start, cfg.year_b_end)
+            if selected_strategy.name.startswith("project_topic_signature"):
+                community_algorithm = "direct_topic_grouping"
+                log_progress("run", "aggregate topics directly for window A")
+                comm_a, proj_a = aggregate_projects_by_topic_signature(
+                    session,
+                    cfg.year_a_start,
+                    cfg.year_a_end,
+                    cfg.top_community_count,
+                )
+                log_progress("run", "aggregate topics directly for window B")
+                comm_b, proj_b = aggregate_projects_by_topic_signature(
+                    session,
+                    cfg.year_b_start,
+                    cfg.year_b_end,
+                    cfg.top_community_count,
+                )
+                if proj_a["nodeCount"] == 0 or proj_b["nodeCount"] == 0:
+                    raise RuntimeError("至少一个时间窗聚合为空，请检查模板或年份区间")
+                merge_meta_a = {
+                    "enabled": False,
+                    "mode": "direct_topic_grouping",
+                    "rawCommunityCount": len(comm_a),
+                    "mergedCommunityCount": len(comm_a),
+                }
+                merge_meta_b = {
+                    "enabled": False,
+                    "mode": "direct_topic_grouping",
+                    "rawCommunityCount": len(comm_b),
+                    "mergedCommunityCount": len(comm_b),
+                }
+            else:
+                log_progress("run", "build projection for window A", graph=graph_a)
+                proj_a = build_projection(session, cfg, graph_a, selected_strategy, cfg.year_a_start, cfg.year_a_end)
+                log_progress("run", "build projection for window B", graph=graph_b)
+                proj_b = build_projection(session, cfg, graph_b, selected_strategy, cfg.year_b_start, cfg.year_b_end)
 
-            if proj_a["nodeCount"] == 0 or proj_b["nodeCount"] == 0:
-                raise RuntimeError("至少一个时间窗投影为空，请检查模板或年份区间")
+                if proj_a["nodeCount"] == 0 or proj_b["nodeCount"] == 0:
+                    raise RuntimeError("至少一个时间窗投影为空，请检查模板或年份区间")
 
-            prefer_louvain = max(proj_a["relationshipCount"], proj_b["relationshipCount"]) >= cfg.community_edge_threshold
-            community_algorithm = "louvain" if prefer_louvain else "leiden"
-            log_progress("run", "run community detection for window A", graph=graph_a, algorithm=community_algorithm)
-            assign_a, algorithm_a = run_community_detection(session, graph_a, prefer_louvain=prefer_louvain)
-            log_progress("run", "run community detection for window B", graph=graph_b, algorithm=community_algorithm)
-            assign_b, algorithm_b = run_community_detection(session, graph_b, prefer_louvain=prefer_louvain)
-            community_algorithm = algorithm_a if algorithm_a == algorithm_b else f"{algorithm_a}/{algorithm_b}"
+                prefer_louvain = max(proj_a["relationshipCount"], proj_b["relationshipCount"]) >= cfg.community_edge_threshold
+                community_algorithm = "louvain" if prefer_louvain else "leiden"
+                log_progress("run", "run community detection for window A", graph=graph_a, algorithm=community_algorithm)
+                assign_a, algorithm_a = run_community_detection(session, graph_a, prefer_louvain=prefer_louvain)
+                log_progress("run", "run community detection for window B", graph=graph_b, algorithm=community_algorithm)
+                assign_b, algorithm_b = run_community_detection(session, graph_b, prefer_louvain=prefer_louvain)
+                community_algorithm = algorithm_a if algorithm_a == algorithm_b else f"{algorithm_a}/{algorithm_b}"
 
-            log_progress("run", "summarize communities for window A")
-            raw_comm_a = summarize_communities(session, assign_a, cfg.top_community_count, selected_strategy)
-            log_progress("run", "summarize communities for window B")
-            raw_comm_b = summarize_communities(session, assign_b, cfg.top_community_count, selected_strategy)
-            log_progress("run", "force merge communities for window A", rawCount=len(raw_comm_a))
-            comm_a, merge_meta_a = force_merge_communities(raw_comm_a, cfg.top_community_count)
-            log_progress("run", "force merge communities for window B", rawCount=len(raw_comm_b))
-            comm_b, merge_meta_b = force_merge_communities(raw_comm_b, cfg.top_community_count)
+                log_progress("run", "summarize communities for window A")
+                raw_comm_a = summarize_communities(session, assign_a, cfg.top_community_count, selected_strategy)
+                log_progress("run", "summarize communities for window B")
+                raw_comm_b = summarize_communities(session, assign_b, cfg.top_community_count, selected_strategy)
+                log_progress("run", "force merge communities for window A", rawCount=len(raw_comm_a))
+                comm_a, merge_meta_a = force_merge_communities(raw_comm_a, cfg.top_community_count)
+                log_progress("run", "force merge communities for window B", rawCount=len(raw_comm_b))
+                comm_b, merge_meta_b = force_merge_communities(raw_comm_b, cfg.top_community_count)
+
             log_progress("run", "build migration links")
             links, effective_threshold, threshold_attempts = build_migration_with_fallback(
                 comm_a,

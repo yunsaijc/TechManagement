@@ -31,21 +31,27 @@ DEFAULT_OUTPUT_HTML = (
     / "src/services/sandbox/output/step2/hotspot_migration_real_schema_2023_to_2024.cluster_nodes.html"
 )
 
-CANVAS_WIDTH = 3600
-CANVAS_HEIGHT = 2500
-PLANE_WIDTH = 2550.0
-PLANE_HEIGHT = 820.0
-PLANE_PADDING_X = 120.0
-PLANE_PADDING_Y = 90.0
-LAYER_SKEW_X = 0.08
-LAYER_SCALE_Y = 0.78
-TOP_LAYER_OFFSET_X = 580.0
-TOP_LAYER_OFFSET_Y = 220.0
-BOTTOM_LAYER_OFFSET_X = 320.0
-BOTTOM_LAYER_OFFSET_Y = 1360.0
+CANVAS_WIDTH = 3200
+CANVAS_HEIGHT = 1500
+TIMELINE_START_X = 360.0
+TIMELINE_END_X = 3250.0
+TIMELINE_BASELINE_Y = 1600.0
+TIMELINE_TOP_Y = 180.0
+TIMELINE_BOTTOM_Y = 1330.0
+TIMELINE_BAND_HEIGHT = 960.0
+TIMELINE_MONTHS = [
+    "2023-01", "2023-02", "2023-03", "2023-04", "2023-05", "2023-06",
+    "2023-07", "2023-08", "2023-09", "2023-10", "2023-11", "2023-12",
+    "2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06",
+    "2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12",
+]
+HEAT_COLORS = ["#6c96c7", "#88b9b0", "#d9b86a", "#c85f51"]
 MAX_RENDER_LINKS = 1200
 MAX_LINKS_PER_SOURCE = 2
 MAX_LINKS_PER_TARGET = 2
+MAX_SAME_YEAR_LINKS_PER_NODE = 4
+MIN_SAME_YEAR_LINK_SCORE = 0.72
+VISIBLE_COMMUNITIES_PER_PERIOD = 25
 SESSION_KWARGS = {
     "notifications_disabled_classifications": ["DEPRECATION"],
 }
@@ -186,18 +192,134 @@ def _clamp(value: float, minimum: float, maximum: float) -> float:
 
 
 def _node_card_dimensions(size: int) -> tuple[float, float]:
-    scale = math.sqrt(max(1, int(size)))
-    diameter = min(230.0, max(118.0, 82.0 + scale * 7.6))
+    scale = max(1.0, float(size)) ** 0.62
+    diameter = min(220.0, max(68.0, 40.0 + scale * 7.4))
     return diameter, diameter
 
 
-def _scatter_positions(
+def _color_bucket(rank: int, total: int, palette: list[str] | None = None) -> str:
+    colors = palette or HEAT_COLORS
+    if total <= 1:
+        return colors[2]
+    bucket = min(len(colors) - 1, int((rank / total) * len(colors)))
+    return colors[bucket]
+
+
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    text = str(color).strip().lstrip("#")
+    return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+
+
+def _rgb_to_hex(rgb: tuple[float, float, float]) -> str:
+    red, green, blue = rgb
+    return "#{:02x}{:02x}{:02x}".format(
+        max(0, min(255, round(red))),
+        max(0, min(255, round(green))),
+        max(0, min(255, round(blue))),
+    )
+
+
+def _mix_color(left: str, right: str, t: float) -> str:
+    lt = _hex_to_rgb(left)
+    rt = _hex_to_rgb(right)
+    ratio = _clamp(float(t), 0.0, 1.0)
+    return _rgb_to_hex(
+        (
+            lt[0] + (rt[0] - lt[0]) * ratio,
+            lt[1] + (rt[1] - lt[1]) * ratio,
+            lt[2] + (rt[2] - lt[2]) * ratio,
+        )
+    )
+
+
+def _continuous_palette_color(value: float, minimum: float, maximum: float, palette: list[str] | None = None) -> str:
+    colors = palette or HEAT_COLORS
+    if len(colors) == 1 or maximum <= minimum:
+        return colors[-1]
+    ratio = _clamp((float(value) - minimum) / (maximum - minimum), 0.0, 1.0)
+    scaled = ratio * (len(colors) - 1)
+    index = min(len(colors) - 2, int(math.floor(scaled)))
+    local_t = scaled - index
+    return _mix_color(colors[index], colors[index + 1], local_t)
+
+
+def _node_heat_styles(communities: list[dict[str, Any]]) -> dict[str, tuple[str, str]]:
+    styles: dict[str, tuple[str, str]] = {}
+    if not communities:
+        return styles
+    ordered = sorted(
+        communities,
+        key=lambda item: (int(item.get("size", 0) or 0), -int(item.get("rank", 0) or 0)),
+    )
+    total = max(1, len(ordered) - 1)
+    for idx, item in enumerate(ordered):
+        ratio = idx / total if total > 0 else 0.5
+        fill = _continuous_palette_color(
+            ratio,
+            0.0,
+            1.0,
+            palette=["#76aeea", "#8fc8cf", "#e2cc70", "#ef9355", "#cc5a4c"],
+        )
+        stroke = _mix_color(fill, "#2b3442", 0.34)
+        styles[str(item["id"])] = (fill, stroke)
+    return styles
+
+
+def _topic_name_tokens(text: str) -> set[str]:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return set()
+    tokens: set[str] = {raw}
+    if len(raw) <= 4:
+        tokens.add(raw)
+    for idx in range(max(0, len(raw) - 1)):
+        token = raw[idx: idx + 2].strip()
+        if token:
+            tokens.add(token)
+    return tokens
+
+
+def _timeline_month_slot(index: int) -> dict[str, Any]:
+    slot_width = (TIMELINE_END_X - TIMELINE_START_X) / max(len(TIMELINE_MONTHS) - 1, 1)
+    x = TIMELINE_START_X + index * slot_width
+    return {
+        "index": index,
+        "label": TIMELINE_MONTHS[index],
+        "x": round(x, 2),
+    }
+
+
+def build_time_axis() -> dict[str, Any]:
+    months = [_timeline_month_slot(index) for index in range(len(TIMELINE_MONTHS))]
+    year_sections = [
+        {
+            "label": "2023年",
+            "startX": months[0]["x"],
+            "endX": months[11]["x"],
+            "centerX": round((months[0]["x"] + months[11]["x"]) / 2, 2),
+        },
+        {
+            "label": "2024年",
+            "startX": months[12]["x"],
+            "endX": months[23]["x"],
+            "centerX": round((months[12]["x"] + months[23]["x"]) / 2, 2),
+        },
+    ]
+    return {
+        "months": months,
+        "yearSections": year_sections,
+        "baselineY": TIMELINE_BASELINE_Y,
+        "topY": TIMELINE_TOP_Y,
+        "bottomY": TIMELINE_BOTTOM_Y,
+    }
+
+
+def place_communities_on_timeline(
     communities: list[dict[str, Any]],
-    min_x: float,
-    max_x: float,
-    min_y: float,
-    max_y: float,
-    seed_key: str,
+    period_label: str,
+    start_month_index: int,
+    end_month_index: int,
+    lane: str,
 ) -> list[dict[str, Any]]:
     if not communities:
         return []
@@ -206,37 +328,31 @@ def _scatter_positions(
         communities,
         key=lambda item: (-int(item["size"]), int(item["rank"]), str(item["name"])),
     )
-    max_diameter = max(_node_card_dimensions(int(item["size"]))[0] for item in ordered)
-    column_count = 2 if len(ordered) <= 10 else 3
-    row_count = max(1, math.ceil(len(ordered) / column_count))
-    center_x = (min_x + max_x) / 2
-    base_col_spacing = min((max_x - min_x) / max(column_count, 1), max_diameter * 1.95)
-    col_spacing = max(max_diameter * 1.45, base_col_spacing)
-    y_step = (max_y - min_y) / (row_count + 1)
-    y_step = max(y_step, max_diameter * 1.22)
-    total_height = y_step * max(row_count - 1, 0)
-    start_y = ((min_y + max_y) / 2) - total_height / 2
-    rng = random.Random(_stable_seed(seed_key, len(ordered)))
-    x_centers = [
-        center_x + (idx - (column_count - 1) / 2.0) * col_spacing
-        for idx in range(column_count)
-    ]
+    slot_count = max(1, end_month_index - start_month_index + 1)
+    lane_seed = random.Random(_stable_seed(period_label, lane, len(ordered)))
+    lane_base_y = TIMELINE_TOP_Y if lane == "top" else (TIMELINE_TOP_Y + TIMELINE_BAND_HEIGHT * 0.58)
+    lane_span = TIMELINE_BAND_HEIGHT * (0.36 if lane == "top" else 0.30)
 
     placed: list[dict[str, Any]] = []
     for index, item in enumerate(ordered):
         diameter, _ = _node_card_dimensions(int(item["size"]))
         radius = diameter / 2
-        col = index // row_count
-        row = index % row_count
-        x_jitter = rng.uniform(-18.0, 18.0)
-        y_jitter = rng.uniform(-20.0, 20.0)
-        x = _clamp(x_centers[min(col, column_count - 1)] + x_jitter, min_x + radius, max_x - radius)
-        y = _clamp(start_y + row * y_step + y_jitter, min_y + radius, max_y - radius)
+        month_offset = round(index * (slot_count - 1) / max(len(ordered) - 1, 1))
+        month_index = start_month_index + month_offset
+        slot = _timeline_month_slot(month_index)
+        x_jitter = lane_seed.uniform(-18.0, 18.0)
+        band_position = (index % 5) / 4 if len(ordered) > 1 else 0.5
+        y = lane_base_y + band_position * lane_span + lane_seed.uniform(-16.0, 16.0)
+        x = _clamp(slot["x"] + x_jitter, TIMELINE_START_X + radius, TIMELINE_END_X - radius)
+        y = _clamp(y, TIMELINE_TOP_Y + radius, TIMELINE_BOTTOM_Y - radius - 120.0)
         placed.append(
             {
                 **item,
+                "layer": lane,
                 "x": round(x, 2),
                 "y": round(y, 2),
+                "monthIndex": month_index,
+                "monthLabel": slot["label"],
                 "radius": round(radius, 2),
                 "cardWidth": round(diameter, 2),
                 "cardHeight": round(diameter, 2),
@@ -246,62 +362,47 @@ def _scatter_positions(
     return placed
 
 
-def _project_layer_point(x: float, y: float, layer: str) -> tuple[float, float]:
-    if layer == "top":
-        offset_x = TOP_LAYER_OFFSET_X
-        offset_y = TOP_LAYER_OFFSET_Y
-    else:
-        offset_x = BOTTOM_LAYER_OFFSET_X
-        offset_y = BOTTOM_LAYER_OFFSET_Y
-    return (
-        round(offset_x + x + y * LAYER_SKEW_X, 2),
-        round(offset_y + y * LAYER_SCALE_Y, 2),
-    )
-
-
-def _build_layer_plane(layer: str, label: str) -> dict[str, Any]:
-    corners = [
-        _project_layer_point(0.0, 0.0, layer),
-        _project_layer_point(PLANE_WIDTH, 0.0, layer),
-        _project_layer_point(PLANE_WIDTH, PLANE_HEIGHT, layer),
-        _project_layer_point(0.0, PLANE_HEIGHT, layer),
-    ]
-    label_point = _project_layer_point(36.0, 34.0, layer)
-    return {
-        "id": f"plane-{layer}",
-        "layer": layer,
-        "label": label,
-        "corners": [{"x": x, "y": y} for x, y in corners],
-        "labelPoint": {"x": label_point[0], "y": label_point[1]},
-    }
-
-
-def place_communities(
+def resolve_node_collisions(
     communities: list[dict[str, Any]],
-    layer: str,
+    iterations: int = 80,
 ) -> list[dict[str, Any]]:
-    local = _scatter_positions(
-        communities,
-        PLANE_PADDING_X,
-        PLANE_WIDTH - PLANE_PADDING_X,
-        PLANE_PADDING_Y,
-        PLANE_HEIGHT - PLANE_PADDING_Y,
-        layer,
-    )
-    projected: list[dict[str, Any]] = []
-    for item in local:
-        x, y = _project_layer_point(float(item["x"]), float(item["y"]), layer)
-        projected.append(
-            {
-                **item,
-                "layer": layer,
-                "x": x,
-                "y": y,
-                "localX": float(item["x"]),
-                "localY": float(item["y"]),
-            }
-        )
-    return projected
+    if not communities:
+        return communities
+
+    items = [{**item} for item in communities]
+    for _ in range(iterations):
+        moved = False
+        for idx, left in enumerate(items):
+            for right in items[idx + 1:]:
+                dx = float(right["x"]) - float(left["x"])
+                dy = float(right["y"]) - float(left["y"])
+                distance = math.sqrt(dx * dx + dy * dy) or 0.01
+                min_gap = float(left["radius"]) + float(right["radius"]) + 10.0
+                if distance >= min_gap:
+                    continue
+                overlap = (min_gap - distance) / 2.0
+                nx = dx / distance
+                ny = dy / distance
+                if abs(dx) < 0.1 and abs(dy) < 0.1:
+                    nx = 1.0 if int(left["communityId"]) % 2 == 0 else -1.0
+                    ny = 0.35 if left["layer"] == "top" else -0.35
+                for item, sign in ((left, -1.0), (right, 1.0)):
+                    new_x = _clamp(
+                        float(item["x"]) + nx * overlap * sign,
+                        TIMELINE_START_X + float(item["radius"]),
+                        TIMELINE_END_X - float(item["radius"]),
+                    )
+                    new_y = _clamp(
+                        float(item["y"]) + ny * overlap * sign,
+                        TIMELINE_TOP_Y + float(item["radius"]),
+                        TIMELINE_BOTTOM_Y - float(item["radius"]) - 92.0,
+                    )
+                    item["x"] = round(new_x, 2)
+                    item["y"] = round(new_y, 2)
+                moved = True
+        if not moved:
+            break
+    return items
 
 
 def _parse_link_id(raw: str, prefix: str) -> int | None:
@@ -405,17 +506,48 @@ def _community_similarity(left: dict[str, Any], right: dict[str, Any]) -> tuple[
     return overlap, round(jaccard, 4)
 
 
+def _same_year_link_metrics(left: dict[str, Any], right: dict[str, Any]) -> dict[str, float]:
+    overlap, jaccard = _community_similarity(left, right)
+    left_tokens = _topic_name_tokens(str(left.get("name", "")))
+    right_tokens = _topic_name_tokens(str(right.get("name", "")))
+    name_overlap = len(left_tokens & right_tokens)
+    rank_gap = abs(int(left.get("rank", 0) or 0) - int(right.get("rank", 0) or 0))
+    left_size = int(left.get("size", 0) or 0)
+    right_size = int(right.get("size", 0) or 0)
+    max_size = max(left_size, right_size, 1)
+    size_similarity = 1.0 - abs(left_size - right_size) / max_size
+    if overlap <= 0 and name_overlap <= 0:
+        score = 0.0
+    else:
+        score = (
+            overlap * 1.55
+            + jaccard * 2.35
+            + min(name_overlap, 3) * 0.8
+            + max(0.0, 1.0 - rank_gap / 10.0) * 0.45
+            + max(0.0, size_similarity) * 0.35
+        )
+    return {
+        "overlap": float(overlap),
+        "jaccard": float(jaccard),
+        "nameOverlap": float(name_overlap),
+        "score": float(score),
+    }
+
+
 def build_same_year_links(
     communities: list[dict[str, Any]],
     layer: str,
 ) -> list[dict[str, Any]]:
-    links: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     for idx, left in enumerate(communities):
         for right in communities[idx + 1:]:
-            overlap, jaccard = _community_similarity(left, right)
-            if overlap <= 0:
+            metrics = _same_year_link_metrics(left, right)
+            overlap = int(metrics["overlap"])
+            jaccard = float(metrics["jaccard"])
+            score = float(metrics["score"])
+            if score < MIN_SAME_YEAR_LINK_SCORE:
                 continue
-            links.append(
+            candidates.append(
                 {
                     "id": f"{layer}-internal-{left['communityId']}-{right['communityId']}",
                     "kind": "same_year",
@@ -424,13 +556,155 @@ def build_same_year_links(
                     "target": str(right["id"]),
                     "sourceName": str(left["name"]),
                     "targetName": str(right["name"]),
-                    "value": int(overlap),
-                    "jaccard": float(jaccard),
-                    "strokeWidth": round(1.0 + math.log1p(int(overlap)) * 1.6, 2),
+                    "value": max(overlap, int(round(score))),
+                    "jaccard": round(max(jaccard, min(score / 6.0, 0.95)), 4),
+                    "score": round(score, 4),
+                    "strokeWidth": round(0.95 + math.log1p(max(overlap, 1)) * 1.2 + min(score, 4.0) * 0.28, 2),
                     "relationLabel": "同年簇关联",
                 }
             )
+    candidates.sort(
+        key=lambda item: (
+            float(item.get("score", 0.0) or 0.0),
+            float(item.get("jaccard", 0.0) or 0.0),
+            int(item.get("value", 0) or 0),
+        ),
+        reverse=True,
+    )
+    links: list[dict[str, Any]] = []
+    degree: dict[str, int] = {}
+    for item in candidates:
+        source = str(item["source"])
+        target = str(item["target"])
+        if degree.get(source, 0) >= MAX_SAME_YEAR_LINKS_PER_NODE:
+            continue
+        if degree.get(target, 0) >= MAX_SAME_YEAR_LINKS_PER_NODE:
+            continue
+        links.append(item)
+        degree[source] = degree.get(source, 0) + 1
+        degree[target] = degree.get(target, 0) + 1
     return links
+
+
+def select_larger_half(communities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not communities:
+        return []
+    ordered = sorted(
+        communities,
+        key=lambda item: (
+            int(item.get("size", 0) or 0),
+            -int(item.get("rank", 0) or 0),
+        ),
+        reverse=True,
+    )
+    keep_count = max(1, math.ceil(len(ordered) * 0.5))
+    kept = ordered[:keep_count]
+    kept_ids = {str(item["id"]) for item in kept}
+    return [item for item in communities if str(item["id"]) in kept_ids]
+
+
+def select_top_n_communities(communities: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if not communities:
+        return []
+    ordered = sorted(
+        communities,
+        key=lambda item: (
+            int(item.get("size", 0) or 0),
+            -int(item.get("rank", 0) or 0),
+        ),
+        reverse=True,
+    )
+    kept = ordered[:max(1, int(limit))]
+    kept_ids = {str(item["id"]) for item in kept}
+    return [item for item in communities if str(item["id"]) in kept_ids]
+
+
+def trim_smallest_communities(
+    communities_2023: list[dict[str, Any]],
+    communities_2024: list[dict[str, Any]],
+    remove_count: int = 10,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    combined = sorted(
+        [*communities_2023, *communities_2024],
+        key=lambda item: (
+            int(item.get("size", 0) or 0),
+            int(item.get("rank", 0) or 0),
+        ),
+    )
+    drop_ids = {str(item["id"]) for item in combined[:max(0, remove_count)]}
+    return (
+        [item for item in communities_2023 if str(item["id"]) not in drop_ids],
+        [item for item in communities_2024 if str(item["id"]) not in drop_ids],
+    )
+
+
+def apply_link_heat_colors(links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not links:
+        return links
+
+    ordered = sorted(
+        enumerate(links),
+        key=lambda pair: (
+            int(pair[1].get("value", 0) or 0),
+            float(pair[1].get("jaccard", 0.0) or 0.0),
+        ),
+    )
+    total = len(ordered)
+    for rank, (_, item) in enumerate(ordered):
+        color = _color_bucket(rank, total)
+        item["strokeColor"] = color
+        item["labelStrokeColor"] = color
+    return links
+
+
+def build_evidence_series(
+    communities_2023: list[dict[str, Any]],
+    communities_2024: list[dict[str, Any]],
+    cross_year_links: list[dict[str, Any]],
+    bucket_count: int = 12,
+) -> dict[str, Any]:
+    labels = [f"Q{index + 1:02d}" for index in range(bucket_count)]
+
+    def bucket_values(items: list[dict[str, Any]]) -> list[int]:
+        ordered = sorted(
+            items,
+            key=lambda item: (
+                int(item.get("rank", 0) or 0),
+                -int(item.get("size", 0) or 0),
+            ),
+        )
+        values = [0] * bucket_count
+        if not ordered:
+            return values
+        for index, item in enumerate(ordered):
+            bucket_index = min(bucket_count - 1, int(index * bucket_count / len(ordered)))
+            values[bucket_index] += int(item.get("size", 0) or 0)
+        return values
+
+    rank_to_bucket_2023: dict[str, int] = {}
+    rank_to_bucket_2024: dict[str, int] = {}
+    for index, item in enumerate(sorted(communities_2023, key=lambda row: int(row.get("rank", 0) or 0))):
+        rank_to_bucket_2023[str(item["id"])] = min(bucket_count - 1, int(index * bucket_count / max(1, len(communities_2023))))
+    for index, item in enumerate(sorted(communities_2024, key=lambda row: int(row.get("rank", 0) or 0))):
+        rank_to_bucket_2024[str(item["id"])] = min(bucket_count - 1, int(index * bucket_count / max(1, len(communities_2024))))
+
+    relation_strength = [0] * bucket_count
+    for item in cross_year_links:
+        source_bucket = rank_to_bucket_2023.get(str(item.get("source")))
+        target_bucket = rank_to_bucket_2024.get(str(item.get("target")))
+        if source_bucket is None or target_bucket is None:
+            continue
+        bucket_index = max(0, min(bucket_count - 1, round((source_bucket + target_bucket) / 2)))
+        relation_strength[bucket_index] += int(item.get("value", 0) or 0)
+
+    return {
+        "labels": labels,
+        "series": [
+            {"key": "volume2023", "label": "2023主题簇规模", "color": "#4c9fe6", "values": bucket_values(communities_2023)},
+            {"key": "volume2024", "label": "2024主题簇规模", "color": "#f0a63a", "values": bucket_values(communities_2024)},
+            {"key": "migration", "label": "跨年关系强度", "color": "#4eaf6f", "values": relation_strength},
+        ],
+    }
 
 
 def build_payload(
@@ -456,16 +730,42 @@ def build_payload(
         label_2024,
         project_name_map,
     )
+    raw_count_2023 = len(communities_2023)
+    raw_count_2024 = len(communities_2024)
+    communities_2023 = select_top_n_communities(communities_2023, VISIBLE_COMMUNITIES_PER_PERIOD)
+    communities_2024 = select_top_n_communities(communities_2024, VISIBLE_COMMUNITIES_PER_PERIOD)
 
-    positioned_2024 = place_communities(communities_2024, "top")
-    positioned_2023 = place_communities(communities_2023, "bottom")
-    all_communities = positioned_2024 + positioned_2023
+    positioned_2023 = place_communities_on_timeline(
+        communities_2023,
+        label_2023,
+        0,
+        11,
+        "bottom",
+    )
+    positioned_2024 = place_communities_on_timeline(
+        communities_2024,
+        label_2024,
+        12,
+        23,
+        "top",
+    )
+    positioned_2023 = resolve_node_collisions(positioned_2023)
+    positioned_2024 = resolve_node_collisions(positioned_2024)
     cross_year_links = build_links(sankey.get("links", []) or [], positioned_2023, positioned_2024)
     same_year_links = [
         *build_same_year_links(positioned_2024, "top"),
         *build_same_year_links(positioned_2023, "bottom"),
     ]
-    links = [*same_year_links, *cross_year_links]
+    all_communities = [*positioned_2024, *positioned_2023]
+    links = apply_link_heat_colors([*same_year_links, *cross_year_links])
+    evidence_series = build_evidence_series(positioned_2023, positioned_2024, cross_year_links)
+    node_styles = _node_heat_styles(all_communities)
+    for item in all_communities:
+        fill, stroke = node_styles.get(str(item["id"]), ("#88b9b0", "#5f8f87"))
+        item["nodeColor"] = fill
+        item["nodeStroke"] = stroke
+    same_year_count = len([item for item in links if str(item.get("kind")) == "same_year"])
+    cross_year_count = len([item for item in links if str(item.get("kind")) == "cross_year"])
 
     return {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
@@ -483,12 +783,14 @@ def build_payload(
         "periods": {
             "top": {
                 "label": label_2024,
-                "communityCount": len(positioned_2024),
+                "communityCount": raw_count_2024,
+                "visibleCommunityCount": len(positioned_2024),
                 "projectCount": sum(int(item["size"]) for item in positioned_2024),
             },
             "bottom": {
                 "label": label_2023,
-                "communityCount": len(positioned_2023),
+                "communityCount": raw_count_2023,
+                "visibleCommunityCount": len(positioned_2023),
                 "projectCount": sum(int(item["size"]) for item in positioned_2023),
             },
         },
@@ -496,16 +798,15 @@ def build_payload(
             "width": CANVAS_WIDTH,
             "height": CANVAS_HEIGHT,
         },
-        "planes": {
-            "top": _build_layer_plane("top", label_2024),
-            "bottom": _build_layer_plane("bottom", label_2023),
-        },
+        "layoutMode": "reference_cluster",
+        "evidenceSeries": evidence_series,
+        "timeline": build_time_axis(),
         "communities": all_communities,
         "links": links,
         "insightDraft": [
-            f"每个圆形节点代表一个主题簇，{label_2024}和{label_2023}分别位于两个年度区域。",
-            f"圆形越大说明该簇包含的项目越多；同年簇关联与跨年迁移会同时显示。",
-            f"当前共展示 {len(same_year_links)} 条同年关系与 {len(cross_year_links)} 条跨年迁移关系。",
+            "图谱按主题簇关系进行中心辐射式排布，突出核心主题与外围关联主题。",
+            "圆形越大说明该簇包含的项目越多，节点颜色按规模从蓝绿过渡到橙红。",
+            f"当前共展示 {same_year_count} 条同年关系与 {cross_year_count} 条跨年迁移关系。",
             "点击圆形节点可查看该主题簇的项目清单，点击关系边可查看对应联系说明。",
         ],
     }
@@ -519,6 +820,10 @@ class ClusterNodeHtmlBuilder:
 
     def render_html(self, payload: dict[str, Any]) -> str:
         data_json = json.dumps(payload, ensure_ascii=False)
+        default_topic = ""
+        communities = payload.get("communities", []) or []
+        if communities:
+            default_topic = str(communities[0].get("name") or "").strip()
         template = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -527,60 +832,61 @@ class ClusterNodeHtmlBuilder:
   <title>主题簇节点图</title>
   <style>
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: radial-gradient(circle at 15% 12%, rgba(37,99,235,0.08), transparent 20%), linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%); color: #0f172a; }}
-    .page {{ width: min(100%, 1960px); margin: 0 auto; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; align-items: start; min-height: 100vh; }}
-    .main {{ min-width: 0; width: 100%; display: grid; gap: 16px; }}
-    .hero {{ padding: 22px 24px; border: 1px solid #d8e5f5; border-radius: 22px; background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(237,246,255,0.98) 100%); box-shadow: 0 16px 40px rgba(15, 23, 42, 0.07); }}
-    .title {{ font-size: 28px; font-weight: 900; letter-spacing: -0.02em; }}
-    .subtitle {{ margin-top: 8px; color: #475569; font-size: 13px; line-height: 1.8; max-width: 1040px; }}
-    .stats {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }}
-    .stat {{ padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,0.94); border: 1px solid #dbe5f1; box-shadow: inset 0 1px 0 rgba(255,255,255,0.7); }}
-    .stat-label {{ font-size: 12px; color: #64748b; }}
-    .stat-value {{ margin-top: 6px; font-size: 24px; font-weight: 800; }}
-    .controls {{ display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }}
-    .toggle {{ display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 999px; background: rgba(255,255,255,0.96); border: 1px solid #dbe5f1; font-size: 13px; box-shadow: 0 6px 16px rgba(15,23,42,0.04); }}
-    .graph-wrap {{ min-width: 0; overflow: hidden; padding: 16px; border-radius: 22px; background: rgba(255,255,255,0.98); border: 1px solid #dbe5f1; box-shadow: 0 16px 38px rgba(15, 23, 42, 0.05); }}
-    .summary-title {{ font-size: 14px; font-weight: 800; margin: 12px 0 8px; }}
+    html, body {{ height: 100%; overflow: hidden; }}
+    body {{ margin: 0; font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: linear-gradient(180deg, #dfeaf7 0%, #edf3fa 12%, #f4f7fb 100%); color: #111827; }}
+    .shell {{ height: 100vh; display: grid; grid-template-rows: 52px 1fr; overflow: hidden; }}
+    .topbar {{ display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid #d5dfeb; background: linear-gradient(180deg, #edf4fb 0%, #dfeaf7 100%); box-shadow: inset 0 -1px 0 rgba(255,255,255,0.7); }}
+    .brand {{ display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 900; }}
+    .brand-badge {{ width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #5aa0ff, #2f69d9); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; }}
+    .topbar-meta {{ display: flex; align-items: center; gap: 14px; color: #475569; font-size: 13px; }}
+    .page {{ width: min(100%, 1980px); height: calc(100vh - 52px); margin: 0 auto; padding: 8px 10px; display: grid; grid-template-columns: 286px minmax(0, 1fr) 316px; gap: 8px; align-items: stretch; overflow: hidden; }}
+    .left-rail, .right-rail, .center-stage {{ min-width: 0; }}
+    .left-rail, .right-rail {{ display: grid; gap: 8px; align-content: start; min-height: 0; overflow: hidden; }}
+    .right-rail {{ grid-template-rows: minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.15fr); }}
+    .panel {{ border: 2px solid #d8a764; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.98)); box-shadow: 0 10px 24px rgba(15,23,42,0.06); overflow: hidden; }}
+    .panel-head {{ padding: 8px 12px; font-size: 12px; font-weight: 900; border-bottom: 1px solid #e4e9f0; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(245,248,252,0.95)); }}
+    .panel-body {{ padding: 10px 12px; }}
+    .hero {{ border: 2px solid #d8a764; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,250,253,0.98)); box-shadow: 0 10px 24px rgba(15,23,42,0.06); overflow: hidden; }}
+    .hero-title-wrap {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 4px; border-bottom: 1px solid #e3e9f1; }}
+    .hero-main-title {{ font-size: 18px; font-weight: 900; }}
+    .stats {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }}
+    .stat {{ padding: 10px 12px; border-radius: 10px; background: #fff; border: 1px solid #dce4ef; display: grid; justify-items: center; gap: 6px; min-height: 76px; }}
+    .stat-label {{ font-size: 11px; color: #64748b; letter-spacing: 1px; line-height: 1.2; text-align: center; }}
+    .stat-value {{ font-size: 20px; font-weight: 900; line-height: 1; }}
+    .controls {{ display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }}
+    .toggle {{ display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 999px; background: #fff; border: 1px solid #dce4ef; font-size: 11px; }}
+    .graph-wrap {{ min-width: 0; overflow: hidden; padding: 6px 10px 6px; background: transparent; }}
+    .summary-title {{ font-size: 13px; font-weight: 800; margin: 10px 0 6px; }}
     .summary-empty {{ color: #94a3b8; font-size: 13px; }}
-    .summary-list {{ display: grid; gap: 10px; }}
-    .summary-item {{ padding: 12px 14px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 13px; line-height: 1.7; }}
-    .group-columns {{ display: grid; gap: 12px; }}
-    .group-column {{ padding: 12px; border-radius: 14px; background: #f8fafc; border: 1px solid #e2e8f0; }}
-    .group-column-title {{ font-size: 14px; font-weight: 800; margin-bottom: 10px; }}
-    .group-items {{ display: grid; gap: 10px; }}
-    .group-item {{ padding: 10px 12px; border-radius: 12px; background: #fff; border: 1px solid #e2e8f0; }}
-    .group-item-name {{ font-size: 13px; font-weight: 800; line-height: 1.6; }}
-    .group-item-meta {{ margin-top: 4px; color: #64748b; font-size: 12px; }}
-    .group-item-desc {{ margin-top: 6px; color: #334155; font-size: 12px; line-height: 1.7; }}
+    .summary-list {{ display: grid; gap: 8px; }}
+    .summary-item {{ padding: 10px 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 11px; line-height: 1.6; }}
+    .group-columns {{ display: grid; gap: 10px; }}
+    .group-column {{ padding: 10px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; }}
+    .group-column-title {{ font-size: 12px; font-weight: 800; margin-bottom: 8px; }}
+    .group-items {{ display: grid; gap: 6px; max-height: 150px; overflow: auto; }}
+    .group-item {{ padding: 8px 10px; border-radius: 10px; background: #fff; border: 1px solid #e2e8f0; }}
+    .group-item-name {{ font-size: 12px; font-weight: 800; line-height: 1.45; }}
+    .group-item-meta {{ margin-top: 3px; color: #64748b; font-size: 11px; }}
+    .group-item-desc {{ margin-top: 4px; color: #334155; font-size: 11px; line-height: 1.55; }}
     .group-keywords {{ margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }}
-    .keyword-chip {{ padding: 4px 8px; border-radius: 999px; background: #e9f2ff; color: #1d4ed8; font-size: 12px; }}
-    .graph-toolbar {{ display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }}
+    .keyword-chip {{ padding: 3px 7px; border-radius: 999px; background: #e9f2ff; color: #1d4ed8; font-size: 10px; }}
+    .graph-toolbar {{ display: flex; justify-content: flex-start; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }}
     .legend {{ display: flex; gap: 14px; flex-wrap: wrap; color: #475569; font-size: 12px; }}
     .legend-item {{ display: inline-flex; align-items: center; gap: 8px; }}
     .swatch {{ width: 18px; height: 18px; border-radius: 999px; display: inline-block; }}
     .swatch-sphere-2024 {{ background: #3b82f6; border: 2px solid #1e3a8a; }}
     .swatch-sphere-2023 {{ background: #64748b; border: 2px solid #1f2937; }}
-    .canvas-shell {{ width: 100%; max-width: 100%; overflow: auto; max-height: calc(100vh - 220px); border-radius: 18px; border: 1px solid #d8e2ef; background: #f8fafc; overscroll-behavior: contain; }}
+    .canvas-shell {{ width: 100%; max-width: 100%; height: min(68vh, 800px); overflow: hidden; border-radius: 0; border: 0; background: radial-gradient(circle at 50% 42%, rgba(255,255,255,0.96), rgba(236,243,249,0.82)); overscroll-behavior: contain; }}
     .graph-stage {{ position: relative; width: __WIDTH__px; height: __HEIGHT__px; transform-origin: top left; }}
-    svg {{ width: __WIDTH__px; height: __HEIGHT__px; display: block; transform-origin: top left; background:
-      radial-gradient(circle at 18% 18%, rgba(37,99,235,0.08), transparent 24%),
-      radial-gradient(circle at 78% 72%, rgba(245,158,11,0.08), transparent 24%),
-      linear-gradient(rgba(148,163,184,0.14) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148,163,184,0.14) 1px, transparent 1px),
-      linear-gradient(180deg, rgba(37,99,235,0.025) 0 48%, rgba(71,85,105,0.025) 52% 100%),
-      #f8fafc; }}
-    svg {{ background-size: auto, auto, 80px 80px, 80px 80px, auto, auto; user-select: none; -webkit-user-select: none; }}
-    .side {{ width: 100%; min-width: 0; max-width: 400px; justify-self: stretch; display: grid; gap: 14px; align-content: start; position: sticky; top: 20px; height: fit-content; max-height: calc(100vh - 40px); overflow: auto; padding-left: 20px; border-left: 1px solid rgba(148,163,184,0.28); }}
-    .panel {{ border: 1px solid #dbe5f1; border-radius: 18px; padding: 16px; background: rgba(255,255,255,0.98); box-shadow: 0 14px 32px rgba(15,23,42,0.05); }}
-    .panel + .panel {{ margin-top: 0; }}
+    svg {{ width: __WIDTH__px; height: __HEIGHT__px; display: block; transform-origin: top left; background: transparent; user-select: none; -webkit-user-select: none; }}
     .panel-title {{ font-size: 15px; font-weight: 800; margin-bottom: 10px; }}
     .hint {{ font-size: 12px; color: #64748b; line-height: 1.8; }}
     .detail-title {{ font-size: 17px; font-weight: 800; line-height: 1.6; }}
     .detail-meta {{ margin-top: 10px; display: grid; gap: 8px; font-size: 13px; color: #334155; }}
-    .project-list {{ margin-top: 14px; max-height: 380px; overflow: auto; display: grid; gap: 8px; }}
+    .project-list {{ margin-top: 10px; max-height: 180px; overflow: auto; display: grid; gap: 8px; }}
     .project-item {{ padding: 8px 10px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 13px; line-height: 1.6; }}
     .search {{ width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid #dbe5f1; outline: none; }}
-    .list {{ display: grid; gap: 8px; max-height: 360px; overflow: auto; margin-top: 12px; }}
+    .list {{ display: grid; gap: 8px; max-height: 170px; overflow: auto; margin-top: 10px; }}
     .list-item {{ border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; cursor: pointer; background: #fff; }}
     .list-item:hover {{ border-color: #93c5fd; background: #eff6ff; }}
     .list-item-title {{ font-size: 13px; font-weight: 700; line-height: 1.6; }}
@@ -590,20 +896,27 @@ class ClusterNodeHtmlBuilder:
     .kg-node-hit {{ fill: transparent; pointer-events: all; cursor: grab; }}
     .kg-node.dragging .kg-node-hit {{ cursor: grabbing; }}
     .kg-node-circle {{ stroke-width: 3; pointer-events: none; }}
-    .kg-node-circle-2024 {{ fill: #3b82f6; stroke: #1e3a8a; }}
-    .kg-node-circle-2023 {{ fill: #64748b; stroke: #1f2937; }}
-    .relation-cross {{ stroke: #f59e0b; stroke-dasharray: 10 8; fill: none; cursor: pointer; }}
-    .relation-same {{ stroke: #6366f1; fill: none; cursor: pointer; }}
+    .kg-node-label {{ font-size: 18px; font-weight: 700; fill: #334155; pointer-events: none; }}
+    .kg-node-label-shadow {{ fill: rgba(255,255,255,0.92); stroke: rgba(203,213,225,0.7); stroke-width: 1; }}
+    .relation-cross {{ fill: none; cursor: pointer; }}
+    .relation-same {{ fill: none; cursor: pointer; opacity: 0.88; }}
     .relation-label-bg {{ fill: rgba(255,255,255,0.92); stroke-width: 1; }}
-    .relation-label-bg-cross {{ stroke: rgba(245,158,11,0.40); }}
-    .relation-label-bg-top {{ stroke: rgba(37,99,235,0.30); }}
-    .relation-label-bg-bottom {{ stroke: rgba(71,85,105,0.24); }}
+    .relation-label-bg-cross {{ }}
+    .relation-label-bg-top {{ }}
+    .relation-label-bg-bottom {{ }}
     .relation-label {{ font-size: 16px; font-weight: 800; pointer-events: none; }}
     .relation-label-cross {{ fill: #92400e; }}
     .relation-label-top {{ fill: #1d4ed8; }}
     .relation-label-bottom {{ fill: #334155; }}
     .label-pill {{ fill: rgba(255,255,255,0.82); stroke: rgba(148,163,184,0.22); stroke-width: 1; }}
     .label-text {{ font-size: 30px; font-weight: 800; fill: #0f172a; }}
+    .cluster-title {{ font-size: 34px; font-weight: 900; fill: rgba(51,65,85,0.2); letter-spacing: 4px; }}
+    .timeline-axis {{ stroke: #94a3b8; stroke-width: 2; }}
+    .timeline-tick {{ stroke: #cbd5e1; stroke-width: 1.5; }}
+    .timeline-month {{ font-size: 16px; fill: #475569; font-weight: 700; }}
+    .timeline-year-pill {{ fill: rgba(255,255,255,0.92); stroke: rgba(148,163,184,0.42); stroke-width: 1.5; }}
+    .timeline-year-text {{ font-size: 24px; fill: #0f172a; font-weight: 900; }}
+    .timeline-band {{ fill: rgba(255,255,255,0.42); stroke: rgba(148,163,184,0.16); stroke-width: 1.5; }}
     .dimmed {{ opacity: 0.42; }}
     .selected-node {{ opacity: 1 !important; }}
     .selected-node .kg-node-circle {{ stroke: #ef4444 !important; stroke-width: 5 !important; }}
@@ -612,13 +925,52 @@ class ClusterNodeHtmlBuilder:
     .selected-link line {{ stroke: #ef4444 !important; stroke-width: 3.5 !important; }}
     .selected-link .relation-label-bg {{ stroke: rgba(239,68,68,0.42) !important; }}
     .selected-link .relation-label {{ fill: #b91c1c !important; }}
+    .left-mini-grid {{ display: grid; gap: 10px; }}
+    .evidence-table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+    .evidence-table th, .evidence-table td {{ padding: 6px 4px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }}
+    .evidence-table th {{ color: #475569; font-weight: 800; }}
+    .evidence-badge {{ display: inline-flex; min-width: 48px; justify-content: center; padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 800; line-height: 1.2; }}
+    .evidence-badge-low {{ background: #e4f1ea; color: #44715f; }}
+    .evidence-badge-mid {{ background: #e2eef5; color: #456b86; }}
+    .evidence-badge-high {{ background: #efe6f6; color: #6d5b8c; }}
+    .evidence-badge-top {{ background: #f2e8de; color: #8a6a52; }}
+    .metric-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }}
+    .metric-chip {{ padding: 8px 10px; border-radius: 10px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 12px; }}
+    .right-title {{ font-size: 16px; font-weight: 900; text-align: center; line-height: 1.5; }}
+    .right-actions {{ display: block; }}
+    .action-card {{ border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; background: #fff; font-size: 10px; line-height: 1.55; }}
+    .insight-section {{ margin-top: 6px; }}
+    .insight-index {{ display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 999px; margin-right: 8px; background: #e8eef7; color: #1e3a5f; font-size: 11px; font-weight: 900; }}
+    .pager {{ display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }}
+    .pager-btn {{ min-width: 56px; height: 28px; border: 1px solid #cfd9e6; border-radius: 999px; background: #fff; color: #334155; font-size: 11px; cursor: pointer; }}
+    .pager-btn:disabled {{ opacity: 0.42; cursor: default; }}
+    .pager-indicator {{ font-size: 11px; color: #64748b; }}
+    .center-stage {{ display: grid; gap: 8px; min-height: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr) minmax(0, 240px); }}
+    .bottom-strip {{ display: grid; grid-template-columns: 1fr; gap: 8px; min-height: 0; }}
+    .trend-card {{ border: 2px solid #d8a764; border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,250,253,0.98)); overflow: hidden; box-shadow: 0 10px 24px rgba(15,23,42,0.06); }}
+    .trend-body {{ padding: 8px 10px; max-height: 100%; overflow: auto; }}
+    .chart-legend {{ display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; font-size: 11px; color: #475569; }}
+    .fake-line-label {{ display: inline-flex; align-items: center; gap: 6px; }}
+    .fake-line-swatch {{ width: 18px; height: 4px; border-radius: 999px; display: inline-block; }}
+    .blue {{ background: #3b82f6; }}
+    .gold {{ background: #f59e0b; }}
+    .green {{ background: #22c55e; }}
+    .evidence-chart-shell {{ border: 1px solid #dbe5f1; border-radius: 12px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(246,249,252,0.96)); overflow: hidden; }}
+    .evidence-chart-svg {{ width: 100%; height: 156px; display: block; }}
+    .timeline-note {{ display: none; }}
+    #left-evidence {{ max-height: 270px; overflow: auto; }}
+    #trend-insights {{ max-height: 220px; overflow: auto; }}
+    #insights {{ max-height: 220px; overflow: auto; }}
+    #detail {{ max-height: 100%; overflow: auto; }}
+    .detail-panel-body {{ height: 100%; overflow: auto; }}
     @media (max-width: 1680px) {{
-      .page {{ grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; }}
-      .side {{ max-width: 360px; padding-left: 16px; }}
+      .page {{ grid-template-columns: 280px minmax(0, 1fr) 300px; }}
     }}
     @media (max-width: 1480px) {{
       .page {{ grid-template-columns: 1fr; }}
-      .side {{ position: static; max-height: none; max-width: none; padding-left: 0; border-left: none; }}
+      .hero-title-wrap {{ flex-direction: column; align-items: flex-start; }}
+      .controls {{ justify-content: flex-start; }}
+      .bottom-strip {{ grid-template-columns: 1fr; }}
       .stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
     }}
     @media (max-width: 720px) {{
@@ -627,65 +979,109 @@ class ClusterNodeHtmlBuilder:
   </style>
 </head>
 <body>
-  <div class="page">
-    <main class="main">
-      <section class="hero">
-        <div class="title">主题簇节点图</div>
-        <div class="subtitle">
-          这张图把每个主题簇视为知识图谱中的一个独立圆形节点。两年主题簇会分别排布在上下两个年度区域，同年簇关联和跨年迁移会同时显示；点击圆形节点后，右侧会展开该簇详情。
-        </div>
-        <div class="stats" id="stats"></div>
-        <div class="controls">
-          <label class="toggle"><input type="checkbox" id="toggle-2024" checked />显示 2024 年主题簇</label>
-          <label class="toggle"><input type="checkbox" id="toggle-2023" checked />显示 2023 年主题簇</label>
-          <label class="toggle"><input type="checkbox" id="toggle-links" checked />显示全部关系边</label>
-        </div>
-      </section>
-
-      <section class="graph-wrap">
-        <div class="graph-toolbar">
-          <div class="legend">
-            <div class="legend-item"><span class="swatch swatch-sphere-2024"></span>2024 主题簇</div>
-            <div class="legend-item"><span class="swatch swatch-sphere-2023"></span>2023 主题簇</div>
-            <div class="legend-item"><span class="swatch" style="background:#6366f1;"></span>同年簇关联</div>
-            <div class="legend-item"><span class="swatch" style="background:#f59e0b;"></span>跨年迁移</div>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-badge">▲</span>
+        <span>全省科技治理政策研判系统</span>
+      </div>
+      <div class="topbar-meta">
+        <span>主题迁移研判</span>
+        <span>用户：soptum-info</span>
+      </div>
+    </header>
+    <div class="page">
+      <aside class="left-rail">
+        <section class="panel">
+          <div class="panel-head">事实层与关系层证据底座</div>
+          <div class="panel-body">
+            <div id="stats" class="stats"></div>
           </div>
-          <div class="hint">圆形节点代表主题簇，边表示簇间联系；拖动圆形节点可调整位置，滚轮可缩放左侧图，点击节点或边可在右侧查看详细说明。</div>
-        </div>
-        <div class="canvas-shell">
-          <div id="graph-stage" class="graph-stage">
-            <svg id="graph" viewBox="0 0 __WIDTH__ __HEIGHT__" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <marker id="arrowhead" markerWidth="18" markerHeight="14" refX="16" refY="7" orient="auto" markerUnits="strokeWidth">
-                  <path d="M 0 0 L 18 7 L 0 14 z" fill="#f59e0b"></path>
-                </marker>
-              </defs>
-              <g id="planes"></g>
-              <g id="year-labels"></g>
-              <g id="links"></g>
-              <g id="nodes-2024"></g>
-              <g id="nodes-2023"></g>
-            </svg>
+        </section>
+        <section class="panel">
+          <div class="panel-head">项目实体样本</div>
+          <div class="panel-body" id="left-evidence"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">机构关系与主题簇检索</div>
+          <div class="panel-body">
+            <input id="community-search" class="search" placeholder="输入主题簇名称筛选" />
+            <div id="community-list" class="list"></div>
           </div>
-        </div>
-      </section>
-    </main>
+        </section>
+      </aside>
 
-    <aside class="side">
-      <section class="panel">
-        <div class="panel-title">关系详情</div>
-        <div id="detail" class="hint">先点击一个主题实体或一条关系边。</div>
-      </section>
-      <section class="panel">
-        <div class="panel-title">主题簇查找</div>
-        <input id="community-search" class="search" placeholder="输入主题簇名称筛选" />
-        <div id="community-list" class="list"></div>
-      </section>
-      <section class="panel">
-        <div class="panel-title">图谱说明</div>
-        <div id="insights" class="hint"></div>
-      </section>
-    </aside>
+      <main class="center-stage">
+        <section class="hero">
+          <div class="hero-title-wrap">
+            <div class="hero-main-title">核心推演区：技术主题与机构网络演化图</div>
+            <div class="controls">
+              <label class="toggle"><input type="checkbox" id="toggle-2024" checked />显示 2024 年主题簇</label>
+              <label class="toggle"><input type="checkbox" id="toggle-2023" checked />显示 2023 年主题簇</label>
+              <label class="toggle"><input type="checkbox" id="toggle-links" checked />显示全部关系边</label>
+            </div>
+          </div>
+          <section class="graph-wrap">
+            <div class="graph-toolbar">
+              <div class="legend">
+                <div class="legend-item"><span class="swatch" style="background:linear-gradient(90deg,#c7dcf5,#7fa9d8,#355f9e);"></span>边权重热度</div>
+              </div>
+            </div>
+            <div class="canvas-shell">
+              <div id="graph-stage" class="graph-stage">
+                <svg id="graph" viewBox="0 0 __WIDTH__ __HEIGHT__" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <marker id="arrowhead" markerWidth="4.2" markerHeight="3.3" refX="3.6" refY="1.65" orient="auto" markerUnits="strokeWidth">
+                      <path d="M 0 0 L 4.2 1.65 L 0 3.3 z" fill="context-stroke"></path>
+                    </marker>
+                  </defs>
+                  <g id="planes"></g>
+                  <g id="year-labels"></g>
+                  <g id="links"></g>
+                  <g id="nodes-2024"></g>
+                  <g id="nodes-2023"></g>
+                </svg>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <div class="bottom-strip">
+          <section class="trend-card">
+            <div class="panel-head">队列与统计层证据</div>
+            <div class="trend-body">
+              <div class="chart-legend">
+                <span class="fake-line-label"><span class="fake-line-swatch blue"></span>2023主题簇规模</span>
+                <span class="fake-line-label"><span class="fake-line-swatch gold"></span>2024主题簇规模</span>
+                <span class="fake-line-label"><span class="fake-line-swatch green"></span>跨年关系强度</span>
+              </div>
+              <div class="evidence-chart-shell">
+                <svg id="evidence-chart" class="evidence-chart-svg" viewBox="0 0 980 156" preserveAspectRatio="none"></svg>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <aside class="right-rail">
+        <section class="panel">
+          <div class="panel-head">关系详情</div>
+          <div class="panel-body detail-panel-body">
+            <div id="detail" class="hint">先点击一个主题实体或一条关系边。</div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">项目事实追溯</div>
+          <div class="panel-body" id="trend-insights"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">热点迁移研判归纳</div>
+          <div class="panel-body">
+            <div id="insights" class="right-actions"></div>
+          </div>
+        </section>
+      </aside>
+    </div>
   </div>
 
   <script>
@@ -697,6 +1093,9 @@ class ClusterNodeHtmlBuilder:
     const statsEl = document.getElementById('stats');
     const detailEl = document.getElementById('detail');
     const insightsEl = document.getElementById('insights');
+    const leftEvidenceEl = document.getElementById('left-evidence');
+    const trendInsightsEl = document.getElementById('trend-insights');
+    const evidenceChartEl = document.getElementById('evidence-chart');
     const communitySearchEl = document.getElementById('community-search');
     const communityListEl = document.getElementById('community-list');
 
@@ -727,6 +1126,10 @@ class ClusterNodeHtmlBuilder:
       startX: 0,
       startY: 0,
     }};
+    const pagerState = {{
+      keyChangePage: 0,
+      pageSize: 1,
+    }};
 
     function statCard(label, value) {{
       return `
@@ -735,6 +1138,19 @@ class ClusterNodeHtmlBuilder:
           <div class="stat-value">${{value}}</div>
         </div>
       `;
+    }}
+
+    function projectCountBadge(value) {{
+      const count = Number(value || 0);
+      const sizes = (DATA.communities || []).map((item) => Number(item.size || 0));
+      const min = Math.min(...sizes);
+      const max = Math.max(...sizes);
+      const ratio = max > min ? (count - min) / (max - min) : 0.5;
+      const bg = ratio <= 0.5
+        ? `rgb(${{Math.round(245 - ratio * 30)}}, ${{Math.round(235 + ratio * 20)}}, ${{Math.round(160 - ratio * 20)}})`
+        : `rgb(${{Math.round(230 - (ratio - 0.5) * 120)}}, ${{Math.round(245 - (ratio - 0.5) * 10)}}, ${{Math.round(150 + (ratio - 0.5) * 60)}})`;
+      const color = ratio > 0.62 ? '#1f5f38' : '#6b5b17';
+      return `<span class="evidence-badge" style="background:${{bg}};color:${{color}};">${{count}}</span>`;
     }}
 
     function renderStats() {{
@@ -756,10 +1172,14 @@ class ClusterNodeHtmlBuilder:
       const topGroups = ((DATA.report || {{}}).topGroups || {{}});
       const keyChanges = ((DATA.report || {{}}).keyChanges || []);
       const periods = Object.keys(topGroups);
-      const graphTips = (DATA.insightDraft || []).map((line) => `<div>${{line}}</div>`).join('');
-      const reportInsightHtml = rows.length
-        ? rows.map((line) => `<div class="summary-item">${{line}}</div>`).join('')
-        : '<div class="summary-empty">暂无结论摘要</div>';
+      const reportInsightHtml = `
+        <div class="action-card">
+          <div class="insight-section"><span class="insight-index">1</span>${{rows[0] || '暂无归纳内容'}}</div>
+          <div class="insight-section"><span class="insight-index">2</span>${{rows[1] || (DATA.insightDraft || [])[0] || '暂无补充说明'}}</div>
+          <div class="insight-section"><span class="insight-index">3</span>图上当前展示 ${{DATA.periods.bottom.visibleCommunityCount || DATA.periods.bottom.communityCount}} 个 2023 主题簇、${{DATA.periods.top.visibleCommunityCount || DATA.periods.top.communityCount}} 个 2024 主题簇。</div>
+          <div class="insight-section"><span class="insight-index">4</span>跨年迁移边共 ${{DATA.links.filter((item) => item.kind === 'cross_year').length}} 条，重点关系支持点击追溯。</div>
+        </div>
+      `;
       const topGroupHtml = periods.length
         ? `
           <div class="group-columns">
@@ -769,7 +1189,7 @@ class ClusterNodeHtmlBuilder:
                 <div class="group-items">
                   ${{
                     (topGroups[period] || []).length
-                      ? (topGroups[period] || []).map((item) => `
+                      ? (topGroups[period] || []).slice(0, 4).map((item) => `
                           <div class="group-item">
                             <div class="group-item-name">${{item.name || '未命名方向'}}</div>
                             <div class="group-item-meta">第${{item.rank || '-'}}位 · 约${{item.projectCount || 0}}个项目</div>
@@ -789,8 +1209,16 @@ class ClusterNodeHtmlBuilder:
           </div>
         `
         : '<div class="summary-empty">暂无重点领域方向</div>';
-      const keyChangeHtml = keyChanges.length
-        ? keyChanges.map((item) => `
+      const totalKeyPages = Math.max(1, Math.ceil(Math.max(keyChanges.length, 1) / pagerState.pageSize));
+      pagerState.keyChangePage = Math.min(pagerState.keyChangePage, totalKeyPages - 1);
+      const currentKeyItems = keyChanges.length
+        ? keyChanges.slice(
+            pagerState.keyChangePage * pagerState.pageSize,
+            (pagerState.keyChangePage + 1) * pagerState.pageSize,
+          )
+        : [];
+      const keyChangeHtml = currentKeyItems.length
+        ? currentKeyItems.map((item) => `
             <div class="summary-item">
               <div><strong>${{item.rank || '-'}}.</strong> 从“${{item.from || '-'}}”到“${{item.to || '-'}}”</div>
               <div style="margin-top:6px;">${{item.description || ''}}</div>
@@ -798,15 +1226,45 @@ class ClusterNodeHtmlBuilder:
           `).join('')
         : '<div class="summary-empty">暂无重点趋势</div>';
 
-      insightsEl.innerHTML = `
-        <div>${{graphTips}}</div>
-        <div class="summary-title">结论摘要</div>
-        <div class="summary-list">${{reportInsightHtml}}</div>
+      const allProjects = DATA.communities
+        .slice()
+        .sort((a, b) => Number(b.size || 0) - Number(a.size || 0))
+        .slice(0, 4);
+      leftEvidenceEl.innerHTML = `
+        <table class="evidence-table">
+          <thead>
+            <tr><th>ID</th><th>主题簇</th><th>年度</th><th>项目量</th></tr>
+          </thead>
+          <tbody>
+            ${{
+              allProjects.map((item, index) => `
+                <tr>
+                  <td>${{index + 301}}</td>
+                  <td>${{item.name}}</td>
+                  <td>${{item.period}}</td>
+                  <td>${{projectCountBadge(item.size)}}</td>
+                </tr>
+              `).join('')
+            }}
+          </tbody>
+        </table>
+      `;
+      insightsEl.innerHTML = reportInsightHtml || '<div class="summary-empty">暂无归纳内容</div>';
+      trendInsightsEl.innerHTML = `
         <div class="summary-title">重点领域方向</div>
         ${{topGroupHtml}}
-        <div class="summary-title">重点趋势</div>
+        <div class="summary-title">热点迁移说明</div>
         <div class="summary-list">${{keyChangeHtml}}</div>
+        <div class="pager">
+          <button class="pager-btn" id="prev-keychange" ${{pagerState.keyChangePage <= 0 ? 'disabled' : ''}}>上一页</button>
+          <div class="pager-indicator">${{totalKeyPages === 0 ? 0 : pagerState.keyChangePage + 1}} / ${{totalKeyPages}}</div>
+          <button class="pager-btn" id="next-keychange" ${{pagerState.keyChangePage >= totalKeyPages - 1 ? 'disabled' : ''}}>下一页</button>
+        </div>
       `;
+      const prevBtn = document.getElementById('prev-keychange');
+      const nextBtn = document.getElementById('next-keychange');
+      if (prevBtn) prevBtn.onclick = () => {{ pagerState.keyChangePage = Math.max(0, pagerState.keyChangePage - 1); renderInsights(); }};
+      if (nextBtn) nextBtn.onclick = () => {{ pagerState.keyChangePage = Math.min(totalKeyPages - 1, pagerState.keyChangePage + 1); renderInsights(); }};
     }}
 
     function createSvgEl(tag, attrs = {{}}, text = '') {{
@@ -814,6 +1272,24 @@ class ClusterNodeHtmlBuilder:
       Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)));
       if (text) el.textContent = text;
       return el;
+    }}
+
+    function buildSmoothLinePath(points) {{
+      if (!points.length) return '';
+      if (points.length === 1) return `M ${{points[0][0]}} ${{points[0][1]}}`;
+      let d = `M ${{points[0][0]}} ${{points[0][1]}}`;
+      for (let index = 0; index < points.length - 1; index += 1) {{
+        const prev = points[index - 1] || points[index];
+        const curr = points[index];
+        const next = points[index + 1];
+        const nextNext = points[index + 2] || next;
+        const cp1x = curr[0] + (next[0] - prev[0]) / 6;
+        const cp1y = curr[1] + (next[1] - prev[1]) / 6;
+        const cp2x = next[0] - (nextNext[0] - curr[0]) / 6;
+        const cp2y = next[1] - (nextNext[1] - curr[1]) / 6;
+        d += ` C ${{cp1x}} ${{cp1y}}, ${{cp2x}} ${{cp2y}}, ${{next[0]}} ${{next[1]}}`;
+      }}
+      return d;
     }}
 
     function clamp(value, min, max) {{
@@ -857,6 +1333,147 @@ class ClusterNodeHtmlBuilder:
       graphEl.style.transform = `scale(${{zoomState.scale}})`;
     }}
 
+    function fitGraphToViewport() {{
+      const availableWidth = Math.max(240, canvasShellEl.clientWidth - 8);
+      const availableHeight = Math.max(220, canvasShellEl.clientHeight - 8);
+      const fitScale = Math.min(
+        availableWidth / GRAPH_WIDTH,
+        availableHeight / GRAPH_HEIGHT,
+        1,
+      );
+      zoomState.scale = clamp(fitScale, zoomState.min, 1);
+      updateGraphScale();
+      const scaledWidth = GRAPH_WIDTH * zoomState.scale;
+      canvasShellEl.scrollLeft = Math.max(0, (scaledWidth - canvasShellEl.clientWidth) / 2);
+      canvasShellEl.scrollTop = 0;
+    }}
+
+    function polarPoint(cx, cy, radius, angle) {{
+      return {{
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius,
+      }};
+    }}
+
+    function applyReferenceLayout() {{
+      const groups = [
+        {{
+          period: DATA.periods.bottom.label,
+          centerX: GRAPH_WIDTH * 0.34,
+          centerY: GRAPH_HEIGHT * 0.52,
+          rotation: Math.PI * 0.94,
+        }},
+        {{
+          period: DATA.periods.top.label,
+          centerX: GRAPH_WIDTH * 0.68,
+          centerY: GRAPH_HEIGHT * 0.48,
+          rotation: Math.PI * 0.08,
+        }},
+      ];
+      groups.forEach((group) => {{
+        const items = DATA.communities
+          .filter((item) => item.period === group.period)
+          .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+        if (!items.length) return;
+        items.forEach((item, index) => {{
+          const size = nodeCardSize(item);
+          item.cardWidth = size.width;
+          item.cardHeight = size.height;
+          item.radius = Number(size.radius.toFixed(2));
+          item.layoutGroup = group.period;
+          if (index === 0) {{
+            item.x = Number(group.centerX.toFixed(2));
+            item.y = Number(group.centerY.toFixed(2));
+            return;
+          }}
+          const offsetIndex = index - 1;
+          let ring = 0;
+          let ringIndex = offsetIndex;
+          let ringCount = 6;
+          if (offsetIndex >= 6 && offsetIndex < 14) {{
+            ring = 1;
+            ringIndex = offsetIndex - 6;
+            ringCount = 8;
+          }} else if (offsetIndex >= 14) {{
+            ring = 2;
+            ringIndex = offsetIndex - 14;
+            ringCount = Math.max(1, items.length - 14);
+          }}
+          const baseRadius = [175, 315, 455][ring] + size.radius * 0.08;
+          const angleStep = (Math.PI * 2) / ringCount;
+          const angle = group.rotation + ringIndex * angleStep + (ring % 2 ? angleStep * 0.18 : 0);
+          const point = polarPoint(group.centerX, group.centerY, baseRadius, angle);
+          item.x = Number(clamp(point.x, size.radius + 40, GRAPH_WIDTH - size.radius - 40).toFixed(2));
+          item.y = Number(clamp(point.y, size.radius + 60, GRAPH_HEIGHT - size.radius - 60).toFixed(2));
+        }});
+      }});
+      normalizeGraphFootprint();
+      renderReferenceCollisions();
+      normalizeGraphFootprint();
+    }}
+
+    function normalizeGraphFootprint() {{
+      const items = DATA.communities || [];
+      if (!items.length) return;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      items.forEach((item) => {{
+        const radius = Number(item.radius || nodeCardSize(item).radius || 0);
+        minX = Math.min(minX, Number(item.x) - radius);
+        maxX = Math.max(maxX, Number(item.x) + radius);
+        minY = Math.min(minY, Number(item.y) - radius);
+        maxY = Math.max(maxY, Number(item.y) + radius);
+      }});
+      const target = {{
+        left: GRAPH_WIDTH * 0.06,
+        right: GRAPH_WIDTH * 0.94,
+        top: GRAPH_HEIGHT * 0.12,
+        bottom: GRAPH_HEIGHT * 0.9,
+      }};
+      const sourceWidth = Math.max(1, maxX - minX);
+      const sourceHeight = Math.max(1, maxY - minY);
+      const targetWidth = target.right - target.left;
+      const targetHeight = target.bottom - target.top;
+      const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+      items.forEach((item) => {{
+        item.x = Number((target.left + (Number(item.x) - minX) * scale).toFixed(2));
+        item.y = Number((target.top + (Number(item.y) - minY) * scale).toFixed(2));
+        item.radius = Number((Number(item.radius || 0) * scale).toFixed(2));
+        item.cardWidth = Number((Number(item.cardWidth || 0) * scale).toFixed(2));
+        item.cardHeight = Number((Number(item.cardHeight || 0) * scale).toFixed(2));
+      }});
+    }}
+
+    function renderReferenceCollisions() {{
+      for (let iteration = 0; iteration < 90; iteration += 1) {{
+        let moved = false;
+        const items = DATA.communities.slice();
+        for (let i = 0; i < items.length; i += 1) {{
+          for (let j = i + 1; j < items.length; j += 1) {{
+            const left = items[i];
+            const right = items[j];
+            if (left.period !== right.period) continue;
+            const dx = Number(right.x) - Number(left.x);
+            const dy = Number(right.y) - Number(left.y);
+            const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+            const minGap = Number(left.radius || 0) + Number(right.radius || 0) + 26;
+            if (dist >= minGap) continue;
+            const push = (minGap - dist) / 2;
+            const nx = dx / dist;
+            const ny = dy / dist;
+            left.x = Number((left.x - nx * push).toFixed(2));
+            left.y = Number((left.y - ny * push).toFixed(2));
+            right.x = Number((right.x + nx * push).toFixed(2));
+            right.y = Number((right.y + ny * push).toFixed(2));
+            moved = true;
+          }}
+        }}
+        if (!moved) break;
+      }}
+    }}
+
     function handleGraphWheel(event) {{
       event.preventDefault();
       const rect = canvasShellEl.getBoundingClientRect();
@@ -879,37 +1496,20 @@ class ClusterNodeHtmlBuilder:
       }});
     }}
 
-    function renderYearLabels() {{
+    function renderPlanes() {{
       const group = document.getElementById('year-labels');
-      const labels = [
-        {{ x: DATA.planes.top.labelPoint.x, y: DATA.planes.top.labelPoint.y, text: DATA.periods.top.label }},
-        {{ x: DATA.planes.bottom.labelPoint.x, y: DATA.planes.bottom.labelPoint.y, text: DATA.periods.bottom.label }},
-      ];
-
-      labels.forEach((item) => {{
-        const width = 180;
-        const rect = createSvgEl('rect', {{
-          x: item.x - 18,
-          y: item.y - 38,
-          rx: 28,
-          ry: 28,
-          width,
-          height: 58,
-          class: 'label-pill',
-        }});
-        const text = createSvgEl('text', {{
+      group.replaceChildren();
+      [
+        {{ label: DATA.periods.bottom.label, x: GRAPH_WIDTH * 0.34, y: GRAPH_HEIGHT * 0.11 }},
+        {{ label: DATA.periods.top.label, x: GRAPH_WIDTH * 0.68, y: GRAPH_HEIGHT * 0.11 }},
+      ].forEach((item) => {{
+        group.appendChild(createSvgEl('text', {{
           x: item.x,
           y: item.y,
-          class: 'label-text',
-        }}, item.text);
-        group.appendChild(rect);
-        group.appendChild(text);
+          'text-anchor': 'middle',
+          class: 'cluster-title',
+        }}, item.label));
       }});
-    }}
-
-    function renderPlanes() {{
-      const group = document.getElementById('planes');
-      group.replaceChildren();
     }}
 
     function applyVisibility() {{
@@ -976,6 +1576,7 @@ class ClusterNodeHtmlBuilder:
         <div class="detail-title">${{item.name}}</div>
         <div class="detail-meta">
           <div><strong>所属年份：</strong>${{item.period}}</div>
+          <div><strong>位置分组：</strong>${{item.layoutGroup || item.period}}</div>
           <div><strong>主题簇编号：</strong>C${{item.communityId}}</div>
           <div><strong>排序：</strong>第${{item.rank}}位</div>
           <div><strong>项目数量：</strong>${{item.size}}</div>
@@ -1032,6 +1633,81 @@ class ClusterNodeHtmlBuilder:
       }}
     }}
 
+    function renderEvidenceChart() {{
+      if (!evidenceChartEl) return;
+      evidenceChartEl.replaceChildren();
+      const chart = DATA.evidenceSeries || {{}};
+      const labels = chart.labels || [];
+      const series = chart.series || [];
+      const width = 980;
+      const height = 156;
+      const padding = {{ left: 44, right: 18, top: 16, bottom: 28 }};
+      const innerWidth = width - padding.left - padding.right;
+      const innerHeight = height - padding.top - padding.bottom;
+      const maxValue = Math.max(
+        1,
+        ...series.flatMap((item) => item.values || []).map((value) => Number(value || 0)),
+      );
+      for (let row = 0; row <= 4; row += 1) {{
+        const y = padding.top + (innerHeight / 4) * row;
+        evidenceChartEl.appendChild(createSvgEl('line', {{
+          x1: padding.left,
+          y1: y,
+          x2: width - padding.right,
+          y2: y,
+          stroke: row === 4 ? '#94a3b8' : 'rgba(148,163,184,0.18)',
+          'stroke-width': row === 4 ? 1.4 : 1,
+        }}));
+      }}
+      labels.forEach((label, index) => {{
+        const x = padding.left + (innerWidth * index) / Math.max(1, labels.length - 1);
+        evidenceChartEl.appendChild(createSvgEl('text', {{
+          x,
+          y: height - 8,
+          'text-anchor': 'middle',
+          fill: '#64748b',
+          'font-size': 10,
+          'font-weight': 700,
+        }}, label));
+      }});
+      series.forEach((item) => {{
+        const values = item.values || [];
+        const points = values.map((value, index) => {{
+          const x = padding.left + (innerWidth * index) / Math.max(1, values.length - 1);
+          const y = padding.top + innerHeight - (Number(value || 0) / maxValue) * innerHeight;
+          return [x, y];
+        }});
+        const areaPoints = [
+          [points[0][0], padding.top + innerHeight],
+          ...points,
+          [points[points.length - 1][0], padding.top + innerHeight],
+        ];
+        evidenceChartEl.appendChild(createSvgEl('path', {{
+          d: `${{buildSmoothLinePath(areaPoints)}} Z`,
+          fill: `${{item.color || '#3b82f6'}}22`,
+          stroke: 'none',
+        }}));
+        evidenceChartEl.appendChild(createSvgEl('path', {{
+          d: buildSmoothLinePath(points),
+          fill: 'none',
+          stroke: item.color || '#3b82f6',
+          'stroke-width': 2.6,
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+        }}));
+        points.forEach((point) => {{
+          evidenceChartEl.appendChild(createSvgEl('circle', {{
+            cx: point[0],
+            cy: point[1],
+            r: 2.8,
+            fill: item.color || '#3b82f6',
+            stroke: '#ffffff',
+            'stroke-width': 1.4,
+          }}));
+        }});
+      }});
+    }}
+
     function renderLinks() {{
       const group = document.getElementById('links');
       group.replaceChildren();
@@ -1043,24 +1719,22 @@ class ClusterNodeHtmlBuilder:
         const linkGroup = createSvgEl('g', {{ class: 'relation-group' }});
         const sourceSize = nodeCardSize(source);
         const targetSize = nodeCardSize(target);
-        const sourceOffset = sourceSize.radius + (item.kind === 'cross_year' ? 16 : 12);
-        const targetOffset = targetSize.radius + (item.kind === 'cross_year' ? 16 : 12);
+        const sourceOffset = sourceSize.radius + (item.kind === 'cross_year' ? 8 : 10);
+        const targetOffset = targetSize.radius + (item.kind === 'cross_year' ? 10 : 10);
         const start = edgePoint(source, target, sourceOffset);
         const end = edgePoint(target, source, targetOffset);
         const midX = (start.x + end.x) / 2;
         const midY = (start.y + end.y) / 2;
-        const curvature = item.kind === 'cross_year' ? 0 : (item.layer === 'top' ? -72 : 72);
-        const controlX = midX + (item.kind === 'cross_year' ? 0 : 18);
-        const controlY = midY + curvature;
         const path = createSvgEl('path', {{
-          d: item.kind === 'cross_year'
-            ? `M ${{start.x}} ${{start.y}} L ${{end.x}} ${{end.y}}`
-            : `M ${{start.x}} ${{start.y}} Q ${{controlX}} ${{controlY}} ${{end.x}} ${{end.y}}`,
+          d: `M ${{start.x}} ${{start.y}} L ${{end.x}} ${{end.y}}`,
           class: item.kind === 'cross_year'
             ? 'relation-cross'
             : 'relation-same',
           'stroke-width': item.strokeWidth,
+          stroke: item.strokeColor || '#22c55e',
           'marker-end': item.kind === 'cross_year' ? 'url(#arrowhead)' : '',
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
         }});
         const label = `${{item.relationLabel || '关系'}} · ${{item.jaccard}}`;
         linkGroup.appendChild(path);
@@ -1074,6 +1748,7 @@ class ClusterNodeHtmlBuilder:
             width: labelWidth,
             height: 34,
             class: 'relation-label-bg relation-label-bg-cross',
+            stroke: item.labelStrokeColor || item.strokeColor || '#22c55e',
           }});
           const labelText = createSvgEl('text', {{
             x: midX,
@@ -1185,7 +1860,6 @@ class ClusterNodeHtmlBuilder:
       DATA.communities.forEach((item) => {{
         const groupId = item.period === DATA.periods.top.label ? 'nodes-2024' : 'nodes-2023';
         const group = document.getElementById(groupId);
-        const isTopPeriod = item.period === DATA.periods.top.label;
         const size = nodeCardSize(item);
         const node = createSvgEl('g', {{
           class: 'kg-node',
@@ -1197,7 +1871,9 @@ class ClusterNodeHtmlBuilder:
           cx: 0,
           cy: 0,
           r: size.radius,
-          class: isTopPeriod ? 'kg-node-circle kg-node-circle-2024' : 'kg-node-circle kg-node-circle-2023',
+          class: 'kg-node-circle',
+          fill: item.nodeColor || '#22c55e',
+          stroke: item.nodeStroke || '#15803d',
         }});
         const hitArea = createSvgEl('circle', {{
           cx: 0,
@@ -1207,6 +1883,25 @@ class ClusterNodeHtmlBuilder:
         }});
         node.appendChild(circle);
         node.appendChild(hitArea);
+        if (Number(item.rank || 0) <= 6) {{
+          const labelX = item.period === DATA.periods.top.label ? size.radius + 18 : -(size.radius + 18);
+          const labelWidth = Math.max(76, String(item.name || '').length * 18);
+          node.appendChild(createSvgEl('rect', {{
+            x: item.period === DATA.periods.top.label ? labelX - 8 : labelX - labelWidth + 8,
+            y: -18,
+            width: labelWidth,
+            height: 28,
+            rx: 14,
+            ry: 14,
+            class: 'kg-node-label-shadow',
+          }}));
+          node.appendChild(createSvgEl('text', {{
+            x: labelX,
+            y: 1,
+            'text-anchor': item.period === DATA.periods.top.label ? 'start' : 'end',
+            class: 'kg-node-label',
+          }}, item.name || ''));
+        }}
         group.appendChild(node);
         domRefs.nodes.set(item.id, node);
       }});
@@ -1220,7 +1915,8 @@ class ClusterNodeHtmlBuilder:
           if (a.period !== b.period) return a.period.localeCompare(b.period);
           if (a.rank !== b.rank) return a.rank - b.rank;
           return a.name.localeCompare(b.name);
-        }});
+        }})
+        .slice(0, text ? 12 : 4);
 
       communityListEl.innerHTML = rows.map((item) => `
         <div class="list-item" data-community-id="${{item.id}}">
@@ -1242,12 +1938,14 @@ class ClusterNodeHtmlBuilder:
     graphEl.addEventListener('mousedown', handleGraphMouseDown, true);
     window.addEventListener('mousemove', moveNodeDrag);
     window.addEventListener('mouseup', endNodeDrag);
+    window.addEventListener('resize', fitGraphToViewport);
 
+    applyReferenceLayout();
     renderStats();
     renderInsights();
-    updateGraphScale();
+    renderEvidenceChart();
+    fitGraphToViewport();
     renderPlanes();
-    renderYearLabels();
     renderLinks();
     renderNodes();
     renderCommunityList();
@@ -1261,6 +1959,7 @@ class ClusterNodeHtmlBuilder:
             .replace("{{", "{")
             .replace("}}", "}")
             .replace("__DATA_JSON__", data_json)
+            .replace("__DEFAULT_TOPIC__", default_topic or "Auto Topic")
             .replace("__WIDTH__", str(CANVAS_WIDTH))
             .replace("__HEIGHT__", str(CANVAS_HEIGHT))
         )
