@@ -560,13 +560,7 @@ class StampExtractor:
         return {"words_info": words_info, "processed_text": processed_text}
 
     def _save_qwen_ocr_debug_response(self, debug_name: str, payload: Dict[str, Any]) -> None:
-        if str(debug_name or "").startswith("stamp"):
-            return
-        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
-        os.makedirs(debug_dir, exist_ok=True)
-        safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(debug_name or "qwen_ocr"))
-        with open(f"{debug_dir}/{safe_name}.json", "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return
 
     def _normalize_bbox(
         self,

@@ -44,16 +44,6 @@ def _is_exact_match(left: str, right: str) -> bool:
     return bool(normalized_left) and normalized_left == normalized_right
 
 
-def _is_partial_match(left: str, right: str) -> bool:
-    normalized_left = _normalize_text(left)
-    normalized_right = _normalize_text(right)
-    if not normalized_left or not normalized_right:
-        return False
-    if normalized_left == normalized_right:
-        return False
-    return normalized_left in normalized_right or normalized_right in normalized_left
-
-
 def _matches(expected: str, candidates: List[str]) -> bool:
     left = _normalize_text(expected)
     if not left:
@@ -62,7 +52,7 @@ def _matches(expected: str, candidates: List[str]) -> bool:
         right = _normalize_text(item)
         if not right:
             continue
-        if left == right or left in right or right in left:
+        if left == right:
             return True
     return False
 
@@ -103,8 +93,6 @@ def _raw_db_field_state(expected: str, observed: str) -> str:
         return "unknown"
     if _is_exact_match(expected_text, observed_text):
         return "match"
-    if _is_partial_match(expected_text, observed_text):
-        return "partial_match"
     return "mismatch"
 
 
@@ -398,7 +386,7 @@ class RewardReviewService:
                             role_label="企业名称",
                             expected_unit=str(target_values.get("enterprise_name") or ""),
                             role_units=stamps,
-                            verification=None,
+                            verification=verification.get("enterprise_stamp"),
                         ),
                         self._compare_named_signature(
                             item="enterprise_legal_representative_signature_consistency",
@@ -866,6 +854,7 @@ class RewardReviewService:
             if isinstance(payload, dict) and payload:
                 return {
                     "legal_representative_signature": self._normalize_verification_entry(payload.get("legal_representative_signature")),
+                    "enterprise_stamp": self._normalize_verification_entry(payload.get("enterprise_stamp")),
                 }
             return {}
         return self._build_verification_result(file_data=file_data, doc_type=doc_type, target_values=target_values)
@@ -1414,6 +1403,14 @@ class RewardReviewService:
 
         work_item = self._extract_item_evidence(result, "award_contributor_work_unit_stamp_consistency")
         work_units = _dedup([str(item).strip() for item in (work_item.get("role_stamp_units") or []) if str(item).strip()])
+        completion_item = self._extract_item_evidence(result, "award_contributor_completion_unit_stamp_consistency")
+        completion_units = _dedup([str(item).strip() for item in (completion_item.get("role_stamp_units") or []) if str(item).strip()])
+        same_unit = bool(work_item.get("same_unit")) or bool(completion_item.get("same_unit"))
+        if same_unit:
+            merged_units = _dedup(work_units + completion_units)
+            work_units = list(merged_units)
+            completion_units = list(merged_units)
+
         work_result = self._compare_role_stamp_consistency(
             item="award_contributor_work_unit_stamp_consistency",
             role_label="工作单位",
@@ -1424,8 +1421,6 @@ class RewardReviewService:
         work_result.evidence.update({"same_unit": bool(work_item.get("same_unit"))})
         self._replace_result_item(result, "award_contributor_work_unit_stamp_consistency", work_result)
 
-        completion_item = self._extract_item_evidence(result, "award_contributor_completion_unit_stamp_consistency")
-        completion_units = _dedup([str(item).strip() for item in (completion_item.get("role_stamp_units") or []) if str(item).strip()])
         completion_result = self._compare_role_stamp_consistency(
             item="award_contributor_completion_unit_stamp_consistency",
             role_label="完成单位",

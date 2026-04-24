@@ -17,6 +17,7 @@ _SIGNATURE_DESCRIPTION_MARKERS = {
 }
 _SEAL_ONLY_MARKERS = {
     "公章", "印章", "盖章", "圆形章", "红章", "日期", "单位（盖章）", "单位盖章",
+    "姓名章", "签名章", "私章", "名章", "人名章", "方章", "人名方章",
 }
 _HANDWRITING_MARKERS = {
     "手写签名", "手写签字", "本人签名", "本人签字", "手写", "签名笔迹", "签字笔迹",
@@ -107,9 +108,10 @@ class SignatureExtractor:
 
 注意：
 1. 公章、印章、盖章、打印文字、日期都不算签字。
-2. 只有确认存在手写签字/手写签名时，has_signature 才能为 true。
-3. 如果能辨认出姓名，text 写姓名；如果只能确认有手写签字但姓名不清晰，text 置空，description 写“检测到手写签字，姓名不清晰”。
-4. 只返回 JSON，不要解释，不要代码块。
+2. 姓名章、签名章、私章、人名方章都不算签字。
+3. 只有确认存在手写签字/手写签名时，has_signature 才能为 true。
+4. 如果能辨认出姓名，text 写姓名；如果只能确认有手写签字但姓名不清晰，text 置空，description 写“检测到手写签字，姓名不清晰”。
+5. 只返回 JSON，不要解释，不要代码块。
 
 返回格式：
 {
@@ -126,6 +128,7 @@ class SignatureExtractor:
             raw = await multi_llm.analyze_image(image_data, prompt)
 
             signatures = self._parse_signatures(raw)
+            signatures = self._filter_out_personal_seals(signatures, image_data)
             if not signatures:
                 logger.warning("[SignatureExtractor] 未能检测到签字")
                 return None
@@ -191,6 +194,81 @@ class SignatureExtractor:
 
         coords = self._parse_signature_coords(stripped)
         return normalize_signature_entries([{"text": stripped, "bbox": coords[0] if coords else None}])
+
+    def _filter_out_personal_seals(self, signatures: List[Dict[str, Any]], image_data: bytes) -> List[Dict[str, Any]]:
+        """过滤掉被误识别为签字的人名章/姓名章。"""
+        if not signatures:
+            return []
+        try:
+            import io
+            import numpy as np
+            from PIL import Image, ImageOps
+
+            image = Image.open(io.BytesIO(image_data))
+            image = ImageOps.exif_transpose(image).convert("RGB")
+            rgb = np.array(image).astype(np.int16)
+            img_h, img_w = rgb.shape[:2]
+        except Exception:
+            return signatures
+
+        filtered: List[Dict[str, Any]] = []
+        for item in signatures:
+            bbox = self._normalize_bbox(item.get("bbox"), img_w=img_w, img_h=img_h)
+            if bbox and self._looks_like_personal_seal(rgb, bbox):
+                logger.info("[SignatureExtractor] 过滤疑似姓名章结果: %s", item.get("text") or "")
+                continue
+            filtered.append(item)
+        return filtered
+
+    def _normalize_bbox(self, bbox: Any, img_w: int, img_h: int) -> Optional[Dict[str, int]]:
+        if isinstance(bbox, dict):
+            try:
+                x1 = int(float(bbox.get("x1")))
+                y1 = int(float(bbox.get("y1")))
+                x2 = int(float(bbox.get("x2")))
+                y2 = int(float(bbox.get("y2")))
+            except Exception:
+                return None
+        elif isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            try:
+                x1, y1, x2, y2 = [int(float(v)) for v in bbox]
+            except Exception:
+                return None
+        else:
+            return None
+
+        x1 = max(0, min(img_w, x1))
+        y1 = max(0, min(img_h, y1))
+        x2 = max(0, min(img_w, x2))
+        y2 = max(0, min(img_h, y2))
+        if x2 - x1 < 8 or y2 - y1 < 8:
+            return None
+        return {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+
+    def _looks_like_personal_seal(self, rgb, bbox: Dict[str, int]) -> bool:
+        import numpy as np
+
+        x1, y1, x2, y2 = bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]
+        region = rgb[y1:y2, x1:x2]
+        if region.size == 0:
+            return False
+
+        red_mask = (
+            (region[:, :, 0] >= 110)
+            & (region[:, :, 0] >= region[:, :, 1] + 20)
+            & (region[:, :, 0] >= region[:, :, 2] + 20)
+        )
+        dark_mask = (
+            (region[:, :, 0] <= 120)
+            & (region[:, :, 1] <= 120)
+            & (region[:, :, 2] <= 120)
+        )
+        area = float(region.shape[0] * region.shape[1])
+        red_ratio = float(red_mask.sum()) / area
+        dark_ratio = float(dark_mask.sum()) / area
+        aspect = float(region.shape[1]) / max(1.0, float(region.shape[0]))
+
+        return red_ratio >= 0.10 and dark_ratio <= 0.18 and 0.45 <= aspect <= 3.2
 
     def _pdf_to_image(self, file_data: bytes) -> bytes:
         """PDF 转图片（取第一页，fitz 放大3倍）"""

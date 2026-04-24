@@ -99,8 +99,10 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert 'id="result-tabs"' in html
     assert 'data-tab-target="report-chat"' in html
     assert 'data-tab-target="report-fit"' not in html
-    assert 'data-tab-target="report-benchmark"' not in html
+    assert 'data-tab-target="report-benchmark"' in html
     assert 'id="report-chat"' in html
+    assert 'id="report-benchmark"' in html
+    assert "未执行技术摸底" in html
     assert 'id="chat-form"' in html
     assert "/api/v1/evaluation/chat/ask" in html
     assert "/api/v1/evaluation/chat/ask-stream" in html
@@ -131,6 +133,33 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert "chat-citation-snippet" not in html
     assert "chat-live-skeleton" in html
     assert "text/event-stream" not in html
+
+
+def test_report_generator_benchmark_uses_readable_chinese_labels_and_reference_cards():
+    """技术摸底应使用中文新颖性标签和精简参考条目"""
+    generator = ReportGenerator()
+    payload = _build_debug_payload()
+    payload["result"]["benchmark"] = {
+        "novelty_level": "medium",
+        "literature_position": "已检索到 2 条相关文献",
+        "patent_overlap": "专利对比待接入",
+        "conclusion": "项目与同类研究存在可比较改进空间。",
+        "references": [
+            {
+                "source": "literature",
+                "title": "数字技术在创伤骨科的应用 临床数字骨科（一）",
+                "year": 2011,
+            }
+        ],
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert "对比参考" in html
+    assert "中等" in html
+    assert "benchmark-reference-item" in html
+    assert "论文 · 2011" in html
+    assert "literature / 数字技术在创伤骨科的应用 临床数字骨科（一） / 2011" not in html
 
 
 def test_report_generator_debug_html_hides_interactive_chat_panel():
@@ -293,6 +322,35 @@ def test_report_generator_formal_html_renders_fit_and_benchmark_as_flat_sections
     assert 'class="flat-label">贴合度<' in html
     assert 'class="flat-label">综合结论<' in html
     assert '<table class="kv-table">' not in html
+
+
+def test_report_generator_benchmark_references_render_as_flat_list():
+    """技术摸底参考文献应保持扁平列表展示，避免改动原有版式"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["result"]["benchmark"] = {
+        "novelty_level": "medium",
+        "literature_position": "已检索到 1 条相关文献",
+        "patent_overlap": "专利对比待接入",
+        "conclusion": "当前公开论文对比显示具备一定相关基础。",
+        "references": [
+            {
+                "source": "literature",
+                "title": "数字技术在创伤骨科的应用 临床数字骨科（一）",
+                "snippet": "围绕骨科临床数字化、导航与机器人辅助手术展开。",
+                "year": 2011,
+                "url": "https://openalex.org/W938609951",
+            }
+        ],
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert 'class="flat-list"' in html
+    assert "literature / 数字技术在创伤骨科的应用 临床数字骨科（一） / 2011" in html
+    assert 'class="benchmark-ref-card"' not in html
+    assert "查看来源" not in html
 
 
 def test_report_generator_chat_panel_allows_first_ask_when_chat_not_ready():
@@ -492,11 +550,11 @@ def test_report_generator_build_from_debug_file_recovers_missing_page_chunks(
     assert '"page_chunks"' in updated_json
 
 
-def test_report_generator_build_from_debug_file_injects_workspace_project_nav(
+def test_report_generator_build_from_debug_file_keeps_single_project_layout(
     tmp_path: Path,
     monkeypatch,
 ):
-    """正式报告应在左侧注入同目录项目切换栏，但不影响单项目主体结构"""
+    """正式报告重建时应保持单项目布局，不注入多项目切换栏"""
     generator = ReportGenerator()
 
     payload = _build_debug_payload()
@@ -527,18 +585,18 @@ def test_report_generator_build_from_debug_file_injects_workspace_project_nav(
     generator.build_from_debug_file(debug_json, output_html, debug_mode=False)
 
     html = output_html.read_text(encoding="utf-8")
-    assert 'id="project-rail"' in html
-    assert "另一个项目" in html
-    assert 'href="EVAL_another-project.html"' in html
+    assert 'id="project-rail"' not in html
+    assert "另一个项目" not in html
+    assert 'href="EVAL_another-project.html"' not in html
     assert 'id="document-rail"' not in html
     assert 'id="report-chat"' in html
 
 
-def test_report_generator_workspace_nav_ignores_hash_docx_project_name(
+def test_report_generator_build_index_html_ignores_hash_docx_project_name(
     tmp_path: Path,
     monkeypatch,
 ):
-    """左侧项目栏不应把 hash docx 文件名当成项目名称"""
+    """多项目索引页的左侧项目栏不应把 hash docx 文件名当成项目名称"""
     generator = ReportGenerator()
 
     payload = _build_debug_payload()
@@ -580,9 +638,21 @@ def test_report_generator_workspace_nav_ignores_hash_docx_project_name(
 
     generator.build_from_debug_file(debug_json, output_html, debug_mode=False)
 
-    html = output_html.read_text(encoding="utf-8")
-    assert "生殖健康科普示范基地标准化建设与创新模式探索" in html
-    assert '<div class="project-link-title">ffb75a4c639d4ebab2c33e21d75d7bac.docx</div>' not in html
+    records = [
+        {
+            **payload["result"],
+            "payload": payload,
+            "html_file": "EVAL_demo-project.html",
+        },
+        {
+            **other_payload["result"],
+            "payload": other_payload,
+            "html_file": "EVAL_ffb75a4c639d4ebab2c33e21d75d7bac.html",
+        },
+    ]
+    index_html = generator.build_index_html(records)
+    assert "生殖健康科普示范基地标准化建设与创新模式探索" in index_html
+    assert "ffb75a4c639d4ebab2c33e21d75d7bac.docx" not in index_html
 
 
 def test_report_generator_build_from_debug_file_backfills_packet_assets(tmp_path: Path):
@@ -613,6 +683,67 @@ def test_report_generator_build_from_debug_file_backfills_packet_assets(tmp_path
     assert 'src="projects/demo-project/packet_viewer.html"' in html
     assert '"packet_assets"' in updated_json
     assert (tmp_path / "projects" / "demo-project" / "packet_viewer.html").exists()
+
+
+def test_report_generator_build_from_debug_file_backfills_missing_highlights(tmp_path: Path):
+    """旧 debug JSON 缺少划重点结果时，应按当前提取器回填并写回 JSON"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    payload["sections"] = {
+        "项目简介": "建设目标：建设智能化服务平台，形成统一数据底座，支撑跨场景智能分析与服务。",
+        "创新点": "创新点1 智能问答平台。创新点2 多模态数据融合技术。",
+        "技术路线": "技术路线：搭建平台，整合数据，开发模型，形成应用闭环。",
+    }
+    payload["page_chunks"] = [
+        {
+            "id": 1,
+            "file": "demo.pdf",
+            "page": 2,
+            "section": "项目简介",
+            "text": "建设目标：建设智能化服务平台，形成统一数据底座，支撑跨场景智能分析与服务。",
+        },
+        {
+            "id": 2,
+            "file": "demo.pdf",
+            "page": 3,
+            "section": "创新点",
+            "text": "创新点1 智能问答平台。创新点2 多模态数据融合技术。",
+        },
+        {
+            "id": 3,
+            "file": "demo.pdf",
+            "page": 4,
+            "section": "技术路线",
+            "text": "技术路线：搭建平台，整合数据，开发模型，形成应用闭环。",
+        },
+    ]
+    payload["result"]["highlights"] = {}
+    payload["result"]["evidence"] = []
+    payload["meta"] = {
+        "file_name": "demo.pdf",
+        "file_path": str(tmp_path / "demo.pdf"),
+        "page_estimated": False,
+        "page_count": 4,
+    }
+
+    debug_json = tmp_path / "EVAL_demo-project.json"
+    output_html = tmp_path / "EVAL_demo-project.html"
+    debug_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    _write_pdf(tmp_path / "demo.pdf", "项目目标：建设智能化服务平台。")
+
+    generator.build_from_debug_file(debug_json, output_html, debug_mode=False)
+
+    updated = json.loads(debug_json.read_text(encoding="utf-8"))
+    highlights = updated["result"]["highlights"]
+    evidence = updated["result"]["evidence"]
+    html = output_html.read_text(encoding="utf-8")
+
+    assert highlights["research_goals"]
+    assert highlights["innovations"]
+    assert highlights["technical_route"]
+    assert evidence
+    assert "建设智能化服务平台" in html
 
 
 def test_report_generator_build_index_html_creates_multi_project_workspace():

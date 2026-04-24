@@ -374,12 +374,25 @@ async def _main() -> None:
         default="/home/tdkx/workspace/tech/debug_cropped/qysm_tgt_verify_experiment",
         help="directory for saving experiment images",
     )
+    parser.add_argument(
+        "--target-override",
+        default="",
+        help="override expected target text for all selected cases",
+    )
     args = parser.parse_args()
 
     output_root = Path(args.output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
 
+    target_override = str(args.target_override or "").strip()
     for case in _iter_cases(args.cases or ["all"]):
+        if target_override:
+            case = PolarCase(
+                name=case.name,
+                file_path=case.file_path,
+                expected=target_override,
+                crop_box=case.crop_box,
+            )
         summary = await _run_case(case, output_root)
         print(json.dumps(summary, ensure_ascii=False), flush=True)
 

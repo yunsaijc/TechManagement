@@ -824,19 +824,44 @@ class ReviewAgent:
         }
 
     async def _extract_award_contributor_signatures(self, file_data: bytes) -> Dict[str, Any]:
-        """主要完成人签字：统一走 SignatureExtractor。"""
+        """主要完成人签字：只看左下签字区，避免把公章/姓名章带进去。"""
         try:
             from src.common.extractors import SignatureExtractor
             from src.common.extractors.signature import normalize_signature_entries
 
             extractor = SignatureExtractor()
-            result = await extractor.extract(file_data)
+            signature_region = self._build_award_contributor_signature_region(file_data)
+            result = await extractor.extract(signature_region)
             signatures = normalize_signature_entries((result or {}).get("signatures", []))
         except Exception as exc:
             logger.warning("[REVIEW] 主要完成人签字提取失败: %s", exc)
             signatures = []
 
         return {"signatures": signatures}
+
+    def _build_award_contributor_signature_region(self, file_data: bytes) -> bytes:
+        """裁出主要完成人情况表左下签字区，尽量排除右侧公章区。"""
+        import io
+        from PIL import Image, ImageOps
+
+        image_data = self._pdf_to_image(file_data)
+        try:
+            page = Image.open(io.BytesIO(image_data))
+            page = ImageOps.exif_transpose(page).convert("RGB")
+        except Exception:
+            return image_data
+
+        w, h = page.size
+        box = (
+            int(w * 0.02),
+            int(h * 0.58),
+            int(w * 0.46),
+            int(h * 0.97),
+        )
+        crop = page.crop(box)
+        buf = io.BytesIO()
+        crop.save(buf, format="PNG")
+        return buf.getvalue()
 
     async def _locate_award_contributor_stamp_anchors(self, file_data: bytes) -> Dict[str, Any]:
         """主要完成人公章锚点定位。"""
@@ -915,7 +940,7 @@ class ReviewAgent:
         if page_image is None:
             return {"document_type_llm": doc_type, "extracted_fields": {"姓名": ""}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
 
-        signature_crop = self._crop_ratio_image(page_image, (0.28, 0.64, 0.92, 0.88))
+        signature_crop = await self._locate_first_contributor_signature_crop(file_data, page_image)
         self._save_special_debug_crop("first_contributor_signature_crop", signature_crop)
         signature_bytes = self._image_to_png_bytes(signature_crop)
         signatures_result = await self._extract_signatures_from_image(signature_bytes)
@@ -939,6 +964,131 @@ class ReviewAgent:
             "signatures_description": "；".join(signature_names) if signature_names else "未检测到签字",
             "verification_result": verification_result,
         }
+
+    async def _locate_first_contributor_signature_crop(self, file_data: bytes, page_image) -> Any:
+        """基于“第一完成人签字”锚点裁剪签字区，找不到时回退固定框。"""
+        default_box = (0.28, 0.64, 0.92, 0.88)
+        default_crop = self._crop_ratio_image(page_image, default_box)
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            image_data = self._pdf_to_image(file_data)
+            ocr_result = await extractor._run_qwen_ocr(
+                image_data=image_data,
+                prompt="请对这张第一页执行 OCR，返回所有文字及其位置。",
+                debug_name="first_contributor_page_ocr",
+                task="advanced_recognition",
+                enable_rotate=False,
+            )
+            label_bbox = self._find_first_contributor_signature_label_bbox(
+                words=list(ocr_result.get("words_info") or []),
+                extractor=extractor,
+                img_w=page_image.size[0],
+                img_h=page_image.size[1],
+            )
+            if not label_bbox:
+                return default_crop
+            crop = self._crop_first_contributor_signature_from_label(page_image, label_bbox)
+            self._save_special_debug_crop("first_contributor_signature_anchor_crop", crop)
+            return crop
+        except Exception as exc:
+            logger.warning("[REVIEW] 第一完成人签字锚点定位失败: %s", exc)
+            return default_crop
+
+    def _find_first_contributor_signature_label_bbox(
+        self,
+        words: List[Dict[str, Any]],
+        extractor: Any,
+        img_w: int,
+        img_h: int,
+    ) -> Optional[Dict[str, float]]:
+        targets = ("第一完成人签字", "第一完成人签名")
+        exact: List[tuple[float, Dict[str, float]]] = []
+        partial: List[tuple[float, Dict[str, float]]] = []
+        for word in words:
+            box = extractor._word_bbox(word)
+            if box["y1"] < img_h * 0.55:
+                continue
+            text_norm = extractor._normalize_text(word.get("text"))
+            if not text_norm:
+                continue
+            for target in targets:
+                if target in text_norm:
+                    sliced = extractor._slice_word_by_normalized_substring(word, target)
+                    sliced_box = extractor._merge_word_bboxes([sliced])
+                    if sliced_box:
+                        score = box["y1"] - box["x1"] * 0.001
+                        exact.append((score, sliced_box))
+                    break
+            else:
+                if "第一完成人" not in text_norm:
+                    continue
+                tail_word = self._find_nearby_text_word(
+                    words=words,
+                    extractor=extractor,
+                    base_word=word,
+                    candidates=("签字", "签名"),
+                    img_h=img_h,
+                )
+                merged_words = [extractor._slice_word_by_normalized_substring(word, "第一完成人")]
+                if tail_word is not None:
+                    tail_text = extractor._normalize_text(tail_word.get("text"))
+                    tail_target = "签字" if "签字" in tail_text else "签名"
+                    merged_words.append(extractor._slice_word_by_normalized_substring(tail_word, tail_target))
+                merged_box = extractor._merge_word_bboxes(merged_words)
+                if merged_box:
+                    score = box["y1"] - box["x1"] * 0.001
+                    partial.append((score, merged_box))
+        if exact:
+            exact.sort(key=lambda item: item[0], reverse=True)
+            return exact[0][1]
+        if partial:
+            partial.sort(key=lambda item: item[0], reverse=True)
+            return partial[0][1]
+        return None
+
+    def _find_nearby_text_word(
+        self,
+        words: List[Dict[str, Any]],
+        extractor: Any,
+        base_word: Dict[str, Any],
+        candidates: tuple[str, ...],
+        img_h: int,
+    ) -> Optional[Dict[str, Any]]:
+        base_box = extractor._word_bbox(base_word)
+        base_center_y = (base_box["y1"] + base_box["y2"]) / 2.0
+        matches: List[tuple[float, Dict[str, Any]]] = []
+        for word in words:
+            if word is base_word:
+                continue
+            text_norm = extractor._normalize_text(word.get("text"))
+            if not text_norm or not any(target in text_norm for target in candidates):
+                continue
+            box = extractor._word_bbox(word)
+            if box["y1"] < img_h * 0.55:
+                continue
+            center_y = (box["y1"] + box["y2"]) / 2.0
+            if abs(center_y - base_center_y) > 48:
+                continue
+            gap = abs(box["x1"] - base_box["x2"])
+            matches.append((gap, word))
+        if not matches:
+            return None
+        matches.sort(key=lambda item: item[0])
+        return matches[0][1]
+
+    def _crop_first_contributor_signature_from_label(self, page_image, label_bbox: Dict[str, float]):
+        img_w, img_h = page_image.size
+        label_width = max(1.0, label_bbox["x2"] - label_bbox["x1"])
+        label_height = max(1.0, label_bbox["y2"] - label_bbox["y1"])
+        left = max(0, int(label_bbox["x2"] - label_width * 0.08))
+        top = max(0, int(label_bbox["y1"] - label_height * 0.9))
+        right = min(img_w, int(max(label_bbox["x2"] + img_w * 0.22, img_w * 0.92)))
+        bottom = min(img_h, int(label_bbox["y2"] + label_height * 3.4))
+        if right - left < 40 or bottom - top < 40:
+            return self._crop_ratio_image(page_image, (0.28, 0.64, 0.92, 0.88))
+        return page_image.crop((left, top, right, bottom))
 
     async def _do_first_completion_unit_commitment_llm_analysis(
         self,
@@ -994,14 +1144,22 @@ class ReviewAgent:
 
         company_stamp_result = await self._extract_stamps_from_image(company_stamp_crop, debug_prefix="enterprise")
         stamp_units = self._extract_company_like_stamp_units(company_stamp_result) or self._extract_stamp_units(company_stamp_result)
+        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
         verification_result = await self._verify_target_signature_if_needed(
             image_data=rep_bytes,
-            expected_name=str(((metadata.get("reward_review_context") or {}).get("target_values") or {}).get("legal_representative") or "").strip(),
+            expected_name=str(target_values.get("legal_representative") or "").strip(),
             signature_names=signature_names,
             verification_key="legal_representative_signature",
             task_name="企业声明法定代表人定向验证",
             prompt_label="法定代表人签名/签章区域",
         )
+        enterprise_stamp_verification = await self._verify_target_enterprise_stamp_if_needed(
+            stamp_crop=company_stamp_crop,
+            expected_unit=str(target_values.get("enterprise_name") or "").strip(),
+            stamp_units=stamp_units,
+        )
+        if enterprise_stamp_verification:
+            verification_result.update(enterprise_stamp_verification)
 
         return {
             "document_type_llm": doc_type,
@@ -1114,6 +1272,222 @@ class ReviewAgent:
         entry = self._parse_named_verification(raw, verification_key)
         return {verification_key: entry} if entry.get("status") else {}
 
+    async def _verify_target_enterprise_stamp_if_needed(
+        self,
+        stamp_crop,
+        expected_unit: str,
+        stamp_units: List[str],
+    ) -> Dict[str, Any]:
+        """企业声明企业公章：先 raw 比对，不通过时再做定向复核。"""
+        if not expected_unit or self._text_exact_matches(expected_unit, stamp_units):
+            return {}
+
+        crop_bytes = self._image_to_png_bytes(stamp_crop)
+        primary = await self._verify_target_enterprise_stamp(
+            crop_bytes=crop_bytes,
+            expected_unit=expected_unit,
+            polar_bytes=None,
+            task_name="企业声明企业公章定向验证",
+        )
+        if primary.get("status") in {"yes", "no"}:
+            return {"enterprise_stamp": primary}
+
+        polar_bytes = await self._build_enterprise_stamp_soft_polar_bytes(stamp_crop)
+        if not polar_bytes:
+            return {"enterprise_stamp": primary} if primary.get("status") else {}
+
+        retry = await self._verify_target_enterprise_stamp(
+            crop_bytes=crop_bytes,
+            expected_unit=expected_unit,
+            polar_bytes=polar_bytes,
+            task_name="企业声明企业公章定向复核",
+        )
+        final_entry = retry if retry.get("status") else primary
+        return {"enterprise_stamp": final_entry} if final_entry.get("status") else {}
+
+    def _text_exact_matches(self, expected: str, candidates: List[str]) -> bool:
+        import re
+
+        def _normalize(value: str) -> str:
+            return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", str(value or "")).lower()
+
+        left = _normalize(expected)
+        if not left:
+            return False
+        return any(_normalize(item) == left for item in candidates if str(item or "").strip())
+
+    async def _verify_target_enterprise_stamp(
+        self,
+        crop_bytes: bytes,
+        expected_unit: str,
+        polar_bytes: Optional[bytes],
+        task_name: str,
+    ) -> Dict[str, str]:
+        import base64
+        from langchain_core.messages import HumanMessage
+
+        prompt = (
+            "你在做企业公章定向核验。\n"
+            f"目标单位：{expected_unit}\n"
+            "图1是公章原始裁剪图。"
+            + ("图2是同一枚公章的极坐标展开图。\n" if polar_bytes else "\n")
+            + "只判断这枚公章中的单位名称是否就是目标单位，不要根据上下文补全，不要纠错，不要猜附近正文。\n"
+            + "如果能确认完全是目标单位，返回 yes；如果能确认不是，返回 no；看不清或无法确认，返回 uncertain。\n"
+            + "严格返回 JSON：{\"enterprise_stamp\": {\"status\": \"yes|no|uncertain\", \"reason\": \"\"}}"
+        )
+        content: List[Dict[str, Any]] = [
+            {"type": "text", "text": prompt},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{base64.b64encode(self._compress_image_for_llm(crop_bytes)).decode('utf-8')}"},
+            },
+        ]
+        if polar_bytes:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{base64.b64encode(self._compress_image_for_llm(polar_bytes)).decode('utf-8')}"},
+                }
+            )
+
+        timeout = 45
+        logger.info(f"[LLM] {task_name} 开始 (timeout={timeout}s)")
+        print(f"[LLM] {task_name} 开始", flush=True)
+        try:
+            raw = await asyncio.wait_for(
+                self.llm.ainvoke([HumanMessage(content=content)]),
+                timeout=timeout,
+            )
+            logger.info(f"[LLM] {task_name} 完成")
+            print(f"[LLM] {task_name} 完成", flush=True)
+        except asyncio.TimeoutError as exc:
+            msg = f"{task_name} 超时（>{timeout}s）"
+            logger.error(f"[LLM] {msg}")
+            print(f"[LLM] {msg}", flush=True)
+            raise RuntimeError(msg) from exc
+
+        raw_text = raw.content if hasattr(raw, "content") else str(raw)
+        return self._parse_named_verification(str(raw_text), "enterprise_stamp")
+
+    async def _build_enterprise_stamp_soft_polar_bytes(self, stamp_crop) -> Optional[bytes]:
+        try:
+            from PIL import Image
+            import cv2
+            import numpy as np
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            tight_crop = extractor._crop_largest_red_stamp_component(stamp_crop)
+            polar_raw_source = tight_crop or stamp_crop
+            circles = extractor._detect_stamp_circle_candidates(polar_raw_source)
+            if not circles:
+                return None
+
+            def _build_source(image: Image.Image, red_gain: float, sharpen_amount: float) -> Image.Image:
+                rgb = np.array(image.convert("RGB")).astype(np.float32)
+                red = rgb[:, :, 0]
+                green = rgb[:, :, 1]
+                blue = rgb[:, :, 2]
+                dominance = np.maximum(0.0, red - np.maximum(green, blue))
+                dominance = np.clip(dominance * red_gain, 0.0, 255.0)
+                gray = 255.0 - dominance
+                gray = cv2.medianBlur(gray.astype(np.uint8), 3)
+                gray = cv2.resize(
+                    gray,
+                    (max(1, image.size[0] * 2), max(1, image.size[1] * 2)),
+                    interpolation=cv2.INTER_CUBIC,
+                )
+                if sharpen_amount > 0:
+                    blur = cv2.GaussianBlur(gray, (0, 0), 1.1)
+                    gray = cv2.addWeighted(gray, 1.0 + sharpen_amount, blur, -sharpen_amount, 0)
+                gray = cv2.copyMakeBorder(gray, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255)
+                return Image.fromarray(gray).convert("RGB")
+
+            async def _score_candidate(candidate_name: str, polar_image: Image.Image) -> tuple[tuple[int, int, float], bytes]:
+                polar_bytes = extractor._image_to_png_bytes(polar_image)
+                ocr_inputs: List[tuple[str, bytes]] = [(candidate_name, polar_bytes)]
+                ocr_inputs.extend(extractor._build_polar_segments(polar_image))
+                results = await asyncio.gather(
+                    *[
+                        extractor._run_qwen_ocr(
+                            image_data=image_data,
+                            prompt="请对这张公章文字展开图执行 OCR，只返回图片中实际可见文字，不要纠错，不要补全。",
+                            debug_name=f"enterprise_verify_{candidate_name}_{name}_ocr",
+                            task="advanced_recognition",
+                            enable_rotate=False,
+                        )
+                        for name, image_data in ocr_inputs
+                    ],
+                    return_exceptions=True,
+                )
+
+                full_texts: List[str] = []
+                ordered_segment_texts: List[str] = []
+                for (name, _), result in zip(ocr_inputs, results):
+                    if isinstance(result, Exception):
+                        continue
+                    texts = extractor._extract_stamp_unit_texts(result, variant_name=name)
+                    if name == candidate_name:
+                        full_texts = [extractor._normalize_stamp_unit_text(text) for text in texts if extractor._normalize_stamp_unit_text(text)]
+                    elif name.startswith("polar_upper_seg"):
+                        merged = extractor._merge_ordered_stamp_texts(texts)
+                        if merged:
+                            ordered_segment_texts.append(merged)
+                primary_text = full_texts[0] if full_texts else extractor._merge_overlapping_stamp_segments(ordered_segment_texts)
+                score = (
+                    len(primary_text or ""),
+                    sum(1 for item in ordered_segment_texts if item),
+                    1.0 - extractor._polar_edge_cut_penalty(polar_image),
+                )
+                return score, polar_bytes
+
+            best_score: tuple[int, int, float] = (-1, -1, -1.0)
+            best_bytes: Optional[bytes] = None
+            configs = (
+                ("soft_base", 2.2, 0.0),
+                ("soft_sharp", 2.4, 0.55),
+            )
+            for source_name, red_gain, sharpen_amount in configs:
+                source_image = _build_source(polar_raw_source, red_gain=red_gain, sharpen_amount=sharpen_amount)
+                gray = np.array(source_image.convert("L"))
+                for circle_name, circle in circles:
+                    cx, cy, radius = circle
+                    band = extractor._unwrap_upper_annulus(
+                        gray,
+                        cx * 2.0 + 24.0,
+                        cy * 2.0 + 24.0,
+                        radius * 2.0,
+                        inner_ratio=0.37,
+                        outer_ratio=0.985,
+                        start_deg=-236.0,
+                        end_deg=56.0,
+                    )
+                    if band is None:
+                        continue
+                    band = extractor._trim_unwrapped_band_rows(band)
+                    band = extractor._trim_unwrapped_band_cols(band)
+                    if band is None:
+                        continue
+                    band = cv2.resize(
+                        band,
+                        (max(1600, band.shape[1] * 2), max(320, band.shape[0] * 3)),
+                        interpolation=cv2.INTER_CUBIC,
+                    )
+                    band = cv2.copyMakeBorder(band, 28, 28, 28, 28, cv2.BORDER_CONSTANT, value=255)
+                    polar_image = Image.fromarray(band).convert("RGB")
+                    score, polar_bytes = await _score_candidate(f"{source_name}_{circle_name}_soft_topsafe", polar_image)
+                    if score > best_score:
+                        best_score = score
+                        best_bytes = polar_bytes
+
+            if best_bytes:
+                from PIL import Image
+                self._save_special_debug_crop("enterprise_stamp_verify_polar", Image.open(__import__("io").BytesIO(best_bytes)).convert("RGB"))
+            return best_bytes
+        except Exception as exc:
+            logger.warning("[REVIEW] 企业声明企业公章 polar 生成失败: %s", exc)
+            return None
+
     def _parse_named_verification(self, raw_text: str, key: str) -> Dict[str, str]:
         import json
         import re
@@ -1190,7 +1564,7 @@ D 完成单位公章区
         return {"signature_for_name": entry["status"]} if entry.get("status") else {}
 
     def _award_text_matches(self, expected: str, candidates: List[str]) -> bool:
-        """轻量文本匹配，用于决定是否需要签字兜底。"""
+        """严格文本匹配，用于决定是否需要签字兜底。"""
         import re
 
         def _normalize(value: str) -> str:
@@ -1201,7 +1575,7 @@ D 完成单位公章区
             return False
         for item in candidates:
             right = _normalize(item)
-            if right and (left == right or left in right or right in left):
+            if right and left == right:
                 return True
         return False
 

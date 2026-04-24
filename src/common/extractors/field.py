@@ -351,15 +351,11 @@ class FieldExtractor:
         suffix: str,
         metadata: Dict[str, Any],
     ) -> None:
-        """保存字段裁剪调试图和坐标信息。"""
+        """保存字段裁剪调试图。"""
         debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
         os.makedirs(debug_dir, exist_ok=True)
 
         safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(fname or "field"))
-        meta_path = f"{debug_dir}/{safe_name}_{index + 1}_{suffix}.json"
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
-
         x1, y1, x2, y2 = bbox
         left = int(max(0.0, min(1.0, x1)) * img_w)
         top = int(max(0.0, min(1.0, y1)) * img_h)
@@ -379,13 +375,11 @@ class FieldExtractor:
         final_crop: Image.Image,
         metadata: Dict[str, Any],
     ) -> None:
-        """保存字段原始裁剪图、最终 OCR 图和坐标信息。"""
+        """保存字段原始裁剪图和最终 OCR 图。"""
         debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
         os.makedirs(debug_dir, exist_ok=True)
 
         safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(fname or "field"))
-        with open(f"{debug_dir}/{safe_name}_{index + 1}.json", "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
         raw_crop.save(f"{debug_dir}/{safe_name}_{index + 1}_raw.png")
         final_crop.save(f"{debug_dir}/{safe_name}_{index + 1}.png")
 
@@ -474,11 +468,7 @@ class FieldExtractor:
         return {"words_info": words_info, "processed_text": processed_text}
 
     def _save_qwen_ocr_debug_response(self, debug_name: str, payload: Dict[str, Any]) -> None:
-        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
-        os.makedirs(debug_dir, exist_ok=True)
-        safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(debug_name or "qwen_ocr"))
-        with open(f"{debug_dir}/{safe_name}.json", "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return
 
     def _match_field_label(self, words: List[Dict[str, Any]], field_name: str) -> Optional[Dict[str, Any]]:
         target = self._normalize_text(field_name)
@@ -718,17 +708,6 @@ class FieldExtractor:
     ) -> None:
         debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
         os.makedirs(debug_dir, exist_ok=True)
-        with open(f"{debug_dir}/field_page_ocr_selected.json", "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "fields": field_names,
-                    "selected": debug_rows,
-                    "words_count": len(words),
-                },
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
         canvas = img.copy()
         draw = ImageDraw.Draw(canvas)
         for index, fname in enumerate(field_names, start=1):

@@ -17,6 +17,7 @@ from typing import Any, Dict, List
 import fitz
 
 from src.services.evaluation.parsers import DocumentParser
+from src.services.evaluation.highlight.extractor import HighlightExtractor
 from src.services.evaluation.packet_builder import EvaluationPacketBuilder
 from src.services.evaluation.storage.project_repo import EvaluationProjectRepository
 
@@ -114,6 +115,19 @@ class ReportGenerator:
         "compliance": 8,
         "合规性": 8,
     }
+    BENCHMARK_NOVELTY_LABELS = {
+        "high": "高",
+        "medium_high": "较高",
+        "medium": "中等",
+        "medium_low": "偏保守",
+        "low": "较低",
+        "unknown": "待核验",
+    }
+    BENCHMARK_SOURCE_LABELS = {
+        "literature": "论文",
+        "openalex": "论文",
+        "patent": "专利",
+    }
 
     def build_from_debug_file(
         self,
@@ -125,12 +139,8 @@ class ReportGenerator:
         debug_json = Path(debug_json_path)
         output_html = Path(output_html_path)
         data = json.loads(debug_json.read_text(encoding="utf-8"))
-        if not debug_mode:
-            data["_workspace_projects"] = self._collect_workspace_projects(
-                debug_dir=debug_json.parent,
-                current_stem=debug_json.stem,
-            )
         updated = self._ensure_page_chunks(data)
+        updated = self._ensure_highlight_payload(data) or updated
         updated = self._ensure_packet_assets(data, debug_json.parent) or updated
         if updated:
             debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -264,6 +274,83 @@ class ReportGenerator:
         data["packet_assets"] = packet_assets
         return True
 
+    def _ensure_highlight_payload(self, data: Dict[str, Any]) -> bool:
+        """兼容旧 debug JSON，缺少结构化摘要时按当前提取器回填"""
+        result = data.get("result")
+        if not isinstance(result, dict):
+            return False
+
+        existing_highlights = result.get("highlights") or {}
+        if not isinstance(existing_highlights, dict):
+            existing_highlights = {}
+        has_goal = bool(existing_highlights.get("research_goals"))
+        has_innovation = bool(existing_highlights.get("innovations"))
+        has_route = bool(existing_highlights.get("technical_route"))
+        if has_goal and has_innovation and has_route:
+            return False
+
+        sections = data.get("sections") or {}
+        page_chunks = data.get("page_chunks") or []
+        if not isinstance(sections, dict) or not sections or not isinstance(page_chunks, list) or not page_chunks:
+            return False
+
+        extractor = HighlightExtractor()
+        highlights, evidence = asyncio.run(
+            extractor.extract(
+                sections=sections,
+                page_chunks=page_chunks,
+                file_name=str(data.get("source_name") or data.get("meta", {}).get("file_name") or ""),
+            )
+        )
+        extracted = highlights.model_dump(mode="json")
+
+        changed = False
+        merged_highlights = {
+            "research_goals": list(existing_highlights.get("research_goals") or []),
+            "innovations": list(existing_highlights.get("innovations") or []),
+            "technical_route": list(existing_highlights.get("technical_route") or []),
+        }
+        for key in ("research_goals", "innovations", "technical_route"):
+            if not merged_highlights[key] and extracted.get(key):
+                merged_highlights[key] = list(extracted.get(key) or [])
+                changed = True
+
+        if changed:
+            result["highlights"] = merged_highlights
+
+        if evidence:
+            existing_evidence = result.get("evidence") or []
+            if not isinstance(existing_evidence, list):
+                existing_evidence = []
+            existing_keys = {
+                (
+                    str(item.get("category") or ""),
+                    str(item.get("target") or ""),
+                    str(item.get("file") or ""),
+                    int(item.get("page") or 0),
+                )
+                for item in existing_evidence
+                if isinstance(item, dict)
+            }
+            for item in evidence:
+                payload = item.model_dump(mode="json")
+                key = (
+                    str(payload.get("category") or ""),
+                    str(payload.get("target") or ""),
+                    str(payload.get("file") or ""),
+                    int(payload.get("page") or 0),
+                )
+                if key in existing_keys:
+                    continue
+                existing_keys.add(key)
+                existing_evidence.append(payload)
+                changed = True
+            if changed:
+                result["evidence"] = existing_evidence
+
+        data["result"] = result
+        return changed
+
     def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
         result = data.get("result", {})
@@ -297,11 +384,10 @@ class ReportGenerator:
             ("report-overview", "评审结论"),
             ("report-dimensions", "维度评分"),
             ("report-chat", "专家聊天"),
+            ("report-benchmark", "技术摸底"),
         ]
         if industry_fit:
             result_tabs.append(("report-fit", "指南贴合"))
-        if benchmark:
-            result_tabs.append(("report-benchmark", "技术摸底"))
         result_tabs_html = ""
         if not debug_mode:
             result_tabs_html = (
@@ -316,19 +402,17 @@ class ReportGenerator:
                 + "</div>"
             )
         optional_panels = ""
+        optional_panels += f"""
+              <section class="result-panel" id="report-benchmark">
+                {self._render_benchmark(benchmark)}
+              </section>
+"""
         if industry_fit:
             optional_panels += f"""
               <section class="result-panel" id="report-fit">
                 {self._render_industry_fit(industry_fit)}
               </section>
 """
-        if benchmark:
-            optional_panels += f"""
-              <section class="result-panel" id="report-benchmark">
-                {self._render_benchmark(benchmark)}
-              </section>
-"""
-
         if debug_mode:
             left_tail = f"""
         <section class="panel">
@@ -1194,6 +1278,29 @@ class ReportGenerator:
     .flat-item::before {{
       content: "• ";
       color: var(--brand);
+    }}
+    .benchmark-reference-list {{
+      display: grid;
+      gap: 10px;
+    }}
+    .benchmark-reference-item {{
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #f8fbff;
+    }}
+    .benchmark-reference-title {{
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.7;
+      color: var(--text);
+      word-break: break-word;
+    }}
+    .benchmark-reference-meta {{
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
     }}
     details {{
       border: 1px solid var(--line);
@@ -4174,27 +4281,42 @@ class ReportGenerator:
 
     def _render_benchmark(self, benchmark: Dict[str, Any] | None) -> str:
         if not benchmark:
-            return '<div class="empty">未启用或暂无结果</div>'
-        refs = benchmark.get("references") or []
-        ref_items = [
-            " / ".join(
-                part for part in [
-                    str(item.get("source") or ""),
-                    str(item.get("title") or ""),
-                    str(item.get("year") or ""),
-                ] if part
-            )
-            for item in refs
-        ]
+            return '<div class="empty">未执行技术摸底</div>'
+        novelty_level = str(benchmark.get("novelty_level") or "").strip().lower()
+        novelty_label = self.BENCHMARK_NOVELTY_LABELS.get(novelty_level, novelty_level or "-")
         return (
             '<div class="flat-stack">'
-            f'<section class="flat-section"><div class="flat-label">新颖性</div><div class="flat-value">{html.escape(str(benchmark.get("novelty_level") or "-"))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">新颖性</div><div class="flat-value">{html.escape(novelty_label)}</div></section>'
             f'<section class="flat-section"><div class="flat-label">文献定位</div><div class="flat-value">{html.escape(str(benchmark.get("literature_position") or "-"))}</div></section>'
             f'<section class="flat-section"><div class="flat-label">专利重叠</div><div class="flat-value">{html.escape(str(benchmark.get("patent_overlap") or "-"))}</div></section>'
             f'<section class="flat-section"><div class="flat-label">综合结论</div><div class="flat-value">{html.escape(str(benchmark.get("conclusion") or "-"))}</div></section>'
-            f'<section class="flat-section"><div class="flat-label">参考条目</div>{self._render_flat_list(ref_items, "暂无参考条目")}</section>'
+            f'<section class="flat-section"><div class="flat-label">对比参考</div>{self._render_benchmark_references(benchmark.get("references") or [])}</section>'
             '</div>'
         )
+
+    def _render_benchmark_references(self, references: List[Dict[str, Any]]) -> str:
+        rows: List[str] = []
+        for index, item in enumerate(references[:4], start=1):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            if not title:
+                continue
+            source = str(item.get("source") or "").strip().lower()
+            source_label = self.BENCHMARK_SOURCE_LABELS.get(source, "参考")
+            year = str(item.get("year") or "").strip()
+            meta_parts = [source_label]
+            if year:
+                meta_parts.append(year)
+            rows.append(
+                '<div class="benchmark-reference-item">'
+                f'<div class="benchmark-reference-title">{index}. {html.escape(title)}</div>'
+                f'<div class="benchmark-reference-meta">{" · ".join(html.escape(part) for part in meta_parts)}</div>'
+                '</div>'
+            )
+        if not rows:
+            return '<div class="empty">暂无参考条目</div>'
+        return '<div class="benchmark-reference-list">' + "".join(rows) + "</div>"
 
     def _render_errors(self, errors: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
         error_html = self._render_list(
