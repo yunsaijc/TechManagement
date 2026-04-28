@@ -136,21 +136,49 @@ class StampExtractor:
 
         if not isinstance(anchors, dict):
             anchors = {}
+        if not anchors:
+            logger.warning("[StampExtractor] 未定位到主要完成人公章锚点，跳过公章 OCR")
+            return self._empty_award_result()
         role_specs = (
             ("work_unit", "工作单位（公章）"),
             ("completion_unit", "完成单位（公章）"),
         )
-        role_outputs = await asyncio.gather(
-            *[
-                self._extract_award_contributor_stamp_role(
-                    page_image=page_image,
-                    anchors=anchors,
-                    role_key=role_key,
-                    role_label=role_label,
-                )
-                for role_key, role_label in role_specs
-            ]
-        )
+        work_anchor = anchors.get("work_unit")
+        completion_anchor = anchors.get("completion_unit")
+        if work_anchor and completion_anchor and self._same_anchor_bbox(work_anchor, completion_anchor):
+            work_output = await self._extract_award_contributor_stamp_role(
+                page_image=page_image,
+                anchors=anchors,
+                role_key="work_unit",
+                role_label="工作单位（公章）",
+            )
+            completion_result = self._retag_award_stamp_result(
+                work_output.get("result", {}),
+                location="完成单位（公章）",
+            )
+            completion_output = {
+                "role": "completion_unit",
+                "result": completion_result,
+                "region": {
+                    **work_output.get("region", {}),
+                    "role": "completion_unit",
+                    "label": "完成单位（公章）",
+                    "stamps": completion_result.get("stamps", []),
+                },
+            }
+            role_outputs = [work_output, completion_output]
+        else:
+            role_outputs = await asyncio.gather(
+                *[
+                    self._extract_award_contributor_stamp_role(
+                        page_image=page_image,
+                        anchors=anchors,
+                        role_key=role_key,
+                        role_label=role_label,
+                    )
+                    for role_key, role_label in role_specs
+                ]
+            )
         role_results: Dict[str, Dict[str, Any]] = {item["role"]: item["result"] for item in role_outputs}
         regions: List[Dict[str, Any]] = [item["region"] for item in role_outputs]
 
@@ -165,6 +193,11 @@ class StampExtractor:
                 *role_results.get("completion_unit", {}).get("stamps", []),
             ]
         )
+        if len(all_units) == 1:
+            if work_units and not completion_units:
+                completion_units = list(work_units)
+            elif completion_units and not work_units:
+                work_units = list(completion_units)
 
         all_stamps = self._merge_award_stamps(
             work_stamps=role_results.get("work_unit", {}).get("stamps", []),
@@ -197,7 +230,18 @@ class StampExtractor:
         """并行提取单个公章角色区域。"""
         bbox = anchors.get(role_key)
         if bbox is None:
-            bbox = self._default_award_stamp_bbox(role_key)
+            logger.warning(f"[StampExtractor] 未定位到{role_label}锚点，跳过该公章 OCR")
+            return {
+                "role": role_key,
+                "result": {"stamps": [], "raw": ""},
+                "region": {
+                    "role": role_key,
+                    "label": role_label,
+                    "bbox": None,
+                    "stamps": [],
+                    "raw": "",
+                },
+            }
         crop_bytes, crop_bbox = self._crop_with_margin(page_image, bbox, margin_ratio=0.015)
         crop_image = self._load_image(crop_bytes)
         ocr_image = self._prepare_stamp_crop_for_ocr(crop_image) if crop_image is not None else None
@@ -215,7 +259,7 @@ class StampExtractor:
             ocr_variants=ocr_variants,
         )
         crop_result = await self._qwen_extract_stamps_from_variants(
-            variants=ocr_variants or [("enhanced", ocr_bytes)],
+            variants=[],
             region_name=role_label,
             role_key=role_key,
             polar_raw_source=ocr_bundle.get("polar_raw_source"),
@@ -264,6 +308,20 @@ class StampExtractor:
             "regions": [],
             "raw": {},
         }
+
+    def _same_anchor_bbox(self, left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+        keys = ("x1", "y1", "x2", "y2")
+        try:
+            return all(abs(float(left.get(key, 0)) - float(right.get(key, 0))) < 1e-6 for key in keys)
+        except Exception:
+            return False
+
+    def _retag_award_stamp_result(self, result: Dict[str, Any], location: str) -> Dict[str, Any]:
+        cloned = json.loads(json.dumps(result, ensure_ascii=False))
+        for stamp in cloned.get("stamps", []) if isinstance(cloned, dict) else []:
+            if isinstance(stamp, dict):
+                stamp["location"] = location
+        return cloned
 
     def _parse_stamp_coords(self, text: str) -> List[Dict]:
         """解析 LLM 返回的坐标描述"""
@@ -371,6 +429,17 @@ class StampExtractor:
             out["work_unit"] = sorted_regions[-1]
             selected["completion_unit"]["red_stamp_bbox"] = sorted_regions[0]
             selected["work_unit"]["red_stamp_bbox"] = sorted_regions[-1]
+        elif red_regions:
+            sorted_regions = sorted(red_regions, key=lambda item: (item["x1"] + item["x2"]) / 2.0)
+            rightmost = sorted_regions[-1]
+            center_x = (rightmost["x1"] + rightmost["x2"]) / 2.0
+            if center_x >= 0.42:
+                out["work_unit"] = rightmost
+                out["completion_unit"] = rightmost
+                selected.setdefault("work_unit", {})["red_stamp_bbox"] = rightmost
+                selected["work_unit"]["target"] = "工作单位公章"
+                selected.setdefault("completion_unit", {})["red_stamp_bbox"] = rightmost
+                selected["completion_unit"]["target"] = "完成单位公章"
         self._save_award_stamp_anchor_debug(
             image_data,
             out,
@@ -631,8 +700,14 @@ class StampExtractor:
         img_h: int,
     ) -> List[Dict[str, Any]]:
         target = self._normalize_text(target_text)
-        primary = target.replace("公章", "")
-        seal = "公章"
+        primary = target.replace("公章", "").replace("签章", "").replace("章", "")
+        seal_terms = ("公章", "签章", "章")
+        target_variants = [
+            target,
+            f"{primary}公章",
+            f"{primary}签章",
+            f"{primary}章",
+        ]
         exact: List[Tuple[float, Dict[str, Any]]] = []
         partial: List[Tuple[float, List[Dict[str, Any]]]] = []
 
@@ -643,16 +718,18 @@ class StampExtractor:
             text_norm = self._normalize_text(word.get("text"))
             if not text_norm:
                 continue
-            if target in text_norm:
-                matched = self._slice_word_by_normalized_substring(word, target)
+            matched_target = next((item for item in target_variants if item and item in text_norm), "")
+            if matched_target:
+                matched = self._slice_word_by_normalized_substring(word, matched_target)
                 score = box["y1"] - box["x1"] * 0.001
                 exact.append((score, matched))
                 continue
             if primary in text_norm:
                 merged = [self._slice_word_by_normalized_substring(word, primary)]
-                seal_word = self._find_nearby_anchor_word(words, base_word=word, target=seal, img_h=img_h)
+                seal_word = self._find_nearby_anchor_word(words, base_word=word, targets=seal_terms, img_h=img_h)
                 if seal_word is not None:
-                    merged.append(self._slice_word_by_normalized_substring(seal_word, seal))
+                    seal_text = self._first_matching_text(seal_word, seal_terms)
+                    merged.append(self._slice_word_by_normalized_substring(seal_word, seal_text or str(seal_word.get("text") or "")))
                 score = box["y1"] - box["x1"] * 0.001
                 partial.append((score, merged))
 
@@ -687,7 +764,7 @@ class StampExtractor:
         self,
         words: List[Dict[str, Any]],
         base_word: Dict[str, Any],
-        target: str,
+        targets: Tuple[str, ...],
         img_h: int,
     ) -> Optional[Dict[str, Any]]:
         base_box = self._word_bbox(base_word)
@@ -697,7 +774,7 @@ class StampExtractor:
             if word is base_word:
                 continue
             text_norm = self._normalize_text(word.get("text"))
-            if target not in text_norm:
+            if not any(target in text_norm for target in targets):
                 continue
             box = self._word_bbox(word)
             if box["y1"] < img_h * 0.72:
@@ -711,6 +788,10 @@ class StampExtractor:
             return None
         candidates.sort(key=lambda item: item[0])
         return candidates[0][1]
+
+    def _first_matching_text(self, word: Dict[str, Any], targets: Tuple[str, ...]) -> str:
+        text_norm = self._normalize_text(word.get("text"))
+        return next((target for target in targets if target in text_norm), "")
 
     def _stamp_region_from_label_bbox(
         self,
@@ -742,14 +823,16 @@ class StampExtractor:
             for item in selected.values()
             if isinstance(item, dict) and isinstance(item.get("label_bbox"), dict)
         ]
-        if not label_boxes:
-            return []
         img = image.convert("RGB")
         width, height = img.size
-        min_label_y = min(float(box["y1"]) for box in label_boxes)
-        max_label_y = max(float(box["y2"]) for box in label_boxes)
-        band_top = int(max(0, min_label_y - height * 0.14))
-        band_bottom = int(min(height, max_label_y + height * 0.20))
+        if label_boxes:
+            min_label_y = min(float(box["y1"]) for box in label_boxes)
+            max_label_y = max(float(box["y2"]) for box in label_boxes)
+            band_top = int(max(0, min_label_y - height * 0.14))
+            band_bottom = int(min(height, max_label_y + height * 0.20))
+        else:
+            band_top = int(height * 0.52)
+            band_bottom = int(height * 0.98)
 
         pixels = img.load()
         column_counts = [0] * width
@@ -882,9 +965,9 @@ class StampExtractor:
         red = rgb[:, :, 0]
         green = rgb[:, :, 1]
         blue = rgb[:, :, 2]
-        dominance = np.clip((red - np.maximum(green, blue)) * 3.2, 0, 255).astype(np.uint8)
+        dominance = np.clip((red - np.maximum(green, blue)) * 3.6, 0, 255).astype(np.uint8)
         gray = (255 - dominance).astype(np.uint8)
-        gray = cv2.medianBlur(gray, 3)
+        gray = cv2.bilateralFilter(gray, 5, 35, 35)
         gray = cv2.resize(
             gray,
             (max(1, crop_image.size[0] * 2), max(1, crop_image.size[1] * 2)),
@@ -910,12 +993,8 @@ class StampExtractor:
         polar_source_variant = "enhanced"
         if tight_crop is not None:
             tight = self._prepare_stamp_crop_for_ocr(tight_crop)
-            polar_tight = self._prepare_stamp_crop_for_polar(tight_crop)
             if tight is not None:
                 variants.append(("tight", tight))
-                polar_raw_source = tight_crop
-                polar_source = polar_tight or tight
-                polar_source_variant = "tight"
         upper_source = tight_crop or crop_image
         upper = self._prepare_stamp_upper_band_for_ocr(upper_source)
         if upper is not None:
@@ -990,7 +1069,8 @@ class StampExtractor:
         circles = self._detect_stamp_circle_candidates(raw_image)
         if not circles:
             return []
-        gray = np.array(enhanced_image.convert("L"))
+        soft_gray = np.array(enhanced_image.convert("L"))
+        hard_gray = self._build_hard_red_stamp_gray(raw_image)
         candidates: List[Tuple[str, Image.Image]] = []
         scale = 2.0
         border = 24.0
@@ -1001,16 +1081,20 @@ class StampExtractor:
             cx = cx * scale + border
             cy = cy * scale + border
             radius = radius * scale
-            for candidate_name, inner_ratio, outer_ratio, start_deg, end_deg in (
-                ("focus", 0.44, 0.90, -186.0, 6.0),
-                ("wide", 0.38, 0.95, -194.0, 14.0),
-                ("wider", 0.40, 0.94, -202.0, 22.0),
-                ("widest", 0.42, 0.93, -214.0, 34.0),
-                ("overscan", 0.43, 0.92, -226.0, 46.0),
-                ("inner", 0.50, 0.86, -182.0, 2.0),
+            for candidate_name, source_type, inner_ratio, outer_ratio, start_deg, end_deg, width_mul, height_mul, final_height, trim_rows in (
+                ("upper_soft", "soft", 0.48, 1.04, -225.0, 45.0, 1.50, 2.0, 624, False),
+                ("shape_safe", "soft", 0.36, 1.05, -240.0, 60.0, 1.20, 2.0, 560, False),
+                ("shape_hard", "hard", 0.36, 1.05, -240.0, 60.0, 1.20, 2.0, 560, False),
+                ("focus", "soft", 0.44, 0.90, -186.0, 6.0, 2.40, 3.2, 320, True),
+                ("wide", "soft", 0.38, 0.95, -194.0, 14.0, 2.40, 3.2, 320, True),
+                ("wider", "soft", 0.40, 0.94, -202.0, 22.0, 2.40, 3.2, 320, True),
+                ("widest", "soft", 0.42, 0.93, -214.0, 34.0, 2.40, 3.2, 320, True),
+                ("overscan", "soft", 0.43, 0.92, -226.0, 46.0, 2.40, 3.2, 320, True),
+                ("inner", "soft", 0.50, 0.86, -182.0, 2.0, 2.40, 3.2, 320, True),
             ):
+                source_gray = hard_gray if source_type == "hard" else soft_gray
                 band = self._unwrap_upper_annulus(
-                    gray,
+                    source_gray,
                     cx,
                     cy,
                     radius,
@@ -1018,22 +1102,55 @@ class StampExtractor:
                     outer_ratio=outer_ratio,
                     start_deg=start_deg,
                     end_deg=end_deg,
+                    width_mul=width_mul,
+                    height_mul=height_mul,
+                    interpolation=cv2.INTER_LINEAR,
                 )
                 if band is None:
                     continue
-                band = self._remove_stamp_ring_rows(band)
-                band = self._trim_unwrapped_band_rows(band)
+                if trim_rows:
+                    band = self._remove_stamp_ring_rows(band)
+                    band = self._trim_unwrapped_band_rows(band)
                 band = self._trim_unwrapped_band_cols(band)
                 if band is None:
                     continue
                 forward = cv2.resize(
                     band,
-                    (max(1600, band.shape[1] * 2), max(320, band.shape[0] * 3)),
-                    interpolation=cv2.INTER_CUBIC,
+                    (max(1600, int(band.shape[1] * 1.35)), final_height if not trim_rows else max(final_height, band.shape[0] * 2)),
+                    interpolation=cv2.INTER_LINEAR if not trim_rows else cv2.INTER_CUBIC,
                 )
                 forward = cv2.copyMakeBorder(forward, 28, 28, 28, 28, cv2.BORDER_CONSTANT, value=255)
+                forward = self._sharpen_polar_band(forward)
                 candidates.append((f"{circle_source}_{candidate_name}", Image.fromarray(forward).convert("RGB")))
         return candidates
+
+    def _sharpen_polar_band(self, gray: np.ndarray) -> np.ndarray:
+        """Light unsharp mask: improve polar readability without changing text shape aggressively."""
+        if gray.size == 0:
+            return gray
+        blur = cv2.GaussianBlur(gray, (0, 0), 1.1)
+        sharpened = cv2.addWeighted(gray, 1.55, blur, -0.55, 0)
+        return np.clip(sharpened, 0, 255).astype(np.uint8)
+
+    def _build_hard_red_stamp_gray(self, image: Image.Image) -> np.ndarray:
+        rgb = np.array(image.convert("RGB")).astype(np.int16)
+        red = rgb[:, :, 0]
+        green = rgb[:, :, 1]
+        blue = rgb[:, :, 2]
+        mask = (
+            (red >= 105)
+            & (red >= green + 22)
+            & (red >= blue + 22)
+        ).astype(np.uint8) * 255
+        mask = cv2.medianBlur(mask, 3)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((2, 2), dtype=np.uint8), iterations=1)
+        gray = (255 - mask).astype(np.uint8)
+        gray = cv2.resize(
+            gray,
+            (max(1, image.size[0] * 2), max(1, image.size[1] * 2)),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        return cv2.copyMakeBorder(gray, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255)
 
     def _detect_stamp_circle_candidates(self, image: Image.Image) -> List[Tuple[str, Tuple[float, float, float]]]:
         rgb = np.array(image.convert("RGB")).astype(np.int16)
@@ -1100,12 +1217,15 @@ class StampExtractor:
         outer_ratio: float,
         start_deg: float,
         end_deg: float,
+        width_mul: float = 2.4,
+        height_mul: float = 3.2,
+        interpolation: int = cv2.INTER_LINEAR,
     ) -> Optional[np.ndarray]:
         text_center_ratio = (inner_ratio + outer_ratio) / 2.0
         mean_radius = radius * text_center_ratio
         arc_span = np.deg2rad(end_deg - start_deg)
-        output_width = max(1200, int(mean_radius * arc_span * 2.4))
-        output_height = max(180, int(radius * (outer_ratio - inner_ratio) * 3.2))
+        output_width = max(1200, int(mean_radius * arc_span * width_mul))
+        output_height = max(180, int(radius * (outer_ratio - inner_ratio) * height_mul))
         angles = np.deg2rad(np.linspace(start_deg, end_deg, output_width))
         radii = np.linspace(radius * outer_ratio, radius * inner_ratio, output_height)
         angle_grid, radius_grid = np.meshgrid(angles, radii)
@@ -1115,7 +1235,7 @@ class StampExtractor:
             gray,
             map_x,
             map_y,
-            cv2.INTER_LINEAR,
+            interpolation,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=255,
         )
@@ -1167,7 +1287,7 @@ class StampExtractor:
     def _build_polar_segments(self, polar_image: Image.Image) -> List[Tuple[str, bytes]]:
         gray = np.array(polar_image.convert("L"))
         width = gray.shape[1]
-        segment_count = 5
+        segment_count = 3
         overlap = max(112, width // 9)
         step = max(1, int(np.ceil((width - overlap) / float(segment_count))))
         segments: List[Tuple[str, bytes]] = []
@@ -1202,9 +1322,10 @@ class StampExtractor:
         candidate_payloads: List[Dict[str, Any]] = []
         best_payload: Optional[Dict[str, Any]] = None
         best_image: Optional[Image.Image] = None
-        best_score: Tuple[int, int, float] = (-1, -1, -1.0)
+        best_score: Tuple[int, int, int, float] = (-1, -1, -1, -1.0)
 
-        for candidate_name, polar_image in polar_variants:
+        selected_polar_variants = self._select_polar_ocr_variants(polar_variants)
+        for candidate_name, polar_image in selected_polar_variants:
             polar_bytes = self._image_to_png_bytes(polar_image)
             ocr_inputs: List[Tuple[str, bytes]] = [(candidate_name, polar_bytes)]
             ocr_inputs.extend(self._build_polar_segments(polar_image))
@@ -1260,6 +1381,7 @@ class StampExtractor:
             edge_penalty = self._polar_edge_cut_penalty(polar_image)
             score = (
                 len(primary_text),
+                self._polar_variant_priority(candidate_name),
                 sum(1 for item in ordered_segment_texts if item),
                 1.0 - edge_penalty,
             )
@@ -1275,6 +1397,26 @@ class StampExtractor:
         best_payload["variant"] = "polar_upper"
         best_payload["candidate_variants"] = other_candidates
         return best_payload
+
+    def _select_polar_ocr_variants(self, polar_variants: List[Tuple[str, Image.Image]]) -> List[Tuple[str, Image.Image]]:
+        selected: List[Tuple[str, Image.Image]] = []
+        seen: set[str] = set()
+        for candidate_name, image in polar_variants[:2]:
+            selected.append((candidate_name, image))
+            seen.add(candidate_name)
+        for candidate_name, image in polar_variants:
+            if "contour_shape_safe" not in candidate_name or candidate_name in seen:
+                continue
+            selected.append((candidate_name, image))
+            seen.add(candidate_name)
+        return selected
+
+    def _polar_variant_priority(self, candidate_name: str) -> int:
+        if "contour_shape_safe" in candidate_name:
+            return 2
+        if "upper_soft" in candidate_name:
+            return 1
+        return 0
 
     def _merge_ordered_stamp_texts(self, texts: List[str]) -> str:
         merged = ""

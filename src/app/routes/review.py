@@ -513,6 +513,16 @@ def _update_processing_retry_status(
         current = _build_placeholder_result(review_id, doc_type)
 
     used_retries = max(0, attempt - 1)
+    if last_result is not None:
+        current.results = list(last_result.results or [])
+        current.ocr_text = str(last_result.ocr_text or "")
+        current.extracted_data = dict(last_result.extracted_data or {})
+        current.llm_analysis = last_result.llm_analysis
+        current.suggestions = list(last_result.suggestions or [])
+        current.processing_time = float(last_result.processing_time or 0.0)
+        current.structured_result = dict(last_result.structured_result or {})
+        current.doc_type_raw = str(last_result.doc_type_raw or current.doc_type_raw or "")
+
     current.status = "processing"
     current.doc_type = doc_type
     current.summary = f"正在复核第 {attempt} 次（共 {max_attempts} 次）" if max_attempts > 1 else "处理中"

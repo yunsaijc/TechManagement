@@ -779,12 +779,12 @@ class ReviewAgent:
         payload["stamp_regions"] = []
         payload["stamp_anchor_regions"] = dict(stamp_anchors or {})
 
-        image_data = self._build_award_contributor_analysis_image(file_data)
+        signature_image_data = self._build_award_contributor_signature_region(file_data)
         stamp_result, verification_result = await asyncio.gather(
             self._extract_award_contributor_stamps(file_data, anchors=stamp_anchors),
             self._verify_award_contributor_signature_if_needed(
                 multi_llm=multi_llm,
-                image_data=image_data,
+                image_data=signature_image_data,
                 metadata=metadata,
                 payload=payload,
             ),
@@ -793,7 +793,7 @@ class ReviewAgent:
         payload["completion_unit_stamp_units"] = list(stamp_result.get("completion_unit_stamp_units", []))
         payload["all_stamp_units"] = list(stamp_result.get("all_stamp_units", []))
         payload["stamp_regions"] = list(stamp_result.get("regions", []))
-        payload["stamp_anchor_regions"] = dict(stamp_result.get("anchor_regions", {}))
+        payload["stamp_anchor_regions"] = dict(stamp_result.get("anchor_regions") or stamp_anchors or {})
 
         extracted_fields = {
             "姓名": payload.get("contributor_name", ""),
@@ -840,7 +840,7 @@ class ReviewAgent:
         return {"signatures": signatures}
 
     def _build_award_contributor_signature_region(self, file_data: bytes) -> bytes:
-        """裁出主要完成人情况表左下签字区，尽量排除右侧公章区。"""
+        """裁出主要完成人情况表底部签字带，尽量排除承诺正文和右侧公章区。"""
         import io
         from PIL import Image, ImageOps
 
@@ -853,10 +853,10 @@ class ReviewAgent:
 
         w, h = page.size
         box = (
-            int(w * 0.02),
-            int(h * 0.58),
-            int(w * 0.46),
-            int(h * 0.97),
+            int(w * 0.05),
+            int(h * 0.65),
+            int(w * 0.43),
+            int(h * 0.88),
         )
         crop = page.crop(box)
         buf = io.BytesIO()
@@ -887,12 +887,21 @@ class ReviewAgent:
 
             extractor = StampExtractor()
             if anchors is None:
-                result = await extractor.extract_award_contributor_stamps(file_data)
+                result = await asyncio.wait_for(
+                    extractor.extract_award_contributor_stamps(file_data),
+                    timeout=45,
+                )
             else:
-                result = await extractor.extract_award_contributor_stamps_from_anchors(file_data, anchors)
+                result = await asyncio.wait_for(
+                    extractor.extract_award_contributor_stamps_from_anchors(file_data, anchors),
+                    timeout=45,
+                )
+        except asyncio.TimeoutError:
+            logger.warning("[REVIEW] 主要完成人公章提取超时，降级为空结果")
+            result = {"anchor_regions": anchors or {}}
         except Exception as exc:
             logger.warning("[REVIEW] 主要完成人公章提取失败: %s", exc)
-            result = {}
+            result = {"anchor_regions": anchors or {}}
 
         if not isinstance(result, dict):
             result = {}
@@ -1534,24 +1543,19 @@ class ReviewAgent:
         if self._award_text_matches(expected_name, [contributor_name]) and self._award_text_matches(expected_name, signature_names):
             return {}
 
-        prompt = """4 个局部图：
-A 字段区
-B 签名区
-C 工作单位公章区
-D 完成单位公章区
-
-只判断 B 签名区里的手写签字是否可以清晰确认是目标姓名。
+        prompt = """这是一张“主要完成人情况表”的签名区裁剪图，只判断图中是否存在可清晰确认的亲笔手写签名。
 目标姓名：%s
 
 返回严格 JSON：
 {"signature_for_name": {"status": "yes|no|uncertain", "reason": ""}}
 
 规则：
-1. yes 仅表示 B 区手写签字可清晰确认是目标姓名。
-2. no 表示 B 区未见签字，或可清晰确认不是目标姓名。
-3. uncertain 表示签字存在但看不清或无法确认。
-4. 不要判断 A/C/D 区，不要判断工作单位、完成单位或公章。
-5. 只返回 JSON，不要解释。""" % expected_name
+1. yes 仅表示图中能看到连续笔迹形成的亲笔手写签名，而且字形本身可清晰读成目标姓名。
+2. no 表示图中未见亲笔手写签名，或只有姓名章、签名章、私章、方章、红章、日期、打印字、盖章痕迹，或可清晰确认不是目标姓名。
+3. uncertain 仅用于：确有亲笔手写笔迹，但看不清，无法确认是否为目标姓名。
+4. 严禁根据目标姓名去猜；如果字形本身读不出来，就不能返回 yes。
+5. 红色方章/姓名章/签名章绝不是亲笔签名，必须返回 no。
+6. 只返回 JSON，不要解释。""" % expected_name
 
         raw = await self._analyze_image_with_timeout(
             multi_llm,
