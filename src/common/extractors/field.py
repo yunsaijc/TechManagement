@@ -63,6 +63,7 @@ class FieldExtractor:
         self._llm_client = None
         self._last_page_ocr_result: Dict[str, Any] = {}
         self._last_page_words: List[Dict[str, Any]] = []
+        self._last_field_debug_rows: Dict[str, Any] = {}
 
     @property
     def ocr(self):
@@ -243,6 +244,7 @@ class FieldExtractor:
                     "value_bbox": value_bbox,
                     "normalized_bbox": [x1, y1, x2, y2],
                 }
+            self._last_field_debug_rows = debug_rows
             self._save_qwen_page_debug(img, field_names, debug_rows, words)
             logger.info(f"[FieldExtractor] 定位到 {len(field_coords)} 个字段区域")
             return field_coords if field_coords else None
@@ -328,10 +330,22 @@ class FieldExtractor:
                 },
             )
             trans = await self._qwen_transcribe_crop(final_crop, fname=fname, index=i)
+            trans = self._fallback_rank_from_page_ocr(fname, trans)
             logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:30]}...")
             fields[fname] = trans.strip()
 
         return fields
+
+    def _fallback_rank_from_page_ocr(self, field_name: str, transcribed: str) -> str:
+        """排名是单字符数字，crop OCR 容易把 6/8 识别成字母；只在无数字时回退整页 OCR 原值。"""
+        if self._normalize_field_key(field_name) != "排名":
+            return transcribed
+        if re.search(r"\d+", str(transcribed or "")):
+            return transcribed
+        row = self._last_field_debug_rows.get(field_name) or {}
+        texts = self._extract_ordered_texts(list(row.get("value_words") or []))
+        joined = "".join(texts).strip()
+        return joined or transcribed
 
     def _normalize_field_bbox(
         self,
@@ -362,7 +376,7 @@ class FieldExtractor:
         width = x2 - x1
         height = y2 - y1
         field_key = self._normalize_field_key(field_name)
-        no_left_expand_fields = {"姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
+        no_left_expand_fields = {"排名", "姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
         margin_left = 0.0 if field_key in no_left_expand_fields else width * 0.04
         margin_right = width * 0.04
         margin_top = height * 0.10
@@ -391,7 +405,7 @@ class FieldExtractor:
     def _trim_left_table_boundary(self, cropped_img: Image.Image, field_name: str) -> Image.Image:
         """按表格竖线裁掉字段值左侧的标签残留。"""
         field_key = self._normalize_field_key(field_name)
-        if field_key not in {"姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}:
+        if field_key not in {"排名", "姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}:
             return cropped_img
 
         gray = ImageOps.grayscale(cropped_img)
@@ -657,7 +671,7 @@ class FieldExtractor:
         label_height = max(1.0, label_box["y2"] - label_box["y1"])
         merged_value_bbox = self._merge_word_bboxes(value_words)
         field_key = self._normalize_field_key(field_name)
-        grid_cell_fields = {"姓名", "工作单位", "完成单位", "单位名称", "企业名称"}
+        grid_cell_fields = {"姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
         if field_key in grid_cell_fields:
             table_cell = self._find_value_table_cell(
                 image=page_image,
@@ -685,7 +699,7 @@ class FieldExtractor:
         top = max(row_top + 2.0, 0.0)
         bottom = min(row_bottom - 2.0, float(img_h))
 
-        full_cell_fields = {"工作单位", "完成单位", "单位名称", "企业名称"}
+        full_cell_fields = {"工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
         if field_key in full_cell_fields and right - left >= 12.0 and bottom - top >= 12.0:
             return {"x1": left, "y1": top, "x2": right, "y2": bottom}
 

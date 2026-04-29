@@ -463,6 +463,15 @@ def _is_full_pass(result: ReviewResult) -> bool:
     return str(result.status or "").strip().lower() == "done" and counts["failed"] == 0 and counts["warning"] == 0
 
 
+def _has_document_type_mismatch(result: ReviewResult) -> bool:
+    for item in result.results or []:
+        item_name = str(getattr(item, "item", "") or "").strip()
+        status = str(getattr(getattr(item, "status", ""), "value", getattr(item, "status", "")) or "").strip().lower()
+        if item_name == "document_type_consistency" and status == "failed":
+            return True
+    return False
+
+
 def _result_rank(result: ReviewResult) -> tuple[int, int, int, int, float]:
     counts = _result_status_counts(result)
     not_done_penalty = 0 if str(result.status or "").strip().lower() == "done" else 1
@@ -584,6 +593,10 @@ async def _run_with_retries(
         if _is_full_pass(current):
             best_result = current
             stop_reason = "full_pass"
+            break
+        if _has_document_type_mismatch(current):
+            best_result = current
+            stop_reason = "document_type_mismatch"
             break
 
         if attempt < attempts:

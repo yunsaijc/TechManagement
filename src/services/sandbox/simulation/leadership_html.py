@@ -518,7 +518,7 @@ class LeadershipHtmlRenderer:
     .swatch.ghost {{ background: #b8c4d8; }}
     .chart-frame {{
       width: 100%;
-      height: 240px;
+      height: 300px;
       display: block;
     }}
     .graph-grid {{
@@ -1219,13 +1219,23 @@ class LeadershipHtmlRenderer:
         return String((currentRun || {{}}).role || '') === 'backtest';
       }}
 
+      function topicBacktest(topic) {{
+        const backtest = (topic || {{}}).backtest || null;
+        if (!backtest || typeof backtest !== 'object') return null;
+        const predicted = backtest.predicted || null;
+        const actual = backtest.actual || null;
+        const error = backtest.error || null;
+        if (!predicted || !actual || !error) return null;
+        return backtest;
+      }}
+
       function metricValue(topic, key) {{
         return Number(((topic || {{}}).metrics || {{}})[key] || 0);
       }}
 
       function runRows() {{
         return topics.map((topic) => {{
-          const backtest = topic.backtest || null;
+          const backtest = topicBacktest(topic);
           if (backtest) {{
             const predicted = backtest.predicted || {{}};
             const actual = backtest.actual || {{}};
@@ -1287,6 +1297,15 @@ class LeadershipHtmlRenderer:
         return text.length > maxChars ? `${{text.slice(0, Math.max(1, maxChars - 1))}}…` : text;
       }}
 
+      function chartAxisLabelLines(value, maxChars) {{
+        const text = String(value || '');
+        if (text.length <= maxChars) return [text];
+        const first = text.slice(0, maxChars);
+        const secondRaw = text.slice(maxChars, maxChars * 2);
+        const second = text.length > maxChars * 2 ? `${{secondRaw.slice(0, Math.max(1, maxChars - 1))}}…` : secondRaw;
+        return [first, second].filter(Boolean);
+      }}
+
       function svgEmpty(message) {{
         return `<svg class="chart-frame" viewBox="0 0 360 220"><text x="20" y="28" fill="#98a2b3" font-size="12">${{escapeHtml(message)}}</text></svg>`;
       }}
@@ -1306,7 +1325,7 @@ class LeadershipHtmlRenderer:
         const maxValue = Math.max(...values, 1);
         const chartWidth = 360;
         const left = 42;
-        const bottom = 178;
+        const bottom = 158;
         const usableHeight = 128;
         const groupWidth = (chartWidth - left - 16) / chartRows.length;
         const barWidth = Math.max(8, (groupWidth - 8) / 2);
@@ -1328,9 +1347,9 @@ class LeadershipHtmlRenderer:
           bars.push(`<rect x="${{groupX.toFixed(1)}}" y="${{(bottom - baselineH).toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{baselineH.toFixed(1)}}" rx="4" fill="#d9e2f1"/>`);
           bars.push(`<rect x="${{(groupX + barWidth + 4).toFixed(1)}}" y="${{(bottom - scenarioH).toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{scenarioH.toFixed(1)}}" rx="4" fill="#3f7cff"/>`);
           const labelX = groupX + barWidth;
-          labels.push(`<text x="${{labelX.toFixed(1)}}" y="${{(bottom + 16).toFixed(1)}}" text-anchor="end" transform="rotate(-38 ${{labelX.toFixed(1)}} ${{(bottom + 16).toFixed(1)}})" fill="#7a8699" font-size="11">${{escapeHtml(chartAxisLabel(row.label, 12))}}</text>`);
+          labels.push(`<text x="${{labelX.toFixed(1)}}" y="${{(bottom + 18).toFixed(1)}}" text-anchor="end" transform="rotate(-38 ${{labelX.toFixed(1)}} ${{(bottom + 18).toFixed(1)}})" fill="#7a8699" font-size="11">${{escapeHtml(chartAxisLabel(row.label, 12))}}</text>`);
         }});
-        return `<svg class="chart-frame" viewBox="0 0 360 220" role="img" aria-label="批次对比柱状图">${{grid.join('')}}${{bars.join('')}}${{labels.join('')}}</svg>`;
+        return `<svg class="chart-frame" viewBox="0 0 360 270" role="img" aria-label="批次对比柱状图">${{grid.join('')}}${{bars.join('')}}${{labels.join('')}}</svg>`;
       }}
 
       function bubbleChartSvg(rows) {{
@@ -1344,14 +1363,21 @@ class LeadershipHtmlRenderer:
         const maxR = Math.max(...chartRows.map((row) => Math.abs(Number(row.deltaFunding || 0))), 1);
         const palette = ['#7aa5ff', '#69d2a6', '#ffb454', '#b18cff', '#ff8d7a', '#91d5ff', '#9be29b', '#ffd166'];
         const grid = [];
+        const axes = [];
         const points = [];
         const legends = [];
         for (let step = 0; step < 5; step += 1) {{
           const x = 48 + 224 * step / 4;
           const y = 180 - 136 * step / 4;
+          const xValue = maxX * step / 4;
+          const yValue = maxY * step / 4;
           grid.push(`<line x1="${{x.toFixed(1)}}" y1="28" x2="${{x.toFixed(1)}}" y2="180" stroke="#edf2f8"/>`);
           grid.push(`<line x1="48" y1="${{y.toFixed(1)}}" x2="272" y2="${{y.toFixed(1)}}" stroke="#edf2f8"/>`);
+          axes.push(`<text x="${{x.toFixed(1)}}" y="197" text-anchor="middle" fill="#98a2b3" font-size="10">${{plainNumber(xValue, 0)}}</text>`);
+          axes.push(`<text x="42" y="${{(y + 4).toFixed(1)}}" text-anchor="end" fill="#98a2b3" font-size="10">${{plainNumber(yValue, 0)}}</text>`);
         }}
+        axes.push('<line x1="48" y1="180" x2="272" y2="180" stroke="#cad5e3" stroke-width="1.2"/>');
+        axes.push('<line x1="48" y1="28" x2="48" y2="180" stroke="#cad5e3" stroke-width="1.2"/>');
         chartRows.forEach((row, index) => {{
           const color = palette[index % palette.length];
           const x = 48 + 224 * (Number(row.baselineFunding || 0) / maxX);
@@ -1360,43 +1386,7 @@ class LeadershipHtmlRenderer:
           points.push(`<circle cx="${{x.toFixed(1)}}" cy="${{y.toFixed(1)}}" r="${{r.toFixed(1)}}" fill="${{color}}" fill-opacity="0.68" stroke="${{color}}" stroke-opacity="0.9"/>`);
           legends.push(`<text x="286" y="${{28 + index * 18}}" fill="#667085" font-size="11">${{escapeHtml(chartAxisLabel(row.label, 18))}}</text><circle cx="274" cy="${{24 + index * 18}}" r="5" fill="${{color}}" fill-opacity="0.85"/>`);
         }});
-        return `<svg class="chart-frame" viewBox="0 0 360 220" role="img" aria-label="批次经费气泡图"><text x="20" y="20" fill="#98a2b3" font-size="11">调整后经费</text><text x="190" y="208" fill="#98a2b3" font-size="11">基准经费</text>${{grid.join('')}}${{points.join('')}}${{legends.join('')}}</svg>`;
-      }}
-
-      function backtestBarChartSvg(rows, predictedKey, actualKey) {{
-        const chartRows = rows
-          .filter((row) => Number(row[predictedKey] || 0) > 0 || Number(row[actualKey] || 0) > 0)
-          .sort((a, b) => Math.max(Number(b[predictedKey] || 0), Number(b[actualKey] || 0)) - Math.max(Number(a[predictedKey] || 0), Number(a[actualKey] || 0)))
-          .slice(0, 10);
-        if (!chartRows.length) return svgEmpty('当前回测批次没有可展示的预测值。');
-        const maxValue = Math.max(...chartRows.flatMap((row) => [Number(row[predictedKey] || 0), Number(row[actualKey] || 0)]), 1);
-        const chartWidth = 360;
-        const left = 42;
-        const bottom = 178;
-        const usableHeight = 128;
-        const groupWidth = (chartWidth - left - 16) / chartRows.length;
-        const barWidth = Math.max(8, (groupWidth - 8) / 2);
-        const grid = [];
-        const labels = [];
-        const bars = [];
-        for (let step = 0; step < 5; step += 1) {{
-          const y = bottom - usableHeight * step / 4;
-          const value = maxValue * step / 4;
-          grid.push(`<line x1="${{left}}" y1="${{y.toFixed(1)}}" x2="${{chartWidth - 10}}" y2="${{y.toFixed(1)}}" stroke="#edf2f8" stroke-width="1"/>`);
-          labels.push(`<text x="${{left - 8}}" y="${{(y + 4).toFixed(1)}}" text-anchor="end" fill="#98a2b3" font-size="11">${{Math.round(value)}}</text>`);
-        }}
-        chartRows.forEach((row, index) => {{
-          const predicted = Math.max(Number(row[predictedKey] || 0), 0);
-          const actual = Math.max(Number(row[actualKey] || 0), 0);
-          const groupX = left + index * groupWidth + 4;
-          const predictedH = usableHeight * predicted / maxValue;
-          const actualH = usableHeight * actual / maxValue;
-          bars.push(`<rect x="${{groupX.toFixed(1)}}" y="${{(bottom - predictedH).toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{predictedH.toFixed(1)}}" rx="4" fill="#3f7cff"/>`);
-          bars.push(`<rect x="${{(groupX + barWidth + 4).toFixed(1)}}" y="${{(bottom - actualH).toFixed(1)}}" width="${{barWidth.toFixed(1)}}" height="${{actualH.toFixed(1)}}" rx="4" fill="#d9e2f1"/>`);
-          const labelX = groupX + barWidth;
-          labels.push(`<text x="${{labelX.toFixed(1)}}" y="${{(bottom + 16).toFixed(1)}}" text-anchor="end" transform="rotate(-38 ${{labelX.toFixed(1)}} ${{(bottom + 16).toFixed(1)}})" fill="#7a8699" font-size="11">${{escapeHtml(chartAxisLabel(row.label, 12))}}</text>`);
-        }});
-        return `<svg class="chart-frame" viewBox="0 0 360 220" role="img" aria-label="回测对比柱状图">${{grid.join('')}}${{bars.join('')}}${{labels.join('')}}</svg>`;
+        return `<svg class="chart-frame" viewBox="0 0 360 220" role="img" aria-label="批次经费气泡图"><text x="18" y="20" fill="#667085" font-size="11">调整后经费（万元）</text><text x="178" y="214" fill="#667085" font-size="11">基线经费（万元）</text>${{grid.join('')}}${{axes.join('')}}${{points.join('')}}${{legends.join('')}}</svg>`;
       }}
 
       function errorClass(value, actual) {{
@@ -1413,6 +1403,16 @@ class LeadershipHtmlRenderer:
         return `与真实值偏差 ${{signedNumber(error, digits)}}${{suffix}}`;
       }}
 
+      function metricCardHtml(card) {{
+        return `
+          <article class="metric-card">
+            <span>${{escapeHtml(card.label)}}</span>
+            <strong>${{escapeHtml(card.value)}}</strong>
+            <div class="metric-delta ${{card.cls || (card.down ? 'down' : 'up')}}">${{escapeHtml(card.delta)}}</div>
+          </article>
+        `;
+      }}
+
       function renderRunMetrics(rows) {{
         if (!metricGrid) return;
         const sum = (key) => rows.reduce((total, row) => total + Number(row[key] || 0), 0);
@@ -1427,19 +1427,13 @@ class LeadershipHtmlRenderer:
           const actualFunding = sum('actualFunding');
           const errorFunding = sum('errorFunding');
           const cards = [
-            {{ label: '当前批次', value: currentRun.year || activeYear || '-', delta: '回测', cls: 'neutral' }},
-            {{ label: '验证方向', value: String(rows.length), delta: '研究方向', cls: 'neutral' }},
-            {{ label: '申报项目数', value: plainNumber(predictedApplication, 0), delta: backtestDeltaText(actualApplication, errorApplication, 0, '项'), cls: errorClass(errorApplication, actualApplication) }},
-            {{ label: '立项项目数', value: plainNumber(predictedFunded, 0), delta: backtestDeltaText(actualFunded, errorFunded, 0, '项'), cls: errorClass(errorFunded, actualFunded) }},
-            {{ label: '经费', value: plainNumber(predictedFunding, 1), delta: backtestDeltaText(actualFunding, errorFunding, 1, '万元'), cls: errorClass(errorFunding, actualFunding) }},
+            {{ label: '当前批次', value: currentRun.year || activeYear || '-', delta: runRoleLabel(currentRun), cls: 'neutral' }},
+            {{ label: '研究方向', value: String(rows.filter((row) => row.majorDelta > 1e-9).length), delta: '有变化对象', cls: 'neutral' }},
+            {{ label: '申报变化', value: plainNumber(predictedApplication, 0), delta: backtestDeltaText(actualApplication, errorApplication, 0, '项'), cls: errorClass(errorApplication, actualApplication) }},
+            {{ label: '立项变化', value: plainNumber(predictedFunded, 0), delta: backtestDeltaText(actualFunded, errorFunded, 0, '项'), cls: errorClass(errorFunded, actualFunded) }},
+            {{ label: '经费变化', value: plainNumber(predictedFunding, 1), delta: backtestDeltaText(actualFunding, errorFunding, 1, '万元'), cls: errorClass(errorFunding, actualFunding) }},
           ];
-          metricGrid.innerHTML = cards.map((card) => `
-            <article class="metric-card">
-              <span>${{escapeHtml(card.label)}}</span>
-              <strong>${{escapeHtml(card.value)}}</strong>
-              <div class="metric-delta ${{card.cls || 'up'}}">${{escapeHtml(card.delta)}}</div>
-            </article>
-          `).join('');
+          metricGrid.innerHTML = cards.map(metricCardHtml).join('');
           return;
         }}
         const cards = [
@@ -1449,26 +1443,23 @@ class LeadershipHtmlRenderer:
           {{ label: '立项变化', value: signedNumber(sum('deltaFunded'), 0), delta: '项目数', down: sum('deltaFunded') < 0 }},
           {{ label: '经费变化', value: signedNumber(sum('deltaFunding'), 1), delta: '万元', down: sum('deltaFunding') < 0 }},
         ];
-        metricGrid.innerHTML = cards.map((card) => `
-          <article class="metric-card">
-            <span>${{escapeHtml(card.label)}}</span>
-            <strong>${{escapeHtml(card.value)}}</strong>
-            <div class="metric-delta ${{card.down ? 'down' : 'up'}}">${{escapeHtml(card.delta)}}</div>
-          </article>
-        `).join('');
+        metricGrid.innerHTML = cards.map(metricCardHtml).join('');
       }}
 
       function renderBaselineContext(rows) {{
         if (!baselineContextRoot) return;
         const ctx = currentBaselineContext();
         const changedCount = rows.filter((row) => row.majorDelta > 1e-9).length;
+        const dataYear = String((currentRun || {{}}).dataYear || ctx.year || activeYear || '');
+        const runYear = String((currentRun || {{}}).year || activeYear || '');
+        const projectLabel = dataYear && runYear && dataYear !== runYear ? `${{dataYear}} 年基线项目` : `${{ctx.year || activeYear || ''}} 年公开项目`;
         const cards = [
-          {{ label: `${{ctx.year || activeYear || ''}} 年公开项目`, value: plainNumber(ctx.projectCount || 0, 0) }},
+          {{ label: projectLabel, value: plainNumber(ctx.projectCount || 0, 0) }},
           {{ label: '基线研究方向', value: plainNumber(ctx.topicCount || 0, 0) }},
           {{ label: '指南项', value: plainNumber(ctx.guideCount || 0, 0) }},
           {{ label: '专项', value: plainNumber(ctx.programCount || 0, 0) }},
           {{ label: '承担单位', value: plainNumber(ctx.institutionCount || 0, 0) }},
-          {{ label: isBacktestRun() ? '参与验证方向' : '本次有变化方向', value: `${{plainNumber(isBacktestRun() ? rows.length : changedCount, 0)}} / ${{plainNumber(ctx.topicCount || rows.length || 0, 0)}}` }},
+          {{ label: '本次有变化方向', value: `${{plainNumber(changedCount, 0)}} / ${{plainNumber(ctx.topicCount || rows.length || 0, 0)}}` }},
         ];
         baselineContextRoot.innerHTML = cards.map((card) => `
           <article class="baseline-card">
@@ -1479,15 +1470,6 @@ class LeadershipHtmlRenderer:
       }}
 
       function renderRunCharts(rows) {{
-        if (isBacktestRun()) {{
-          if (applicationChartTitle) applicationChartTitle.textContent = '申报项目数回测 TOP10';
-          if (fundedChartTitle) fundedChartTitle.textContent = '立项项目数回测 TOP10';
-          if (fundingChartTitle) fundingChartTitle.textContent = '经费回测 TOP10';
-          if (applicationChart) applicationChart.innerHTML = backtestBarChartSvg(rows, 'predictedApplication', 'actualApplication');
-          if (fundedChart) fundedChart.innerHTML = backtestBarChartSvg(rows, 'predictedFunded', 'actualFunded');
-          if (fundingChart) fundingChart.innerHTML = backtestBarChartSvg(rows, 'predictedFunding', 'actualFunding');
-          return;
-        }}
         if (applicationChartTitle) applicationChartTitle.textContent = '申报项目数变化 TOP10（个）';
         if (fundedChartTitle) fundedChartTitle.textContent = '立项项目数变化 TOP10（个）';
         if (fundingChartTitle) fundingChartTitle.textContent = '经费变化 TOP10（万元）';
@@ -1498,38 +1480,6 @@ class LeadershipHtmlRenderer:
 
       function renderRunImpactTable(rows) {{
         if (!impactTableRoot) return;
-        if (isBacktestRun()) {{
-          const tableRows = rows
-            .filter((row) => row.predictedApplication > 0 || row.actualApplication > 0)
-            .sort((a, b) => Number(b.majorDelta || 0) - Number(a.majorDelta || 0))
-            .slice(0, 8);
-          if (!tableRows.length) {{
-            impactTableRoot.innerHTML = '<div class="note-item"><p>当前回测批次没有可展示的预测对比。</p></div>';
-            return;
-          }}
-          const body = tableRows.map((row) => `
-            <tr>
-              <td><span class="pill info">回测</span></td>
-              <td>${{escapeHtml(row.fullLabel)}}</td>
-              <td>${{escapeHtml(`申报 ${{plainNumber(row.predictedApplication, 0)}}｜立项 ${{plainNumber(row.predictedFunded, 0)}}｜经费 ${{plainNumber(row.predictedFunding, 1)}}`)}}</td>
-              <td>${{escapeHtml(`申报 ${{plainNumber(row.actualApplication, 0)}}｜立项 ${{plainNumber(row.actualFunded, 0)}}｜经费 ${{plainNumber(row.actualFunding, 1)}}`)}}</td>
-              <td>${{escapeHtml(`申报 ${{signedNumber(row.errorApplication, 0)}}｜立项 ${{signedNumber(row.errorFunded, 0)}}｜经费 ${{signedNumber(row.errorFunding, 1)}}`)}}</td>
-            </tr>
-          `).join('');
-          impactTableRoot.innerHTML = `<table class="impact-table">
-            <thead>
-              <tr>
-                <th>类型</th>
-                <th>研究方向</th>
-                <th>预测值</th>
-                <th>真实值</th>
-                <th>偏差</th>
-              </tr>
-            </thead>
-            <tbody>${{body}}</tbody>
-          </table>`;
-          return;
-        }}
         const tableRows = rows
           .filter((row) => row.majorDelta > 1e-9)
           .sort((a, b) => Number(b.majorDelta || 0) - Number(a.majorDelta || 0))
@@ -1542,9 +1492,15 @@ class LeadershipHtmlRenderer:
           const impactClass = row.direct ? 'direct' : 'spill';
           const impactType = row.direct ? '直接影响' : '外溢影响';
           const deltaParts = [];
-          if (Math.abs(row.deltaFunding) > 1e-9) deltaParts.push(`经费 ${{signedNumber(row.deltaFunding, 1)}}`);
-          if (Math.abs(row.deltaFunded) > 1e-9) deltaParts.push(`立项 ${{signedNumber(row.deltaFunded, 0)}}`);
-          if (Math.abs(row.deltaApplication) > 1e-9) deltaParts.push(`申报 ${{signedNumber(row.deltaApplication, 0)}}`);
+          if (isBacktestRun()) {{
+            if (Math.abs(row.errorFunding) > 1e-9) deltaParts.push(`经费 ${{plainNumber(row.predictedFunding, 1)}}，与真实值偏差 ${{signedNumber(row.errorFunding, 1)}}`);
+            if (Math.abs(row.errorFunded) > 1e-9) deltaParts.push(`立项 ${{plainNumber(row.predictedFunded, 0)}}，与真实值偏差 ${{signedNumber(row.errorFunded, 0)}}`);
+            if (Math.abs(row.errorApplication) > 1e-9) deltaParts.push(`申报 ${{plainNumber(row.predictedApplication, 0)}}，与真实值偏差 ${{signedNumber(row.errorApplication, 0)}}`);
+          }} else {{
+            if (Math.abs(row.deltaFunding) > 1e-9) deltaParts.push(`经费 ${{signedNumber(row.deltaFunding, 1)}}`);
+            if (Math.abs(row.deltaFunded) > 1e-9) deltaParts.push(`立项 ${{signedNumber(row.deltaFunded, 0)}}`);
+            if (Math.abs(row.deltaApplication) > 1e-9) deltaParts.push(`申报 ${{signedNumber(row.deltaApplication, 0)}}`);
+          }}
           const baseline = `申报 ${{plainNumber(row.baselineApplication, 0)}}｜立项 ${{plainNumber(row.baselineFunded, 0)}}｜经费 ${{plainNumber(row.baselineFunding, 1)}}`;
           return `<tr>
             <td><span class="pill ${{impactClass}}">${{impactType}}</span></td>
@@ -1769,19 +1725,36 @@ class LeadershipHtmlRenderer:
         const entry = topicEntry(topic);
         const item = entry.item || {{}};
         const profile = topic.detailProfile || {{}};
-        const backtest = topic.backtest || null;
+        const backtest = topicBacktest(topic);
         stageFocusTitle.textContent = String(topic.shortLabel || topic.label || '未标注主题');
         stageFocusCopy.textContent = String(topic.label || item.displayContext || '暂无补充说明。');
-        const focusCards = backtest ? [
-          {{ label: '申报项目数', value: `${{plainNumber((backtest.predicted || {{}}).application, 0)}} 项` }},
-          {{ label: '与真实值偏差', value: `${{signedNumber((backtest.error || {{}}).application, 0)}} 项` }},
-          {{ label: '立项项目数', value: `${{plainNumber((backtest.predicted || {{}}).funded, 0)}} 项` }},
-          {{ label: '经费偏差', value: `${{signedNumber((backtest.error || {{}}).funding, 1)}} 万元` }},
-        ] : [
-          {{ label: '本次变化', value: item.deltaSentence || compactValue(item.metric, entry.delta) }},
-          {{ label: '本年项目', value: plainNumber(profile.projectCount ?? topic.baselineApplication ?? 0, 0) }},
-          {{ label: '本年立项', value: plainNumber(profile.fundedCount ?? topic.baselineFunded ?? 0, 0) }},
-          {{ label: '本年经费', value: `${{plainNumber(profile.fundingAmount ?? topic.baselineFunding ?? 0, 1)}} 万元` }},
+        const predicted = (backtest || {{}}).predicted || {{}};
+        const error = (backtest || {{}}).error || {{}};
+        const focusCards = [
+          {{
+            label: '本次变化',
+            value: backtest
+              ? `申报 ${{plainNumber(predicted.application, 0)}} 项｜与真实值偏差 ${{signedNumber(error.application, 0)}} 项`
+              : (item.deltaSentence || compactValue(item.metric, entry.delta)),
+          }},
+          {{
+            label: '本年项目',
+            value: backtest
+              ? `${{plainNumber(predicted.application, 0)}} 项｜与真实值偏差 ${{signedNumber(error.application, 0)}} 项`
+              : plainNumber(profile.projectCount ?? topic.baselineApplication ?? 0, 0),
+          }},
+          {{
+            label: '本年立项',
+            value: backtest
+              ? `${{plainNumber(predicted.funded, 0)}} 项｜与真实值偏差 ${{signedNumber(error.funded, 0)}} 项`
+              : plainNumber(profile.fundedCount ?? topic.baselineFunded ?? 0, 0),
+          }},
+          {{
+            label: '本年经费',
+            value: backtest
+              ? `${{plainNumber(predicted.funding, 1)}} 万元｜与真实值偏差 ${{signedNumber(error.funding, 1)}} 万元`
+              : `${{plainNumber(profile.fundingAmount ?? topic.baselineFunding ?? 0, 1)}} 万元`,
+          }},
         ];
         stageFocusKpis.innerHTML = focusCards.map((card) => `
           <div class="focus-kpi">
@@ -1834,8 +1807,9 @@ class LeadershipHtmlRenderer:
           group.appendChild(createSvgEl('circle', {{ cx: pos.x, cy: pos.y, r: pos.r + 8, class: 'halo' }}));
           group.appendChild(createSvgEl('circle', {{ cx: pos.x, cy: pos.y, r: pos.r, class: 'core' }}));
           const valueNode = createSvgEl('text', {{ x: pos.x, y: pos.y, class: 'graph-node-value' }});
-          valueNode.textContent = topic.backtest
-            ? plainNumber((topic.backtest.predicted || {{}}).application, 0)
+          const backtest = topicBacktest(topic);
+          valueNode.textContent = backtest
+            ? plainNumber((backtest.predicted || {{}}).application, 0)
             : compactValue(item.metric, entry.delta);
           group.appendChild(valueNode);
           const labelLines = splitLabel(topic.shortLabel || topic.label, 10);
@@ -1848,8 +1822,8 @@ class LeadershipHtmlRenderer:
             label.textContent = line;
             group.appendChild(label);
           }});
-          if (topic.backtest) {{
-            const error = (topic.backtest.error || {{}}).application;
+          if (backtest) {{
+            const error = (backtest.error || {{}}).application;
             const sub = createSvgEl('text', {{
               x: pos.x,
               y: pos.y + pos.r + 18 + labelLines.length * 14,
@@ -2185,7 +2159,7 @@ def _render_metric_cards(cards: Sequence[Mapping[str, Any]]) -> str:
 def _render_bar_chart(items: Any, *, value_type: str) -> str:
     rows = [_as_dict(item) for item in items or [] if _as_dict(item)][:10]
     if not rows:
-        return '<svg class="chart-frame" viewBox="0 0 360 220"><text x="20" y="28" fill="#98a2b3" font-size="12">当前没有可展示的数据。</text></svg>'
+        return '<svg class="chart-frame" viewBox="0 0 360 270"><text x="20" y="28" fill="#98a2b3" font-size="12">当前没有可展示的数据。</text></svg>'
 
     if value_type == "application":
         baseline_key = "baseline_application_count"
@@ -2202,9 +2176,9 @@ def _render_bar_chart(items: Any, *, value_type: str) -> str:
     max_value = max(values) or 1.0
 
     chart_width = 360
-    chart_height = 220
+    chart_height = 270
     left = 42
-    bottom = 178
+    bottom = 158
     usable_height = 128
     group_gap = 8
     group_width = (chart_width - left - 16) / len(rows)
@@ -2231,8 +2205,9 @@ def _render_bar_chart(items: Any, *, value_type: str) -> str:
             f'<rect x="{group_x + bar_width + 4:.1f}" y="{bottom - scenario_h:.1f}" width="{bar_width:.1f}" height="{scenario_h:.1f}" rx="4" fill="#3f7cff"/>'
         )
         label = _chart_axis_label(str(row.get("label") or ""), 12)
+        label_x = group_x + bar_width
         labels.append(
-            f'<text x="{group_x + bar_width:.1f}" y="{bottom + 16:.1f}" text-anchor="end" transform="rotate(-38 {group_x + bar_width:.1f} {bottom + 16:.1f})" fill="#7a8699" font-size="11">{_escape(label)}</text>'
+            f'<text x="{label_x:.1f}" y="{bottom + 18:.1f}" text-anchor="end" transform="rotate(-38 {label_x:.1f} {bottom + 18:.1f})" fill="#7a8699" font-size="11">{_escape(label)}</text>'
         )
 
     return f"""<svg class="chart-frame" viewBox="0 0 {chart_width} {chart_height}" role="img" aria-label="对比柱状图">
@@ -2266,15 +2241,23 @@ def _render_bubble_chart(items: Any) -> str:
             f'<circle cx="274" cy="{24 + index * 18}" r="5" fill="{color}" fill-opacity="0.85"/>'
         )
     grid = []
+    axes = []
     for step in range(5):
         x = 48 + 224 * step / 4
         y = 180 - 136 * step / 4
+        x_value = max_x * step / 4
+        y_value = max_y * step / 4
         grid.append(f'<line x1="{x:.1f}" y1="28" x2="{x:.1f}" y2="180" stroke="#edf2f8"/>')
         grid.append(f'<line x1="48" y1="{y:.1f}" x2="272" y2="{y:.1f}" stroke="#edf2f8"/>')
+        axes.append(f'<text x="{x:.1f}" y="197" text-anchor="middle" fill="#98a2b3" font-size="10">{_short_axis_number(x_value)}</text>')
+        axes.append(f'<text x="42" y="{y + 4:.1f}" text-anchor="end" fill="#98a2b3" font-size="10">{_short_axis_number(y_value)}</text>')
+    axes.append('<line x1="48" y1="180" x2="272" y2="180" stroke="#cad5e3" stroke-width="1.2"/>')
+    axes.append('<line x1="48" y1="28" x2="48" y2="180" stroke="#cad5e3" stroke-width="1.2"/>')
     return f"""<svg class="chart-frame" viewBox="0 0 360 220" role="img" aria-label="经费分布气泡图">
-      <text x="20" y="20" fill="#98a2b3" font-size="11">调整后方案经费</text>
-      <text x="190" y="208" fill="#98a2b3" font-size="11">基准方案经费</text>
+      <text x="18" y="20" fill="#667085" font-size="11">调整后经费（万元）</text>
+      <text x="178" y="214" fill="#667085" font-size="11">基线经费（万元）</text>
       {''.join(grid)}
+      {''.join(axes)}
       {''.join(points)}
       {''.join(legends)}
     </svg>"""
@@ -2398,10 +2381,20 @@ def _build_summary_bullets(leadership_page: Mapping[str, Any]) -> list[str]:
 
 
 def _build_window_copy(leadership_page: Mapping[str, Any]) -> str:
-    scenario_window = str(_as_dict(leadership_page.get("control_panel")).get("scenario_window") or "").strip()
-    if scenario_window:
-        return f"本页只看 {scenario_window} 这一个推演窗口"
-    return "本页只看当前这一轮推演窗口"
+    display_year = _display_current_year(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
+    if display_year:
+        return f"本页主批次为 {display_year} 当前推演"
+    return "本页主批次为当前推演"
+
+
+def _display_current_year(scenario_window: Any) -> str:
+    text = str(scenario_window or "").strip()
+    if not text:
+        return str(datetime.now().year)
+    start_year_text = text.split("-", 1)[0].strip()
+    if start_year_text.isdigit():
+        return str(max(int(start_year_text), datetime.now().year))
+    return text
 
 
 def _build_report_title(leadership_page: Mapping[str, Any], fallback_title: str) -> str:
@@ -2447,6 +2440,7 @@ def _scene_from_visual_scene(visual_scene: Mapping[str, Any]) -> dict[str, Any]:
         run = _as_dict(raw_run)
         year_runs[str(year)] = {
             "year": run.get("year") or year,
+            "dataYear": run.get("dataYear"),
             "role": run.get("role"),
             "label": run.get("label") or year,
             "focusTopicId": run.get("focusTopicId"),
@@ -2723,6 +2717,7 @@ def _build_adjustment_panel(scenario_contract: Mapping[str, Any], leadership_pag
         numeric = _as_number(actions[0].get("intensity"))
         if numeric:
             intensity = int(round(numeric * 100))
+    display_year = _display_current_year(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
     return {
         "method_options": [
             {"value": "increase_support", "label": "增加支持"},
@@ -2731,10 +2726,8 @@ def _build_adjustment_panel(scenario_contract: Mapping[str, Any], leadership_pag
         ],
         "method": "increase_support",
         "intensity_display": intensity,
-        "year_options": _build_year_options(
-            _as_dict(leadership_page.get("control_panel")).get("scenario_window")
-        ),
-        "year": _as_dict(leadership_page.get("control_panel")).get("scenario_window") or "",
+        "year_options": _build_year_options(display_year),
+        "year": display_year,
         "note": _build_adjustment_note(leadership_page),
     }
 
@@ -2828,6 +2821,15 @@ def _chart_axis_label(value: str, max_length: int) -> str:
     if "｜" in text:
         text = [segment.strip() for segment in text.split("｜") if segment.strip()][-1]
     return _truncate_label(text, max_length)
+
+
+def _chart_axis_label_lines(value: str, max_length: int) -> list[str]:
+    text = _chart_axis_label(value, max_length * 2)
+    if not text:
+        return []
+    if len(text) <= max_length:
+        return [text]
+    return [text[:max_length], text[max_length: max_length * 2]]
 
 
 def _scene_delta_sentence(value: Any) -> str:

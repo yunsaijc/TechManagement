@@ -52,6 +52,9 @@ _TOPIC_METRIC_LABELS = {
     "delta_proxy_risk": "风险代理变化",
 }
 
+_BACKTEST_TRAINING_START_YEAR = 2015
+_BACKTEST_EARLIEST_VALIDATION_YEAR = 2020
+
 _GOVERNANCE_STAGE_SPECS = (
     {
         "stage_id": "application_response",
@@ -1259,6 +1262,7 @@ def _build_visual_scene(
         nodes = _finalize_visual_nodes(nodes_by_year[year], order_by_year.get(year, []))
         year_runs[year] = {
             "year": year,
+            "dataYear": int(year) - 1 if year == active_year and str(year).isdigit() else (int(year) if str(year).isdigit() else None),
             "role": _visual_year_role(year, active_year),
             "label": _visual_year_label(year, active_year),
             "topics": nodes,
@@ -1302,8 +1306,7 @@ def _attach_backtest_year_runs(year_runs: dict[str, dict[str, Any]], active_year
     if not active_topics:
         return
 
-    backtest_years = [int(active_year) - 1, int(active_year) - 2]
-    backtest_years = [year for year in backtest_years if year >= 2020]
+    backtest_years = list(range(int(active_year) - 1, _BACKTEST_EARLIEST_VALIDATION_YEAR - 1, -1))
     if not backtest_years:
         return
 
@@ -1316,9 +1319,11 @@ def _attach_backtest_year_runs(year_runs: dict[str, dict[str, Any]], active_year
         return
 
     try:
-        facts = load_project_facts(start_year=2020, end_year=max(backtest_years))
-    except Exception:
-        return
+        facts = load_project_facts(start_year=_BACKTEST_TRAINING_START_YEAR, end_year=max(backtest_years))
+    except Exception as exc:
+        raise RuntimeError(
+            f"failed to load real project facts for backtest years {backtest_years[0]}-{backtest_years[-1]}"
+        ) from exc
 
     stats_by_topic_year = _build_topic_year_stats(facts, topic_ids)
 
@@ -1334,9 +1339,10 @@ def _attach_backtest_year_runs(year_runs: dict[str, dict[str, Any]], active_year
             continue
         year_runs[str(year)] = {
             "year": str(year),
+            "dataYear": year,
             "role": "backtest",
             "label": f"{year} 回测",
-            "trainWindow": f"2020-{year - 1}",
+            "trainWindow": f"{_BACKTEST_TRAINING_START_YEAR}-{year - 1}",
             "validationYear": year,
             "topics": nodes,
             "edges": _build_visual_edges(nodes),
@@ -1382,12 +1388,13 @@ def _enrich_visual_scene_with_project_data(visual_scene: dict[str, Any]) -> None
         run = _as_dict(raw_run)
         if not run:
             continue
-        year = int(year_text) if str(year_text).isdigit() else active_year_int
-        if not year:
+        run_year = int(year_text) if str(year_text).isdigit() else active_year_int
+        if not run_year:
             continue
-        year_facts = facts_by_year.get(year, [])
+        data_year = _visual_run_data_year(run, active_year_int=active_year_int, run_year=run_year)
+        year_facts = facts_by_year.get(data_year, [])
         run["baselineContext"] = _build_year_baseline_context(
-            year=year,
+            year=data_year,
             facts=year_facts,
             shown_topics=len(run.get("topics", []) or []),
         )
@@ -1401,7 +1408,7 @@ def _enrich_visual_scene_with_project_data(visual_scene: dict[str, Any]) -> None
                 topic_facts.extend(facts_by_year_topic.get(year, {}).get(topic_id, []))
             topic_payload["detailProfile"] = _build_topic_detail_profile(
                 topic=topic_payload,
-                year=year,
+                year=data_year,
                 facts=topic_facts,
                 all_facts=facts,
             )
@@ -1427,6 +1434,16 @@ def _visual_scene_years(visual_scene: Mapping[str, Any]) -> list[int]:
         if year_text.isdigit():
             years.add(int(year_text))
     return sorted(years)
+
+
+def _visual_run_data_year(run: Mapping[str, Any], *, active_year_int: int | None, run_year: int) -> int:
+    explicit = _as_number(run.get("dataYear"))
+    if explicit > 0:
+        return int(explicit)
+    role = str(run.get("role") or "").strip()
+    if role == "current" and active_year_int and run_year == active_year_int:
+        return max(active_year_int - 1, _BACKTEST_EARLIEST_VALIDATION_YEAR)
+    return run_year
 
 
 def _build_year_baseline_context(*, year: int, facts: Sequence[Any], shown_topics: int) -> dict[str, Any]:
@@ -1645,7 +1662,7 @@ def _build_backtest_nodes(
             "deltaCentrality": 0.0,
         }
         node["backtest"] = {
-            "trainWindow": f"2020-{year - 1}",
+            "trainWindow": f"{_BACKTEST_TRAINING_START_YEAR}-{year - 1}",
             "validationYear": year,
             "predicted": predicted,
             "actual": actual,
@@ -1860,8 +1877,12 @@ def _finalize_visual_nodes(nodes_by_key: Mapping[str, dict[str, Any]], order: Se
 def _visual_active_year(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
-        return "current"
-    return text.split("-", 1)[0].strip() or text
+        return str(datetime.now().year)
+    start_year = text.split("-", 1)[0].strip() or text
+    if start_year.isdigit():
+        current_year = datetime.now().year
+        return str(max(int(start_year), current_year))
+    return start_year
 
 
 def _visual_item_year(item: Mapping[str, Any]) -> str:
@@ -1922,7 +1943,7 @@ def _visual_year_label(year: str, active_year: str) -> str:
 def _visual_year_validation(year: str, active_year: str) -> dict[str, Any]:
     role = _visual_year_role(year, active_year)
     if role == "backtest" and year.isdigit():
-        train_start = 2020
+        train_start = _BACKTEST_TRAINING_START_YEAR
         train_end = int(year) - 1
         return {
             "title": "回测验证",
@@ -1933,7 +1954,7 @@ def _visual_year_validation(year: str, active_year: str) -> dict[str, Any]:
     if role == "future":
         return {
             "title": "未来延伸",
-            "summary": f"{year} 年是未来延伸批次，不和 2025 当前推演混在一起看。",
+            "summary": f"{year} 年是未来延伸批次，不和当前推演混在一起看。",
         }
     return {
         "title": "当前推演",

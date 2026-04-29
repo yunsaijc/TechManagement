@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
 from pathlib import PureWindowsPath
 from typing import Any, Dict, List, Optional
 
+import requests
+
 from src.common.database.connection import reward_execute, reward_execute_write
+from src.common.llm import llm_config
 from src.common.models import CheckResult, CheckStatus, ReviewResult
 from src.services.review.doc_types import get_doc_type_label, normalize_doc_type
 
@@ -31,6 +35,28 @@ DOC_TYPE_TO_LX = {
 }
 
 QTFJCL_DOC_TYPES = {"dywcrcns", "dywcdwcns", "qysm"}
+
+TYPE_DETECTION_DOC_TYPES = {
+    "wcr",
+    "wjwcr",
+    "wcdw",
+    "dywcrcns",
+    "dywcdwcns",
+    "qysm",
+    "tjdwyj",
+}
+
+TYPE_LABELS = {
+    "wcr": "主要完成人情况表",
+    "wjwcr": "外籍主要完成人情况表",
+    "wcdw": "主要完成单位情况表",
+    "dywcrcns": "第一完成人承诺书",
+    "dywcdwcns": "第一完成单位承诺书",
+    "qysm": "企业声明",
+    "tjdwyj": "提名意见表",
+    "tmh": "提名函",
+    "unknown": "无法确认",
+}
 
 
 def _normalize_text(value: Any) -> str:
@@ -94,6 +120,16 @@ def _raw_db_field_state(expected: str, observed: str) -> str:
     if _is_exact_match(expected_text, observed_text):
         return "match"
     return "mismatch"
+
+
+def _normalize_rank_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"\d+", text)
+    if not match:
+        return ""
+    return str(int(match.group(0)))
 
 
 def _clean_signature_text(value: Any) -> str:
@@ -234,6 +270,10 @@ class RewardReviewService:
         result.extracted_data["reward_verification"] = verification
 
         extras: List[CheckResult] = []
+        type_check = self._build_document_type_consistency_check(file_data, normalized_doc_type)
+        if type_check:
+            extras.append(type_check)
+
         errors = [str(item) for item in context.get("errors", []) if str(item).strip()]
         if errors:
             extras.append(
@@ -285,6 +325,10 @@ class RewardReviewService:
             extras.extend(
                 self._filter_items(
                     [
+                        self._compare_rank_field(
+                            observed=observed_fields.get("rank", ""),
+                            expected=str(target_values.get("rank") or ""),
+                        ),
                         self._compare_field(
                             item="contributor_db_name_consistency",
                             label="姓名",
@@ -327,6 +371,13 @@ class RewardReviewService:
                             observed=observed_fields.get("legal_representative", ""),
                             expected=str(target_values.get("legal_representative") or ""),
                             verification=verification.get("legal_representative"),
+                        ),
+                        self._compare_named_signature(
+                            item="completion_unit_legal_representative_signature_consistency",
+                            label="法定代表人",
+                            expected_name=str(target_values.get("legal_representative") or ""),
+                            signature_names=signatures,
+                            verification=verification.get("legal_representative_signature"),
                         ),
                     ],
                     effective_items,
@@ -420,6 +471,147 @@ class RewardReviewService:
             verification=verification,
         )
         return result
+
+    def _build_document_type_consistency_check(
+        self,
+        file_data: Optional[bytes],
+        requested_doc_type: str,
+    ) -> Optional[CheckResult]:
+        if requested_doc_type not in TYPE_DETECTION_DOC_TYPES or not file_data:
+            return None
+        detected = self._detect_actual_document_type(file_data)
+        actual_doc_type = str(detected.get("doc_type") or "").strip()
+        if not actual_doc_type or actual_doc_type == "unknown":
+            return None
+        if actual_doc_type == requested_doc_type:
+            return None
+        return CheckResult(
+            item="document_type_consistency",
+            status=CheckStatus.FAILED,
+            message=(
+                f"材料类型与请求类型不一致：请求为“{TYPE_LABELS.get(requested_doc_type, requested_doc_type)}”，"
+                f"实际识别为“{TYPE_LABELS.get(actual_doc_type, actual_doc_type)}”"
+            ),
+            evidence={
+                "requested_doc_type": requested_doc_type,
+                "requested_label": TYPE_LABELS.get(requested_doc_type, get_doc_type_label(requested_doc_type)),
+                "actual_doc_type": actual_doc_type,
+                "actual_label": TYPE_LABELS.get(actual_doc_type, actual_doc_type),
+                "title": detected.get("title", ""),
+                "text_head": detected.get("text_head", ""),
+            },
+        )
+
+    def _detect_actual_document_type(self, file_data: bytes) -> Dict[str, str]:
+        try:
+            image_data = self._pdf_to_image(file_data)
+            ocr_result = self._run_qwen_page_ocr_for_type(image_data)
+            texts = [
+                str(item.get("text") or "").strip()
+                for item in list(ocr_result.get("words_info") or [])
+                if str(item.get("text") or "").strip()
+            ]
+            text = " ".join(texts) or str(ocr_result.get("processed_text") or "")
+            actual = self._classify_document_type_from_text(text)
+            return {
+                "doc_type": actual,
+                "title": self._extract_document_title(text),
+                "text_head": text[:300],
+            }
+        except Exception as exc:
+            logger.warning("材料类型一致性 OCR 检测失败: %s", exc)
+            return {"doc_type": "unknown", "title": "", "text_head": ""}
+
+    def _run_qwen_page_ocr_for_type(self, image_data: bytes) -> Dict[str, Any]:
+        api_key = str(llm_config.api_key or "").strip()
+        if not api_key:
+            return {}
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+        payload = {
+            "model": "qwen-vl-ocr-latest",
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "image": f"data:image/png;base64,{image_b64}",
+                                "min_pixels": 28 * 28 * 256,
+                                "max_pixels": 28 * 28 * 1600,
+                            },
+                            {"text": "请对这张首页执行 OCR，返回所有文字。"},
+                        ],
+                    }
+                ]
+            },
+            "parameters": {
+                "ocr_options": {
+                    "task": "advanced_recognition",
+                    "enable_table": False,
+                    "enable_rotate": True,
+                }
+            },
+        }
+        response = requests.post(
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["output"]["choices"][0]["message"]["content"][0]["ocr_result"]
+        return {
+            "words_info": list(content.get("words_info") or []),
+            "processed_text": str(content.get("processed_text") or ""),
+        }
+
+    def _classify_document_type_from_text(self, text: str) -> str:
+        normalized = re.sub(r"\s+", "", str(text or ""))
+        if not normalized:
+            return "unknown"
+        if "外籍主要完成人情况表" in normalized:
+            return "wjwcr"
+        if "主要完成人情况表" in normalized:
+            return "wcr"
+        if "主要完成单位情况表" in normalized:
+            return "wcdw"
+        if "第一完成人承诺书" in normalized:
+            return "dywcrcns"
+        if "第一完成单位承诺书" in normalized:
+            return "dywcdwcns"
+        if "企业声明" in normalized:
+            return "qysm"
+        if "提名意见" in normalized or "提名单位意见" in normalized:
+            return "tjdwyj"
+        if "提名函" in normalized or re.search(r"关于报送.*提名.*项目.*函", normalized):
+            return "tmh"
+        return "unknown"
+
+    def _extract_document_title(self, text: str) -> str:
+        compact = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not compact:
+            return ""
+        markers = [
+            "主要完成人情况表",
+            "主要完成单位情况表",
+            "第一完成人承诺书",
+            "第一完成单位承诺书",
+            "企业声明",
+            "提名意见表",
+            "提名函",
+        ]
+        for marker in markers:
+            index = compact.find(marker)
+            if index >= 0:
+                return compact[max(0, index - 12): index + len(marker) + 12].strip()
+        match = re.search(r"关于报送.{0,40}提名.{0,40}项目.{0,20}函", compact)
+        if match:
+            return match.group(0).strip()
+        return compact[:80]
 
     def persist_recognition(self, context: Dict[str, Any], result: ReviewResult) -> None:
         attachment = context.get("attachment_record") or {}
@@ -597,6 +789,7 @@ class RewardReviewService:
             )
             row = rows[0] if rows else None
             return row, {
+                "rank": str(_pick_case_insensitive(row or {}, "pm", "PM") or "").strip(),
                 "name": str(_pick_case_insensitive(row or {}, "xm", "XM") or "").strip(),
                 "work_unit": str(_pick_case_insensitive(row or {}, "gzdw", "GZDW") or "").strip(),
                 "completion_unit": str(_pick_case_insensitive(row or {}, "wcdw", "WCDW") or "").strip(),
@@ -672,6 +865,7 @@ class RewardReviewService:
             if not isinstance(payload, dict):
                 payload = {}
             return {
+                "rank": str(payload.get("rank") or extracted_fields.get("排名") or "").strip(),
                 "name": str(payload.get("contributor_name") or extracted_fields.get("姓名") or "").strip(),
                 "work_unit": str(payload.get("work_unit") or extracted_fields.get("工作单位") or "").strip(),
                 "completion_unit": str(payload.get("completion_unit") or extracted_fields.get("完成单位") or "").strip(),
@@ -857,7 +1051,14 @@ class RewardReviewService:
                     "enterprise_stamp": self._normalize_verification_entry(payload.get("enterprise_stamp")),
                 }
             return {}
-        return self._build_verification_result(file_data=file_data, doc_type=doc_type, target_values=target_values)
+        verification = self._build_verification_result(file_data=file_data, doc_type=doc_type, target_values=target_values)
+        if doc_type == "wcdw":
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                verification["legal_representative_signature"] = self._normalize_verification_entry(
+                    payload.get("legal_representative_signature")
+                )
+        return verification
 
     def _build_verification_result(
         self,
@@ -1074,6 +1275,38 @@ class RewardReviewService:
             status=CheckStatus.WARNING,
             message=f"表单{label}结果需复核" if verification_status == "yes" else f"表单{label}疑似与奖励库记录不一致，请复核",
             evidence=evidence,
+        )
+
+    def _compare_rank_field(self, observed: str, expected: str) -> CheckResult:
+        observed_rank = _normalize_rank_value(observed)
+        expected_rank = _normalize_rank_value(expected)
+        if not expected_rank:
+            status = CheckStatus.WARNING
+            message = "奖励库未提供可核验的排名"
+            raw_state = "unknown"
+        elif not observed_rank:
+            status = CheckStatus.WARNING
+            message = "表单排名疑似与奖励库记录不一致，请复核"
+            raw_state = "unknown"
+        elif observed_rank == expected_rank:
+            status = CheckStatus.PASSED
+            message = "表单排名与奖励库记录一致"
+            raw_state = "match"
+        else:
+            status = CheckStatus.FAILED
+            message = "表单排名与奖励库记录不一致"
+            raw_state = "mismatch"
+        return CheckResult(
+            item="contributor_db_rank_consistency",
+            status=status,
+            message=message,
+            evidence={
+                "observed": observed,
+                "expected": expected,
+                "observed_rank": observed_rank,
+                "expected_rank": expected_rank,
+                "raw_state": raw_state,
+            },
         )
 
     def _compare_named_signature(
@@ -1527,6 +1760,8 @@ class RewardReviewService:
             }
             if item.item in {"signature", "stamp"}:
                 grouped["recognition"].append(payload)
+            elif item.item == "document_type_consistency":
+                grouped["system"].append(payload)
             elif item.item in {
                 "award_contributor_signature_consistency",
                 "award_contributor_work_unit_stamp_consistency",
@@ -1535,6 +1770,7 @@ class RewardReviewService:
                 "candidate_work_unit_stamp_consistency",
                 "completion_unit_name_consistency",
                 "completion_unit_legal_representative_consistency",
+                "completion_unit_legal_representative_signature_consistency",
                 "cooperation_unit_name_consistency",
                 "first_contributor_signature_consistency",
                 "first_completion_unit_stamp_consistency",
@@ -1552,9 +1788,11 @@ class RewardReviewService:
         labels = {
             "signature": "签字识别",
             "stamp": "盖章识别",
+            "document_type_consistency": "材料类型一致性",
             "award_contributor_signature_consistency": "姓名与签字一致性",
             "award_contributor_work_unit_stamp_consistency": "工作单位与公章一致性",
             "award_contributor_completion_unit_stamp_consistency": "完成单位与公章一致性",
+            "contributor_db_rank_consistency": "排名与奖励库一致性",
             "contributor_db_name_consistency": "姓名与奖励库一致性",
             "contributor_db_work_unit_consistency": "工作单位与奖励库一致性",
             "contributor_db_completion_unit_consistency": "完成单位与奖励库一致性",
@@ -1562,6 +1800,7 @@ class RewardReviewService:
             "candidate_work_unit_stamp_consistency": "候选人工作单位公章与奖励库一致性",
             "completion_unit_name_consistency": "单位名称与奖励库一致性",
             "completion_unit_legal_representative_consistency": "法定代表人与奖励库一致性",
+            "completion_unit_legal_representative_signature_consistency": "法定代表人签字/签章与奖励库一致性",
             "cooperation_unit_name_consistency": "合作单位名称与奖励库一致性",
             "first_contributor_signature_consistency": "第一完成人签字与奖励库一致性",
             "first_completion_unit_stamp_consistency": "第一完成单位公章与奖励库一致性",

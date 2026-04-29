@@ -628,89 +628,26 @@ class ReviewAgent:
         if normalized_doc_type == "qysm":
             return await self._do_enterprise_statement_llm_analysis(file_data, doc_type, metadata or {})
 
-        multi_llm = MultimodalLLM(self.llm)
         logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
         print(f"[LLM] 深度分析开始，doc_type={doc_type}", flush=True)
-        
-        # 将 PDF 转为图片（取第一页）
-        image_data = self._pdf_to_image(file_data)
-        
-        ocr_text = extracted.get("text", "") or ""
-        
+
         # 1. 文档类型由请求指定，不做 LLM 分类
         doc_type_llm = doc_type
-        
-        # 2. LLM 通用表格内容提取（一次调用，原文照抄）
-        import re
+
+        # 2. 通用表格字段提取：统一复用 FieldExtractor 的 Qwen OCR 坐标定位 + crop 二次 OCR。
         from src.services.review.rules.config import load_llm_extract_fields
-        from PIL import Image
-        import io
-        
-        # 尝试从配置中获取关键字段
+
         configured_fields = load_llm_extract_fields(doc_type)
-        
+
         try:
-            # 将 PDF 转为图片（取第一页）
-            image_data = self._pdf_to_image(file_data)
-            img = Image.open(io.BytesIO(image_data))
-            img_w, img_h = img.size
-            
-            # Step1: 识别表格字段（如果没有配置字段，才走自动识别）
-            if configured_fields:
-                field_names = configured_fields
-                logger.info(f"[LLM] 使用配置的关键字段: {field_names}")
-            else:
-                logger.info("[LLM] Step1: 识别表格字段...")
-                prompt_detect = """请仔细看图，列出这个表格/表单的所有字段名（只返回字段名列表，每行一个）。
-
-只输出字段名，不要其他内容。"""
-
-                cols_result = await self._analyze_image_with_timeout(
-                    multi_llm, image_data, prompt_detect, "深度分析-Step1字段检测", timeout_sec=40
-                )
-                field_names = [line.strip() for line in cols_result.strip().split('\n') if line.strip() and len(line.strip()) > 1]
-                max_fields = int(os.getenv("LLM_MAX_FIELDS", "25"))
-                if len(field_names) > max_fields:
-                    logger.warning(f"[LLM] 字段数过多({len(field_names)})，仅保留前{max_fields}个")
-                    field_names = field_names[:max_fields]
-                logger.info(f"[LLM] 识别到字段数: {len(field_names)}")
-                
-                if not field_names:
-                    raise Exception("未能识别到表格字段")
-            
-            # Step2: 定位每个字段的值区域
-            logger.info("[LLM] Step2: 定位字段值区域...")
-            prompt_locate = f"""请在图片中找出以下字段的【填写内容】区域（不是字段名，是实际填写文字的区域，要尽量小，只包含文字）：
-
-{chr(10).join(field_names)}
-
-返回格式（每行）：
-字段名: x1,y1,x2,y2 （归一化坐标0-1）"""
-
-            locate_result = await self._analyze_image_with_timeout(
-                    multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
-            )
-            
-            # 解析坐标
-            field_coords = {}
-            for line in locate_result.strip().split('\n'):
-                match = re.match(r'(.+?):\s*([\d.]+),([\d.]+),([\d.]+),([\d.]+)', line)
-                if match:
-                    fname = match.group(1).strip()
-                    x1, y1, x2, y2 = float(match.group(2)), float(match.group(3)), float(match.group(4)), float(match.group(5))
-                    field_coords[fname] = (x1, y1, x2, y2)
-            
-            logger.info(f"[LLM] 定位到 {len(field_coords)} 个字段区域")
-            
-            # Step3: 使用 FieldExtractor 提取（统一提取逻辑）
             from src.common.extractors import FieldExtractor
+
             extractor = FieldExtractor()
-            fields_llm = await extractor.extract_with_coords(
-                file_data=image_data,
-                field_coords=field_coords,
-                field_names=field_names,
+            fields_llm = await extractor.extract(
+                file_data=file_data,
+                document_type=doc_type,
+                configured_fields=configured_fields,
             )
-            
             logger.info("[LLM] 表格提取完成")
         except Exception as e:
             logger.error(f"[LLM] 表格提取失败: {e}")
@@ -733,7 +670,21 @@ class ReviewAgent:
         # 4. 使用 SignatureExtractor 提取签字
         from src.common.extractors import SignatureExtractor
         sig_extractor = SignatureExtractor()
-        sigs_result = await sig_extractor.extract(file_data)
+        verification_result: Dict[str, Any] = {}
+        if normalized_doc_type == "wcdw":
+            signature_region = self._build_completion_unit_legal_representative_signature_region(file_data)
+            self._save_special_debug_crop("completion_unit_legal_representative_signature_crop", signature_region)
+            signature_region_bytes = self._image_to_png_bytes(signature_region)
+            sigs_result = await self._extract_signatures_from_image(signature_region_bytes)
+            signature_names = self._extract_signature_names(sigs_result)
+            target_values = ((metadata or {}).get("reward_review_context") or {}).get("target_values") or {}
+            verification_result = await self._verify_completion_unit_legal_representative_signature_if_needed(
+                image_data=signature_region_bytes,
+                expected_name=str(target_values.get("legal_representative") or "").strip(),
+                signature_names=signature_names,
+            )
+        else:
+            sigs_result = await sig_extractor.extract(file_data)
         sigs_desc = sigs_result if sigs_result else "未检测到签字"
         
         return {
@@ -741,7 +692,9 @@ class ReviewAgent:
             "extracted_fields": fields_llm,
             "stamps_description": stamps_desc,
             "stamps_result": stamps_result,  # 结构化印章数据
+            "signatures_result": sigs_result,
             "signatures_description": str(sigs_desc) if sigs_desc else "未检测到签字",
+            "verification_result": verification_result,
         }
 
     async def _do_award_contributor_llm_analysis(
@@ -773,6 +726,7 @@ class ReviewAgent:
             "raw_response": "",
         }
         payload["contributor_name"] = field_values.get("姓名", "")
+        payload["rank"] = field_values.get("排名", "")
         payload["work_unit"] = field_values.get("工作单位", "")
         payload["completion_unit"] = field_values.get("完成单位", "")
         payload["field_ocr_result"] = field_values
@@ -796,6 +750,7 @@ class ReviewAgent:
         payload["stamp_anchor_regions"] = dict(stamp_result.get("anchor_regions") or stamp_anchors or {})
 
         extracted_fields = {
+            "排名": payload.get("rank", ""),
             "姓名": payload.get("contributor_name", ""),
             "工作单位": payload.get("work_unit", ""),
             "完成单位": payload.get("completion_unit", ""),
@@ -917,7 +872,7 @@ class ReviewAgent:
 
     async def _extract_award_contributor_fields_with_ocr(self, file_data: bytes, doc_type: str) -> Dict[str, str]:
         """主要完成人表单字段：定位值区域后裁剪 OCR。"""
-        field_names = ["姓名", "工作单位", "完成单位"]
+        field_names = ["排名", "姓名", "工作单位", "完成单位"]
         try:
             from src.common.extractors import FieldExtractor
 
@@ -1098,6 +1053,50 @@ class ReviewAgent:
         if right - left < 40 or bottom - top < 40:
             return self._crop_ratio_image(page_image, (0.28, 0.64, 0.92, 0.88))
         return page_image.crop((left, top, right, bottom))
+
+    def _build_completion_unit_legal_representative_signature_region(self, file_data: bytes):
+        """主要完成单位情况表底部法定代表人签名/签章区。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            import io
+            from PIL import Image
+
+            return Image.open(io.BytesIO(self._pdf_to_image(file_data))).convert("RGB")
+        return self._crop_ratio_image(page_image, (0.06, 0.66, 0.58, 0.93))
+
+    async def _verify_completion_unit_legal_representative_signature_if_needed(
+        self,
+        image_data: bytes,
+        expected_name: str,
+        signature_names: List[str],
+    ) -> Dict[str, Any]:
+        """主要完成单位：只核验底部“法定代表人签名”右侧手写/签章姓名。"""
+        if not expected_name or self._award_text_matches(expected_name, signature_names):
+            return {}
+        multi_llm = MultimodalLLM(self.llm)
+        prompt = """这是“主要完成单位情况表”底部的法定代表人签名区域裁剪图。
+目标姓名：%s
+
+请只看“法定代表人签名:”右侧的手写签名或姓名签章，不要读取正文、日期、表格字段、目标姓名，也不要根据上下文猜。
+
+返回严格 JSON：
+{"legal_representative_signature": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示右侧签名/签章的字形本身可以逐字清晰读成目标姓名。
+2. no 表示未见签名/签章，或可见签名/签章不是目标姓名，或只能读成其他姓名，或不能逐字读成目标姓名。
+3. uncertain 仅用于确有签名/签章但图像太模糊，无法判断具体姓名。
+4. 严禁因为目标姓名出现在提示词或表格字段中就返回 yes；必须以签名区域字形为准。
+5. 只返回 JSON，不要解释。""" % expected_name
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            image_data,
+            prompt,
+            "主要完成单位法定代表人签名定向验证",
+            timeout_sec=45,
+        )
+        entry = self._parse_named_verification(raw, "legal_representative_signature")
+        return {"legal_representative_signature": entry} if entry.get("status") else {}
 
     async def _do_first_completion_unit_commitment_llm_analysis(
         self,
