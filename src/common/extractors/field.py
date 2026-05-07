@@ -141,26 +141,9 @@ class FieldExtractor:
 
     def _pdf_to_image(self, file_data: bytes) -> bytes:
         """PDF 转图片（取第一页，fitz 放大3倍）"""
-        import fitz  # PyMuPDF
-        
-        if file_data[:4] != b'%PDF':
-            # 不是 PDF，直接返回
-            return file_data
-        
-        try:
-            doc = fitz.open(stream=file_data, filetype="pdf")
-            if doc.page_count == 0:
-                return file_data
-            
-            # 渲染第一页为图片（放大3倍，提高清晰度）
-            page = doc.load_page(0)
-            pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))  # 3x 分辨率
-            img_data = pix.tobytes("png")
-            doc.close()
-            return img_data
-        except Exception as e:
-            logger.warning(f"[FieldExtractor] PDF 转图片失败: {e}")
-            return file_data
+        from src.common.file_handler.pdf_renderer import render_pdf_first_page
+
+        return render_pdf_first_page(file_data, zoom=3.0)
 
     async def _detect_fields(
         self,

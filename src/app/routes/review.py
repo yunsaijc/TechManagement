@@ -449,6 +449,61 @@ def _build_failure_result(review_id: str, doc_type: str, error: Exception, start
     )
 
 
+def _build_document_type_mismatch_result(
+    review_id: str,
+    doc_type: str,
+    type_check: CheckResult,
+    start_time: float,
+) -> ReviewResult:
+    """构造材料类型不一致的提前终止结果。"""
+    summary = "审查完成：通过 0 项，失败 1 项，警告 0 项"
+    suggestions = [f"请检查：{type_check.item} - {type_check.message}"]
+    result = ReviewResult(
+        id=review_id,
+        status="done",
+        doc_type=doc_type,
+        doc_type_raw=doc_type,
+        results=[type_check],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary=summary,
+        suggestions=suggestions,
+        processing_time=time.time() - start_time,
+    )
+    result.structured_result = {
+        "overview": {
+            "doc_type": doc_type,
+            "doc_type_label": get_doc_type_label(doc_type),
+            "summary": summary,
+            "status_counts": {"passed": 0, "failed": 1, "warning": 0},
+        },
+        "recognized": {
+            "signatures": [],
+            "fields": {},
+            "notes": [],
+            "stamps": [],
+        },
+        "verification": {},
+        "db_binding": {},
+        "checks": {
+            "recognition": [],
+            "form_consistency": [],
+            "database_consistency": [],
+            "system": [
+                {
+                    "code": type_check.item,
+                    "label": "材料类型一致性",
+                    "status": type_check.status.value,
+                    "message": type_check.message,
+                    "evidence": dict(type_check.evidence or {}),
+                }
+            ],
+        },
+    }
+    return result
+
+
 def _result_status_counts(result: ReviewResult) -> Dict[str, int]:
     counts = {"passed": 0, "failed": 0, "warning": 0}
     for item in result.results:
@@ -1170,6 +1225,29 @@ async def submit_review_by_path(
                     normalized_doc_type,
                 )
                 metadata["reward_review_context"] = reward_context
+                type_check = await asyncio.to_thread(
+                    reward_service._build_document_type_consistency_check,
+                    file_data,
+                    normalized_doc_type,
+                )
+                if type_check:
+                    current = _build_document_type_mismatch_result(
+                        review_id=review_id,
+                        doc_type=normalized_doc_type,
+                        type_check=type_check,
+                        start_time=start_time,
+                    )
+                    current = _attach_retry_metadata(
+                        current,
+                        attempts=1,
+                        used_retries=0,
+                        stop_reason="document_type_mismatch",
+                        total_elapsed=time.time() - start_time,
+                        max_attempts=1,
+                    )
+                    _review_results[review_id] = current
+                    _persist_review_result(current)
+                    return
 
             async def _run_single_attempt(_attempt: int) -> ReviewResult:
                 current = await _run_review_job(

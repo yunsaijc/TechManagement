@@ -1145,19 +1145,9 @@ class RewardReviewService:
     def _pdf_to_image(self, file_data: bytes) -> bytes:
         if not file_data.startswith(b"%PDF"):
             return file_data
-        try:
-            import fitz
+        from src.common.file_handler.pdf_renderer import render_pdf_first_page
 
-            doc = fitz.open(stream=file_data, filetype="pdf")
-            if doc.page_count <= 0:
-                return file_data
-            page = doc.load_page(0)
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
-            image_data = pix.tobytes("png")
-            doc.close()
-            return image_data
-        except Exception:
-            return file_data
+        return render_pdf_first_page(file_data, zoom=2.5)
 
     def _run_multimodal_json(self, image_data: bytes, prompt: str) -> Dict[str, Any]:
         async def _run() -> str:

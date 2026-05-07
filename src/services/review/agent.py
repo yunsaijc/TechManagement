@@ -1708,22 +1708,6 @@ class ReviewAgent:
         Returns:
             PNG 格式的图片数据
         """
-        import fitz  # PyMuPDF
-        
-        if file_data[:4] != b'%PDF':
-            # 不是 PDF，直接返回
-            return file_data
-        
-        try:
-            doc = fitz.open(stream=file_data, filetype="pdf")
-            if doc.page_count == 0:
-                return file_data
-            
-            # 渲染第一页为图片（放大3倍，提高清晰度）
-            page = doc.load_page(0)
-            pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))  # 3x 分辨率
-            img_data = pix.tobytes("png")
-            doc.close()
-            return img_data
-        except Exception:
-            return file_data
+        from src.common.file_handler.pdf_renderer import render_pdf_first_page
+
+        return render_pdf_first_page(file_data, zoom=3.0)
