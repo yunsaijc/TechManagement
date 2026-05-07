@@ -2,6 +2,7 @@
 
 from src.common.models.evaluation import EvaluationDimension
 from src.services.evaluation.profile import (
+    PROFILE_DEMONSTRATION,
     PROFILE_GENERIC,
     PROFILE_PLATFORM,
     PROFILE_SCIENCE_POPULARIZATION,
@@ -64,3 +65,19 @@ def test_project_profiler_identifies_tech_rnd_profile():
     )
 
     assert result.project_profile == PROFILE_TECH_RND
+
+
+def test_project_profiler_identifies_demonstration_profile_with_overrides():
+    """示范应用类项目应识别为示范画像，并携带维度放宽配置"""
+    profiler = ProjectProfiler()
+
+    result = profiler.infer(
+        {
+            "应用示范方案": "围绕低空巡检场景开展应用示范与推广应用。",
+            "推广应用": "形成示范场景并逐步产业化落地。",
+            "项目实施的预期经济社会效益目标": "通过示范带动区域应用。",
+        }
+    )
+
+    assert result.project_profile == PROFILE_DEMONSTRATION
+    assert EvaluationDimension.OUTCOME.value in result.dimension_overrides

@@ -46,7 +46,7 @@ def get_default_llm_client():
 def get_review_llm_client():
     """获取 review 场景专用 LLM 客户端。
 
-    review 审查链路更看重可复现性而不是发散性，统一固定 temperature=0。
+    review 审查链路更看重可复现性而不是发散性，统一固定 temperature=0.7。
     """
     api_key = (
         llm_config.api_key
@@ -54,15 +54,20 @@ def get_review_llm_client():
         or os.getenv("API_KEY")
         or os.getenv("OPENAI_API_KEY")
     )
+    extra_body = None
+    if llm_config.provider == "qwen" and llm_config.model.startswith("qwen3.5"):
+        # review 链路以抽取/定位/校验为主，统一关闭 thinking，避免长耗时与脑补。
+        extra_body = {"enable_thinking": False}
     return get_llm_client(
         provider=llm_config.provider or "openai",
         model=llm_config.model or None,
         api_key=api_key or None,
         base_url=llm_config.base_url or None,
-        temperature=0.0,
+        temperature=0.7,
         max_tokens=llm_config.max_tokens,
         timeout=llm_config.timeout,
         max_retries=llm_config.max_retries,
+        extra_body=extra_body,
     )
 
 

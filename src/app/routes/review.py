@@ -6,6 +6,7 @@ import re
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -294,6 +295,14 @@ def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
             "used_retries": int(retry.get("used_retries") or 0),
             "stop_reason": str(retry.get("stop_reason") or ""),
         }
+        if "max_attempts" in retry:
+            compact["retry"]["max_attempts"] = int(retry.get("max_attempts") or 0)
+        if "stage" in retry:
+            compact["retry"]["stage"] = str(retry.get("stage") or "")
+        if "in_progress" in retry:
+            compact["retry"]["in_progress"] = bool(retry.get("in_progress"))
+        if "last_summary" in retry:
+            compact["retry"]["last_summary"] = str(retry.get("last_summary") or "")
 
     return compact
 
@@ -440,6 +449,61 @@ def _build_failure_result(review_id: str, doc_type: str, error: Exception, start
     )
 
 
+def _build_document_type_mismatch_result(
+    review_id: str,
+    doc_type: str,
+    type_check: CheckResult,
+    start_time: float,
+) -> ReviewResult:
+    """构造材料类型不一致的提前终止结果。"""
+    summary = "审查完成：通过 0 项，失败 1 项，警告 0 项"
+    suggestions = [f"请检查：{type_check.item} - {type_check.message}"]
+    result = ReviewResult(
+        id=review_id,
+        status="done",
+        doc_type=doc_type,
+        doc_type_raw=doc_type,
+        results=[type_check],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary=summary,
+        suggestions=suggestions,
+        processing_time=time.time() - start_time,
+    )
+    result.structured_result = {
+        "overview": {
+            "doc_type": doc_type,
+            "doc_type_label": get_doc_type_label(doc_type),
+            "summary": summary,
+            "status_counts": {"passed": 0, "failed": 1, "warning": 0},
+        },
+        "recognized": {
+            "signatures": [],
+            "fields": {},
+            "notes": [],
+            "stamps": [],
+        },
+        "verification": {},
+        "db_binding": {},
+        "checks": {
+            "recognition": [],
+            "form_consistency": [],
+            "database_consistency": [],
+            "system": [
+                {
+                    "code": type_check.item,
+                    "label": "材料类型一致性",
+                    "status": type_check.status.value,
+                    "message": type_check.message,
+                    "evidence": dict(type_check.evidence or {}),
+                }
+            ],
+        },
+    }
+    return result
+
+
 def _result_status_counts(result: ReviewResult) -> Dict[str, int]:
     counts = {"passed": 0, "failed": 0, "warning": 0}
     for item in result.results:
@@ -452,6 +516,15 @@ def _result_status_counts(result: ReviewResult) -> Dict[str, int]:
 def _is_full_pass(result: ReviewResult) -> bool:
     counts = _result_status_counts(result)
     return str(result.status or "").strip().lower() == "done" and counts["failed"] == 0 and counts["warning"] == 0
+
+
+def _has_document_type_mismatch(result: ReviewResult) -> bool:
+    for item in result.results or []:
+        item_name = str(getattr(item, "item", "") or "").strip()
+        status = str(getattr(getattr(item, "status", ""), "value", getattr(item, "status", "")) or "").strip().lower()
+        if item_name == "document_type_consistency" and status == "failed":
+            return True
+    return False
 
 
 def _result_rank(result: ReviewResult) -> tuple[int, int, int, int, float]:
@@ -472,11 +545,14 @@ def _attach_retry_metadata(
     used_retries: int,
     stop_reason: str,
     total_elapsed: float,
+    max_attempts: Optional[int] = None,
 ) -> ReviewResult:
     retry_info = {
         "attempts": attempts,
         "used_retries": used_retries,
         "stop_reason": stop_reason,
+        "max_attempts": int(max_attempts or attempts),
+        "in_progress": False,
     }
     result.processing_time = total_elapsed
     result.extracted_data = dict(result.extracted_data or {})
@@ -485,6 +561,53 @@ def _attach_retry_metadata(
     structured["retry"] = retry_info
     result.structured_result = structured
     return result
+
+
+def _update_processing_retry_status(
+    review_id: str,
+    doc_type: str,
+    attempt: int,
+    max_attempts: int,
+    stage: str,
+    last_result: Optional[ReviewResult] = None,
+) -> None:
+    """在重试/复核期间把可见状态写回内存和磁盘。"""
+    current = _review_results.get(review_id)
+    if current is None:
+        current = _build_placeholder_result(review_id, doc_type)
+
+    used_retries = max(0, attempt - 1)
+    if last_result is not None:
+        current.results = list(last_result.results or [])
+        current.ocr_text = str(last_result.ocr_text or "")
+        current.extracted_data = dict(last_result.extracted_data or {})
+        current.llm_analysis = last_result.llm_analysis
+        current.suggestions = list(last_result.suggestions or [])
+        current.processing_time = float(last_result.processing_time or 0.0)
+        current.structured_result = dict(last_result.structured_result or {})
+        current.doc_type_raw = str(last_result.doc_type_raw or current.doc_type_raw or "")
+
+    current.status = "processing"
+    current.doc_type = doc_type
+    current.summary = f"正在复核第 {attempt} 次（共 {max_attempts} 次）" if max_attempts > 1 else "处理中"
+    if stage:
+        current.summary = f"{current.summary}：{stage}"
+    current.processed_at = datetime.now()
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    retry_info = {
+        "attempts": attempt,
+        "used_retries": used_retries,
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+    }
+    if last_result is not None:
+        retry_info["last_summary"] = str(last_result.summary or "")
+    current.extracted_data["retry"] = retry_info
+    current.structured_result["retry"] = retry_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
 
 
 async def _run_with_retries(
@@ -500,6 +623,14 @@ async def _run_with_retries(
 
     for attempt in range(1, attempts + 1):
         completed_attempts = attempt
+        _update_processing_retry_status(
+            review_id=review_id,
+            doc_type=doc_type,
+            attempt=attempt,
+            max_attempts=attempts,
+            stage="开始审查" if attempt == 1 else "开始复核",
+            last_result=best_result,
+        )
         try:
             current = await run_attempt(attempt)
         except Exception as exc:
@@ -518,6 +649,20 @@ async def _run_with_retries(
             best_result = current
             stop_reason = "full_pass"
             break
+        if _has_document_type_mismatch(current):
+            best_result = current
+            stop_reason = "document_type_mismatch"
+            break
+
+        if attempt < attempts:
+            _update_processing_retry_status(
+                review_id=review_id,
+                doc_type=doc_type,
+                attempt=attempt + 1,
+                max_attempts=attempts,
+                stage=f"第 {attempt} 次结果需复核，准备重试",
+                last_result=current,
+            )
 
     assert best_result is not None
     return _attach_retry_metadata(
@@ -526,6 +671,7 @@ async def _run_with_retries(
         used_retries=max(0, completed_attempts - 1),
         stop_reason=stop_reason,
         total_elapsed=time.time() - start_time,
+        max_attempts=attempts,
     )
 
 
@@ -1079,6 +1225,29 @@ async def submit_review_by_path(
                     normalized_doc_type,
                 )
                 metadata["reward_review_context"] = reward_context
+                type_check = await asyncio.to_thread(
+                    reward_service._build_document_type_consistency_check,
+                    file_data,
+                    normalized_doc_type,
+                )
+                if type_check:
+                    current = _build_document_type_mismatch_result(
+                        review_id=review_id,
+                        doc_type=normalized_doc_type,
+                        type_check=type_check,
+                        start_time=start_time,
+                    )
+                    current = _attach_retry_metadata(
+                        current,
+                        attempts=1,
+                        used_retries=0,
+                        stop_reason="document_type_mismatch",
+                        total_elapsed=time.time() - start_time,
+                        max_attempts=1,
+                    )
+                    _review_results[review_id] = current
+                    _persist_review_result(current)
+                    return
 
             async def _run_single_attempt(_attempt: int) -> ReviewResult:
                 current = await _run_review_job(

@@ -49,6 +49,7 @@ class EconomicBenefitChecker(BaseChecker):
                 self.PROJECT_PROFILE_TECH_RND,
                 self.PROJECT_PROFILE_PLATFORM,
                 self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                "demonstration",
             ):
                 alternative_sections = self._extract_sections(
                     content,
@@ -62,8 +63,9 @@ class EconomicBenefitChecker(BaseChecker):
                         content,
                         self.PROJECT_PROFILE_PLATFORM,
                         self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                        "demonstration",
                     ):
-                        opinion = "该项目更偏平台建设或科普实施类，已基于推广前景、运营延展性和模式复制能力进行基础经济效益判断，不再强制要求独立经济效益章节。"
+                        opinion = "该项目更偏平台建设、科普实施或示范应用类，已基于推广前景、运营延展性和模式复制能力进行基础经济效益判断，不再强制要求独立经济效益章节。"
                         issue = "未设置独立经济效益章节，已按推广前景与运营转化相关内容替代评估"
                     return CheckResult(
                         dimension=self.dimension,

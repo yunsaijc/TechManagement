@@ -43,6 +43,7 @@ class _PolicyContext:
     documents_by_id: dict[str, PolicyDocument]
     bindings_by_document_id: dict[str, list[PolicyBinding]]
     topic_ids_by_program_id: dict[str, list[str]]
+    topic_ids_by_guide_code: dict[str, list[str]]
     window_start_year: int | None
     window_end_year: int | None
 
@@ -245,9 +246,11 @@ def _load_policy_context(
     disclosures: list[ValidationDisclosure],
 ) -> _PolicyContext:
     if not _needs_policy_context(contract):
-        return _PolicyContext({}, {}, {}, None, None)
+        return _PolicyContext({}, {}, {}, {}, None, None)
 
-    start_year, end_year = _policy_window_from_baseline(baseline)
+    start_year, end_year = _policy_window_from_contract(contract)
+    if start_year is None and end_year is None:
+        start_year, end_year = _policy_window_from_baseline(baseline)
     try:
         service = SandboxDataService()
         documents = service.load_policy_documents(start_year=start_year, end_year=end_year)
@@ -270,7 +273,7 @@ def _load_policy_context(
                 field_path="basis_documents",
             )
         )
-        return _PolicyContext({}, {}, {}, start_year, end_year)
+        return _PolicyContext({}, {}, {}, {}, start_year, end_year)
 
     bindings_by_document_id: dict[str, list[PolicyBinding]] = defaultdict(list)
     for item in bindings:
@@ -279,6 +282,7 @@ def _load_policy_context(
         documents_by_id={item.document_id: item for item in documents},
         bindings_by_document_id=dict(bindings_by_document_id),
         topic_ids_by_program_id=_build_topic_ids_by_program_id(project_facts),
+        topic_ids_by_guide_code=_build_topic_ids_by_guide_code(project_facts),
         window_start_year=start_year,
         window_end_year=end_year,
     )
@@ -298,6 +302,18 @@ def _policy_window_from_baseline(baseline: BaselineSnapshot) -> tuple[int | None
     metadata = baseline.metadata or {}
     start_year = _optional_int(metadata.get("startYear"))
     end_year = _optional_int(metadata.get("endYear"))
+    return start_year, end_year
+
+
+def _policy_window_from_contract(contract: ScenarioContract) -> tuple[int | None, int | None]:
+    metadata = contract.metadata or {}
+    policy_window = metadata.get("policyWindow")
+    if not isinstance(policy_window, dict):
+        policy_window = metadata.get("policy_window")
+    if not isinstance(policy_window, dict):
+        return None, None
+    start_year = _optional_int(policy_window.get("start_year") or policy_window.get("startYear"))
+    end_year = _optional_int(policy_window.get("end_year") or policy_window.get("endYear"))
     return start_year, end_year
 
 
@@ -435,6 +451,8 @@ def _collect_document_scope(
             guide_code_hint = _text_value(keys.get("guide_code_hint"))
             if guide_code_hint:
                 topic_ids[guide_code_hint] = None
+                for topic_id in policy_context.topic_ids_by_guide_code.get(guide_code_hint, []):
+                    topic_ids[topic_id] = None
             for stage_name in _string_list(keys.get("stage_names")):
                 stage_names[stage_name] = None
             for constraint_type in _string_list(keys.get("constraint_types")):
@@ -457,6 +475,8 @@ def _collect_document_scope(
         for binding in policy_context.bindings_by_document_id.get(document_id, []):
             if binding.binding_type == "topic" and binding.topic_id:
                 topic_ids[binding.topic_id] = None
+                for topic_id in policy_context.topic_ids_by_guide_code.get(binding.topic_id, []):
+                    topic_ids[topic_id] = None
             elif binding.binding_type == "program" and binding.program_id:
                 program_ids[binding.program_id] = None
             elif binding.binding_type == "stage" and binding.stage_name:
@@ -574,10 +594,38 @@ def _build_topic_ids_by_program_id(project_facts: list[object]) -> dict[str, lis
     grouped: dict[str, OrderedDict[str, None]] = defaultdict(OrderedDict)
     for fact in project_facts:
         program_id = _text_value(getattr(fact, "program_id", None))
-        topic_id = _text_value(getattr(fact, "topic_id", None))
+        topic_id = _compiler_topic_id(getattr(fact, "topic_id", None))
         if program_id and topic_id:
             grouped[program_id][topic_id] = None
     return {program_id: list(topic_ids.keys()) for program_id, topic_ids in grouped.items()}
+
+
+def _build_topic_ids_by_guide_code(project_facts: list[object]) -> dict[str, list[str]]:
+    grouped: dict[str, OrderedDict[str, None]] = defaultdict(OrderedDict)
+    for fact in project_facts:
+        topic_id = _compiler_topic_id(getattr(fact, "topic_id", None))
+        if not topic_id:
+            continue
+        for guide_code in _fact_guide_keys(fact):
+            grouped[guide_code][topic_id] = None
+    return {guide_code: list(topic_ids.keys()) for guide_code, topic_ids in grouped.items()}
+
+
+def _compiler_topic_id(value: object) -> str | None:
+    text = _text_value(value)
+    return text.lower() if text else None
+
+
+def _fact_guide_keys(fact: object) -> list[str]:
+    output: OrderedDict[str, None] = OrderedDict()
+    for attr in ("guide_code", "guide_id"):
+        value = _text_value(getattr(fact, attr, None))
+        if value:
+            output[value] = None
+    legacy_topic_id = _text_value(getattr(fact, "topic_id", None))
+    if legacy_topic_id and legacy_topic_id.isalnum():
+        output[legacy_topic_id] = None
+    return list(output.keys())
 
 
 def _build_action_parameters(

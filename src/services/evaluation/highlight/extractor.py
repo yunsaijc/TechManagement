@@ -1,6 +1,8 @@
 """划重点提取器"""
+from __future__ import annotations
+
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.common.models.evaluation import EvidenceItem, StructuredHighlights
 
@@ -13,6 +15,7 @@ class HighlightExtractor:
     PROJECT_PROFILE_MEDICAL = "medical"
 
     GOAL_SECTION_KEYS = ["研究目标", "项目目标", "总体目标", "项目目的和意义", "项目简介"]
+    KPI_GOAL_SECTION_KEYS = ["项目绩效评价考核目标及指标", "绩效评价考核目标", "考核目标及指标"]
     GOAL_HINTS = ["总体目标", "研究目标", "目标是", "拟实现", "拟建成", "目标值"]
     INNOVATION_SECTION_KEYS = ["创新点", "创新性", "技术创新", "方法创新", "内容创新", "模式创新", "传播创新"]
     INNOVATION_HINTS = ["创新点", "首创", "首次", "突破", "新范式", "新模式"]
@@ -189,8 +192,10 @@ class HighlightExtractor:
         sections: Dict[str, str],
         page_chunks: List[Dict[str, Any]],
         file_name: str,
+        preferred_sections_by_category: Optional[Dict[str, Dict[str, str]]] = None,
     ) -> Tuple[StructuredHighlights, List[EvidenceItem]]:
         """提取结构化摘要与证据"""
+        preferred_sections_by_category = preferred_sections_by_category or {}
         project_profile = self._infer_project_profile(sections)
         goals = self._collect_points(
             sections,
@@ -199,6 +204,7 @@ class HighlightExtractor:
             self.GOAL_HINTS,
             allow_hint_fallback=True,
             category="goal",
+            preferred_sections=preferred_sections_by_category.get("goal"),
         )
         innovations = self._collect_points(
             sections,
@@ -207,6 +213,7 @@ class HighlightExtractor:
             self.INNOVATION_HINTS,
             allow_hint_fallback=True,
             category="innovation",
+            preferred_sections=preferred_sections_by_category.get("innovation"),
         )
         routes = self._collect_points(
             sections,
@@ -215,6 +222,7 @@ class HighlightExtractor:
             self.ROUTE_HINTS,
             allow_hint_fallback=False,
             category="route",
+            preferred_sections=preferred_sections_by_category.get("route"),
         )
 
         highlights = StructuredHighlights(
@@ -242,12 +250,18 @@ class HighlightExtractor:
         hints: List[str],
         allow_hint_fallback: bool,
         category: str,
+        preferred_sections: Optional[Dict[str, str]] = None,
     ) -> List[str]:
         """优先按章节提取，缺失时回退到切片"""
         candidates: List[str] = []
+        preferred_sections = preferred_sections or {}
 
-        for section_name, section_text in self._select_sections(sections, section_keys):
+        for section_name, section_text in preferred_sections.items():
             candidates.extend(self._extract_candidates(section_name, section_text, category))
+
+        if not candidates:
+            for section_name, section_text in self._select_sections(sections, section_keys):
+                candidates.extend(self._extract_candidates(section_name, section_text, category))
 
         if not candidates and allow_hint_fallback:
             for section_name, section_text in sections.items():
@@ -349,8 +363,18 @@ class HighlightExtractor:
         for marker_pattern, stop_markers in patterns:
             candidates.extend(self._extract_goal_segments(compact, marker_pattern, stop_markers))
 
-        if candidates:
-            return candidates
+        viable_candidates = [
+            candidate
+            for candidate in candidates
+            if self._is_valid_point(self._normalize_point(candidate, "goal"), "goal")
+        ]
+        if viable_candidates:
+            return viable_candidates
+
+        if self._section_matches(section_name, self.KPI_GOAL_SECTION_KEYS):
+            candidates.extend(self._extract_goal_candidates_from_kpi_section(compact))
+            if candidates:
+                return candidates
 
         if (
             section_name in {"研究目标", "项目目标", "项目目的和意义"}
@@ -403,6 +427,50 @@ class HighlightExtractor:
 
         segments = re.split(r"[；;。]", compact)
         return [segment.strip(" ：:；;。") for segment in segments if segment.strip()]
+
+    def _extract_goal_candidates_from_kpi_section(self, text: str) -> List[str]:
+        """从绩效表类章节中兜底抽取实施期总体目标，避免整段空掉"""
+        compact = re.sub(r"\s+", " ", text or "").strip()
+        if not compact:
+            return []
+
+        candidates: List[str] = []
+        patterns = (
+            r"实施期目标[:：]\s*(?P<body>.+?)(?:(?:第一年度目标|第二年度目标|第三年度目标|第四年度目标|总体目标[:：]绩效指标|绩效指标|指标名称|指标值|\[表格行\d+\])|$)",
+        )
+        for pattern in patterns:
+            for match in re.finditer(pattern, compact):
+                body = match.groupdict().get("body") if match.groupdict() else match.group(0)
+                cleaned = self._clean_kpi_goal_candidate(body)
+                if cleaned and cleaned not in candidates:
+                    candidates.append(cleaned)
+                if len(candidates) >= 3:
+                    return candidates
+        return candidates
+
+    def _clean_kpi_goal_candidate(self, text: str) -> str:
+        """清理绩效表中的目标候选，去掉表头和指标噪声"""
+        cleaned = re.sub(r"\[表格(?:行|表头)\d+\]", " ", text)
+        cleaned = re.sub(
+            r"(实施期目标|第一年度目标|第二年度目标|第三年度目标|第四年度目标|当前年度|指标名称|指标值|绩效指标|总体目标)",
+            " ",
+            cleaned,
+        )
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ：:；;。|")
+        if not cleaned:
+            return ""
+
+        items = [
+            item.strip(" ：:；;。|")
+            for item in re.split(r"[；;]", cleaned)
+            if item.strip(" ：:；;。|")
+        ]
+        strong_items = [
+            item for item in items
+            if re.search(r"^(形成|研发|建设|开发|完成|构建|搭建|建立)", item)
+        ]
+        merged = "；".join((strong_items or items)[:5]).strip(" ：:；;。|")
+        return merged
 
     def _infer_project_profile(self, sections: Dict[str, str]) -> str:
         """根据章节和正文特征推断项目类型"""

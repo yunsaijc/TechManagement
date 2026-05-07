@@ -22,7 +22,7 @@ def _name_matches(expected: str, candidates: List[str]) -> bool:
         right = _normalize_text(item)
         if not right:
             continue
-        if left == right or left in right or right in left:
+        if left == right:
             return True
     return False
 

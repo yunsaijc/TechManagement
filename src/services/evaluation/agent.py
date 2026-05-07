@@ -30,6 +30,7 @@ from .benchmark import BenchmarkAnalyzer, BenchmarkRetriever
 from .checkers import (
     BaseChecker,
     ComplianceChecker,
+    EvidencePackBuilder,
     EconomicBenefitChecker,
     FeasibilityChecker,
     InnovationChecker,
@@ -44,14 +45,21 @@ from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
 from .packet_builder import EvaluationPacketBuilder
-from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler
+from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler, RubricManager
 from .scorers import EvaluationScorer, ReportGenerator
 from .storage import EvaluationProjectRepository, EvaluationStorage
-from .tools import ToolGateway, ToolUnavailableError
+from .tools import EvaluationSearchClient, ToolGateway, ToolUnavailableError
 
 
 class EvaluationAgent:
     """正文评审编排器"""
+
+    HASH_SOURCE_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(?:pdf|docx)$", re.IGNORECASE)
+    PROJECT_NAME_PATTERNS = [
+        r"项\s*目\s*名\s*称\s*[：:]\s*(.+?)(?:申\s*报\s*单\s*位|承\s*担\s*单\s*位|合\s*作\s*单\s*位|项目负责人|$)",
+        r"项目名称\s*\|\s*(.+?)\s*\|\s*所属专项",
+        r"项目名称\s+(.+?)\s+所属专项",
+    ]
 
     EXPERT_QA_QUESTIONS = [
         "这个项目的研究目标是什么？",
@@ -85,13 +93,21 @@ class EvaluationAgent:
         self.project_repo = EvaluationProjectRepository()
         self.packet_builder = EvaluationPacketBuilder()
 
-        self.tool_gateway = ToolGateway()
+        self.search_client = EvaluationSearchClient()
+        self.tool_gateway = ToolGateway(
+            tech_search_handler=self.search_client.tech_search_handler,
+        )
         self.highlight_extractor = HighlightExtractor()
         self.industry_fit_analyzer = IndustryFitAnalyzer(self.tool_gateway)
-        self.benchmark_analyzer = BenchmarkAnalyzer(BenchmarkRetriever(self.tool_gateway))
+        self.benchmark_analyzer = BenchmarkAnalyzer(
+            BenchmarkRetriever(self.tool_gateway),
+            patent_search_enabled=False,
+        )
         self.chat_indexer = ChatIndexer()
         self.qa_agent = EvaluationQAAgent(llm=self.llm, indexer=self.chat_indexer)
         self.project_profiler = ProjectProfiler()
+        self.rubric_manager = RubricManager()
+        self.evidence_pack_builder = EvidencePackBuilder()
         self._task_semaphore = asyncio.Semaphore(max(1, self.config.concurrency))
         self._chat_answer_cache: Dict[str, EvaluationChatAskResponse] = {}
         self._chat_highlight_cache: Dict[str, EvaluationCitationHighlightResponse] = {}
@@ -134,12 +150,30 @@ class EvaluationAgent:
         sections = parsed.get("sections", {})
         page_chunks = parsed.get("page_chunks", [])
         meta = parsed.get("meta", {})
+        project_name = self._resolve_project_name(
+            sections=sections,
+            meta=meta,
+            project_id=request.project_id,
+            source_name=source_name,
+        )
+        if project_name and not sections.get("项目名称"):
+            sections["项目名称"] = project_name
 
         if request.include_sections:
             sections = self._filter_sections(sections, request.include_sections)
 
         profile_result = self.project_profiler.infer(sections)
         meta["project_profile"] = profile_result.as_dict()
+        dimension_contexts = self._prepare_dimension_contexts(
+            sections=sections,
+            dimensions=request.get_dimensions(),
+            profile_result=profile_result,
+        )
+        meta["dimension_rubrics"] = dimension_contexts["rubrics"]
+        meta["dimension_evidence_packs"] = {
+            dimension: self._summarize_evidence_pack(pack)
+            for dimension, pack in dimension_contexts["evidence_packs"].items()
+        }
 
         dimensions = request.get_dimensions()
         weights = request.weights or self.config.default_weights
@@ -156,12 +190,13 @@ class EvaluationAgent:
             dimensions=dimensions,
             evaluation_id=evaluation_id,
             profile_result=profile_result,
+            dimension_contexts=dimension_contexts,
         )
 
         check_results = module_outputs.get("checks", [])
         result = self.scorer.build_result(
             project_id=request.project_id,
-            project_name=sections.get("项目名称") or meta.get("file_name") or None,
+            project_name=project_name or sections.get("项目名称") or meta.get("file_name") or None,
             check_results=check_results,
             weights=normalized_weights,
         )
@@ -471,20 +506,40 @@ class EvaluationAgent:
         dimensions: List[str],
         evaluation_id: str,
         profile_result: ProjectProfileResult,
+        dimension_contexts: Dict[str, Dict[str, Any]],
     ) -> tuple[Dict[str, Any], List[EvaluationError], bool]:
         """并发执行评审与增强模块"""
         outputs: Dict[str, Any] = {}
         errors: List[EvaluationError] = []
         partial = False
 
+        run_checks_signature = inspect.signature(self._run_checks)
+        if "dimension_contexts" in run_checks_signature.parameters:
+            checks_coro = self._run_checks(
+                sections=sections,
+                dimensions=dimensions,
+                profile_result=profile_result,
+                dimension_contexts=dimension_contexts,
+            )
+        else:
+            checks_coro = self._run_checks(sections, dimensions, profile_result)
+
         module_tasks: Dict[str, asyncio.Task] = {
-            "checks": asyncio.create_task(self._run_task(self._run_checks(sections, dimensions, profile_result))),
+            "checks": asyncio.create_task(self._run_task(checks_coro)),
         }
 
         if request.enable_highlight:
-            module_tasks["highlight"] = asyncio.create_task(
-                self._run_task(self._run_highlight(sections, page_chunks, meta))
-            )
+            run_highlight_signature = inspect.signature(self._run_highlight)
+            if "dimension_contexts" in run_highlight_signature.parameters:
+                highlight_coro = self._run_highlight(
+                    sections,
+                    page_chunks,
+                    meta,
+                    dimension_contexts=dimension_contexts,
+                )
+            else:
+                highlight_coro = self._run_highlight(sections, page_chunks, meta)
+            module_tasks["highlight"] = asyncio.create_task(self._run_task(highlight_coro))
 
         if request.enable_industry_fit:
             module_tasks["industry_fit"] = asyncio.create_task(
@@ -522,7 +577,7 @@ class EvaluationAgent:
                     outputs["benchmark"] = BenchmarkResult(
                         novelty_level="unknown",
                         literature_position="技术摸底工具不可用",
-                        patent_overlap="技术摸底工具不可用",
+                        patent_overlap="专利对比待接入",
                         conclusion="当前仅基于申报书内容，外部对比结论待补充",
                         references=[],
                     )
@@ -556,15 +611,14 @@ class EvaluationAgent:
         sections: Dict[str, str],
         dimensions: List[str],
         profile_result: ProjectProfileResult,
+        dimension_contexts: Dict[str, Dict[str, Any]],
     ) -> List[CheckResult]:
         """并行执行维度检查"""
         task_specs: List[tuple[str, asyncio.Task]] = []
         results: List[CheckResult] = []
-        checker_content = dict(sections)
-        checker_content["_project_profile"] = profile_result.project_profile
 
         for dimension in dimensions:
-            checker = self.get_checker(dimension, profile_result)
+            checker = dimension_contexts["checkers"].get(dimension)
             if not checker:
                 results.append(
                     CheckResult(
@@ -578,15 +632,34 @@ class EvaluationAgent:
                     )
                 )
                 continue
+            checker_content = self._build_checker_content(
+                sections=sections,
+                project_profile=profile_result.project_profile,
+                rubric=dimension_contexts["rubrics"].get(dimension),
+                evidence_pack=dimension_contexts["evidence_packs"].get(dimension),
+            )
             task_specs.append((dimension, asyncio.create_task(self._safe_check(checker, checker_content))))
 
         if task_specs:
             raw = await asyncio.gather(*[task for _, task in task_specs], return_exceptions=True)
             for (dimension, _), item in zip(task_specs, raw):
                 if isinstance(item, Exception):
-                    checker = self.get_checker(dimension, profile_result)
+                    checker = dimension_contexts["checkers"].get(dimension)
                     if checker:
-                        results.append(checker.build_degraded_result(checker_content, str(item)))
+                        checker_content = self._build_checker_content(
+                            sections=sections,
+                            project_profile=profile_result.project_profile,
+                            rubric=dimension_contexts["rubrics"].get(dimension),
+                            evidence_pack=dimension_contexts["evidence_packs"].get(dimension),
+                        )
+                        degraded = checker.build_degraded_result(checker_content, str(item))
+                        results.append(
+                            self._annotate_check_result(
+                                degraded,
+                                rubric=dimension_contexts["rubrics"].get(dimension),
+                                evidence_pack=dimension_contexts["evidence_packs"].get(dimension),
+                            )
+                        )
                     else:
                         results.append(
                             CheckResult(
@@ -600,21 +673,134 @@ class EvaluationAgent:
                             )
                         )
                 else:
-                    results.append(item)
+                    results.append(
+                        self._annotate_check_result(
+                            item,
+                            rubric=dimension_contexts["rubrics"].get(dimension),
+                            evidence_pack=dimension_contexts["evidence_packs"].get(dimension),
+                        )
+                    )
 
         return results
+
+    def _prepare_dimension_contexts(
+        self,
+        sections: Dict[str, str],
+        dimensions: List[str],
+        profile_result: ProjectProfileResult,
+    ) -> Dict[str, Dict[str, Any]]:
+        """预构建维度级 rubric、证据包和 checker"""
+        checkers: Dict[str, BaseChecker] = {}
+        rubrics: Dict[str, Dict[str, Any]] = {}
+        evidence_packs: Dict[str, Dict[str, Any]] = {}
+
+        for dimension in dimensions:
+            checker = self.get_checker(dimension, profile_result)
+            if not checker:
+                continue
+            checkers[dimension] = checker
+            rubric = self.rubric_manager.build_dimension_rubric(
+                dimension=dimension,
+                checker=checker,
+                profile_result=profile_result,
+            )
+            rubrics[dimension] = rubric
+            evidence_packs[dimension] = self.evidence_pack_builder.build(
+                sections=sections,
+                rubric=rubric,
+            )
+
+        return {
+            "checkers": checkers,
+            "rubrics": rubrics,
+            "evidence_packs": evidence_packs,
+        }
+
+    def _build_checker_content(
+        self,
+        sections: Dict[str, str],
+        project_profile: str,
+        rubric: Optional[Dict[str, Any]],
+        evidence_pack: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """构建单维度 checker 输入"""
+        selected_sections = dict((evidence_pack or {}).get("sections") or {})
+        checker_content: Dict[str, Any] = dict(selected_sections)
+        checker_content["_project_profile"] = project_profile
+        if rubric:
+            checker_content["_rubric"] = rubric
+        if evidence_pack:
+            checker_content["_evidence_pack"] = evidence_pack
+        if not selected_sections:
+            checker_content["_all_sections"] = sections
+        return checker_content
+
+    def _summarize_evidence_pack(self, evidence_pack: Dict[str, Any]) -> Dict[str, Any]:
+        """压缩证据包，便于写入调试产物"""
+        return {
+            "required_sections": evidence_pack.get("required_sections", []),
+            "alternative_sections": evidence_pack.get("alternative_sections", []),
+            "required_hits": evidence_pack.get("required_hits", []),
+            "alternative_hits": evidence_pack.get("alternative_hits", []),
+            "query_matches": evidence_pack.get("query_matches", {}),
+            "candidate_count": evidence_pack.get("candidate_count", 0),
+            "evidence_sufficient": evidence_pack.get("evidence_sufficient", False),
+        }
+
+    def _annotate_check_result(
+        self,
+        check_result: CheckResult,
+        rubric: Optional[Dict[str, Any]],
+        evidence_pack: Optional[Dict[str, Any]],
+    ) -> CheckResult:
+        """为维度结果补充 rubric/evidence 元信息，供总评与建议使用"""
+        details = dict(check_result.details or {})
+        details["rubric"] = {
+            "project_profile": (rubric or {}).get("project_profile", ""),
+            "relax_missing_sections": bool((rubric or {}).get("relax_missing_sections", False)),
+            "required_sections": list((rubric or {}).get("required_sections") or []),
+            "alternative_sections": list((rubric or {}).get("alternative_sections") or []),
+        }
+        details["evidence_pack"] = self._summarize_evidence_pack(evidence_pack or {})
+        check_result.details = details
+        return check_result
+
+    def _build_highlight_preferred_sections(
+        self,
+        dimension_contexts: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Dict[str, str]]:
+        """从维度证据包汇总结构化摘要优先章节"""
+        evidence_packs = dimension_contexts.get("evidence_packs") or {}
+
+        def merge_sections(dimensions: List[str]) -> Dict[str, str]:
+            merged: Dict[str, str] = {}
+            for dimension in dimensions:
+                pack = evidence_packs.get(dimension) or {}
+                for name, text in (pack.get("sections") or {}).items():
+                    if name not in merged:
+                        merged[name] = text
+            return merged
+
+        return {
+            "goal": merge_sections(["feasibility", "outcome"]),
+            "innovation": merge_sections(["innovation"]),
+            "route": merge_sections(["feasibility", "schedule"]),
+        }
 
     async def _run_highlight(
         self,
         sections: Dict[str, str],
         page_chunks: List[Dict[str, Any]],
         meta: Dict[str, Any],
+        dimension_contexts: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """执行划重点"""
+        preferred_sections = self._build_highlight_preferred_sections(dimension_contexts or {})
         highlights, evidence = await self.highlight_extractor.extract(
             sections=sections,
             page_chunks=page_chunks,
             file_name=str(meta.get("file_name", "")),
+            preferred_sections_by_category=preferred_sections,
         )
         return {"highlights": highlights, "evidence": evidence}
 
@@ -698,6 +884,75 @@ class EvaluationAgent:
             filtered["项目简介"] = sections["项目简介"]
 
         return filtered or sections
+
+    def _resolve_project_name(
+        self,
+        sections: Dict[str, Any],
+        meta: Dict[str, Any],
+        project_id: str,
+        source_name: str,
+    ) -> str:
+        """统一解析项目名称，避免回退成哈希文件名"""
+        direct_candidates = [
+            sections.get("项目名称"),
+            meta.get("project_name"),
+            source_name,
+            meta.get("file_name"),
+        ]
+        for candidate in direct_candidates:
+            cleaned = self._clean_project_name(candidate)
+            if cleaned:
+                return cleaned
+
+        preferred_keys = ["概述", "项目基本信息", "项目简介", "项目概况", "申报书摘要"]
+        searched_sections: List[str] = []
+        for key in preferred_keys:
+            value = sections.get(key)
+            if isinstance(value, str) and value.strip():
+                searched_sections.append(value)
+
+        for key, value in sections.items():
+            if key in preferred_keys:
+                continue
+            if isinstance(value, str) and value.strip():
+                searched_sections.append(value)
+
+        for text in searched_sections:
+            extracted = self._extract_project_name_from_text(text)
+            if extracted:
+                return extracted
+
+        return str(project_id or "").strip()
+
+    def _extract_project_name_from_text(self, text: str) -> str:
+        """从正文文本中提取项目名称"""
+        normalized_text = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not normalized_text:
+            return ""
+
+        for pattern in self.PROJECT_NAME_PATTERNS:
+            match = re.search(pattern, normalized_text, flags=re.IGNORECASE)
+            if not match:
+                continue
+            cleaned = self._clean_project_name(match.group(1))
+            if cleaned:
+                return cleaned
+        return ""
+
+    def _clean_project_name(self, value: Any) -> str:
+        """清洗候选项目名称，并过滤掉哈希文件名/说明性文案"""
+        text = str(value or "").replace("\r", "")
+        text = re.sub(r"\s*\n\s*", "", text)
+        text = re.sub(r"\s+", " ", text).strip(" :：|\t")
+        if not text:
+            return ""
+        if self.HASH_SOURCE_NAME_RE.match(text):
+            return ""
+        if any(marker in text for marker in ("[表格", "项目名称:", "指南代码")):
+            return ""
+        if any(marker in text for marker in ("要求简练", "字数不宜过多", "项目申报书分为")):
+            return ""
+        return text
 
     def _merge_evidence(self, outputs: Dict[str, Any]) -> List:
         """合并并去重证据"""
@@ -899,11 +1154,12 @@ class EvaluationAgent:
             result = payload.get("result") or {}
             if not isinstance(result, dict):
                 continue
+            project_name = self.report_generator._extract_project_name_from_payload(payload) or result.get("project_name")
             records.append(
                 {
                     "created_at": result.get("created_at"),
                     "project_id": result.get("project_id"),
-                    "project_name": result.get("project_name"),
+                    "project_name": project_name,
                     "source_name": payload.get("source_name"),
                     "overall_score": result.get("overall_score"),
                     "grade": result.get("grade"),

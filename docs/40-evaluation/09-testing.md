@@ -10,15 +10,17 @@
 4. 搜索工具不可用时可降级并标记 `partial/errors`
 5. 不同类型申报书可按画像应用不同评审口径
 6. 正式 HTML 审阅工作台可稳定完成“右侧证据 -> 左侧正文”联动
+7. 已优化的聊天低时延、流式体验与谨慎回答能力不被后续方案回归破坏
 
 ## 测试分层
 
 1. 单元测试：解析器、检查器、评分器、工具网关适配层  
 2. 单元测试：项目画像识别与维度覆盖规则  
-3. 集成测试：`EvaluationAgent` 并发编排与结果合并  
-4. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`、`/chat/ask-stream`  
-5. 前端报告测试：左右布局、正文跳转、高亮联动  
-6. 回归测试：与历史评审结果字段兼容
+3. 单元测试：`rubric` 选择与 `evidence pack` 构建
+4. 集成测试：`EvaluationAgent` 并发编排与结果合并  
+5. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`、`/chat/ask-stream`  
+6. 前端报告测试：左右布局、正文跳转、高亮联动  
+7. 回归测试：与历史评审结果字段兼容
 
 ## 目录建议
 
@@ -62,7 +64,18 @@ tests/services/evaluation/
 - 用例：封面/填报说明/附件目录/绩效表头混入正文  
 - 断言：不会被误归类为 `研究目标/进度安排/预期成果` 等业务章节
 
-### D. 聊天问答
+### D. Rubric 与 Evidence Pack
+
+- 用例：基础研究类项目进入标准研发口径
+- 断言：`feasibility/innovation` 维度仍要求技术方案、验证或研究路径证据
+- 用例：平台建设类项目缺少独立“技术路线”章节
+- 断言：可由“建设目标/建设内容/实施方案”进入替代评估，而不是直接判缺失
+- 用例：某维度只命中封面、目录或噪声页
+- 断言：该维度 `evidence pack` 不应视为充分证据
+- 用例：摘要、评分、总评同时消费同一证据包
+- 断言：关键页码引用保持一致，不出现互相矛盾的证据来源
+
+### E. 聊天问答
 
 - 用例：`/chat/ask` 提问“验证数据有吗？”  
 - 断言：返回 `answer + citations[]`
@@ -76,8 +89,10 @@ tests/services/evaluation/
 - 断言：进展问题不会优先命中封面、预算页或纯职责分工页
 - 断言：预期效益问题能命中效益相关章节并抽取社会/经济/效益类信息
 - 断言：量产可能性问题在证据不足时保持谨慎，不直接输出“可以量产”
+- 断言：问答首字延迟与流式增量体验不因评审主链路调整而明显退化
+- 断言：聊天增强仅限问题路由/证据整理，不改变现有 API 结构
 
-### E. 审阅工作台
+### F. 审阅工作台
 
 - 用例：正式 HTML 报告加载
 - 断言：页面采用左正文、右结果的双栏结构
@@ -89,7 +104,7 @@ tests/services/evaluation/
 - 用例：移动端宽度
 - 断言：页面退化为上下布局，信息仍可完整访问
 
-### F. 兼容与回归
+### G. 兼容与回归
 
 - 用例：科普实施类项目缺少独立 `技术路线` 章节
 - 断言：`feasibility / schedule / risk_control` 不直接退化为默认 5 分缺失结论
@@ -113,6 +128,7 @@ tests/services/evaluation/
 4. 所有降级路径均能返回明确 `partial/errors`  
 5. 审阅工作台中任一证据点击后，页级跳转成功率 = 100%  
 6. 新增能力关闭时，评分结果与旧版偏差在可控范围内
+7. 聊天接口协议、流式事件和低时延体验不因 rubric/evidence 主线改造而回归
 
 ## 测试数据要求
 
@@ -128,7 +144,7 @@ tests/services/evaluation/
 
 ## 当前已落地的最小自动化测试
 
-当前仓库已补充以下聊天能力最小测试：
+当前仓库已补充以下评审主链路最小测试：
 
 - `tests/services/evaluation/test_chat_indexer.py`
   - 研究目标问题优先命中目标/简介章节
@@ -160,6 +176,11 @@ tests/services/evaluation/
   - 科普实施类项目缺少独立技术路线时，相关维度走放宽口径
   - 科普实施类项目未单列成果/效益章节时，成果与效益维度走放宽口径
   - 同一 agent 连续评审时，画像状态不会串用
+- 后续新增：
+  - `tests/services/evaluation/test_rubric_manager.py`
+    - 不同 `project_profile` 输出不同必要项与缺失容忍规则
+  - `tests/services/evaluation/test_evidence_pack.py`
+    - 维度级 `evidence pack` 可过滤噪声页、保持页码一致性、供摘要/评分/总评复用
 - `tests/services/evaluation/test_api_evaluation.py`
   - `evaluate/file` 路由可解析表单参数并调用评审 Agent
   - `chat/ask` 路由可返回 `answer + citations`

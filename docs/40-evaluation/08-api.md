@@ -37,7 +37,7 @@ Content-Type: application/json
   },
   "include_sections": ["技术路线", "创新点"],
   "enable_highlight": true,
-  "enable_industry_fit": true,
+  "enable_industry_fit": false,
   "enable_benchmark": true,
   "enable_chat_index": true
 }
@@ -59,17 +59,11 @@ Content-Type: application/json
     "innovations": ["创新点1"],
     "technical_route": ["路线步骤1"]
   },
-  "industry_fit": {
-    "fit_score": 0.78,
-    "matched": ["指南条目A"],
-    "gaps": ["缺少产业化路径量化指标"],
-    "suggestions": ["补充产线验证数据和时间表"]
-  },
   "benchmark": {
     "novelty_level": "medium_high",
     "literature_position": "与近三年同类研究相比具备方法改进",
-    "patent_overlap": "存在部分交叉，需要进一步规避设计",
-    "conclusion": "技术水平处于国内前列"
+    "patent_overlap": "专利对比待接入",
+    "conclusion": "当前公开论文对比显示技术方案具备一定比较优势"
   },
   "evidence": [
     {
@@ -102,6 +96,7 @@ Content-Type: multipart/form-data
 - `dimensions`：逗号分隔
 - `weights`：JSON 字符串
 - `enable_highlight` / `enable_industry_fit` / `enable_benchmark` / `enable_chat_index`
+- 当前建议：`enable_industry_fit=false`，因为指南正文尚未形成可靠可核验的数据源
 
 ### 说明
 
@@ -156,6 +151,7 @@ Content-Type: application/json
 - `limit` 为可选参数；不传则全量，传入时仅处理前 N 个项目
 - 正文固定读取：
   - `/mnt/remote_corpus/{year}/sbs/{id}/{id}.docx`
+- 当前批量真实评审建议默认关闭 `enable_industry_fit`
 
 ### 响应
 
@@ -208,6 +204,12 @@ Content-Type: application/json
 - 仅当自动重建仍失败时，接口返回 `422`（错误信息包含“未构建聊天索引，且无法自动重建”）
 - `chat/ask` 主链路只返回 `answer + citations(file/page/snippet)`，以降低响应延迟
 - 正文高亮通过 `/chat/citation-highlight` 懒加载补全，前端在用户点击具体证据时再请求 `packet_page/highlight_rects`
+
+## 7. 搜索能力约束
+
+- `guide_search`：当前未作为正式能力启用
+- `tech_search`：当前先接 OpenAlex 公开论文检索
+- 专利对比：暂未接入，相关字段会明确返回“专利对比待接入”，而不是输出误导性否定结论
 
 ## 6. 专家流式问答
 

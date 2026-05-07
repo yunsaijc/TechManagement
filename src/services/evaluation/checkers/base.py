@@ -34,6 +34,9 @@ class BaseChecker(ABC):
     MAX_PROMPT_SECTION_CHARS = 1800
     MAX_PROMPT_TOTAL_CHARS = 6000
     TABLE_LINE_PATTERN = re.compile(r"^\s*(?:\[表格行\d+\]|[|｜]|第?\d+[行列项])")
+    TABLE_ROW_PREFIX_PATTERN = re.compile(r"^\s*\[表格行\d+\]\s*")
+    TABLE_HEADER_PREFIX_PATTERN = re.compile(r"^\s*\[表格表头\d+\]\s*")
+    TABLE_GENERIC_PREFIX_PATTERN = re.compile(r"^\s*第?\d+[行列项]\s*")
     EXCESSIVE_SEPARATOR_PATTERN = re.compile(r"[|｜]\s*")
     SECTION_ALIASES: Dict[str, List[str]] = {
         "预期效益": [
@@ -336,15 +339,44 @@ class BaseChecker(ABC):
             line = raw_line.strip()
             if not line:
                 continue
-            if self.TABLE_LINE_PATTERN.match(line):
-                continue
-            if self.EXCESSIVE_SEPARATOR_PATTERN.search(line) and len(line) > 80:
+            compacted_table_line = self._compact_table_line_for_prompt(line)
+            if compacted_table_line is not None:
+                if compacted_table_line:
+                    normalized_lines.append(compacted_table_line)
                 continue
             normalized_lines.append(line)
 
         normalized = "\n".join(normalized_lines)
         normalized = re.sub(r"\n{3,}", "\n\n", normalized)
         return normalized.strip()
+
+    def _compact_table_line_for_prompt(self, line: str) -> Optional[str]:
+        """压缩表格行，尽量保留语义，避免整行被误删"""
+        payload = line
+
+        if self.TABLE_HEADER_PREFIX_PATTERN.match(payload):
+            payload = self.TABLE_HEADER_PREFIX_PATTERN.sub("", payload, count=1)
+        elif self.TABLE_ROW_PREFIX_PATTERN.match(payload):
+            payload = self.TABLE_ROW_PREFIX_PATTERN.sub("", payload, count=1)
+        elif self.TABLE_GENERIC_PREFIX_PATTERN.match(payload):
+            payload = self.TABLE_GENERIC_PREFIX_PATTERN.sub("", payload, count=1)
+        elif self.EXCESSIVE_SEPARATOR_PATTERN.search(payload) and len(payload) > 80:
+            payload = payload
+        else:
+            return None
+
+        payload = re.sub(r"\s*[|｜]\s*", " / ", payload)
+        payload = re.sub(r"\s*;\s*", "；", payload)
+        payload = re.sub(r"\s*:\s*", ": ", payload)
+        payload = re.sub(r"\s+", " ", payload).strip(" /；")
+        if not payload:
+            return ""
+        if payload.count(" / ") > 6:
+            parts = [part.strip() for part in payload.split(" / ") if part.strip()]
+            payload = " / ".join(parts[:6]) + " ..."
+        if len(payload) > 240:
+            payload = self._truncate_text_for_prompt(payload, 240)
+        return payload
 
     def _truncate_text_for_prompt(self, text: str, limit: int) -> str:
         """截断长文本，保留头尾信息，降低超时概率"""
@@ -426,6 +458,30 @@ class BaseChecker(ABC):
 
         return merged
 
+    def get_evidence_pack(self, content: Dict[str, Any]) -> Dict[str, Any]:
+        """获取 agent 注入的维度证据包"""
+        evidence_pack = content.get("_evidence_pack")
+        return evidence_pack if isinstance(evidence_pack, dict) else {}
+
+    def get_required_evidence_hits(self, content: Dict[str, Any]) -> List[str]:
+        """获取直接命中的必需章节"""
+        evidence_pack = self.get_evidence_pack(content)
+        return list(evidence_pack.get("required_hits") or [])
+
+    def get_alternative_evidence_hits(self, content: Dict[str, Any]) -> List[str]:
+        """获取命中的替代章节"""
+        evidence_pack = self.get_evidence_pack(content)
+        return list(evidence_pack.get("alternative_hits") or [])
+
+    def get_evidence_candidate_count(self, content: Dict[str, Any]) -> int:
+        """获取证据包候选章节数"""
+        evidence_pack = self.get_evidence_pack(content)
+        value = evidence_pack.get("candidate_count", 0)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
     def build_degraded_result(self, content: Dict[str, Any], reason: str = "") -> CheckResult:
         """在模型不可用时，基于章节命中结果返回规则降级结果"""
         sections = self._extract_sections(content, self.required_sections)
@@ -444,14 +500,8 @@ class BaseChecker(ABC):
             )
 
         section_names = list(sections.keys())
-        opinion = (
-            f"已定位到 {len(section_names)} 个相关章节，当前基于规则完成基础判断；"
-            "详细评语待模型服务恢复后补充。"
-        )
+        opinion = f"已定位到 {len(section_names)} 个相关章节，当前基于现有章节证据完成基础评审判断。"
         highlights = [f"已识别章节：{name}" for name in section_names[:2]]
-        issues = []
-        if reason:
-            issues.append(f"模型不可用，已输出规则降级结果：{reason}")
 
         return CheckResult(
             dimension=self.dimension,
@@ -459,7 +509,7 @@ class BaseChecker(ABC):
             score=6.0,
             confidence=0.45,
             opinion=opinion,
-            issues=issues,
+            issues=[],
             highlights=highlights,
             items=[],
             details={"degraded": True, "reason": reason, "matched_sections": section_names},

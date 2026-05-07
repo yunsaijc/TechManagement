@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re
 from pathlib import PureWindowsPath
 from typing import Any, Dict, List, Optional
 
+import requests
+
 from src.common.database.connection import reward_execute, reward_execute_write
+from src.common.llm import llm_config
 from src.common.models import CheckResult, CheckStatus, ReviewResult
 from src.services.review.doc_types import get_doc_type_label, normalize_doc_type
 
 logger = logging.getLogger(__name__)
 
 
-REWARD_PATH_DOC_TYPES = {"tjdwyj", "gzdwyj", "wcr", "wjwcr", "wcdw", "hzdw"}
+REWARD_PATH_DOC_TYPES = {"tjdwyj", "gzdwyj", "wcr", "wjwcr", "wcdw", "hzdw", "dywcrcns", "dywcdwcns", "qysm"}
 
 DOC_TYPE_TO_LX = {
     "tjdwyj": "10.1",
@@ -25,12 +29,45 @@ DOC_TYPE_TO_LX = {
     "wjwcr": "10.3",
     "wcdw": "10.4",
     "hzdw": "10.5",
+    "dywcrcns": "5.10",
+    "dywcdwcns": "5.15",
+    "qysm": "5.16",
+}
+
+QTFJCL_DOC_TYPES = {"dywcrcns", "dywcdwcns", "qysm"}
+
+TYPE_DETECTION_DOC_TYPES = {
+    "wcr",
+    "wjwcr",
+    "wcdw",
+    "dywcrcns",
+    "dywcdwcns",
+    "qysm",
+    "tjdwyj",
+}
+
+TYPE_LABELS = {
+    "wcr": "主要完成人情况表",
+    "wjwcr": "外籍主要完成人情况表",
+    "wcdw": "主要完成单位情况表",
+    "dywcrcns": "第一完成人承诺书",
+    "dywcdwcns": "第一完成单位承诺书",
+    "qysm": "企业声明",
+    "tjdwyj": "提名意见表",
+    "tmh": "提名函",
+    "unknown": "无法确认",
 }
 
 
 def _normalize_text(value: Any) -> str:
     text = str(value or "").strip()
     return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", text).lower()
+
+
+def _is_exact_match(left: str, right: str) -> bool:
+    normalized_left = _normalize_text(left)
+    normalized_right = _normalize_text(right)
+    return bool(normalized_left) and normalized_left == normalized_right
 
 
 def _matches(expected: str, candidates: List[str]) -> bool:
@@ -41,7 +78,7 @@ def _matches(expected: str, candidates: List[str]) -> bool:
         right = _normalize_text(item)
         if not right:
             continue
-        if left == right or left in right or right in left:
+        if left == right:
             return True
     return False
 
@@ -73,6 +110,26 @@ def _raw_candidate_state(expected: str, candidates: List[str]) -> str:
     if not expected_text or not normalized_candidates:
         return "unknown"
     return "match" if _matches(expected_text, normalized_candidates) else "mismatch"
+
+
+def _raw_db_field_state(expected: str, observed: str) -> str:
+    expected_text = str(expected or "").strip()
+    observed_text = str(observed or "").strip()
+    if not expected_text or not observed_text:
+        return "unknown"
+    if _is_exact_match(expected_text, observed_text):
+        return "match"
+    return "mismatch"
+
+
+def _normalize_rank_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"\d+", text)
+    if not match:
+        return ""
+    return str(int(match.group(0)))
 
 
 def _clean_signature_text(value: Any) -> str:
@@ -166,7 +223,8 @@ class RewardReviewService:
             )
             context["attachment_record"] = attachment_record
             if not attachment_record:
-                context["errors"].append("未匹配到 t_xm_gzy 附件记录")
+                attachment_table = "t_xm_qtfjcl" if normalized_doc_type in QTFJCL_DOC_TYPES else "t_xm_gzy"
+                context["errors"].append(f"未匹配到 {attachment_table} 附件记录")
                 return context
         except Exception as exc:
             logger.exception("构建奖励附件上下文失败")
@@ -212,6 +270,10 @@ class RewardReviewService:
         result.extracted_data["reward_verification"] = verification
 
         extras: List[CheckResult] = []
+        type_check = self._build_document_type_consistency_check(file_data, normalized_doc_type)
+        if type_check:
+            extras.append(type_check)
+
         errors = [str(item) for item in context.get("errors", []) if str(item).strip()]
         if errors:
             extras.append(
@@ -263,6 +325,10 @@ class RewardReviewService:
             extras.extend(
                 self._filter_items(
                     [
+                        self._compare_rank_field(
+                            observed=observed_fields.get("rank", ""),
+                            expected=str(target_values.get("rank") or ""),
+                        ),
                         self._compare_field(
                             item="contributor_db_name_consistency",
                             label="姓名",
@@ -306,6 +372,13 @@ class RewardReviewService:
                             expected=str(target_values.get("legal_representative") or ""),
                             verification=verification.get("legal_representative"),
                         ),
+                        self._compare_named_signature(
+                            item="completion_unit_legal_representative_signature_consistency",
+                            label="法定代表人",
+                            expected_name=str(target_values.get("legal_representative") or ""),
+                            signature_names=signatures,
+                            verification=verification.get("legal_representative_signature"),
+                        ),
                     ],
                     effective_items,
                 )
@@ -320,6 +393,58 @@ class RewardReviewService:
                             observed=observed_fields.get("unit_name", ""),
                             expected=str(target_values.get("unit_name") or ""),
                             verification=verification.get("unit_name"),
+                        ),
+                    ],
+                    effective_items,
+                )
+            )
+        elif normalized_doc_type == "dywcrcns":
+            extras.extend(
+                self._filter_items(
+                    [
+                        self._compare_named_signature(
+                            item="first_contributor_signature_consistency",
+                            label="第一完成人",
+                            expected_name=str(target_values.get("name") or ""),
+                            signature_names=signatures,
+                            verification=verification.get("signature_for_name"),
+                        ),
+                    ],
+                    effective_items,
+                )
+            )
+        elif normalized_doc_type == "dywcdwcns":
+            extras.extend(
+                self._filter_items(
+                    [
+                        self._compare_role_stamp_consistency(
+                            item="first_completion_unit_stamp_consistency",
+                            role_label="第一完成单位",
+                            expected_unit=str(target_values.get("unit_name") or ""),
+                            role_units=stamps,
+                            verification=None,
+                        ),
+                    ],
+                    effective_items,
+                )
+            )
+        elif normalized_doc_type == "qysm":
+            extras.extend(
+                self._filter_items(
+                    [
+                        self._compare_role_stamp_consistency(
+                            item="enterprise_stamp_consistency",
+                            role_label="企业名称",
+                            expected_unit=str(target_values.get("enterprise_name") or ""),
+                            role_units=stamps,
+                            verification=verification.get("enterprise_stamp"),
+                        ),
+                        self._compare_named_signature(
+                            item="enterprise_legal_representative_signature_consistency",
+                            label="法定代表人",
+                            expected_name=str(target_values.get("legal_representative") or ""),
+                            signature_names=signatures,
+                            verification=verification.get("legal_representative_signature"),
                         ),
                     ],
                     effective_items,
@@ -347,11 +472,153 @@ class RewardReviewService:
         )
         return result
 
+    def _build_document_type_consistency_check(
+        self,
+        file_data: Optional[bytes],
+        requested_doc_type: str,
+    ) -> Optional[CheckResult]:
+        if requested_doc_type not in TYPE_DETECTION_DOC_TYPES or not file_data:
+            return None
+        detected = self._detect_actual_document_type(file_data)
+        actual_doc_type = str(detected.get("doc_type") or "").strip()
+        if not actual_doc_type or actual_doc_type == "unknown":
+            return None
+        if actual_doc_type == requested_doc_type:
+            return None
+        return CheckResult(
+            item="document_type_consistency",
+            status=CheckStatus.FAILED,
+            message=(
+                f"材料类型与请求类型不一致：请求为“{TYPE_LABELS.get(requested_doc_type, requested_doc_type)}”，"
+                f"实际识别为“{TYPE_LABELS.get(actual_doc_type, actual_doc_type)}”"
+            ),
+            evidence={
+                "requested_doc_type": requested_doc_type,
+                "requested_label": TYPE_LABELS.get(requested_doc_type, get_doc_type_label(requested_doc_type)),
+                "actual_doc_type": actual_doc_type,
+                "actual_label": TYPE_LABELS.get(actual_doc_type, actual_doc_type),
+                "title": detected.get("title", ""),
+                "text_head": detected.get("text_head", ""),
+            },
+        )
+
+    def _detect_actual_document_type(self, file_data: bytes) -> Dict[str, str]:
+        try:
+            image_data = self._pdf_to_image(file_data)
+            ocr_result = self._run_qwen_page_ocr_for_type(image_data)
+            texts = [
+                str(item.get("text") or "").strip()
+                for item in list(ocr_result.get("words_info") or [])
+                if str(item.get("text") or "").strip()
+            ]
+            text = " ".join(texts) or str(ocr_result.get("processed_text") or "")
+            actual = self._classify_document_type_from_text(text)
+            return {
+                "doc_type": actual,
+                "title": self._extract_document_title(text),
+                "text_head": text[:300],
+            }
+        except Exception as exc:
+            logger.warning("材料类型一致性 OCR 检测失败: %s", exc)
+            return {"doc_type": "unknown", "title": "", "text_head": ""}
+
+    def _run_qwen_page_ocr_for_type(self, image_data: bytes) -> Dict[str, Any]:
+        api_key = str(llm_config.api_key or "").strip()
+        if not api_key:
+            return {}
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+        payload = {
+            "model": "qwen-vl-ocr-latest",
+            "input": {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "image": f"data:image/png;base64,{image_b64}",
+                                "min_pixels": 28 * 28 * 256,
+                                "max_pixels": 28 * 28 * 1600,
+                            },
+                            {"text": "请对这张首页执行 OCR，返回所有文字。"},
+                        ],
+                    }
+                ]
+            },
+            "parameters": {
+                "ocr_options": {
+                    "task": "advanced_recognition",
+                    "enable_table": False,
+                    "enable_rotate": True,
+                }
+            },
+        }
+        response = requests.post(
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["output"]["choices"][0]["message"]["content"][0]["ocr_result"]
+        return {
+            "words_info": list(content.get("words_info") or []),
+            "processed_text": str(content.get("processed_text") or ""),
+        }
+
+    def _classify_document_type_from_text(self, text: str) -> str:
+        normalized = re.sub(r"\s+", "", str(text or ""))
+        if not normalized:
+            return "unknown"
+        if "外籍主要完成人情况表" in normalized:
+            return "wjwcr"
+        if "主要完成人情况表" in normalized:
+            return "wcr"
+        if "主要完成单位情况表" in normalized:
+            return "wcdw"
+        if "第一完成人承诺书" in normalized:
+            return "dywcrcns"
+        if "第一完成单位承诺书" in normalized:
+            return "dywcdwcns"
+        if "企业声明" in normalized:
+            return "qysm"
+        if "提名意见" in normalized or "提名单位意见" in normalized:
+            return "tjdwyj"
+        if "提名函" in normalized or re.search(r"关于报送.*提名.*项目.*函", normalized):
+            return "tmh"
+        return "unknown"
+
+    def _extract_document_title(self, text: str) -> str:
+        compact = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not compact:
+            return ""
+        markers = [
+            "主要完成人情况表",
+            "主要完成单位情况表",
+            "第一完成人承诺书",
+            "第一完成单位承诺书",
+            "企业声明",
+            "提名意见表",
+            "提名函",
+        ]
+        for marker in markers:
+            index = compact.find(marker)
+            if index >= 0:
+                return compact[max(0, index - 12): index + len(marker) + 12].strip()
+        match = re.search(r"关于报送.{0,40}提名.{0,40}项目.{0,20}函", compact)
+        if match:
+            return match.group(0).strip()
+        return compact[:80]
+
     def persist_recognition(self, context: Dict[str, Any], result: ReviewResult) -> None:
         attachment = context.get("attachment_record") or {}
         row_id = str(_pick_case_insensitive(attachment, "id") or "").strip()
         if not row_id:
             return
+        doc_type = normalize_doc_type(str(context.get("doc_type") or ""))
 
         signature_status = self._extract_item_status(result, "signature")
         stamp_status = self._extract_item_status(result, "stamp")
@@ -370,26 +637,46 @@ class RewardReviewService:
             },
         }
 
-        sql = """
-        UPDATE t_xm_gzy
-        SET signature_check = %s,
-            signature_info = %s,
-            seal_check = %s,
-            seal_info = %s
-        WHERE id = %s
-        """
         try:
-            reward_execute_write(
-                "xmsbnew",
-                sql,
-                (
-                    signature_status,
-                    json.dumps(signature_info, ensure_ascii=False),
-                    stamp_status,
-                    json.dumps(stamp_info, ensure_ascii=False),
-                    row_id,
-                ),
-            )
+            if doc_type in QTFJCL_DOC_TYPES:
+                payload = {
+                    "doc_type": doc_type,
+                    "signature_check": signature_status,
+                    "signature_info": signature_info,
+                    "seal_check": stamp_status,
+                    "seal_info": stamp_info,
+                }
+                reward_execute_write(
+                    "xmsbnew",
+                    """
+                    UPDATE t_xm_qtfjcl
+                    SET ocr_result = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        json.dumps(payload, ensure_ascii=False),
+                        row_id,
+                    ),
+                )
+            else:
+                reward_execute_write(
+                    "xmsbnew",
+                    """
+                    UPDATE t_xm_gzy
+                    SET signature_check = %s,
+                        signature_info = %s,
+                        seal_check = %s,
+                        seal_info = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        signature_status,
+                        json.dumps(signature_info, ensure_ascii=False),
+                        stamp_status,
+                        json.dumps(stamp_info, ensure_ascii=False),
+                        row_id,
+                    ),
+                )
         except Exception:
             logger.exception("奖励附件识别结果写回失败: id=%s", row_id)
 
@@ -401,6 +688,12 @@ class RewardReviewService:
         nd = ""
         for index, part in enumerate(parts):
             matched = re.fullmatch(r"gzy(\d{4})", part, re.IGNORECASE)
+            if matched:
+                nd = matched.group(1)
+                if index + 1 < len(parts):
+                    xmtjh = parts[index + 1]
+                break
+            matched = re.fullmatch(r"zmcl(\d{4})", part, re.IGNORECASE)
             if matched:
                 nd = matched.group(1)
                 if index + 1 < len(parts):
@@ -421,22 +714,34 @@ class RewardReviewService:
         if not filename or not lx:
             return None
 
-        base_sql = """
-        SELECT g.*, gg.XMTJH
-        FROM t_xm_gzy g
-        LEFT JOIN t_xm_ggjbxx gg ON gg.XMBH = g.XMBH
-        WHERE g.XMBH = %s
-          AND g.LX = %s
-          AND g.FJLJ = %s
-        """
         attempts: List[tuple[str, tuple[Any, ...]]] = []
-        if nd and xmtjh:
-            attempts.append((base_sql + " AND g.ND = %s AND gg.XMTJH = %s LIMIT 1", (project_id, lx, filename, nd, xmtjh)))
-        if nd:
-            attempts.append((base_sql + " AND g.ND = %s LIMIT 1", (project_id, lx, filename, nd)))
-        if xmtjh:
-            attempts.append((base_sql + " AND gg.XMTJH = %s LIMIT 1", (project_id, lx, filename, xmtjh)))
-        attempts.append((base_sql + " LIMIT 1", (project_id, lx, filename)))
+        if doc_type in QTFJCL_DOC_TYPES:
+            base_sql = """
+            SELECT q.*
+            FROM t_xm_qtfjcl q
+            WHERE q.XMBH = %s
+              AND q.LX = %s
+              AND q.FJLJ = %s
+            """
+            if nd:
+                attempts.append((base_sql + " AND q.ND = %s LIMIT 1", (project_id, lx, filename, nd)))
+            attempts.append((base_sql + " LIMIT 1", (project_id, lx, filename)))
+        else:
+            base_sql = """
+            SELECT g.*, gg.XMTJH
+            FROM t_xm_gzy g
+            LEFT JOIN t_xm_ggjbxx gg ON gg.XMBH = g.XMBH
+            WHERE g.XMBH = %s
+              AND g.LX = %s
+              AND g.FJLJ = %s
+            """
+            if nd and xmtjh:
+                attempts.append((base_sql + " AND g.ND = %s AND gg.XMTJH = %s LIMIT 1", (project_id, lx, filename, nd, xmtjh)))
+            if nd:
+                attempts.append((base_sql + " AND g.ND = %s LIMIT 1", (project_id, lx, filename, nd)))
+            if xmtjh:
+                attempts.append((base_sql + " AND gg.XMTJH = %s LIMIT 1", (project_id, lx, filename, xmtjh)))
+            attempts.append((base_sql + " LIMIT 1", (project_id, lx, filename)))
 
         for sql, params in attempts:
             rows = reward_execute("xmsbnew", sql, params)
@@ -484,6 +789,7 @@ class RewardReviewService:
             )
             row = rows[0] if rows else None
             return row, {
+                "rank": str(_pick_case_insensitive(row or {}, "pm", "PM") or "").strip(),
                 "name": str(_pick_case_insensitive(row or {}, "xm", "XM") or "").strip(),
                 "work_unit": str(_pick_case_insensitive(row or {}, "gzdw", "GZDW") or "").strip(),
                 "completion_unit": str(_pick_case_insensitive(row or {}, "wcdw", "WCDW") or "").strip(),
@@ -512,6 +818,40 @@ class RewardReviewService:
                 "unit_name": str(_pick_case_insensitive(row or {}, "dwmc", "DWMC") or "").strip(),
             }
 
+        if doc_type == "dywcrcns":
+            rows = reward_execute(
+                "xmsbnew",
+                "SELECT * FROM t_xm_zywcr WHERE XMBH = %s AND PM = 1 LIMIT 1",
+                (project_id,),
+            )
+            row = rows[0] if rows else None
+            return row, {
+                "name": str(_pick_case_insensitive(row or {}, "xm", "XM") or "").strip(),
+            }
+
+        if doc_type == "dywcdwcns":
+            rows = reward_execute(
+                "xmsbnew",
+                "SELECT * FROM t_xm_xmwcdwqk WHERE XMBH = %s AND DWPM = 1 LIMIT 1",
+                (project_id,),
+            )
+            row = rows[0] if rows else None
+            return row, {
+                "unit_name": str(_pick_case_insensitive(row or {}, "dwmc", "DWMC") or "").strip(),
+            }
+
+        if doc_type == "qysm":
+            rows = reward_execute(
+                "xmsbnew",
+                "SELECT * FROM t_qyjscx_qyjbqk WHERE XMBH = %s LIMIT 1",
+                (project_id,),
+            )
+            row = rows[0] if rows else None
+            return row, {
+                "enterprise_name": str(_pick_case_insensitive(row or {}, "qymc", "QYMC") or "").strip(),
+                "legal_representative": str(_pick_case_insensitive(row or {}, "fddbr", "FDDBR") or "").strip(),
+            }
+
         return None, {}
 
     def _collect_observed_fields(self, result: ReviewResult, doc_type: str) -> Dict[str, str]:
@@ -525,6 +865,7 @@ class RewardReviewService:
             if not isinstance(payload, dict):
                 payload = {}
             return {
+                "rank": str(payload.get("rank") or extracted_fields.get("排名") or "").strip(),
                 "name": str(payload.get("contributor_name") or extracted_fields.get("姓名") or "").strip(),
                 "work_unit": str(payload.get("work_unit") or extracted_fields.get("工作单位") or "").strip(),
                 "completion_unit": str(payload.get("completion_unit") or extracted_fields.get("完成单位") or "").strip(),
@@ -539,6 +880,22 @@ class RewardReviewService:
         if doc_type == "hzdw":
             return {
                 "unit_name": str(extracted_fields.get("单位名称") or "").strip(),
+            }
+
+        if doc_type == "dywcrcns":
+            return {
+                "name": str(extracted_fields.get("姓名") or "").strip(),
+            }
+
+        if doc_type == "dywcdwcns":
+            return {
+                "unit_name": str(extracted_fields.get("单位名称") or "").strip(),
+            }
+
+        if doc_type == "qysm":
+            return {
+                "enterprise_name": str(extracted_fields.get("企业名称") or "").strip(),
+                "legal_representative": str(extracted_fields.get("法定代表人") or "").strip(),
             }
 
         return {}
@@ -679,7 +1036,29 @@ class RewardReviewService:
                     "completion_unit_stamp": self._normalize_verification_entry(payload.get("completion_unit_stamp")),
                 }
             return {}
-        return self._build_verification_result(file_data=file_data, doc_type=doc_type, target_values=target_values)
+        if doc_type == "dywcrcns":
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                return {
+                    "signature_for_name": self._normalize_verification_entry(payload.get("signature_for_name")),
+                }
+            return {}
+        if doc_type == "qysm":
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                return {
+                    "legal_representative_signature": self._normalize_verification_entry(payload.get("legal_representative_signature")),
+                    "enterprise_stamp": self._normalize_verification_entry(payload.get("enterprise_stamp")),
+                }
+            return {}
+        verification = self._build_verification_result(file_data=file_data, doc_type=doc_type, target_values=target_values)
+        if doc_type == "wcdw":
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                verification["legal_representative_signature"] = self._normalize_verification_entry(
+                    payload.get("legal_representative_signature")
+                )
+        return verification
 
     def _build_verification_result(
         self,
@@ -688,6 +1067,8 @@ class RewardReviewService:
         target_values: Dict[str, Any],
     ) -> Dict[str, Any]:
         if not file_data or not target_values:
+            return {}
+        if doc_type in QTFJCL_DOC_TYPES:
             return {}
         try:
             return self._verify_generic_reward_doc(file_data, doc_type, target_values)
@@ -764,19 +1145,9 @@ class RewardReviewService:
     def _pdf_to_image(self, file_data: bytes) -> bytes:
         if not file_data.startswith(b"%PDF"):
             return file_data
-        try:
-            import fitz
+        from src.common.file_handler.pdf_renderer import render_pdf_first_page
 
-            doc = fitz.open(stream=file_data, filetype="pdf")
-            if doc.page_count <= 0:
-                return file_data
-            page = doc.load_page(0)
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
-            image_data = pix.tobytes("png")
-            doc.close()
-            return image_data
-        except Exception:
-            return file_data
+        return render_pdf_first_page(file_data, zoom=2.5)
 
     def _run_multimodal_json(self, image_data: bytes, prompt: str) -> Dict[str, Any]:
         async def _run() -> str:
@@ -838,7 +1209,7 @@ class RewardReviewService:
         verification: Optional[Dict[str, str]] = None,
     ) -> CheckResult:
         verification_status = self._verification_status(verification)
-        raw_state = _raw_field_state(expected, observed)
+        raw_state = _raw_db_field_state(expected, observed)
         evidence = {
             "observed": observed,
             "expected": expected,
@@ -882,10 +1253,104 @@ class RewardReviewService:
                 message=f"表单{label}疑似与奖励库记录不一致，请复核",
                 evidence=evidence,
             )
+        if raw_state == "partial_match":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"表单{label}仅部分匹配奖励库记录，请复核",
+                evidence=evidence,
+            )
         return CheckResult(
             item=item,
             status=CheckStatus.WARNING,
             message=f"表单{label}结果需复核" if verification_status == "yes" else f"表单{label}疑似与奖励库记录不一致，请复核",
+            evidence=evidence,
+        )
+
+    def _compare_rank_field(self, observed: str, expected: str) -> CheckResult:
+        observed_rank = _normalize_rank_value(observed)
+        expected_rank = _normalize_rank_value(expected)
+        if not expected_rank:
+            status = CheckStatus.WARNING
+            message = "奖励库未提供可核验的排名"
+            raw_state = "unknown"
+        elif not observed_rank:
+            status = CheckStatus.WARNING
+            message = "表单排名疑似与奖励库记录不一致，请复核"
+            raw_state = "unknown"
+        elif observed_rank == expected_rank:
+            status = CheckStatus.PASSED
+            message = "表单排名与奖励库记录一致"
+            raw_state = "match"
+        else:
+            status = CheckStatus.FAILED
+            message = "表单排名与奖励库记录不一致"
+            raw_state = "mismatch"
+        return CheckResult(
+            item="contributor_db_rank_consistency",
+            status=status,
+            message=message,
+            evidence={
+                "observed": observed,
+                "expected": expected,
+                "observed_rank": observed_rank,
+                "expected_rank": expected_rank,
+                "raw_state": raw_state,
+            },
+        )
+
+    def _compare_named_signature(
+        self,
+        item: str,
+        label: str,
+        expected_name: str,
+        signature_names: List[str],
+        verification: Optional[Dict[str, str]] = None,
+    ) -> CheckResult:
+        verification_status = self._verification_status(verification)
+        raw_state = _raw_candidate_state(expected_name, signature_names)
+        evidence: Dict[str, Any] = {
+            "expected_name": expected_name,
+            "signature_names": signature_names,
+            "raw_state": raw_state,
+            "verification_status": verification_status,
+        }
+        if verification:
+            evidence["verification"] = verification
+        if raw_state == "match":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{label}“{expected_name}”与签字/签章一致",
+                evidence=evidence,
+            )
+        if verification_status == "yes":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{label}“{expected_name}”与签字/签章一致",
+                evidence=evidence,
+            )
+        if verification_status == "no":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.FAILED,
+                message=f"{label}“{expected_name}”与签字/签章不一致",
+                evidence=evidence,
+            )
+        if raw_state == "mismatch":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"{label}“{expected_name}”与签字/签章疑似不一致，请复核",
+                evidence=evidence,
+            )
+        return CheckResult(
+            item=item,
+            status=CheckStatus.WARNING,
+            message=f"{label}“{expected_name}”与签字/签章结果需复核"
+            if verification_status == "yes"
+            else f"{label}“{expected_name}”与签字/签章疑似不一致，请复核",
             evidence=evidence,
         )
 
@@ -1161,6 +1626,14 @@ class RewardReviewService:
 
         work_item = self._extract_item_evidence(result, "award_contributor_work_unit_stamp_consistency")
         work_units = _dedup([str(item).strip() for item in (work_item.get("role_stamp_units") or []) if str(item).strip()])
+        completion_item = self._extract_item_evidence(result, "award_contributor_completion_unit_stamp_consistency")
+        completion_units = _dedup([str(item).strip() for item in (completion_item.get("role_stamp_units") or []) if str(item).strip()])
+        same_unit = bool(work_item.get("same_unit")) or bool(completion_item.get("same_unit"))
+        if same_unit:
+            merged_units = _dedup(work_units + completion_units)
+            work_units = list(merged_units)
+            completion_units = list(merged_units)
+
         work_result = self._compare_role_stamp_consistency(
             item="award_contributor_work_unit_stamp_consistency",
             role_label="工作单位",
@@ -1171,8 +1644,6 @@ class RewardReviewService:
         work_result.evidence.update({"same_unit": bool(work_item.get("same_unit"))})
         self._replace_result_item(result, "award_contributor_work_unit_stamp_consistency", work_result)
 
-        completion_item = self._extract_item_evidence(result, "award_contributor_completion_unit_stamp_consistency")
-        completion_units = _dedup([str(item).strip() for item in (completion_item.get("role_stamp_units") or []) if str(item).strip()])
         completion_result = self._compare_role_stamp_consistency(
             item="award_contributor_completion_unit_stamp_consistency",
             role_label="完成单位",
@@ -1279,6 +1750,8 @@ class RewardReviewService:
             }
             if item.item in {"signature", "stamp"}:
                 grouped["recognition"].append(payload)
+            elif item.item == "document_type_consistency":
+                grouped["system"].append(payload)
             elif item.item in {
                 "award_contributor_signature_consistency",
                 "award_contributor_work_unit_stamp_consistency",
@@ -1287,7 +1760,12 @@ class RewardReviewService:
                 "candidate_work_unit_stamp_consistency",
                 "completion_unit_name_consistency",
                 "completion_unit_legal_representative_consistency",
+                "completion_unit_legal_representative_signature_consistency",
                 "cooperation_unit_name_consistency",
+                "first_contributor_signature_consistency",
+                "first_completion_unit_stamp_consistency",
+                "enterprise_stamp_consistency",
+                "enterprise_legal_representative_signature_consistency",
             }:
                 grouped["form_consistency"].append(payload)
             elif item.item.startswith("contributor_db_"):
@@ -1300,9 +1778,11 @@ class RewardReviewService:
         labels = {
             "signature": "签字识别",
             "stamp": "盖章识别",
+            "document_type_consistency": "材料类型一致性",
             "award_contributor_signature_consistency": "姓名与签字一致性",
             "award_contributor_work_unit_stamp_consistency": "工作单位与公章一致性",
             "award_contributor_completion_unit_stamp_consistency": "完成单位与公章一致性",
+            "contributor_db_rank_consistency": "排名与奖励库一致性",
             "contributor_db_name_consistency": "姓名与奖励库一致性",
             "contributor_db_work_unit_consistency": "工作单位与奖励库一致性",
             "contributor_db_completion_unit_consistency": "完成单位与奖励库一致性",
@@ -1310,7 +1790,12 @@ class RewardReviewService:
             "candidate_work_unit_stamp_consistency": "候选人工作单位公章与奖励库一致性",
             "completion_unit_name_consistency": "单位名称与奖励库一致性",
             "completion_unit_legal_representative_consistency": "法定代表人与奖励库一致性",
+            "completion_unit_legal_representative_signature_consistency": "法定代表人签字/签章与奖励库一致性",
             "cooperation_unit_name_consistency": "合作单位名称与奖励库一致性",
+            "first_contributor_signature_consistency": "第一完成人签字与奖励库一致性",
+            "first_completion_unit_stamp_consistency": "第一完成单位公章与奖励库一致性",
+            "enterprise_stamp_consistency": "企业公章与奖励库一致性",
+            "enterprise_legal_representative_signature_consistency": "法定代表人签字/签章与奖励库一致性",
             "reward_db_context": "奖励库关联",
         }
         return labels.get(item, item)

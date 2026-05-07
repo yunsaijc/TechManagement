@@ -618,92 +618,36 @@ class ReviewAgent:
         Returns:
             LLM 分析结果
         """
-        if normalize_doc_type(doc_type) in {"wcr", "wjwcr"}:
+        normalized_doc_type = normalize_doc_type(doc_type)
+        if normalized_doc_type in {"wcr", "wjwcr"}:
             return await self._do_award_contributor_llm_analysis(file_data, doc_type, metadata or {})
+        if normalized_doc_type == "dywcrcns":
+            return await self._do_first_contributor_commitment_llm_analysis(file_data, doc_type, metadata or {})
+        if normalized_doc_type == "dywcdwcns":
+            return await self._do_first_completion_unit_commitment_llm_analysis(file_data, doc_type)
+        if normalized_doc_type == "qysm":
+            return await self._do_enterprise_statement_llm_analysis(file_data, doc_type, metadata or {})
 
-        multi_llm = MultimodalLLM(self.llm)
         logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
         print(f"[LLM] 深度分析开始，doc_type={doc_type}", flush=True)
-        
-        # 将 PDF 转为图片（取第一页）
-        image_data = self._pdf_to_image(file_data)
-        
-        ocr_text = extracted.get("text", "") or ""
-        
+
         # 1. 文档类型由请求指定，不做 LLM 分类
         doc_type_llm = doc_type
-        
-        # 2. LLM 通用表格内容提取（一次调用，原文照抄）
-        import re
+
+        # 2. 通用表格字段提取：统一复用 FieldExtractor 的 Qwen OCR 坐标定位 + crop 二次 OCR。
         from src.services.review.rules.config import load_llm_extract_fields
-        from PIL import Image
-        import io
-        
-        # 尝试从配置中获取关键字段
+
         configured_fields = load_llm_extract_fields(doc_type)
-        
+
         try:
-            # 将 PDF 转为图片（取第一页）
-            image_data = self._pdf_to_image(file_data)
-            img = Image.open(io.BytesIO(image_data))
-            img_w, img_h = img.size
-            
-            # Step1: 识别表格字段（如果没有配置字段，才走自动识别）
-            if configured_fields:
-                field_names = configured_fields
-                logger.info(f"[LLM] 使用配置的关键字段: {field_names}")
-            else:
-                logger.info("[LLM] Step1: 识别表格字段...")
-                prompt_detect = """请仔细看图，列出这个表格/表单的所有字段名（只返回字段名列表，每行一个）。
-
-只输出字段名，不要其他内容。"""
-
-                cols_result = await self._analyze_image_with_timeout(
-                    multi_llm, image_data, prompt_detect, "深度分析-Step1字段检测", timeout_sec=40
-                )
-                field_names = [line.strip() for line in cols_result.strip().split('\n') if line.strip() and len(line.strip()) > 1]
-                max_fields = int(os.getenv("LLM_MAX_FIELDS", "25"))
-                if len(field_names) > max_fields:
-                    logger.warning(f"[LLM] 字段数过多({len(field_names)})，仅保留前{max_fields}个")
-                    field_names = field_names[:max_fields]
-                logger.info(f"[LLM] 识别到字段数: {len(field_names)}")
-                
-                if not field_names:
-                    raise Exception("未能识别到表格字段")
-            
-            # Step2: 定位每个字段的值区域
-            logger.info("[LLM] Step2: 定位字段值区域...")
-            prompt_locate = f"""请在图片中找出以下字段的【填写内容】区域（不是字段名，是实际填写文字的区域，要尽量小，只包含文字）：
-
-{chr(10).join(field_names)}
-
-返回格式（每行）：
-字段名: x1,y1,x2,y2 （归一化坐标0-1）"""
-
-            locate_result = await self._analyze_image_with_timeout(
-                    multi_llm, image_data, prompt_locate, "深度分析-Step2字段定位", timeout_sec=180
-            )
-            
-            # 解析坐标
-            field_coords = {}
-            for line in locate_result.strip().split('\n'):
-                match = re.match(r'(.+?):\s*([\d.]+),([\d.]+),([\d.]+),([\d.]+)', line)
-                if match:
-                    fname = match.group(1).strip()
-                    x1, y1, x2, y2 = float(match.group(2)), float(match.group(3)), float(match.group(4)), float(match.group(5))
-                    field_coords[fname] = (x1, y1, x2, y2)
-            
-            logger.info(f"[LLM] 定位到 {len(field_coords)} 个字段区域")
-            
-            # Step3: 使用 FieldExtractor 提取（统一提取逻辑）
             from src.common.extractors import FieldExtractor
+
             extractor = FieldExtractor()
-            fields_llm = await extractor.extract_with_coords(
-                file_data=image_data,
-                field_coords=field_coords,
-                field_names=field_names,
+            fields_llm = await extractor.extract(
+                file_data=file_data,
+                document_type=doc_type,
+                configured_fields=configured_fields,
             )
-            
             logger.info("[LLM] 表格提取完成")
         except Exception as e:
             logger.error(f"[LLM] 表格提取失败: {e}")
@@ -726,7 +670,21 @@ class ReviewAgent:
         # 4. 使用 SignatureExtractor 提取签字
         from src.common.extractors import SignatureExtractor
         sig_extractor = SignatureExtractor()
-        sigs_result = await sig_extractor.extract(file_data)
+        verification_result: Dict[str, Any] = {}
+        if normalized_doc_type == "wcdw":
+            signature_region = self._build_completion_unit_legal_representative_signature_region(file_data)
+            self._save_special_debug_crop("completion_unit_legal_representative_signature_crop", signature_region)
+            signature_region_bytes = self._image_to_png_bytes(signature_region)
+            sigs_result = await self._extract_signatures_from_image(signature_region_bytes)
+            signature_names = self._extract_signature_names(sigs_result)
+            target_values = ((metadata or {}).get("reward_review_context") or {}).get("target_values") or {}
+            verification_result = await self._verify_completion_unit_legal_representative_signature_if_needed(
+                image_data=signature_region_bytes,
+                expected_name=str(target_values.get("legal_representative") or "").strip(),
+                signature_names=signature_names,
+            )
+        else:
+            sigs_result = await sig_extractor.extract(file_data)
         sigs_desc = sigs_result if sigs_result else "未检测到签字"
         
         return {
@@ -734,7 +692,9 @@ class ReviewAgent:
             "extracted_fields": fields_llm,
             "stamps_description": stamps_desc,
             "stamps_result": stamps_result,  # 结构化印章数据
+            "signatures_result": sigs_result,
             "signatures_description": str(sigs_desc) if sigs_desc else "未检测到签字",
+            "verification_result": verification_result,
         }
 
     async def _do_award_contributor_llm_analysis(
@@ -748,94 +708,53 @@ class ReviewAgent:
         logger.info(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}")
         print(f"[LLM] 主要完成人情况表专项分析开始，doc_type={doc_type}", flush=True)
 
-        image_data = self._build_award_contributor_analysis_image(file_data)
-        reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
-        target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
-        expected_name = str((target_values or {}).get("name") or "").strip()
-        expected_work_unit = str((target_values or {}).get("work_unit") or "").strip()
-        expected_completion_unit = str((target_values or {}).get("completion_unit") or "").strip()
-
-        if expected_name or expected_work_unit or expected_completion_unit:
-            prompt = """4 个局部图：
-A 字段区
-B 签名区
-C 工作单位公章区
-D 完成单位公章区
-
-目标值：
-姓名=%s
-工作单位=%s
-完成单位=%s
-
-只返回 JSON：
-{
-  "raw": {
-    "contributor_name": "",
-    "work_unit": "",
-    "completion_unit": "",
-    "signature_name": "",
-    "work_unit_stamp_unit": "",
-    "completion_unit_stamp_unit": ""
-  },
-  "verify": {
-    "name": "yes|no|uncertain",
-    "signature_for_name": "yes|no|uncertain",
-    "work_unit": "yes|no|uncertain",
-    "completion_unit": "yes|no|uncertain",
-    "work_unit_stamp": "yes|no|uncertain",
-    "completion_unit_stamp": "yes|no|uncertain"
-  }
-}
-
-规则：
-1. raw 只能写图中直接看到的原始内容，看不清留空，不能按目标值补全。
-2. verify 只能填 yes/no/uncertain。
-3. yes=清晰确认与目标一致；no=清晰确认不一致或未见；uncertain=看不清。
-4. C 区只判断工作单位公章，D 区只判断完成单位公章，禁止跨区借用另一块区域的文字或公章。
-5. 公章只看红章，不要把打印文字当公章。
-6. 只返回 JSON，不要解释。""" % (
-                expected_name or "空",
-                expected_work_unit or "空",
-                expected_completion_unit or "空",
-            )
-        else:
-            prompt = """4 个局部图：
-A 字段区
-B 签名区
-C 工作单位公章区
-D 完成单位公章区
-
-只返回 JSON：
-{
-  "contributor_name": "",
-  "work_unit": "",
-  "completion_unit": "",
-  "signature_name": "",
-  "work_unit_stamp_unit": "",
-  "completion_unit_stamp_unit": ""
-}
-
-规则：
-1. 只基于清晰可见内容填写，看不清留空，不要猜。
-2. C 区只识别工作单位公章，D 区只识别完成单位公章，禁止跨区借字。
-3. 只识别对应区域，不要把别处文字带进来。
-4. 只返回 JSON，不要解释。"""
-
-        raw = await self._analyze_image_with_timeout(
-            multi_llm,
-            image_data,
-            prompt,
-            "主要完成人情况表专项分析",
-            timeout_sec=90,
+        field_values, signatures_result, stamp_anchors = await asyncio.gather(
+            self._extract_award_contributor_fields_with_ocr(file_data, doc_type),
+            self._extract_award_contributor_signatures(file_data),
+            self._locate_award_contributor_stamp_anchors(file_data),
         )
-        payload = self._parse_award_contributor_analysis(raw)
+        signature_names = [
+            str(item.get("text") or "").strip()
+            for item in signatures_result.get("signatures", [])
+            if isinstance(item, dict) and str(item.get("text") or "").strip()
+        ]
+        payload = {
+            "signature_names": signature_names,
+            "work_unit_stamp_units": [],
+            "completion_unit_stamp_units": [],
+            "all_stamp_units": [],
+            "raw_response": "",
+        }
+        payload["contributor_name"] = field_values.get("姓名", "")
+        payload["rank"] = field_values.get("排名", "")
+        payload["work_unit"] = field_values.get("工作单位", "")
+        payload["completion_unit"] = field_values.get("完成单位", "")
+        payload["field_ocr_result"] = field_values
+        payload["stamp_regions"] = []
+        payload["stamp_anchor_regions"] = dict(stamp_anchors or {})
+
+        signature_image_data = self._build_award_contributor_signature_region(file_data)
+        stamp_result, verification_result = await asyncio.gather(
+            self._extract_award_contributor_stamps(file_data, anchors=stamp_anchors),
+            self._verify_award_contributor_signature_if_needed(
+                multi_llm=multi_llm,
+                image_data=signature_image_data,
+                metadata=metadata,
+                payload=payload,
+            ),
+        )
+        payload["work_unit_stamp_units"] = list(stamp_result.get("work_unit_stamp_units", []))
+        payload["completion_unit_stamp_units"] = list(stamp_result.get("completion_unit_stamp_units", []))
+        payload["all_stamp_units"] = list(stamp_result.get("all_stamp_units", []))
+        payload["stamp_regions"] = list(stamp_result.get("regions", []))
+        payload["stamp_anchor_regions"] = dict(stamp_result.get("anchor_regions") or stamp_anchors or {})
 
         extracted_fields = {
+            "排名": payload.get("rank", ""),
             "姓名": payload.get("contributor_name", ""),
             "工作单位": payload.get("work_unit", ""),
             "完成单位": payload.get("completion_unit", ""),
         }
-        signature_names = payload.get("signature_names", [])
         work_stamp_units = payload.get("work_unit_stamp_units", [])
         completion_stamp_units = payload.get("completion_unit_stamp_units", [])
         all_stamp_units = []
@@ -843,25 +762,7 @@ D 完成单位公章区
             text = str(unit or "").strip()
             if text and text not in all_stamp_units:
                 all_stamp_units.append(text)
-        signatures_result = {
-            "signatures": [
-                {"text": name, "bbox": None, "confidence": 0.9}
-                for name in signature_names
-            ]
-        }
-        stamps_result = {
-            "stamps": [
-                {"unit": unit, "text": unit, "location": "工作单位（公章）", "bbox": None, "confidence": 0.9}
-                for unit in work_stamp_units
-            ] + [
-                {"unit": unit, "text": unit, "location": "完成单位（公章）", "bbox": None, "confidence": 0.9}
-                for unit in completion_stamp_units
-            ] + [
-                {"unit": unit, "text": unit, "location": "页面印章", "bbox": None, "confidence": 0.8}
-                for unit in all_stamp_units
-                if unit not in set(work_stamp_units + completion_stamp_units)
-            ]
-        }
+        stamps_result = stamp_result
 
         signatures_description = "；".join(signature_names) if signature_names else "未检测到签字"
         stamps_description = "；".join(all_stamp_units) if all_stamp_units else "未检测到印章"
@@ -873,9 +774,841 @@ D 完成单位公章区
             "stamps_result": stamps_result,
             "signatures_result": signatures_result,
             "signatures_description": signatures_description,
-            "verification_result": payload.get("verification", {}),
+            "verification_result": verification_result,
             "award_contributor_analysis": payload,
         }
+
+    async def _extract_award_contributor_signatures(self, file_data: bytes) -> Dict[str, Any]:
+        """主要完成人签字：只看左下签字区，避免把公章/姓名章带进去。"""
+        try:
+            from src.common.extractors import SignatureExtractor
+            from src.common.extractors.signature import normalize_signature_entries
+
+            extractor = SignatureExtractor()
+            signature_region = self._build_award_contributor_signature_region(file_data)
+            result = await extractor.extract(signature_region)
+            signatures = normalize_signature_entries((result or {}).get("signatures", []))
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人签字提取失败: %s", exc)
+            signatures = []
+
+        return {"signatures": signatures}
+
+    def _build_award_contributor_signature_region(self, file_data: bytes) -> bytes:
+        """裁出主要完成人情况表底部签字带，尽量排除承诺正文和右侧公章区。"""
+        import io
+        from PIL import Image, ImageOps
+
+        image_data = self._pdf_to_image(file_data)
+        try:
+            page = Image.open(io.BytesIO(image_data))
+            page = ImageOps.exif_transpose(page).convert("RGB")
+        except Exception:
+            return image_data
+
+        w, h = page.size
+        box = (
+            int(w * 0.05),
+            int(h * 0.65),
+            int(w * 0.43),
+            int(h * 0.88),
+        )
+        crop = page.crop(box)
+        buf = io.BytesIO()
+        crop.save(buf, format="PNG")
+        return buf.getvalue()
+
+    async def _locate_award_contributor_stamp_anchors(self, file_data: bytes) -> Dict[str, Any]:
+        """主要完成人公章锚点定位。"""
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            result = await extractor.locate_award_contributor_stamp_anchors(file_data)
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人公章锚点定位失败: %s", exc)
+            result = {}
+
+        return dict(result or {})
+
+    async def _extract_award_contributor_stamps(
+        self,
+        file_data: bytes,
+        anchors: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """主要完成人公章：统一走 StampExtractor。"""
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            if anchors is None:
+                result = await asyncio.wait_for(
+                    extractor.extract_award_contributor_stamps(file_data),
+                    timeout=45,
+                )
+            else:
+                result = await asyncio.wait_for(
+                    extractor.extract_award_contributor_stamps_from_anchors(file_data, anchors),
+                    timeout=45,
+                )
+        except asyncio.TimeoutError:
+            logger.warning("[REVIEW] 主要完成人公章提取超时，降级为空结果")
+            result = {"anchor_regions": anchors or {}}
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人公章提取失败: %s", exc)
+            result = {"anchor_regions": anchors or {}}
+
+        if not isinstance(result, dict):
+            result = {}
+        return {
+            "stamps": list(result.get("stamps", [])),
+            "work_unit_stamp_units": list(result.get("work_unit_stamp_units", [])),
+            "completion_unit_stamp_units": list(result.get("completion_unit_stamp_units", [])),
+            "all_stamp_units": list(result.get("all_stamp_units", [])),
+            "anchor_regions": dict(result.get("anchor_regions", {})),
+            "regions": list(result.get("regions", [])),
+            "raw": result.get("raw", {}),
+        }
+
+    async def _extract_award_contributor_fields_with_ocr(self, file_data: bytes, doc_type: str) -> Dict[str, str]:
+        """主要完成人表单字段：定位值区域后裁剪 OCR。"""
+        field_names = ["排名", "姓名", "工作单位", "完成单位"]
+        try:
+            from src.common.extractors import FieldExtractor
+
+            extractor = FieldExtractor()
+            fields = await extractor.extract(
+                file_data=file_data,
+                document_type=doc_type,
+                configured_fields=field_names,
+            )
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人字段 OCR 提取失败: %s", exc)
+            fields = {}
+
+        if not isinstance(fields, dict):
+            fields = {}
+        return {
+            name: str(fields.get(name) or "").strip()
+            for name in field_names
+        }
+
+    async def _do_first_contributor_commitment_llm_analysis(
+        self,
+        file_data: bytes,
+        doc_type: str,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """第一完成人承诺书：只走底部签字专项。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            return {"document_type_llm": doc_type, "extracted_fields": {"姓名": ""}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
+
+        signature_crop = await self._locate_first_contributor_signature_crop(file_data, page_image)
+        self._save_special_debug_crop("first_contributor_signature_crop", signature_crop)
+        signature_bytes = self._image_to_png_bytes(signature_crop)
+        signatures_result = await self._extract_signatures_from_image(signature_bytes)
+        signature_names = self._extract_signature_names(signatures_result)
+        verification_result = await self._verify_target_signature_if_needed(
+            image_data=signature_bytes,
+            expected_name=str(((metadata.get("reward_review_context") or {}).get("target_values") or {}).get("name") or "").strip(),
+            signature_names=signature_names,
+            verification_key="signature_for_name",
+            task_name="第一完成人签字定向验证",
+            prompt_label="第一完成人签字区域",
+        )
+
+        recognized_name = signature_names[0] if signature_names else ""
+        return {
+            "document_type_llm": doc_type,
+            "extracted_fields": {"姓名": recognized_name},
+            "stamps_description": "未检测到印章",
+            "stamps_result": {"stamps": []},
+            "signatures_result": signatures_result,
+            "signatures_description": "；".join(signature_names) if signature_names else "未检测到签字",
+            "verification_result": verification_result,
+        }
+
+    async def _locate_first_contributor_signature_crop(self, file_data: bytes, page_image) -> Any:
+        """基于“第一完成人签字”锚点裁剪签字区，找不到时回退固定框。"""
+        default_box = (0.28, 0.64, 0.92, 0.88)
+        default_crop = self._crop_ratio_image(page_image, default_box)
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            image_data = self._pdf_to_image(file_data)
+            ocr_result = await extractor._run_qwen_ocr(
+                image_data=image_data,
+                prompt="请对这张第一页执行 OCR，返回所有文字及其位置。",
+                debug_name="first_contributor_page_ocr",
+                task="advanced_recognition",
+                enable_rotate=False,
+            )
+            label_bbox = self._find_first_contributor_signature_label_bbox(
+                words=list(ocr_result.get("words_info") or []),
+                extractor=extractor,
+                img_w=page_image.size[0],
+                img_h=page_image.size[1],
+            )
+            if not label_bbox:
+                return default_crop
+            crop = self._crop_first_contributor_signature_from_label(page_image, label_bbox)
+            self._save_special_debug_crop("first_contributor_signature_anchor_crop", crop)
+            return crop
+        except Exception as exc:
+            logger.warning("[REVIEW] 第一完成人签字锚点定位失败: %s", exc)
+            return default_crop
+
+    def _find_first_contributor_signature_label_bbox(
+        self,
+        words: List[Dict[str, Any]],
+        extractor: Any,
+        img_w: int,
+        img_h: int,
+    ) -> Optional[Dict[str, float]]:
+        targets = ("第一完成人签字", "第一完成人签名")
+        exact: List[tuple[float, Dict[str, float]]] = []
+        partial: List[tuple[float, Dict[str, float]]] = []
+        for word in words:
+            box = extractor._word_bbox(word)
+            if box["y1"] < img_h * 0.55:
+                continue
+            text_norm = extractor._normalize_text(word.get("text"))
+            if not text_norm:
+                continue
+            for target in targets:
+                if target in text_norm:
+                    sliced = extractor._slice_word_by_normalized_substring(word, target)
+                    sliced_box = extractor._merge_word_bboxes([sliced])
+                    if sliced_box:
+                        score = box["y1"] - box["x1"] * 0.001
+                        exact.append((score, sliced_box))
+                    break
+            else:
+                if "第一完成人" not in text_norm:
+                    continue
+                tail_word = self._find_nearby_text_word(
+                    words=words,
+                    extractor=extractor,
+                    base_word=word,
+                    candidates=("签字", "签名"),
+                    img_h=img_h,
+                )
+                merged_words = [extractor._slice_word_by_normalized_substring(word, "第一完成人")]
+                if tail_word is not None:
+                    tail_text = extractor._normalize_text(tail_word.get("text"))
+                    tail_target = "签字" if "签字" in tail_text else "签名"
+                    merged_words.append(extractor._slice_word_by_normalized_substring(tail_word, tail_target))
+                merged_box = extractor._merge_word_bboxes(merged_words)
+                if merged_box:
+                    score = box["y1"] - box["x1"] * 0.001
+                    partial.append((score, merged_box))
+        if exact:
+            exact.sort(key=lambda item: item[0], reverse=True)
+            return exact[0][1]
+        if partial:
+            partial.sort(key=lambda item: item[0], reverse=True)
+            return partial[0][1]
+        return None
+
+    def _find_nearby_text_word(
+        self,
+        words: List[Dict[str, Any]],
+        extractor: Any,
+        base_word: Dict[str, Any],
+        candidates: tuple[str, ...],
+        img_h: int,
+    ) -> Optional[Dict[str, Any]]:
+        base_box = extractor._word_bbox(base_word)
+        base_center_y = (base_box["y1"] + base_box["y2"]) / 2.0
+        matches: List[tuple[float, Dict[str, Any]]] = []
+        for word in words:
+            if word is base_word:
+                continue
+            text_norm = extractor._normalize_text(word.get("text"))
+            if not text_norm or not any(target in text_norm for target in candidates):
+                continue
+            box = extractor._word_bbox(word)
+            if box["y1"] < img_h * 0.55:
+                continue
+            center_y = (box["y1"] + box["y2"]) / 2.0
+            if abs(center_y - base_center_y) > 48:
+                continue
+            gap = abs(box["x1"] - base_box["x2"])
+            matches.append((gap, word))
+        if not matches:
+            return None
+        matches.sort(key=lambda item: item[0])
+        return matches[0][1]
+
+    def _crop_first_contributor_signature_from_label(self, page_image, label_bbox: Dict[str, float]):
+        img_w, img_h = page_image.size
+        label_width = max(1.0, label_bbox["x2"] - label_bbox["x1"])
+        label_height = max(1.0, label_bbox["y2"] - label_bbox["y1"])
+        left = max(0, int(label_bbox["x2"] - label_width * 0.08))
+        top = max(0, int(label_bbox["y1"] - label_height * 0.9))
+        right = min(img_w, int(max(label_bbox["x2"] + img_w * 0.22, img_w * 0.92)))
+        bottom = min(img_h, int(label_bbox["y2"] + label_height * 3.4))
+        if right - left < 40 or bottom - top < 40:
+            return self._crop_ratio_image(page_image, (0.28, 0.64, 0.92, 0.88))
+        return page_image.crop((left, top, right, bottom))
+
+    def _build_completion_unit_legal_representative_signature_region(self, file_data: bytes):
+        """主要完成单位情况表底部法定代表人签名/签章区。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            import io
+            from PIL import Image
+
+            return Image.open(io.BytesIO(self._pdf_to_image(file_data))).convert("RGB")
+        return self._crop_ratio_image(page_image, (0.06, 0.66, 0.58, 0.93))
+
+    async def _verify_completion_unit_legal_representative_signature_if_needed(
+        self,
+        image_data: bytes,
+        expected_name: str,
+        signature_names: List[str],
+    ) -> Dict[str, Any]:
+        """主要完成单位：只核验底部“法定代表人签名”右侧手写/签章姓名。"""
+        if not expected_name or self._award_text_matches(expected_name, signature_names):
+            return {}
+        multi_llm = MultimodalLLM(self.llm)
+        prompt = """这是“主要完成单位情况表”底部的法定代表人签名区域裁剪图。
+目标姓名：%s
+
+请只看“法定代表人签名:”右侧的手写签名或姓名签章，不要读取正文、日期、表格字段、目标姓名，也不要根据上下文猜。
+
+返回严格 JSON：
+{"legal_representative_signature": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示右侧签名/签章的字形本身可以逐字清晰读成目标姓名。
+2. no 表示未见签名/签章，或可见签名/签章不是目标姓名，或只能读成其他姓名，或不能逐字读成目标姓名。
+3. uncertain 仅用于确有签名/签章但图像太模糊，无法判断具体姓名。
+4. 严禁因为目标姓名出现在提示词或表格字段中就返回 yes；必须以签名区域字形为准。
+5. 只返回 JSON，不要解释。""" % expected_name
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            image_data,
+            prompt,
+            "主要完成单位法定代表人签名定向验证",
+            timeout_sec=45,
+        )
+        entry = self._parse_named_verification(raw, "legal_representative_signature")
+        return {"legal_representative_signature": entry} if entry.get("status") else {}
+
+    async def _do_first_completion_unit_commitment_llm_analysis(
+        self,
+        file_data: bytes,
+        doc_type: str,
+    ) -> Dict[str, Any]:
+        """第一完成单位承诺书：只走底部公章专项。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            return {"document_type_llm": doc_type, "extracted_fields": {"单位名称": ""}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
+
+        stamp_crop = self._crop_ratio_image(page_image, (0.34, 0.52, 0.82, 0.86))
+        self._save_special_debug_crop("first_completion_unit_stamp_crop", stamp_crop)
+        stamp_result = await self._extract_stamps_from_image(stamp_crop, debug_prefix="first_completion_unit")
+        stamp_units = self._extract_stamp_units(stamp_result)
+
+        return {
+            "document_type_llm": doc_type,
+            "extracted_fields": {"单位名称": stamp_units[0] if stamp_units else ""},
+            "stamps_description": "；".join(stamp_units) if stamp_units else "未检测到印章",
+            "stamps_result": stamp_result,
+            "signatures_result": {"signatures": []},
+            "signatures_description": "未检测到签字",
+            "verification_result": {},
+        }
+
+    async def _do_enterprise_statement_llm_analysis(
+        self,
+        file_data: bytes,
+        doc_type: str,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """企业声明：法定代表人签名/签章 + 企业公章专项。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            return {"document_type_llm": doc_type, "extracted_fields": {"企业名称": "", "法定代表人": ""}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
+
+        rep_crop = self._crop_ratio_image(page_image, (0.08, 0.56, 0.56, 0.82))
+        company_stamp_crop = self._crop_ratio_image(page_image, (0.45, 0.44, 0.88, 0.82))
+        self._save_special_debug_crop("enterprise_legal_representative_crop", rep_crop)
+        self._save_special_debug_crop("enterprise_stamp_crop", company_stamp_crop)
+
+        rep_bytes = self._image_to_png_bytes(rep_crop)
+        signatures_result = await self._extract_signatures_from_image(rep_bytes)
+        signature_names = self._extract_signature_names(signatures_result)
+        rep_stamp_result = await self._extract_stamps_from_image(rep_crop, debug_prefix="enterprise_legal_representative")
+        representative_name = signature_names[0] if signature_names else self._pick_short_person_name_from_stamps(rep_stamp_result)
+        if representative_name and not signature_names:
+            signatures_result = {
+                "signatures": [{"text": representative_name, "bbox": None, "confidence": 0.8}],
+            }
+            signature_names = [representative_name]
+
+        company_stamp_result = await self._extract_stamps_from_image(company_stamp_crop, debug_prefix="enterprise")
+        stamp_units = self._extract_company_like_stamp_units(company_stamp_result) or self._extract_stamp_units(company_stamp_result)
+        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        verification_result = await self._verify_target_signature_if_needed(
+            image_data=rep_bytes,
+            expected_name=str(target_values.get("legal_representative") or "").strip(),
+            signature_names=signature_names,
+            verification_key="legal_representative_signature",
+            task_name="企业声明法定代表人定向验证",
+            prompt_label="法定代表人签名/签章区域",
+        )
+        enterprise_stamp_verification = await self._verify_target_enterprise_stamp_if_needed(
+            stamp_crop=company_stamp_crop,
+            expected_unit=str(target_values.get("enterprise_name") or "").strip(),
+            stamp_units=stamp_units,
+        )
+        if enterprise_stamp_verification:
+            verification_result.update(enterprise_stamp_verification)
+
+        return {
+            "document_type_llm": doc_type,
+            "extracted_fields": {
+                "企业名称": stamp_units[0] if stamp_units else "",
+                "法定代表人": representative_name,
+            },
+            "stamps_description": "；".join(stamp_units) if stamp_units else "未检测到印章",
+            "stamps_result": company_stamp_result,
+            "signatures_result": signatures_result,
+            "signatures_description": "；".join(signature_names) if signature_names else "未检测到签字",
+            "verification_result": verification_result,
+        }
+
+    async def _extract_signatures_from_image(self, image_data: bytes) -> Dict[str, Any]:
+        try:
+            from src.common.extractors import SignatureExtractor
+            from src.common.extractors.signature import normalize_signature_entries
+
+            extractor = SignatureExtractor()
+            result = await extractor.extract(image_data)
+            signatures = normalize_signature_entries((result or {}).get("signatures", []))
+        except Exception as exc:
+            logger.warning("[REVIEW] 专项签字提取失败: %s", exc)
+            signatures = []
+        return {"signatures": signatures}
+
+    async def _extract_stamps_from_image(self, image: Any, debug_prefix: str = "") -> Dict[str, Any]:
+        try:
+            from src.common.extractors import StampExtractor
+
+            image_data = self._image_to_png_bytes(image) if hasattr(image, "save") else image
+            extractor = StampExtractor()
+            result = await extractor.extract(image_data)
+        except Exception as exc:
+            logger.warning("[REVIEW] 专项公章提取失败: %s", exc)
+            result = {}
+
+        if not isinstance(result, dict):
+            result = {}
+        stamps = list(result.get("stamps", []))
+        if debug_prefix:
+            self._save_special_polar_if_exists(debug_prefix, result)
+        return {"stamps": stamps, "raw": result.get("raw", "")}
+
+    def _extract_signature_names(self, signatures_result: Dict[str, Any]) -> List[str]:
+        names: List[str] = []
+        for item in (signatures_result or {}).get("signatures", []):
+            text = str((item or {}).get("text") or "").strip()
+            if text and "不清晰" not in text and text not in names:
+                names.append(text)
+        return names
+
+    def _extract_stamp_units(self, stamp_result: Dict[str, Any]) -> List[str]:
+        units: List[str] = []
+        for item in (stamp_result or {}).get("stamps", []):
+            text = str(item.get("unit") or item.get("text") or "").strip()
+            if text and text not in units:
+                units.append(text)
+        return units
+
+    def _extract_company_like_stamp_units(self, stamp_result: Dict[str, Any]) -> List[str]:
+        units: List[str] = []
+        company_markers = ("公司", "集团", "有限", "股份", "研究所", "大学", "学院", "中心")
+        for item in (stamp_result or {}).get("stamps", []):
+            text = str(item.get("unit") or item.get("text") or "").strip()
+            if not text or text in units:
+                continue
+            if len(text) >= 6 or any(marker in text for marker in company_markers):
+                units.append(text)
+        return units
+
+    def _pick_short_person_name_from_stamps(self, stamp_result: Dict[str, Any]) -> str:
+        for item in (stamp_result or {}).get("stamps", []):
+            text = str(item.get("unit") or item.get("text") or "").strip()
+            if 2 <= len(text) <= 4 and "公章" not in text and "公司" not in text:
+                return text
+        return ""
+
+    async def _verify_target_signature_if_needed(
+        self,
+        image_data: bytes,
+        expected_name: str,
+        signature_names: List[str],
+        verification_key: str,
+        task_name: str,
+        prompt_label: str,
+    ) -> Dict[str, Any]:
+        if not expected_name or self._award_text_matches(expected_name, signature_names):
+            return {}
+        multi_llm = MultimodalLLM(self.llm)
+        prompt = """请只判断图中的%s里的签名/签章是否可以清晰确认是目标姓名。
+目标姓名：%s
+
+返回严格 JSON：
+{"%s": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示可以清晰确认是目标姓名。
+2. no 表示未见对应签名/签章，或可清晰确认不是目标姓名。
+3. uncertain 表示看不清或无法确认。
+4. 只返回 JSON，不要解释。""" % (prompt_label, expected_name, verification_key)
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            image_data,
+            prompt,
+            task_name,
+            timeout_sec=45,
+        )
+        entry = self._parse_named_verification(raw, verification_key)
+        return {verification_key: entry} if entry.get("status") else {}
+
+    async def _verify_target_enterprise_stamp_if_needed(
+        self,
+        stamp_crop,
+        expected_unit: str,
+        stamp_units: List[str],
+    ) -> Dict[str, Any]:
+        """企业声明企业公章：先 raw 比对，不通过时再做定向复核。"""
+        if not expected_unit or self._text_exact_matches(expected_unit, stamp_units):
+            return {}
+
+        crop_bytes = self._image_to_png_bytes(stamp_crop)
+        primary = await self._verify_target_enterprise_stamp(
+            crop_bytes=crop_bytes,
+            expected_unit=expected_unit,
+            polar_bytes=None,
+            task_name="企业声明企业公章定向验证",
+        )
+        if primary.get("status") in {"yes", "no"}:
+            return {"enterprise_stamp": primary}
+
+        polar_bytes = await self._build_enterprise_stamp_soft_polar_bytes(stamp_crop)
+        if not polar_bytes:
+            return {"enterprise_stamp": primary} if primary.get("status") else {}
+
+        retry = await self._verify_target_enterprise_stamp(
+            crop_bytes=crop_bytes,
+            expected_unit=expected_unit,
+            polar_bytes=polar_bytes,
+            task_name="企业声明企业公章定向复核",
+        )
+        final_entry = retry if retry.get("status") else primary
+        return {"enterprise_stamp": final_entry} if final_entry.get("status") else {}
+
+    def _text_exact_matches(self, expected: str, candidates: List[str]) -> bool:
+        import re
+
+        def _normalize(value: str) -> str:
+            return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", str(value or "")).lower()
+
+        left = _normalize(expected)
+        if not left:
+            return False
+        return any(_normalize(item) == left for item in candidates if str(item or "").strip())
+
+    async def _verify_target_enterprise_stamp(
+        self,
+        crop_bytes: bytes,
+        expected_unit: str,
+        polar_bytes: Optional[bytes],
+        task_name: str,
+    ) -> Dict[str, str]:
+        import base64
+        from langchain_core.messages import HumanMessage
+
+        prompt = (
+            "你在做企业公章定向核验。\n"
+            f"目标单位：{expected_unit}\n"
+            "图1是公章原始裁剪图。"
+            + ("图2是同一枚公章的极坐标展开图。\n" if polar_bytes else "\n")
+            + "只判断这枚公章中的单位名称是否就是目标单位，不要根据上下文补全，不要纠错，不要猜附近正文。\n"
+            + "如果能确认完全是目标单位，返回 yes；如果能确认不是，返回 no；看不清或无法确认，返回 uncertain。\n"
+            + "严格返回 JSON：{\"enterprise_stamp\": {\"status\": \"yes|no|uncertain\", \"reason\": \"\"}}"
+        )
+        content: List[Dict[str, Any]] = [
+            {"type": "text", "text": prompt},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{base64.b64encode(self._compress_image_for_llm(crop_bytes)).decode('utf-8')}"},
+            },
+        ]
+        if polar_bytes:
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{base64.b64encode(self._compress_image_for_llm(polar_bytes)).decode('utf-8')}"},
+                }
+            )
+
+        timeout = 45
+        logger.info(f"[LLM] {task_name} 开始 (timeout={timeout}s)")
+        print(f"[LLM] {task_name} 开始", flush=True)
+        try:
+            raw = await asyncio.wait_for(
+                self.llm.ainvoke([HumanMessage(content=content)]),
+                timeout=timeout,
+            )
+            logger.info(f"[LLM] {task_name} 完成")
+            print(f"[LLM] {task_name} 完成", flush=True)
+        except asyncio.TimeoutError as exc:
+            msg = f"{task_name} 超时（>{timeout}s）"
+            logger.error(f"[LLM] {msg}")
+            print(f"[LLM] {msg}", flush=True)
+            raise RuntimeError(msg) from exc
+
+        raw_text = raw.content if hasattr(raw, "content") else str(raw)
+        return self._parse_named_verification(str(raw_text), "enterprise_stamp")
+
+    async def _build_enterprise_stamp_soft_polar_bytes(self, stamp_crop) -> Optional[bytes]:
+        try:
+            from PIL import Image
+            import cv2
+            import numpy as np
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            tight_crop = extractor._crop_largest_red_stamp_component(stamp_crop)
+            polar_raw_source = tight_crop or stamp_crop
+            circles = extractor._detect_stamp_circle_candidates(polar_raw_source)
+            if not circles:
+                return None
+
+            def _build_source(image: Image.Image, red_gain: float, sharpen_amount: float) -> Image.Image:
+                rgb = np.array(image.convert("RGB")).astype(np.float32)
+                red = rgb[:, :, 0]
+                green = rgb[:, :, 1]
+                blue = rgb[:, :, 2]
+                dominance = np.maximum(0.0, red - np.maximum(green, blue))
+                dominance = np.clip(dominance * red_gain, 0.0, 255.0)
+                gray = 255.0 - dominance
+                gray = cv2.medianBlur(gray.astype(np.uint8), 3)
+                gray = cv2.resize(
+                    gray,
+                    (max(1, image.size[0] * 2), max(1, image.size[1] * 2)),
+                    interpolation=cv2.INTER_CUBIC,
+                )
+                if sharpen_amount > 0:
+                    blur = cv2.GaussianBlur(gray, (0, 0), 1.1)
+                    gray = cv2.addWeighted(gray, 1.0 + sharpen_amount, blur, -sharpen_amount, 0)
+                gray = cv2.copyMakeBorder(gray, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255)
+                return Image.fromarray(gray).convert("RGB")
+
+            async def _score_candidate(candidate_name: str, polar_image: Image.Image) -> tuple[tuple[int, int, float], bytes]:
+                polar_bytes = extractor._image_to_png_bytes(polar_image)
+                ocr_inputs: List[tuple[str, bytes]] = [(candidate_name, polar_bytes)]
+                ocr_inputs.extend(extractor._build_polar_segments(polar_image))
+                results = await asyncio.gather(
+                    *[
+                        extractor._run_qwen_ocr(
+                            image_data=image_data,
+                            prompt="请对这张公章文字展开图执行 OCR，只返回图片中实际可见文字，不要纠错，不要补全。",
+                            debug_name=f"enterprise_verify_{candidate_name}_{name}_ocr",
+                            task="advanced_recognition",
+                            enable_rotate=False,
+                        )
+                        for name, image_data in ocr_inputs
+                    ],
+                    return_exceptions=True,
+                )
+
+                full_texts: List[str] = []
+                ordered_segment_texts: List[str] = []
+                for (name, _), result in zip(ocr_inputs, results):
+                    if isinstance(result, Exception):
+                        continue
+                    texts = extractor._extract_stamp_unit_texts(result, variant_name=name)
+                    if name == candidate_name:
+                        full_texts = [extractor._normalize_stamp_unit_text(text) for text in texts if extractor._normalize_stamp_unit_text(text)]
+                    elif name.startswith("polar_upper_seg"):
+                        merged = extractor._merge_ordered_stamp_texts(texts)
+                        if merged:
+                            ordered_segment_texts.append(merged)
+                primary_text = full_texts[0] if full_texts else extractor._merge_overlapping_stamp_segments(ordered_segment_texts)
+                score = (
+                    len(primary_text or ""),
+                    sum(1 for item in ordered_segment_texts if item),
+                    1.0 - extractor._polar_edge_cut_penalty(polar_image),
+                )
+                return score, polar_bytes
+
+            best_score: tuple[int, int, float] = (-1, -1, -1.0)
+            best_bytes: Optional[bytes] = None
+            configs = (
+                ("soft_base", 2.2, 0.0),
+                ("soft_sharp", 2.4, 0.55),
+            )
+            for source_name, red_gain, sharpen_amount in configs:
+                source_image = _build_source(polar_raw_source, red_gain=red_gain, sharpen_amount=sharpen_amount)
+                gray = np.array(source_image.convert("L"))
+                for circle_name, circle in circles:
+                    cx, cy, radius = circle
+                    band = extractor._unwrap_upper_annulus(
+                        gray,
+                        cx * 2.0 + 24.0,
+                        cy * 2.0 + 24.0,
+                        radius * 2.0,
+                        inner_ratio=0.37,
+                        outer_ratio=0.985,
+                        start_deg=-236.0,
+                        end_deg=56.0,
+                    )
+                    if band is None:
+                        continue
+                    band = extractor._trim_unwrapped_band_rows(band)
+                    band = extractor._trim_unwrapped_band_cols(band)
+                    if band is None:
+                        continue
+                    band = cv2.resize(
+                        band,
+                        (max(1600, band.shape[1] * 2), max(320, band.shape[0] * 3)),
+                        interpolation=cv2.INTER_CUBIC,
+                    )
+                    band = cv2.copyMakeBorder(band, 28, 28, 28, 28, cv2.BORDER_CONSTANT, value=255)
+                    polar_image = Image.fromarray(band).convert("RGB")
+                    score, polar_bytes = await _score_candidate(f"{source_name}_{circle_name}_soft_topsafe", polar_image)
+                    if score > best_score:
+                        best_score = score
+                        best_bytes = polar_bytes
+
+            if best_bytes:
+                from PIL import Image
+                self._save_special_debug_crop("enterprise_stamp_verify_polar", Image.open(__import__("io").BytesIO(best_bytes)).convert("RGB"))
+            return best_bytes
+        except Exception as exc:
+            logger.warning("[REVIEW] 企业声明企业公章 polar 生成失败: %s", exc)
+            return None
+
+    def _parse_named_verification(self, raw_text: str, key: str) -> Dict[str, str]:
+        import json
+        import re
+
+        text = str(raw_text or "").strip()
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            if len(parts) >= 2:
+                text = parts[1]
+                if text.startswith("json"):
+                    text = text[4:]
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+        entry = payload.get(key) if isinstance(payload, dict) else {}
+        if isinstance(entry, str):
+            status = entry.strip().lower()
+            return {"status": status if status in {"yes", "no", "uncertain"} else "", "reason": ""}
+        if not isinstance(entry, dict):
+            return {}
+        status = str(entry.get("status") or "").strip().lower()
+        if status not in {"yes", "no", "uncertain"}:
+            return {}
+        return {"status": status, "reason": str(entry.get("reason") or "").strip()}
+
+    async def _verify_award_contributor_signature_if_needed(
+        self,
+        multi_llm: MultimodalLLM,
+        image_data: bytes,
+        metadata: Dict[str, Any],
+        payload: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """仅在签字 raw 对比未通过时，使用目标姓名做定向兜底。"""
+        reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
+        target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
+        expected_name = str((target_values or {}).get("name") or "").strip()
+        if not expected_name:
+            return {}
+
+        contributor_name = str(payload.get("contributor_name") or "").strip()
+        signature_names = [str(item).strip() for item in payload.get("signature_names", []) if str(item).strip()]
+        if self._award_text_matches(expected_name, [contributor_name]) and self._award_text_matches(expected_name, signature_names):
+            return {}
+
+        prompt = """这是一张“主要完成人情况表”的签名区裁剪图，只判断图中是否存在可清晰确认的亲笔手写签名。
+目标姓名：%s
+
+返回严格 JSON：
+{"signature_for_name": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示图中能看到连续笔迹形成的亲笔手写签名，而且字形本身可清晰读成目标姓名。
+2. no 表示图中未见亲笔手写签名，或只有姓名章、签名章、私章、方章、红章、日期、打印字、盖章痕迹，或可清晰确认不是目标姓名。
+3. uncertain 仅用于：确有亲笔手写笔迹，但看不清，无法确认是否为目标姓名。
+4. 严禁根据目标姓名去猜；如果字形本身读不出来，就不能返回 yes。
+5. 红色方章/姓名章/签名章绝不是亲笔签名，必须返回 no。
+6. 只返回 JSON，不要解释。""" % expected_name
+
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            image_data,
+            prompt,
+            "主要完成人签字定向验证",
+            timeout_sec=45,
+        )
+        entry = self._parse_award_signature_verification(raw)
+        return {"signature_for_name": entry["status"]} if entry.get("status") else {}
+
+    def _award_text_matches(self, expected: str, candidates: List[str]) -> bool:
+        """严格文本匹配，用于决定是否需要签字兜底。"""
+        import re
+
+        def _normalize(value: str) -> str:
+            return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", str(value or "")).lower()
+
+        left = _normalize(expected)
+        if not left:
+            return False
+        for item in candidates:
+            right = _normalize(item)
+            if right and left == right:
+                return True
+        return False
+
+    def _parse_award_signature_verification(self, raw_text: str) -> Dict[str, str]:
+        """解析签字兜底验证 JSON。"""
+        import json
+        import re
+
+        text = str(raw_text or "").strip()
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            if len(parts) >= 2:
+                text = parts[1]
+                if text.startswith("json"):
+                    text = text[4:]
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+        entry = payload.get("signature_for_name") if isinstance(payload, dict) else {}
+        if isinstance(entry, str):
+            status = entry.strip().lower()
+            return {"status": status if status in {"yes", "no", "uncertain"} else "", "reason": ""}
+        if not isinstance(entry, dict):
+            return {}
+        status = str(entry.get("status") or "").strip().lower()
+        if status not in {"yes", "no", "uncertain"}:
+            return {}
+        return {"status": status, "reason": str(entry.get("reason") or "").strip()}
 
     def _parse_award_contributor_analysis(self, raw_text: str) -> Dict[str, Any]:
         """解析主要完成人情况表专项 JSON。"""
@@ -930,6 +1663,41 @@ D 完成单位公章区
             "notes": _clean_list(raw_payload.get("notes") or payload.get("notes")),
             "raw_response": raw_text,
         }
+
+    def _load_page_image(self, file_data: bytes):
+        import io
+        from PIL import Image, ImageOps
+
+        image_data = self._pdf_to_image(file_data)
+        try:
+            return ImageOps.exif_transpose(Image.open(io.BytesIO(image_data))).convert("RGB")
+        except Exception:
+            return None
+
+    def _crop_ratio_image(self, image, box: tuple[float, float, float, float]):
+        width, height = image.size
+        x1 = int(max(0.0, min(1.0, box[0])) * width)
+        y1 = int(max(0.0, min(1.0, box[1])) * height)
+        x2 = int(max(0.0, min(1.0, box[2])) * width)
+        y2 = int(max(0.0, min(1.0, box[3])) * height)
+        return image.crop((x1, y1, x2, y2))
+
+    def _image_to_png_bytes(self, image) -> bytes:
+        import io
+
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _save_special_debug_crop(self, name: str, image) -> None:
+        import os
+
+        debug_dir = "/home/tdkx/workspace/tech/debug_cropped"
+        os.makedirs(debug_dir, exist_ok=True)
+        image.save(f"{debug_dir}/{name}.png")
+
+    def _save_special_polar_if_exists(self, debug_prefix: str, result: Dict[str, Any]) -> None:
+        return
     
     def _pdf_to_image(self, file_data: bytes) -> bytes:
         """将 PDF 转为图片（取第一页）
@@ -940,22 +1708,6 @@ D 完成单位公章区
         Returns:
             PNG 格式的图片数据
         """
-        import fitz  # PyMuPDF
-        
-        if file_data[:4] != b'%PDF':
-            # 不是 PDF，直接返回
-            return file_data
-        
-        try:
-            doc = fitz.open(stream=file_data, filetype="pdf")
-            if doc.page_count == 0:
-                return file_data
-            
-            # 渲染第一页为图片（放大3倍，提高清晰度）
-            page = doc.load_page(0)
-            pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))  # 3x 分辨率
-            img_data = pix.tobytes("png")
-            doc.close()
-            return img_data
-        except Exception:
-            return file_data
+        from src.common.file_handler.pdf_renderer import render_pdf_first_page
+
+        return render_pdf_first_page(file_data, zoom=3.0)

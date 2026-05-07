@@ -93,7 +93,8 @@ docs/
 │   │   ├── 03-scenario-engine.md
 │   │   ├── 04-outputs-and-api.md
 │   │   ├── 05-data-schema.md
-│   │   └── 06-baseline-and-scenario-design.md
+│   │   ├── 06-baseline-and-scenario-design.md
+│   │   └── 07-leadership-page-design.md
 │   └── archive/                    # 🧱 历史原型材料
 │       ├── 01-neo4j-gds-step1.md
 │       ├── 02-hotspot-migration-step2.md
@@ -205,4 +206,5 @@ docs/
 - [沙盘推演总览 →](70-sandbox/simulation/01-overview.md)
 - [沙盘推演数据 Schema →](70-sandbox/simulation/05-data-schema.md)
 - [baseline 与 scenario 设计 →](70-sandbox/simulation/06-baseline-and-scenario-design.md)
+- [领导页展示设计 →](70-sandbox/simulation/07-leadership-page-design.md)
 - [旧原型探索 →](70-sandbox/archive/01-neo4j-gds-step1.md)

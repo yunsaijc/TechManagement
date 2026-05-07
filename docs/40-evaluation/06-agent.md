@@ -9,10 +9,12 @@
 1. 输入归一化：解析 `project_id` / 上传文件、维度、权重、功能开关  
 2. 文档准备：调用解析器完成章节提取与页码索引准备  
 3. 项目画像识别：在九维检查前推断 `project_profile` 与维度覆盖规则  
-4. 并发调度：并行执行九维检查、划重点、指南贴合、技术摸底  
-5. 结果合并：统一评分、总结、证据去重、异常归并  
-6. 报告产物：输出正式审阅工作台 HTML 与 debug HTML  
-7. 持久化：写入评审结果与证据链
+4. Rubric 选择：按画像输出维度口径、缺失项容忍规则和必要证据要求  
+5. 证据包构建：为评分、摘要、总评生成统一 `evidence pack`  
+6. 并发调度：并行执行九维检查、划重点、技术摸底；指南贴合能力保留但默认不启用  
+7. 结果合并：统一评分、总结、证据去重、异常归并  
+8. 报告产物：输出正式审阅工作台 HTML 与 debug HTML  
+9. 持久化：写入评审结果与证据链
 
 ## 编排流程
 
@@ -20,15 +22,16 @@
 Step 1 读取项目与文档
 Step 2 解析正文并建立页码索引
 Step 3 推断 project_profile（规则式）
-Step 4 并行执行
+Step 4 生成 rubric 与维度级 evidence pack
+Step 5 并行执行
   - 9D Checkers
   - Highlight Extractor
   - Industry Fit Analyzer
   - Benchmark Analyzer
   - Chat Index Builder（按开关启用）
-Step 5 汇总评分与建议
-Step 6 生成正式 HTML / debug HTML
-Step 7 写入 storage 并返回结果
+Step 6 汇总评分与建议
+Step 7 生成正式 HTML / debug HTML
+Step 8 写入 storage 并返回结果
 ```
 
 ## 并发策略
@@ -44,8 +47,9 @@ Step 7 写入 storage 并返回结果
 涉及检索时走服务端 `ToolGateway`：
 
 - `doc_search`：申报书页码检索
-- `guide_search`：产业指南检索
 - `tech_search`：文献/专利检索
+- `guide_search`：产业指南检索（当前默认不启用）
+- `tech_search`：当前先接 OpenAlex 公开论文检索，专利检索待补充
 
 Agent 只接收结构化检索结果并完成分析与合并。
 
@@ -63,7 +67,21 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - 画像推断只使用正文章节和关键词规则
 - 画像是单次评审上下文，不做全局缓存
 - checker 必须按本次画像实例化，不能复用带状态的共享实例
-- 画像覆盖仅用于放宽章节口径，不改变维度权重与评分区间
+- 当前画像覆盖主要用于放宽章节口径；后续可进一步驱动 rubric 差异化，但仍不改变九维框架
+
+## Rubric 与 Evidence Pack
+
+`EvaluationAgent` 后续演进的主线不是重写聊天，而是把评审主流程改成：
+
+1. 先按 `project_profile` 选择 `rubric`
+2. 再为各维度构建 `evidence pack`
+3. 最后基于证据做评分、摘要与总评
+
+约束：
+
+- `rubric` 负责定义“怎么看”，不是直接负责“怎么答”
+- `evidence pack` 应被评分、摘要、总评复用，避免多处重复检索
+- 若某维度证据不足，允许输出谨慎结论或材料不足提示，不强行拉满判断
 
 ## 与聊天能力的关系
 
@@ -75,6 +93,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 
 当前实现约束：
 
+- 聊天主链路当前已满足低时延与稳定性要求，后续默认不做重构
 - 聊天检索优先基于 `page_chunks`
 - 引用结果必须返回 `file/page/snippet`
 - 为降低响应时延，`/chat/ask` 不同步补齐 `highlight_rects`
@@ -99,6 +118,18 @@ Agent 只接收结构化检索结果并完成分析与合并。
   - 量产可能性
 - 检索排序会优先提升相关章节，抑制附件、表格噪声页
 
+后续聊天增强范围只限于：
+
+- 问题分类与检索路由
+- 更稳定的证据整理
+- 回答结构规范化
+
+明确不做：
+
+- 不把聊天改成多 reviewer agent 串并行编排
+- 不替换现有流式协议与首字延迟优化链路
+- 不为“最佳实践”牺牲当前可用性
+
 ## 聊天降级策略
 
 当前聊天问答采用“两层降级”：
@@ -118,7 +149,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 
 - `dimension_scores`、`overall_score`、`grade`
 - `highlights`
-- `industry_fit`
+- `industry_fit`（保留字段，默认不启用）
 - `benchmark`
 - `evidence`（`file/page/snippet/source`）
 - `chat_ready`
@@ -140,6 +171,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - 右侧结果区展示评分、划重点、问答、证据
 - 任一 `evidence/citation` 点击后都能把左侧正文定位到对应页
 - 若 `snippet` 可匹配到 packet 或正文片段，则需对命中区域做临时高亮；匹配失败时至少完成页级跳转
+- 证据卡以“跳转核验”为主，不以大段摘要展示为主
 
 ## 异常与降级
 
@@ -157,7 +189,7 @@ Agent 只接收结构化检索结果并完成分析与合并。
 - `benchmark` 字段填充占位结论：
   - `novelty_level=unknown`
   - `literature_position=技术摸底工具不可用`
-  - `patent_overlap=技术摸底工具不可用`
+  - `patent_overlap=专利对比待接入`
   - `conclusion=当前仅基于申报书内容，外部对比结论待补充`
 
 当前 `industry_fit` 降级语义：
@@ -170,6 +202,11 @@ Agent 只接收结构化检索结果并完成分析与合并。
   - `matched=[]`
   - `gaps=["产业指南检索不可用，结果待核验"]`
   - `suggestions=["待检索工具恢复后补充指南映射"]`
+
+当前能力约束补充：
+
+- 由于暂无法在本地数据中可靠建立项目与指南正文的可核验关联，`industry_fit` 不作为正式报告主展示能力
+- `benchmark` 当前优先消费公开论文检索结果，不把“未做专利检索”误写成“无专利重叠风险”
 
 ## 代码锚点
 

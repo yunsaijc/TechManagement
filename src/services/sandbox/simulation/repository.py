@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from src.common.models.simulation import BaselineSnapshot, SimulationResult
-from src.services.sandbox.simulation.debug_html import render_debug_html
-from src.services.sandbox.simulation.debug_payload import build_debug_payload
+from src.services.sandbox.simulation.leadership_html import render_leadership_html
+from src.services.sandbox.simulation.leadership_payload import build_leadership_payload
 
 DEBUG_ROOT = Path("debug_sandbox")
 BASE_DIR = Path("debug_sandbox/simulation")
@@ -137,7 +137,7 @@ def save_scenario_debug_artifacts(
 
 
 def build_baseline_debug_payload(snapshot: BaselineSnapshot) -> dict[str, Any]:
-    payload = build_debug_payload(baseline=snapshot)
+    payload = build_leadership_payload(baseline=snapshot)
     payload["meta"] = {
         "artifact_kind": "baseline",
         "generated_at": _now_text(),
@@ -178,7 +178,7 @@ def build_scenario_debug_payload(
 
     normalized_scenario = _model_dump_if_needed(scenario)
 
-    payload = build_debug_payload(
+    payload = build_leadership_payload(
         baseline=baseline,
         scenario=scenario,
         result=result,
@@ -237,7 +237,7 @@ def _save_debug_bundle(
     with json_path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
 
-    html_content = render_debug_html(payload, title=html_title)
+    html_content = render_leadership_html(payload, title=html_title)
     html_path.write_text(html_content, encoding="utf-8")
 
     json_rel = json_path.relative_to(DEBUG_ROOT).as_posix()
