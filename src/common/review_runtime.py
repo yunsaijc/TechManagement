@@ -13,6 +13,12 @@ class ReviewRuntime:
     # 项目内并发：同一项目并行跑附件细粒度审查数
     ATTACHMENT_REVIEW_CONCURRENCY = 2
 
+    # 在线单文件审查：后台 worker 并发数
+    REVIEW_WORKER_CONCURRENCY = 2
+
+    # 在线单文件审查：进程内等待队列最大长度
+    REVIEW_QUEUE_MAX_SIZE = 100
+
     # 附件分类阈值
     ATTACHMENT_CLASSIFY_CONFIDENCE = 0.70
 

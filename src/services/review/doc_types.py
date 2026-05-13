@@ -152,6 +152,7 @@ DOC_TYPE_REGISTRY: Dict[str, Dict[str, Any]] = {
         ],
         "llm_rules": [],
         "llm_extract_fields": [],
+        "auto_llm_analysis": True,
         "description": "奖励项目提名单位意见表。",
         "remarks": "奖励平台材料",
     },

@@ -627,6 +627,8 @@ class ReviewAgent:
             return await self._do_first_completion_unit_commitment_llm_analysis(file_data, doc_type)
         if normalized_doc_type == "qysm":
             return await self._do_enterprise_statement_llm_analysis(file_data, doc_type, metadata or {})
+        if normalized_doc_type == "tjdwyj":
+            return await self._do_nomination_opinion_llm_analysis(file_data, doc_type, metadata or {})
 
         logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
         print(f"[LLM] 深度分析开始，doc_type={doc_type}", flush=True)
@@ -1123,6 +1125,59 @@ class ReviewAgent:
             "verification_result": {},
         }
 
+    async def _do_nomination_opinion_llm_analysis(
+        self,
+        file_data: bytes,
+        doc_type: str,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """提名意见表：只裁右下提名单位公章区做红章专项核验。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            return {"document_type_llm": doc_type, "extracted_fields": {}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
+
+        stamp_crop = self._crop_ratio_image(page_image, (0.48, 0.68, 0.96, 0.96))
+        wide_crop = self._crop_ratio_image(page_image, (0.36, 0.62, 0.98, 0.98))
+        enhanced_crop = self._enhance_red_stamp(stamp_crop)
+        self._save_special_debug_crop("nomination_unit_stamp_crop", stamp_crop)
+        self._save_special_debug_crop("nomination_unit_stamp_crop_wide", wide_crop)
+        self._save_special_debug_crop("nomination_unit_stamp_red_enhanced", enhanced_crop)
+
+        enhanced_result = await self._extract_stamps_from_image(enhanced_crop, debug_prefix="nomination_unit")
+        stamp_units = self._extract_stamp_units(enhanced_result)
+        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        expected_unit = str(target_values.get("nomination_unit_name") or "").strip()
+        verification_result = await self._verify_target_nomination_unit_stamp_if_needed(
+            stamp_crop=stamp_crop,
+            expected_unit=expected_unit,
+            stamp_units=stamp_units,
+        )
+
+        if expected_unit and (verification_result.get("nomination_unit_stamp") or {}).get("status") == "yes":
+            stamp_units = [expected_unit]
+            enhanced_result = {
+                "stamps": [
+                    {
+                        "text": expected_unit,
+                        "unit": expected_unit,
+                        "bbox": None,
+                        "confidence": 0.9,
+                        "location": "提名单位（公章）",
+                    }
+                ],
+                "raw": enhanced_result.get("raw", ""),
+            }
+
+        return {
+            "document_type_llm": doc_type,
+            "extracted_fields": {},
+            "stamps_description": "；".join(stamp_units) if stamp_units else "未检测到印章",
+            "stamps_result": enhanced_result,
+            "signatures_result": {"signatures": []},
+            "signatures_description": "未检测到签字",
+            "verification_result": verification_result,
+        }
+
     async def _do_enterprise_statement_llm_analysis(
         self,
         file_data: bytes,
@@ -1312,6 +1367,40 @@ class ReviewAgent:
         )
         final_entry = retry if retry.get("status") else primary
         return {"enterprise_stamp": final_entry} if final_entry.get("status") else {}
+
+    async def _verify_target_nomination_unit_stamp_if_needed(
+        self,
+        stamp_crop,
+        expected_unit: str,
+        stamp_units: List[str],
+    ) -> Dict[str, Any]:
+        """提名意见表：右下公章 crop 定向核验。"""
+        if not expected_unit or self._text_exact_matches(expected_unit, stamp_units):
+            return {}
+        multi_llm = MultimodalLLM(self.llm)
+        prompt = """你在做提名意见表公章定向核验。
+目标提名单位：%s
+
+图中是页面右下角“提名单位（公章）”附近裁剪区域。
+只判断红色公章上的单位名称是否就是目标提名单位，不要根据正文、表格字段或提示词补全。
+
+返回严格 JSON：
+{"nomination_unit_stamp": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示红色公章文字可以清晰确认与目标提名单位一致。
+2. no 表示未见对应红章，或可清晰确认红章单位不是目标提名单位。
+3. uncertain 表示确有红章但看不清。
+4. 只返回 JSON，不要解释。""" % expected_unit
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            self._image_to_png_bytes(stamp_crop),
+            prompt,
+            "提名意见表提名单位公章定向验证",
+            timeout_sec=45,
+        )
+        entry = self._parse_named_verification(raw, "nomination_unit_stamp")
+        return {"nomination_unit_stamp": entry} if entry.get("status") else {}
 
     def _text_exact_matches(self, expected: str, candidates: List[str]) -> bool:
         import re
@@ -1688,6 +1777,26 @@ class ReviewAgent:
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
         return buffer.getvalue()
+
+    def _enhance_red_stamp(self, image):
+        """保留红章像素、弱化黑字和表格线，供公章 OCR 使用。"""
+        import cv2
+        import numpy as np
+        from PIL import Image
+
+        rgb = np.array(image.convert("RGB"))
+        r = rgb[:, :, 0].astype(np.int16)
+        g = rgb[:, :, 1].astype(np.int16)
+        b = rgb[:, :, 2].astype(np.int16)
+        mask = (r > 110) & (r - g > 25) & (r - b > 25)
+        out = np.full_like(rgb, 255)
+        out[mask] = [220, 0, 0]
+        mask_u8 = (mask.astype(np.uint8) * 255)
+        kernel = np.ones((2, 2), np.uint8)
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel, iterations=1)
+        mask_u8 = cv2.dilate(mask_u8, kernel, iterations=1)
+        out[mask_u8 > 0] = [220, 0, 0]
+        return Image.fromarray(out)
 
     def _save_special_debug_crop(self, name: str, image) -> None:
         import os

@@ -1024,6 +1024,13 @@ class RewardReviewService:
         target_values: Dict[str, Any],
     ) -> Dict[str, Any]:
         llm_analysis = result.llm_analysis or {}
+        if doc_type == "tjdwyj":
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                return {
+                    "nomination_unit_stamp": self._normalize_verification_entry(payload.get("nomination_unit_stamp")),
+                }
+            return {}
         if doc_type in {"wcr", "wjwcr"}:
             payload = llm_analysis.get("verification_result") or {}
             if isinstance(payload, dict) and payload:
@@ -1379,8 +1386,22 @@ class RewardReviewService:
                 message=f"奖励库未提供可核验的{label}",
                 evidence=evidence,
             )
+        if verification_status == "no":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.FAILED,
+                message=f"{label}与奖励库记录不一致",
+                evidence=evidence,
+            )
+        if verification_status == "yes":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{label}与奖励库记录一致",
+                evidence=evidence,
+            )
         if raw_state == "match":
-            if verification_status in {"", "yes"}:
+            if verification_status == "":
                 return CheckResult(
                     item=item,
                     status=CheckStatus.PASSED,
@@ -1394,13 +1415,6 @@ class RewardReviewService:
                 evidence=evidence,
             )
         if raw_state == "mismatch":
-            if verification_status == "no":
-                return CheckResult(
-                    item=item,
-                    status=CheckStatus.FAILED,
-                    message=f"{label}与奖励库记录不一致",
-                    evidence=evidence,
-                )
             return CheckResult(
                 item=item,
                 status=CheckStatus.WARNING,

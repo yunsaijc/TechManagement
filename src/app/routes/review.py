@@ -8,7 +8,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -21,6 +21,7 @@ from src.services.review.doc_types import get_doc_type_label, normalize_doc_type
 from src.services.review.reward_review_service import REWARD_PATH_DOC_TYPES, RewardReviewService
 from src.services.review.rules.config import DOCUMENT_CONFIG
 from src.services.review.smb_file_reader import SMBReviewFileReader
+from src.common.review_runtime import ReviewRuntime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ logger = logging.getLogger(__name__)
 _review_results: dict[str, ReviewResult] = {}
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _REVIEW_RESULT_DIR = _PROJECT_ROOT / "data" / "review_results"
-_REVIEW_MAX_RETRIES = 3
+_REVIEW_MAX_RETRIES = 2
+_REVIEW_QUEUE: Optional[asyncio.Queue] = None
+_REVIEW_WORKERS: List[asyncio.Task] = []
 
 
 class ReviewRequest(BaseModel):
@@ -304,6 +307,15 @@ def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
         if "last_summary" in retry:
             compact["retry"]["last_summary"] = str(retry.get("last_summary") or "")
 
+    queue = structured.get("queue") or {}
+    if isinstance(queue, dict) and queue:
+        compact["queue"] = {
+            "phase": str(queue.get("phase") or ""),
+            "queue_position": int(queue.get("queue_position") or 0),
+            "worker_concurrency": int(queue.get("worker_concurrency") or 0),
+            "queue_max_size": int(queue.get("queue_max_size") or 0),
+        }
+
     return compact
 
 
@@ -411,16 +423,108 @@ def _build_placeholder_result(review_id: str, doc_type: str) -> ReviewResult:
     """构造处理中占位结果。"""
     return ReviewResult(
         id=review_id,
-        status="processing",
+        status="queued",
         doc_type=doc_type,
         doc_type_raw="",
         results=[],
         ocr_text="",
         extracted_data={},
         llm_analysis=None,
-        summary="处理中",
+        summary="排队中",
         suggestions=[],
         processing_time=0.0,
+    )
+
+
+def _get_review_queue() -> asyncio.Queue:
+    global _REVIEW_QUEUE
+    if _REVIEW_QUEUE is None:
+        _REVIEW_QUEUE = asyncio.Queue(maxsize=max(1, int(ReviewRuntime.REVIEW_QUEUE_MAX_SIZE)))
+    return _REVIEW_QUEUE
+
+
+async def _review_worker(worker_index: int) -> None:
+    queue = _get_review_queue()
+    while True:
+        review_id, doc_type, job = await queue.get()
+        try:
+            _update_queue_status(
+                review_id=review_id,
+                doc_type=doc_type,
+                status="processing",
+                summary=f"处理中：队列任务已开始（worker {worker_index}）",
+                phase="running",
+            )
+            await job()
+        except Exception:
+            logger.exception("Review queue job failed unexpectedly: %s", review_id)
+            failure = _build_failure_result(
+                review_id=review_id,
+                doc_type=doc_type,
+                error=RuntimeError("后台审查任务异常退出"),
+                start_time=time.time(),
+            )
+            _review_results[review_id] = failure
+            _persist_review_result(failure)
+        finally:
+            queue.task_done()
+
+
+def _ensure_review_workers_started() -> None:
+    target = max(1, int(ReviewRuntime.REVIEW_WORKER_CONCURRENCY))
+    active_workers = [task for task in _REVIEW_WORKERS if not task.done()]
+    _REVIEW_WORKERS[:] = active_workers
+    while len(_REVIEW_WORKERS) < target:
+        worker_index = len(_REVIEW_WORKERS) + 1
+        _REVIEW_WORKERS.append(asyncio.create_task(_review_worker(worker_index)))
+
+
+def _update_queue_status(
+    review_id: str,
+    doc_type: str,
+    status: str,
+    summary: str,
+    phase: str,
+    queue_position: Optional[int] = None,
+) -> None:
+    current = _review_results.get(review_id) or _build_placeholder_result(review_id, doc_type)
+    current.status = status
+    current.doc_type = doc_type
+    current.summary = summary
+    current.processed_at = datetime.now()
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    queue_info = {
+        "phase": phase,
+        "queue_position": int(queue_position or 0),
+        "worker_concurrency": int(ReviewRuntime.REVIEW_WORKER_CONCURRENCY),
+        "queue_max_size": int(ReviewRuntime.REVIEW_QUEUE_MAX_SIZE),
+    }
+    current.extracted_data["queue"] = queue_info
+    current.structured_result["queue"] = queue_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
+
+
+async def _enqueue_review_job(
+    review_id: str,
+    doc_type: str,
+    job: Callable[[], Awaitable[None]],
+) -> None:
+    queue = _get_review_queue()
+    _ensure_review_workers_started()
+    queue_position = queue.qsize() + 1
+    try:
+        queue.put_nowait((review_id, doc_type, job))
+    except asyncio.QueueFull as exc:
+        raise HTTPException(status_code=429, detail="审查队列已满，请稍后重试") from exc
+    _update_queue_status(
+        review_id=review_id,
+        doc_type=doc_type,
+        status="queued",
+        summary=f"排队中：前方 {max(0, queue_position - 1)} 个任务",
+        phase="queued",
+        queue_position=queue_position,
     )
 
 
@@ -563,6 +667,42 @@ def _attach_retry_metadata(
     return result
 
 
+def _publish_retry_snapshot(
+    review_id: str,
+    result: ReviewResult,
+    attempts: int,
+    used_retries: int,
+    stop_reason: str,
+    max_attempts: int,
+    stage: str,
+    start_time: float,
+) -> None:
+    """Expose a completed attempt while background retries continue."""
+    snapshot = _attach_retry_metadata(
+        result,
+        attempts=attempts,
+        used_retries=used_retries,
+        stop_reason=stop_reason,
+        total_elapsed=time.time() - start_time,
+        max_attempts=max_attempts,
+    )
+    retry_info = {
+        "attempts": attempts,
+        "used_retries": used_retries,
+        "stop_reason": stop_reason,
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+    }
+    snapshot.extracted_data = dict(snapshot.extracted_data or {})
+    snapshot.extracted_data["retry"] = retry_info
+    structured = dict(snapshot.structured_result or {})
+    structured["retry"] = retry_info
+    snapshot.structured_result = structured
+    _review_results[review_id] = snapshot
+    _persist_review_result(snapshot)
+
+
 def _update_processing_retry_status(
     review_id: str,
     doc_type: str,
@@ -587,11 +727,14 @@ def _update_processing_retry_status(
         current.structured_result = dict(last_result.structured_result or {})
         current.doc_type_raw = str(last_result.doc_type_raw or current.doc_type_raw or "")
 
-    current.status = "processing"
+    current.status = str(last_result.status or "done") if last_result is not None else "processing"
     current.doc_type = doc_type
-    current.summary = f"正在复核第 {attempt} 次（共 {max_attempts} 次）" if max_attempts > 1 else "处理中"
-    if stage:
-        current.summary = f"{current.summary}：{stage}"
+    if last_result is None:
+        current.summary = f"正在复核第 {attempt} 次（共 {max_attempts} 次）" if max_attempts > 1 else "处理中"
+        if stage:
+            current.summary = f"{current.summary}：{stage}"
+    else:
+        current.summary = str(last_result.summary or current.summary or "")
     current.processed_at = datetime.now()
     current.extracted_data = dict(current.extracted_data or {})
     current.structured_result = dict(current.structured_result or {})
@@ -655,6 +798,17 @@ async def _run_with_retries(
             break
 
         if attempt < attempts:
+            if attempt == 1 and best_result is not None:
+                _publish_retry_snapshot(
+                    review_id=review_id,
+                    result=best_result,
+                    attempts=1,
+                    used_retries=0,
+                    stop_reason="initial_done",
+                    max_attempts=attempts,
+                    stage="后台复核中",
+                    start_time=start_time,
+                )
             _update_processing_retry_status(
                 review_id=review_id,
                 doc_type=doc_type,
@@ -1161,12 +1315,16 @@ async def submit_review(
             _review_results[review_id] = final
             _persist_review_result(final)
 
-        asyncio.create_task(_run_review())
+        try:
+            await _enqueue_review_job(review_id, selected_doc_type, _run_review)
+        except HTTPException:
+            _review_results.pop(review_id, None)
+            raise
 
         return ApiResponse(
             status="success",
             data=placeholder,
-            message="已提交审查任务，请稍后使用 review_id 查询结果",
+            message="已提交审查任务，已进入队列，请稍后使用 review_id 查询结果",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1291,12 +1449,16 @@ async def submit_review_by_path(
             _review_results[review_id] = failure
             _persist_review_result(failure)
 
-    asyncio.create_task(_run_review_from_smb())
+    try:
+        await _enqueue_review_job(review_id, normalized_doc_type, _run_review_from_smb)
+    except HTTPException:
+        _review_results.pop(review_id, None)
+        raise
 
     return ApiResponse(
         status="success",
         data=placeholder,
-        message="已提交路径审查任务，请稍后使用 review_id 查询结果",
+        message="已提交路径审查任务，已进入队列，请稍后使用 review_id 查询结果",
     )
 
 
