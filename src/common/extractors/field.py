@@ -143,7 +143,39 @@ class FieldExtractor:
         """PDF 转图片（取第一页，fitz 放大3倍）"""
         from src.common.file_handler.pdf_renderer import render_pdf_first_page
 
-        return render_pdf_first_page(file_data, zoom=3.0)
+        return self._limit_ocr_image_payload(render_pdf_first_page(file_data, zoom=3.0))
+
+    def _limit_ocr_image_payload(self, image_data: bytes) -> bytes:
+        """限制整页 OCR 输入大小，避免大图 base64 超过 Qwen 请求上限。"""
+        try:
+            img = Image.open(io.BytesIO(image_data)).convert("RGB")
+        except Exception:
+            return image_data
+
+        max_side = int(os.getenv("FIELD_OCR_MAX_IMAGE_SIDE", "2600"))
+        max_png_bytes = int(os.getenv("FIELD_OCR_MAX_IMAGE_BYTES", "12000000"))
+        if max(img.size) <= max_side and len(image_data) <= max_png_bytes:
+            return image_data
+
+        scale = min(max_side / max(img.size), 1.0)
+        while True:
+            resized = img.resize(
+                (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+                Image.LANCZOS,
+            )
+            buf = io.BytesIO()
+            resized.save(buf, format="PNG", optimize=True)
+            limited = buf.getvalue()
+            if len(limited) <= max_png_bytes or scale <= 0.25:
+                logger.info(
+                    "[FieldExtractor] 整页 OCR 图片已压缩: %s -> %s, %s -> %s bytes",
+                    img.size,
+                    resized.size,
+                    len(image_data),
+                    len(limited),
+                )
+                return limited
+            scale *= 0.85
 
     async def _detect_fields(
         self,
@@ -314,10 +346,34 @@ class FieldExtractor:
             )
             trans = await self._qwen_transcribe_crop(final_crop, fname=fname, index=i)
             trans = self._fallback_rank_from_page_ocr(fname, trans)
+            trans = self._postprocess_transcribed_field(fname, trans)
             logger.info(f"[OCR] 字段{i+1}/{len(field_names)}: {fname} -> {trans[:30]}...")
             fields[fname] = trans.strip()
 
         return fields
+
+    def _postprocess_transcribed_field(self, field_name: str, transcribed: str) -> str:
+        """对已定位字段做保守纠偏，不改变字段定位逻辑。"""
+        field_key = self._normalize_field_key(field_name)
+        text = str(transcribed or "").strip()
+        page_text = self._last_page_value_text(field_name)
+
+        if field_key == "排名":
+            match = re.search(r"\d{1,2}", page_text or text)
+            return match.group(0) if match else text
+
+        if field_key == "姓名":
+            match = re.match(r"^[\u4e00-\u9fff]{2,4}", text)
+            if match:
+                return match.group(0)
+            match = re.match(r"^[\u4e00-\u9fff]{2,4}", page_text)
+            return match.group(0) if match else text
+
+        if field_key in {"工作单位", "完成单位"} and page_text and text:
+            # crop OCR 偶发丢左侧前缀；仅当整页 OCR 明确是 crop 文本的超集时补回。
+            if page_text.endswith(text) and page_text != text:
+                return page_text
+        return text
 
     def _fallback_rank_from_page_ocr(self, field_name: str, transcribed: str) -> str:
         """排名是单字符数字，crop OCR 容易把 6/8 识别成字母；只在无数字时回退整页 OCR 原值。"""
@@ -329,6 +385,10 @@ class FieldExtractor:
         texts = self._extract_ordered_texts(list(row.get("value_words") or []))
         joined = "".join(texts).strip()
         return joined or transcribed
+
+    def _last_page_value_text(self, field_name: str) -> str:
+        row = self._last_field_debug_rows.get(field_name) or {}
+        return "".join(self._extract_ordered_texts(list(row.get("value_words") or []))).strip()
 
     def _normalize_field_bbox(
         self,
@@ -486,10 +546,11 @@ class FieldExtractor:
         """crop 后再走一次原生 Qwen-OCR，最终值只认第二次 OCR 结果。"""
         buf = io.BytesIO()
         cropped_img.save(buf, format="PNG")
+        safe_name = re.sub(r"[^\w\u4e00-\u9fff.-]+", "_", str(fname or "field"))
         result = await self._run_qwen_ocr(
             image_data=buf.getvalue(),
             prompt="请对这张字段小图执行 OCR，只返回图片中实际可见文字，不要纠错，不要补全。",
-            debug_name=f"{re.sub(r'[^\w\u4e00-\u9fff.-]+', '_', str(fname or 'field'))}_{index + 1}_ocr",
+            debug_name=f"{safe_name}_{index + 1}_ocr",
         )
         texts = self._extract_ordered_texts(result.get("words_info") or [])
         if texts:
@@ -566,6 +627,90 @@ class FieldExtractor:
 
     def _match_field_label(self, words: List[Dict[str, Any]], field_name: str) -> Optional[Dict[str, Any]]:
         target = self._normalize_field_key(field_name)
+        candidates = [word for word in words if self._normalize_field_key(word.get("text")) == target]
+        candidates.extend(
+            word
+            for word in words
+            if self._field_key_has_embedded_label(self._normalize_field_key(word.get("text")), target)
+        )
+        candidates.extend(self._merge_split_label_words(words, target))
+        if not candidates:
+            return None
+
+        candidates = self._filter_main_table_label_candidates(words, candidates, target)
+        return sorted(candidates, key=lambda item: (self._word_bbox(item)["y1"], self._word_bbox(item)["x1"]))[0]
+
+    def _filter_main_table_label_candidates(
+        self,
+        words: List[Dict[str, Any]],
+        candidates: List[Dict[str, Any]],
+        target: str,
+    ) -> List[Dict[str, Any]]:
+        """WCR 关键字段优先取主表格区域，避免命中下方承诺声明正文。"""
+        if target not in {"排名", "姓名", "工作单位", "完成单位"}:
+            return candidates
+
+        page_bottom = max((self._word_bbox(word)["y2"] for word in words), default=1.0)
+        main_candidates: List[Dict[str, Any]] = []
+        for word in candidates:
+            box = self._word_bbox(word)
+            text_norm = self._normalize_field_key(word.get("text"))
+            if box["y1"] > page_bottom * 0.52:
+                continue
+            if target in {"工作单位", "完成单位"} and self._looks_like_statement_label(text_norm):
+                continue
+            main_candidates.append(word)
+        return main_candidates or candidates
+
+    def _looks_like_statement_label(self, text_norm: str) -> bool:
+        """过滤下半页承诺/声明正文中的“完成单位声明”等伪标签。"""
+        return any(token in text_norm for token in ("声明", "公章", "承诺", "本人同意", "本单位", "按照"))
+
+    def _merge_split_label_words(self, words: List[Dict[str, Any]], target: str) -> List[Dict[str, Any]]:
+        """合并 Qwen 偶发拆开的字段标签，例如“姓”“名”、“排”“名”。"""
+        parts_map = {"姓名": ("姓", "名"), "排名": ("排", "名")}
+        if target not in parts_map:
+            return []
+
+        first, second = parts_map[target]
+        merged_words: List[Dict[str, Any]] = []
+        for first_word in words:
+            if self._normalize_field_key(first_word.get("text")) != first:
+                continue
+            first_box = self._word_bbox(first_word)
+            first_center_y = (first_box["y1"] + first_box["y2"]) / 2.0
+            first_height = max(1.0, first_box["y2"] - first_box["y1"])
+            first_width = max(1.0, first_box["x2"] - first_box["x1"])
+            for second_word in words:
+                if second_word is first_word:
+                    continue
+                if self._normalize_field_key(second_word.get("text")) != second:
+                    continue
+                second_box = self._word_bbox(second_word)
+                second_center_y = (second_box["y1"] + second_box["y2"]) / 2.0
+                if abs(first_center_y - second_center_y) > max(30.0, first_height * 0.7):
+                    continue
+                gap = second_box["x1"] - first_box["x2"]
+                if gap <= 0 or gap > max(220.0, first_width * 2.0):
+                    continue
+                merged = dict(first_word)
+                merged["text"] = target
+                merged["location"] = [
+                    min(first_box["x1"], second_box["x1"]),
+                    min(first_box["y1"], second_box["y1"]),
+                    max(first_box["x2"], second_box["x2"]),
+                    min(first_box["y1"], second_box["y1"]),
+                    max(first_box["x2"], second_box["x2"]),
+                    max(first_box["y2"], second_box["y2"]),
+                    min(first_box["x1"], second_box["x1"]),
+                    max(first_box["y2"], second_box["y2"]),
+                ]
+                merged.pop("rotate_rect", None)
+                merged_words.append(merged)
+        return merged_words
+
+    def _legacy_match_field_label(self, words: List[Dict[str, Any]], field_name: str) -> Optional[Dict[str, Any]]:
+        target = self._normalize_field_key(field_name)
         exact = [word for word in words if self._normalize_field_key(word.get("text")) == target]
         if exact:
             return sorted(exact, key=lambda item: self._word_bbox(item)["x1"])[0]
@@ -590,6 +735,10 @@ class FieldExtractor:
         embedded = self._split_embedded_field_value(label_word, field_name)
         if embedded:
             return [embedded]
+        if self._normalize_field_key(field_name) == "排名":
+            rank_words = self._select_rank_value_words(words, label_word)
+            if rank_words:
+                return rank_words
         label_box = self._word_bbox(label_word)
         label_center_y = (label_box["y1"] + label_box["y2"]) / 2.0
         label_height = max(1.0, label_box["y2"] - label_box["y1"])
@@ -636,6 +785,30 @@ class FieldExtractor:
         )
         return [best]
 
+    def _select_rank_value_words(
+        self,
+        words: List[Dict[str, Any]],
+        label_word: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        label_box = self._word_bbox(label_word)
+        label_center_y = (label_box["y1"] + label_box["y2"]) / 2.0
+        label_height = max(1.0, label_box["y2"] - label_box["y1"])
+        candidates: List[Dict[str, Any]] = []
+        for word in words:
+            if word is label_word:
+                continue
+            text = self._normalize_text(word.get("text"))
+            if not re.fullmatch(r"\d{1,2}", text):
+                continue
+            box = self._word_bbox(word)
+            center_y = (box["y1"] + box["y2"]) / 2.0
+            if box["x1"] < label_box["x2"] - 8.0:
+                continue
+            if abs(center_y - label_center_y) > max(24.0, label_height * 0.9):
+                continue
+            candidates.append(word)
+        return [sorted(candidates, key=lambda item: self._word_bbox(item)["x1"])[0]] if candidates else []
+
     def _build_field_value_bbox(
         self,
         words: List[Dict[str, Any]],
@@ -655,6 +828,18 @@ class FieldExtractor:
         merged_value_bbox = self._merge_word_bboxes(value_words)
         field_key = self._normalize_field_key(field_name)
         grid_cell_fields = {"姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
+        if field_key in {"工作单位", "完成单位"} and label_word and page_image is not None:
+            label_text_norm = self._normalize_field_key(label_word.get("text"))
+            if self._field_key_has_embedded_label(label_text_norm, field_key):
+                embedded_cell = self._find_embedded_value_table_cell(
+                    image=page_image,
+                    label_box=label_box,
+                    image_size=image_size,
+                )
+                if embedded_cell is not None:
+                    return embedded_cell
+        if field_key == "姓名" and value_words and merged_value_bbox:
+            return self._bbox_around_value_words(merged_value_bbox, label_height, image_size)
         if field_key in grid_cell_fields:
             table_cell = self._find_value_table_cell(
                 image=page_image,
@@ -663,7 +848,10 @@ class FieldExtractor:
             )
             if table_cell is not None:
                 left, top, right, bottom = table_cell
-                return {"x1": left, "y1": top, "x2": right, "y2": bottom}
+                bbox = {"x1": left, "y1": top, "x2": right, "y2": bottom}
+                if self._field_bbox_is_unreliable(bbox, label_height, field_key, merged_value_bbox):
+                    return self._bbox_around_value_words(merged_value_bbox, label_height, image_size)
+                return bbox
         if any(word.get("__embedded_value") for word in value_words):
             pad_x = max(8.0, (merged_value_bbox["x2"] - merged_value_bbox["x1"]) * 0.08)
             pad_y = max(8.0, (merged_value_bbox["y2"] - merged_value_bbox["y1"]) * 0.18)
@@ -684,7 +872,10 @@ class FieldExtractor:
 
         full_cell_fields = {"工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
         if field_key in full_cell_fields and right - left >= 12.0 and bottom - top >= 12.0:
-            return {"x1": left, "y1": top, "x2": right, "y2": bottom}
+            bbox = {"x1": left, "y1": top, "x2": right, "y2": bottom}
+            if self._field_bbox_is_unreliable(bbox, label_height, field_key, merged_value_bbox):
+                return self._bbox_around_value_words(merged_value_bbox, label_height, image_size)
+            return bbox
 
         if not merged_value_bbox:
             return None
@@ -701,8 +892,45 @@ class FieldExtractor:
             bottom = min(bottom, merged_value_bbox["y2"] + max(18.0, value_height * 1.1))
 
         if right - left >= 12.0 and bottom - top >= 12.0:
-            return {"x1": left, "y1": top, "x2": right, "y2": bottom}
+            bbox = {"x1": left, "y1": top, "x2": right, "y2": bottom}
+            if self._field_bbox_is_unreliable(bbox, label_height, field_key, merged_value_bbox):
+                return self._bbox_around_value_words(merged_value_bbox, label_height, image_size)
+            return bbox
         return merged_value_bbox
+
+    def _field_bbox_is_unreliable(
+        self,
+        bbox: Dict[str, float],
+        label_height: float,
+        field_key: str,
+        merged_value_bbox: Optional[Dict[str, float]],
+    ) -> bool:
+        if field_key not in {"姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}:
+            return False
+        height = max(0.0, bbox["y2"] - bbox["y1"])
+        if height > max(220.0, label_height * 5.0):
+            return merged_value_bbox is not None
+        if not merged_value_bbox:
+            return False
+        width = max(0.0, bbox["x2"] - bbox["x1"])
+        value_width = max(0.0, merged_value_bbox["x2"] - merged_value_bbox["x1"])
+        return value_width > 0 and width < value_width * 0.85
+
+    def _bbox_around_value_words(
+        self,
+        merged_value_bbox: Dict[str, float],
+        label_height: float,
+        image_size: tuple[int, int],
+    ) -> Dict[str, float]:
+        img_w, img_h = image_size
+        pad_y = max(10.0, label_height * 0.45)
+        pad_x = max(20.0, label_height * 0.8)
+        return {
+            "x1": max(0.0, merged_value_bbox["x1"] - 4.0),
+            "y1": max(0.0, merged_value_bbox["y1"] - pad_y),
+            "x2": min(float(img_w), merged_value_bbox["x2"] + pad_x),
+            "y2": min(float(img_h), merged_value_bbox["y2"] + pad_y),
+        }
 
     def _find_next_horizontal_table_line(
         self,
@@ -795,6 +1023,9 @@ class FieldExtractor:
         bottom = min(bottom_candidates) - 2.0
         if bottom - top < 12.0:
             return None
+        label_height = max(1.0, label_box["y2"] - label_box["y1"])
+        if bottom - top > max(180.0, label_height * 3.5):
+            return None
 
         y1 = max(0, int(top))
         y2 = min(height, int(bottom))
@@ -818,6 +1049,74 @@ class FieldExtractor:
         left = min(float(img_w), left_line + 3.0)
         right = max(left + 12.0, right_line - 3.0)
         return left, top, min(float(img_w), right), min(float(img_h), bottom)
+
+    def _find_embedded_value_table_cell(
+        self,
+        image: Optional[Image.Image],
+        label_box: Dict[str, float],
+        image_size: tuple[int, int],
+    ) -> Optional[Dict[str, float]]:
+        """OCR 把“字段名+值”合成一个块时，用表格竖线切出右侧值单元格。"""
+        if image is None:
+            return None
+
+        img_w, img_h = image_size
+        width, height = image.size
+        gray = np.array(ImageOps.grayscale(image))
+        binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 12)
+        horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(50, min(120, int(width * 0.04))), 1))
+        vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(35, min(90, int(height * 0.025)))))
+        horizontal = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
+        vertical = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
+
+        row_scan_left = max(0, int(label_box["x1"] - 36.0))
+        row_scan_right = min(width, int(max(label_box["x2"] + 520.0, width * 0.72)))
+        if row_scan_right - row_scan_left < 80:
+            return None
+
+        row_centers = self._line_centers_from_projection(
+            (horizontal[:, row_scan_left:row_scan_right] > 0).sum(axis=1),
+            threshold=max(45, int((row_scan_right - row_scan_left) * 0.42)),
+        )
+        label_center_y = (label_box["y1"] + label_box["y2"]) / 2.0
+        top_candidates = [center for center in row_centers if center < label_center_y - 4.0]
+        bottom_candidates = [center for center in row_centers if center > label_center_y + 4.0]
+        if not top_candidates or not bottom_candidates:
+            return None
+
+        top = max(top_candidates) + 2.0
+        bottom = min(bottom_candidates) - 2.0
+        if bottom - top < 12.0 or bottom - top > 180.0:
+            return None
+
+        y1 = max(0, int(top))
+        y2 = min(height, int(bottom))
+        col_centers = self._line_centers_from_projection(
+            (vertical[y1:y2, :] > 0).sum(axis=0),
+            threshold=max(12, int((y2 - y1) * 0.42)),
+        )
+        value_lines = [center for center in col_centers if center > label_box["x1"] + 60.0]
+        if len(value_lines) < 1:
+            return None
+
+        # 有些扫描件第一条“字段名/字段值”分隔竖线较淡，会被形态学漏掉。
+        # 对“完成单位 + 长值”合并块，分隔线稳定在字段标签起点右侧约一个标签宽度。
+        if len(value_lines) >= 2 and value_lines[0] <= label_box["x1"] + 180.0:
+            left_line = value_lines[0]
+            right_line = value_lines[1]
+        else:
+            left_line = label_box["x1"] + 90.0
+            right_line = value_lines[0]
+            if right_line - left_line < 80.0:
+                return None
+        left = min(float(img_w), left_line + 3.0)
+        right = max(left + 12.0, right_line - 3.0)
+        return {
+            "x1": left,
+            "y1": top,
+            "x2": min(float(img_w), right),
+            "y2": min(float(img_h), bottom),
+        }
 
     def _line_centers_from_projection(self, counts: np.ndarray, threshold: int) -> List[float]:
         values = np.where(counts >= threshold)[0]

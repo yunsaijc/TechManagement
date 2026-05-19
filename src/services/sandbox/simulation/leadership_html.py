@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import json
-from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 
@@ -34,14 +33,15 @@ class LeadershipHtmlRenderer:
         )
         basis_docs = [_as_dict(item) for item in scenario_contract.get("basis_documents", []) if _as_dict(item)]
         stages = [_as_dict(item) for item in data.get("stage_impacts", []) if _as_dict(item)]
+        frontend_payload = _build_frontend_payload(visual_scene, stages, basis_docs)
 
         overview_cards = _build_overview_cards(
             baseline_portfolio=baseline_portfolio,
             summary_cards=[_as_dict(item) for item in leadership_page.get("summary_cards", []) if _as_dict(item)],
+            scene=_as_dict(frontend_payload.get("scene")),
         )
         selection_groups = _build_selection_groups(leadership_page)
         adjustment_panel = _build_adjustment_panel(scenario_contract, leadership_page)
-        frontend_payload = _build_frontend_payload(visual_scene, stages, basis_docs)
         payload_json = _json_for_script(frontend_payload)
         report_title = _build_report_title(leadership_page, self.title)
 
@@ -457,6 +457,23 @@ class LeadershipHtmlRenderer:
       letter-spacing: -0.04em;
       font-variant-numeric: tabular-nums;
       word-break: break-word;
+    }}
+    .overview-copy {{
+      display: grid;
+      gap: 4px;
+      margin-top: 6px;
+    }}
+    .overview-copy p {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }}
+    .overview-copy b {{
+      display: inline-block;
+      min-width: 74px;
+      color: var(--ink);
+      font-weight: 800;
     }}
     .metric-delta {{
       display: inline-flex;
@@ -1122,6 +1139,7 @@ class LeadershipHtmlRenderer:
       const toggleSpillButton = document.getElementById('graph-toggle-spill');
       const graphResetButton = document.getElementById('graph-reset');
       const yearTabs = document.getElementById('year-run-tabs');
+      const overviewCopyRoot = document.getElementById('overview-copy-root');
       const metricGrid = document.getElementById('metric-grid');
       const baselineContextRoot = document.getElementById('baseline-context-root');
       const applicationChart = document.getElementById('application-chart');
@@ -1403,6 +1421,60 @@ class LeadershipHtmlRenderer:
         return `与真实值偏差 ${{signedNumber(error, digits)}}${{suffix}}`;
       }}
 
+      function runWindowLabel(run) {{
+        const label = String((run || {{}}).label || '').replace(/\\s*(当前推演|回测|未来延伸|对照)\\s*$/, '').trim();
+        if (label) return label;
+        const dataYear = String((run || {{}}).dataYear || '').trim();
+        const runYear = String((run || {{}}).year || activeYear || '').trim();
+        return dataYear && runYear && dataYear !== runYear ? `${{dataYear}} → ${{runYear}}` : (runYear || '当前批次');
+      }}
+
+      function renderOverviewCopy(rows) {{
+        if (!overviewCopyRoot) return;
+        const windowLabel = runWindowLabel(currentRun);
+        const role = String((currentRun || {{}}).role || '');
+        const dataYear = String((currentRun || {{}}).dataYear || '').trim();
+        const runYear = String((currentRun || {{}}).year || activeYear || '').trim();
+        const mainDirection = contributionDirection(rows);
+        let items = [];
+        if (role === 'backtest') {{
+          const errorFunded = rows.reduce((total, row) => total + Number(row.errorFunded || 0), 0);
+          const errorFunding = rows.reduce((total, row) => total + Number(row.errorFunding || 0), 0);
+          items = [
+            {{ label: '回测口径：', value: windowLabel }},
+            {{ label: '含义：', value: `用截至 ${{dataYear || '-'}} 年的数据推演 ${{runYear || '-'}} 年，并和 ${{runYear || '-'}} 年真实结果对比` }},
+            {{ label: '结论：', value: `立项与真实值偏差 ${{signedNumber(errorFunded, 0)}} 项，经费与真实值偏差 ${{signedNumber(errorFunding, 1)}} 万元，偏差最大方向为 ${{mainDirection ? mainDirection.label : '-'}}` }},
+          ];
+        }} else {{
+          const fundedDelta = rows.reduce((total, row) => total + Number(row.deltaFunded || 0), 0);
+          const fundingDelta = rows.reduce((total, row) => total + Number(row.deltaFunding || 0), 0);
+          items = [
+            {{ label: '推演口径：', value: windowLabel }},
+            {{ label: '含义：', value: `用 ${{dataYear || '-'}} 年项目、指南、经费和主题结构，推演 ${{runYear || '-'}} 年结果` }},
+            {{ label: '结论：', value: `预计立项净增 ${{signedNumber(fundedDelta, 0)}} 项，经费净增 ${{signedNumber(fundingDelta, 1)}} 万元，主要由 ${{mainDirection ? mainDirection.label : '-'}} 贡献` }},
+          ];
+        }}
+        overviewCopyRoot.innerHTML = items.map((item) => `<p><b>${{escapeHtml(item.label)}}</b>${{escapeHtml(item.value)}}</p>`).join('');
+      }}
+
+      function contributionDirection(rows) {{
+        const changed = rows.filter((row) => row.majorDelta > 1e-9);
+        const funding = changed
+          .filter((row) => Math.abs(Number(row.deltaFunding || 0)) > 1e-9)
+          .sort((a, b) => Math.abs(Number(b.deltaFunding || 0)) - Math.abs(Number(a.deltaFunding || 0)))[0];
+        const funded = changed
+          .filter((row) => Math.abs(Number(row.deltaFunded || 0)) > 1e-9)
+          .sort((a, b) => Math.abs(Number(b.deltaFunded || 0)) - Math.abs(Number(a.deltaFunded || 0)))[0];
+        const application = changed
+          .filter((row) => Math.abs(Number(row.deltaApplication || 0)) > 1e-9)
+          .sort((a, b) => Math.abs(Number(b.deltaApplication || 0)) - Math.abs(Number(a.deltaApplication || 0)))[0];
+        return funding || funded || application || changed[0] || null;
+      }}
+
+      function effectiveChangeCount(rows) {{
+        return rows.filter((row) => Math.abs(Number(row.deltaFunding || 0)) > 1e-9 || Math.abs(Number(row.deltaFunded || 0)) > 1e-9).length;
+      }}
+
       function metricCardHtml(card) {{
         return `
           <article class="metric-card">
@@ -1436,12 +1508,16 @@ class LeadershipHtmlRenderer:
           metricGrid.innerHTML = cards.map(metricCardHtml).join('');
           return;
         }}
+        const changedCount = rows.filter((row) => row.majorDelta > 1e-9).length;
+        const effectiveCount = effectiveChangeCount(rows);
+        const reviewCount = Math.max(changedCount - effectiveCount, 0);
+        const mainDirection = contributionDirection(rows);
         const cards = [
-          {{ label: '当前批次', value: currentRun.year || activeYear || '-', delta: runRoleLabel(currentRun), down: false }},
-          {{ label: '研究方向', value: String(rows.filter((row) => row.majorDelta > 1e-9).length), delta: '有变化对象', down: false }},
-          {{ label: '申报变化', value: signedNumber(sum('deltaApplication'), 0), delta: '项目数', down: sum('deltaApplication') < 0 }},
-          {{ label: '立项变化', value: signedNumber(sum('deltaFunded'), 0), delta: '项目数', down: sum('deltaFunded') < 0 }},
-          {{ label: '经费变化', value: signedNumber(sum('deltaFunding'), 1), delta: '万元', down: sum('deltaFunding') < 0 }},
+          {{ label: '预计立项净增', value: signedNumber(sum('deltaFunded'), 0), delta: '项', down: sum('deltaFunded') < 0 }},
+          {{ label: '预计经费净增', value: signedNumber(sum('deltaFunding'), 1), delta: '万元', down: sum('deltaFunding') < 0 }},
+          {{ label: '主要贡献方向', value: mainDirection ? chartAxisLabel(mainDirection.label, 10) : '-', delta: mainDirection ? '贡献最大' : '暂无变化', cls: 'neutral' }},
+          {{ label: '有效变化方向', value: `${{plainNumber(effectiveCount, 0)}} / ${{plainNumber(changedCount || rows.length || 0, 0)}}`, delta: '立项或经费有变化', cls: 'neutral' }},
+          {{ label: '需复核方向', value: `${{plainNumber(reviewCount, 0)}}`, delta: '仅申报端变化', cls: reviewCount ? 'warn' : 'neutral' }},
         ];
         metricGrid.innerHTML = cards.map(metricCardHtml).join('');
       }}
@@ -1524,6 +1600,7 @@ class LeadershipHtmlRenderer:
 
       function renderRunOverview() {{
         const rows = runRows();
+        renderOverviewCopy(rows);
         renderBaselineContext(rows);
         renderRunMetrics(rows);
         renderRunCharts(rows);
@@ -2009,13 +2086,15 @@ def _render_sidebar(selection_groups: Sequence[Mapping[str, Any]], adjustment_pa
 
 
 def _render_overview_section(cards: Sequence[Mapping[str, Any]], leadership_page: Mapping[str, Any]) -> str:
-    window_copy = _build_window_copy(leadership_page)
+    headline_rows = _build_overview_headline_rows(leadership_page, cards)
     return f"""
     <section class="card section-card">
       <div class="section-head">
         <div>
           <h2>整体变化</h2>
-          <p>{_escape(window_copy)}，先看总量变化，再看申报、立项和经费结果。</p>
+          <div class="overview-copy" id="overview-copy-root">
+            {''.join(f'<p><b>{_escape(item["label"])}</b>{_escape(item["value"])}</p>' for item in headline_rows)}
+          </div>
         </div>
         <div class="trend-hint">
           <span class="arrow-up">↑ 上升</span>
@@ -2150,7 +2229,7 @@ def _render_metric_cards(cards: Sequence[Mapping[str, Any]]) -> str:
         f"""<article class="metric-card">
           <span>{_escape(item.get('label') or '指标')}</span>
           <strong>{_escape(item.get('display_value') or '-')}</strong>
-          <div class="metric-delta {'down' if item.get('delta_negative') else 'up'}">{_escape(item.get('delta_text') or '-')}</div>
+          <div class="metric-delta {_escape(item.get('delta_class') or ('down' if item.get('delta_negative') else 'up'))}">{_escape(item.get('delta_text') or '-')}</div>
         </article>"""
         for item in cards
     )
@@ -2380,20 +2459,46 @@ def _build_summary_bullets(leadership_page: Mapping[str, Any]) -> list[str]:
     return output[:4] or ["当前还没有形成可展示的解读。"]
 
 
+def _build_overview_headline_rows(leadership_page: Mapping[str, Any], cards: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+    window_text = _display_current_window(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
+    card_by_label = {str(_as_dict(item).get("label") or ""): _as_dict(item) for item in cards if _as_dict(item)}
+    funded = _as_dict(card_by_label.get("预计立项净增")).get("display_value") or "-"
+    funding = _as_dict(card_by_label.get("预计经费净增")).get("display_value") or "-"
+    main_direction = _as_dict(card_by_label.get("主要贡献方向")).get("display_value") or "-"
+    result_parts = [
+        f"预计立项净增 {funded} 项",
+        f"经费净增 {funding} 万元",
+        f"主要由 {main_direction} 贡献",
+    ]
+    return [
+        {"label": "推演口径：", "value": window_text or "当前推演"},
+        {"label": "含义：", "value": _window_meaning(window_text)},
+        {"label": "结论：", "value": "，".join(result_parts)},
+    ]
+
+
+def _window_meaning(window_text: str) -> str:
+    if "→" not in window_text:
+        return "基于当前已装载数据推演后续结果"
+    baseline_year, result_year = [item.strip() for item in window_text.split("→", 1)]
+    return f"用 {baseline_year} 年项目、指南、经费和主题结构，推演 {result_year} 年结果"
+
+
 def _build_window_copy(leadership_page: Mapping[str, Any]) -> str:
-    display_year = _display_current_year(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
-    if display_year:
-        return f"本页主批次为 {display_year} 当前推演"
+    display_window = _display_current_window(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
+    if display_window:
+        return f"本页主批次为 {display_window} 当前推演"
     return "本页主批次为当前推演"
 
 
-def _display_current_year(scenario_window: Any) -> str:
+def _display_current_window(scenario_window: Any) -> str:
     text = str(scenario_window or "").strip()
     if not text:
-        return str(datetime.now().year)
+        return ""
     start_year_text = text.split("-", 1)[0].strip()
     if start_year_text.isdigit():
-        return str(max(int(start_year_text), datetime.now().year))
+        start_year = int(start_year_text)
+        return f"{start_year} → {start_year + 1}"
     return text
 
 
@@ -2717,7 +2822,7 @@ def _build_adjustment_panel(scenario_contract: Mapping[str, Any], leadership_pag
         numeric = _as_number(actions[0].get("intensity"))
         if numeric:
             intensity = int(round(numeric * 100))
-    display_year = _display_current_year(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
+    display_year = _display_result_year(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
     return {
         "method_options": [
             {"value": "increase_support", "label": "增加支持"},
@@ -2740,36 +2845,58 @@ def _build_year_options(current_value: Any) -> list[dict[str, Any]]:
     return [{"value": text or "", "label": f"{text}年" if text else "当前窗口"}]
 
 
+def _display_result_year(scenario_window: Any) -> str:
+    text = str(scenario_window or "").strip()
+    if not text:
+        return ""
+    start_year_text = text.split("-", 1)[0].strip()
+    if start_year_text.isdigit():
+        return str(int(start_year_text) + 1)
+    return text
+
+
 def _build_adjustment_note(leadership_page: Mapping[str, Any]) -> str:
     control_panel = _as_dict(leadership_page.get("control_panel"))
     summary = str(control_panel.get("summary") or "").strip()
     return summary if len(summary) <= 80 else summary[:78] + "..."
 
 
-def _build_overview_cards(*, baseline_portfolio: Mapping[str, Any], summary_cards: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _build_overview_cards(
+    *,
+    baseline_portfolio: Mapping[str, Any],
+    summary_cards: Sequence[Mapping[str, Any]],
+    scene: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     delta_index = {str(item.get("key") or ""): _as_dict(item) for item in summary_cards if _as_dict(item)}
-    baseline_application = _as_number(baseline_portfolio.get("application_count"))
-    baseline_funded = _as_number(baseline_portfolio.get("funded_count"))
-    baseline_funding = _as_number(baseline_portfolio.get("funding_amount"))
-    baseline_intensity = baseline_funding / baseline_funded if baseline_funded else 0.0
-
     app_delta = _as_number(_as_dict(delta_index.get("application_count")).get("value"))
     funded_delta = _as_number(_as_dict(delta_index.get("funded_count")).get("value"))
     funding_delta = _as_number(_as_dict(delta_index.get("funding_amount")).get("value"))
-    affected_delta = _as_number(_as_dict(delta_index.get("affected_topics")).get("value"))
-    scenario_application = baseline_application + app_delta
-    scenario_funded = baseline_funded + funded_delta
-    scenario_funding = baseline_funding + funding_delta
-    scenario_intensity = scenario_funding / scenario_funded if scenario_funded else 0.0
+    topic_summary = _current_topic_decision_summary(scene)
 
     cards = [
-        _metric_card("总申报项目数（个）", scenario_application, app_delta, baseline_application, "int"),
-        _metric_card("总立项项目数（个）", scenario_funded, funded_delta, baseline_funded, "int"),
-        _metric_card("总经费（万元）", scenario_funding, funding_delta, baseline_funding, "currency"),
-        _metric_card("平均资助强度（万元/项）", scenario_intensity, scenario_intensity - baseline_intensity, baseline_intensity, "currency"),
-        _metric_card("影响主题数（个）", affected_delta, affected_delta, max(affected_delta - affected_delta, 0.0), "int"),
+        _simple_metric_card("预计立项净增", _signed_plain_number(funded_delta, "int"), "项", funded_delta < 0),
+        _simple_metric_card("预计经费净增", _signed_plain_number(funding_delta, "currency"), "万元", funding_delta < 0),
+        _simple_metric_card("主要贡献方向", topic_summary["main_direction"] or "-", "贡献最大", False, "neutral"),
+        _simple_metric_card(
+            "有效变化方向",
+            f"{_format_plain_number(topic_summary['effective_count'], 'int')} / {_format_plain_number(topic_summary['changed_count'], 'int')}",
+            "立项或经费有变化",
+            False,
+            "neutral",
+        ),
+        _simple_metric_card("需复核方向", _format_plain_number(topic_summary["review_count"], "int"), "仅申报端变化", False, "warn" if topic_summary["review_count"] else "neutral"),
     ]
     return cards
+
+
+def _simple_metric_card(label: str, value: str, delta_text: str, delta_negative: bool, delta_class: str | None = None) -> dict[str, Any]:
+    return {
+        "label": label,
+        "display_value": value,
+        "delta_text": delta_text,
+        "delta_negative": delta_negative,
+        "delta_class": delta_class,
+    }
 
 
 def _metric_card(label: str, value: float, delta: float, baseline: float, fmt: str) -> dict[str, Any]:
@@ -2778,8 +2905,8 @@ def _metric_card(label: str, value: float, delta: float, baseline: float, fmt: s
         percent = delta / baseline * 100
     delta_negative = delta < 0
     if fmt == "currency":
-        display_value = _format_plain_number(value / 10000 if "总经费" in label else value, "currency")
-        delta_text = f"{'↓' if delta_negative else '↑'} {_format_plain_number(delta / 10000 if '总经费' in label else delta, 'currency')} ({percent:+.1f}%)"
+        display_value = _format_plain_number(value, "currency")
+        delta_text = f"{'↓' if delta_negative else '↑'} {_format_plain_number(delta, 'currency')} ({percent:+.1f}%)"
     else:
         display_value = _format_plain_number(value, fmt)
         delta_text = f"{'↓' if delta_negative else '↑'} {_format_plain_number(delta, fmt)} ({percent:+.1f}%)"
@@ -2789,6 +2916,63 @@ def _metric_card(label: str, value: float, delta: float, baseline: float, fmt: s
         "delta_text": delta_text,
         "delta_negative": delta_negative,
     }
+
+
+def _current_topic_decision_summary(scene: Mapping[str, Any] | None) -> dict[str, Any]:
+    scene_payload = _as_dict(scene)
+    active_year = str(scene_payload.get("activeYear") or "").strip()
+    run = _as_dict(_as_dict(scene_payload.get("yearRuns")).get(active_year)) if active_year else {}
+    topics = [_as_dict(item) for item in run.get("topics", []) or scene_payload.get("topics", []) or [] if _as_dict(item)]
+    changed: list[dict[str, Any]] = []
+    effective: list[dict[str, Any]] = []
+    for topic in topics:
+        metrics = _as_dict(topic.get("metrics"))
+        delta_application = _as_number(metrics.get("deltaApplication"))
+        delta_funded = _as_number(metrics.get("deltaFunded"))
+        delta_funding = _as_number(metrics.get("deltaFunding"))
+        if max(abs(delta_application), abs(delta_funded), abs(delta_funding)) <= 1e-9:
+            continue
+        changed.append(topic)
+        if abs(delta_funded) > 1e-9 or abs(delta_funding) > 1e-9:
+            effective.append(topic)
+
+    main_topic = _main_contribution_topic(changed)
+    changed_count = len(changed) or len(topics)
+    effective_count = len(effective)
+    return {
+        "main_direction": _truncate_text(str(main_topic.get("shortLabel") or main_topic.get("label") or ""), 10) if main_topic else "",
+        "changed_count": changed_count,
+        "effective_count": effective_count,
+        "review_count": max(changed_count - effective_count, 0),
+    }
+
+
+def _main_contribution_topic(topics: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
+    if not topics:
+        return {}
+
+    def sort_key(topic: Mapping[str, Any]) -> tuple[float, float, float]:
+        metrics = _as_dict(topic.get("metrics"))
+        return (
+            abs(_as_number(metrics.get("deltaFunding"))),
+            abs(_as_number(metrics.get("deltaFunded"))),
+            abs(_as_number(metrics.get("deltaApplication"))),
+        )
+
+    return max(topics, key=sort_key)
+
+
+def _signed_plain_number(value: Any, fmt: str) -> str:
+    numeric = _as_number(value)
+    sign = "+" if numeric >= 0 else ""
+    return f"{sign}{_format_plain_number(numeric, fmt)}"
+
+
+def _truncate_text(value: str, max_chars: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max(1, max_chars - 1)] + "…"
 
 
 def _split_scope_label(value: str) -> tuple[str, str]:

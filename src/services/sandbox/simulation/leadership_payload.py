@@ -1260,11 +1260,12 @@ def _build_visual_scene(
     year_runs: dict[str, dict[str, Any]] = {}
     for year in sorted(nodes_by_year, key=_visual_year_sort_key, reverse=True):
         nodes = _finalize_visual_nodes(nodes_by_year[year], order_by_year.get(year, []))
+        data_year = _visual_baseline_year_for_run(year=year, active_year=active_year)
         year_runs[year] = {
             "year": year,
-            "dataYear": int(year) - 1 if year == active_year and str(year).isdigit() else (int(year) if str(year).isdigit() else None),
+            "dataYear": data_year,
             "role": _visual_year_role(year, active_year),
-            "label": _visual_year_label(year, active_year),
+            "label": _visual_year_label(year, active_year, data_year=data_year),
             "topics": nodes,
             "edges": _build_visual_edges(nodes),
             "focusTopicId": str((nodes[0] if nodes else {}).get("id") or ""),
@@ -1337,11 +1338,12 @@ def _attach_backtest_year_runs(year_runs: dict[str, dict[str, Any]], active_year
         )
         if not nodes:
             continue
+        data_year = year - 1
         year_runs[str(year)] = {
             "year": str(year),
-            "dataYear": year,
+            "dataYear": data_year,
             "role": "backtest",
-            "label": f"{year} 回测",
+            "label": f"{data_year} → {year} 回测",
             "trainWindow": f"{_BACKTEST_TRAINING_START_YEAR}-{year - 1}",
             "validationYear": year,
             "topics": nodes,
@@ -1405,7 +1407,7 @@ def _enrich_visual_scene_with_project_data(visual_scene: dict[str, Any]) -> None
             topic_ids = [item.lower() for item in _string_list(topic_payload.get("topicIds"))]
             topic_facts: list[Any] = []
             for topic_id in topic_ids:
-                topic_facts.extend(facts_by_year_topic.get(year, {}).get(topic_id, []))
+                topic_facts.extend(facts_by_year_topic.get(data_year, {}).get(topic_id, []))
             topic_payload["detailProfile"] = _build_topic_detail_profile(
                 topic=topic_payload,
                 year=data_year,
@@ -1433,6 +1435,10 @@ def _visual_scene_years(visual_scene: Mapping[str, Any]) -> list[int]:
         year_text = str(year or "").strip()
         if year_text.isdigit():
             years.add(int(year_text))
+    for run in _as_dict(visual_scene.get("yearRuns")).values():
+        data_year = int(_as_number(_as_dict(run).get("dataYear")))
+        if data_year > 0:
+            years.add(data_year)
     return sorted(years)
 
 
@@ -1880,9 +1886,19 @@ def _visual_active_year(value: Any) -> str:
         return str(datetime.now().year)
     start_year = text.split("-", 1)[0].strip() or text
     if start_year.isdigit():
-        current_year = datetime.now().year
-        return str(max(int(start_year), current_year))
+        return str(int(start_year) + 1)
     return start_year
+
+
+def _visual_baseline_year_for_run(*, year: str, active_year: str) -> int | None:
+    if not str(year).isdigit():
+        return None
+    year_int = int(year)
+    if str(active_year).isdigit() and year == active_year:
+        return year_int - 1
+    if _visual_year_role(year, active_year) == "backtest":
+        return year_int - 1
+    return year_int
 
 
 def _visual_item_year(item: Mapping[str, Any]) -> str:
@@ -1929,15 +1945,16 @@ def _visual_year_role(year: str, active_year: str) -> str:
     return "comparison"
 
 
-def _visual_year_label(year: str, active_year: str) -> str:
+def _visual_year_label(year: str, active_year: str, *, data_year: int | None = None) -> str:
     role = _visual_year_role(year, active_year)
+    window = f"{data_year} → {year}" if data_year and str(year).isdigit() and int(year) != data_year else year
     if role == "current":
-        return f"{year} 当前推演"
+        return f"{window} 当前推演"
     if role == "backtest":
-        return f"{year} 回测"
+        return f"{window} 回测"
     if role == "future":
-        return f"{year} 未来延伸"
-    return f"{year} 对照"
+        return f"{window} 未来延伸"
+    return f"{window} 对照"
 
 
 def _visual_year_validation(year: str, active_year: str) -> dict[str, Any]:
@@ -1949,7 +1966,7 @@ def _visual_year_validation(year: str, active_year: str) -> dict[str, Any]:
             "title": "回测验证",
             "trainWindow": f"{train_start}-{train_end}",
             "validationYear": year,
-            "summary": f"用 {train_start}-{train_end} 年数据推演 {year} 年，并标注与真实值的偏差。",
+            "summary": f"用截至 {train_end} 年的数据推演 {year} 年，并标注与真实值的偏差。",
         }
     if role == "future":
         return {
@@ -1958,7 +1975,7 @@ def _visual_year_validation(year: str, active_year: str) -> dict[str, Any]:
         }
     return {
         "title": "当前推演",
-        "summary": f"{year} 年是当前默认推演批次。",
+        "summary": f"用 {int(year) - 1} 年现状推演 {year} 年结果。" if str(year).isdigit() else f"{year} 是当前默认推演批次。",
     }
 
 

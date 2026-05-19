@@ -33,6 +33,8 @@ _REVIEW_RESULT_DIR = _PROJECT_ROOT / "data" / "review_results"
 _REVIEW_MAX_RETRIES = 2
 _REVIEW_QUEUE: Optional[asyncio.Queue] = None
 _REVIEW_WORKERS: List[asyncio.Task] = []
+_REVIEW_RETRY_QUEUE: Optional[asyncio.Queue] = None
+_REVIEW_RETRY_WORKERS: List[asyncio.Task] = []
 
 
 class ReviewRequest(BaseModel):
@@ -307,6 +309,15 @@ def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
         if "last_summary" in retry:
             compact["retry"]["last_summary"] = str(retry.get("last_summary") or "")
 
+    retry_queue = structured.get("retry_queue") or {}
+    if isinstance(retry_queue, dict) and retry_queue:
+        compact["retry_queue"] = {
+            "phase": str(retry_queue.get("phase") or ""),
+            "queue_position": int(retry_queue.get("queue_position") or 0),
+            "worker_concurrency": int(retry_queue.get("worker_concurrency") or 0),
+            "queue_max_size": int(retry_queue.get("queue_max_size") or 0),
+        }
+
     queue = structured.get("queue") or {}
     if isinstance(queue, dict) and queue:
         compact["queue"] = {
@@ -443,6 +454,13 @@ def _get_review_queue() -> asyncio.Queue:
     return _REVIEW_QUEUE
 
 
+def _get_review_retry_queue() -> asyncio.Queue:
+    global _REVIEW_RETRY_QUEUE
+    if _REVIEW_RETRY_QUEUE is None:
+        _REVIEW_RETRY_QUEUE = asyncio.Queue(maxsize=max(1, int(ReviewRuntime.REVIEW_RETRY_QUEUE_MAX_SIZE)))
+    return _REVIEW_RETRY_QUEUE
+
+
 async def _review_worker(worker_index: int) -> None:
     queue = _get_review_queue()
     while True:
@@ -470,6 +488,18 @@ async def _review_worker(worker_index: int) -> None:
             queue.task_done()
 
 
+async def _review_retry_worker(worker_index: int) -> None:
+    queue = _get_review_retry_queue()
+    while True:
+        review_id, doc_type, job = await queue.get()
+        try:
+            await job()
+        except Exception:
+            logger.exception("Review retry queue job failed unexpectedly: %s", review_id)
+        finally:
+            queue.task_done()
+
+
 def _ensure_review_workers_started() -> None:
     target = max(1, int(ReviewRuntime.REVIEW_WORKER_CONCURRENCY))
     active_workers = [task for task in _REVIEW_WORKERS if not task.done()]
@@ -477,6 +507,15 @@ def _ensure_review_workers_started() -> None:
     while len(_REVIEW_WORKERS) < target:
         worker_index = len(_REVIEW_WORKERS) + 1
         _REVIEW_WORKERS.append(asyncio.create_task(_review_worker(worker_index)))
+
+
+def _ensure_review_retry_workers_started() -> None:
+    target = max(0, int(ReviewRuntime.REVIEW_RETRY_WORKER_CONCURRENCY))
+    active_workers = [task for task in _REVIEW_RETRY_WORKERS if not task.done()]
+    _REVIEW_RETRY_WORKERS[:] = active_workers
+    while len(_REVIEW_RETRY_WORKERS) < target:
+        worker_index = len(_REVIEW_RETRY_WORKERS) + 1
+        _REVIEW_RETRY_WORKERS.append(asyncio.create_task(_review_retry_worker(worker_index)))
 
 
 def _update_queue_status(
@@ -506,6 +545,28 @@ def _update_queue_status(
     _persist_review_result(current)
 
 
+def _update_retry_queue_status(
+    review_id: str,
+    doc_type: str,
+    queue_position: Optional[int] = None,
+) -> None:
+    current = _review_results.get(review_id)
+    if current is None:
+        return
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    retry_queue_info = {
+        "phase": "queued",
+        "queue_position": int(queue_position or 0),
+        "worker_concurrency": int(ReviewRuntime.REVIEW_RETRY_WORKER_CONCURRENCY),
+        "queue_max_size": int(ReviewRuntime.REVIEW_RETRY_QUEUE_MAX_SIZE),
+    }
+    current.extracted_data["retry_queue"] = retry_queue_info
+    current.structured_result["retry_queue"] = retry_queue_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
+
+
 async def _enqueue_review_job(
     review_id: str,
     doc_type: str,
@@ -526,6 +587,25 @@ async def _enqueue_review_job(
         phase="queued",
         queue_position=queue_position,
     )
+
+
+async def _enqueue_review_retry_job(
+    review_id: str,
+    doc_type: str,
+    job: Callable[[], Awaitable[None]],
+) -> bool:
+    if int(ReviewRuntime.REVIEW_RETRY_WORKER_CONCURRENCY) <= 0:
+        return False
+    queue = _get_review_retry_queue()
+    _ensure_review_retry_workers_started()
+    queue_position = queue.qsize() + 1
+    try:
+        queue.put_nowait((review_id, doc_type, job))
+    except asyncio.QueueFull:
+        logger.warning("Review retry queue full, skip background retries: %s", review_id)
+        return False
+    _update_retry_queue_status(review_id, doc_type, queue_position=queue_position)
+    return True
 
 
 def _build_failure_result(review_id: str, doc_type: str, error: Exception, start_time: float) -> ReviewResult:
@@ -667,6 +747,39 @@ def _attach_retry_metadata(
     return result
 
 
+def _attach_deferred_retry_metadata(
+    result: ReviewResult,
+    attempts: int,
+    used_retries: int,
+    stage: str,
+    total_elapsed: float,
+    max_attempts: int,
+) -> ReviewResult:
+    result = _attach_retry_metadata(
+        result,
+        attempts=attempts,
+        used_retries=used_retries,
+        stop_reason="initial_done",
+        total_elapsed=total_elapsed,
+        max_attempts=max_attempts,
+    )
+    retry_info = {
+        "attempts": attempts,
+        "used_retries": used_retries,
+        "stop_reason": "initial_done",
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+        "last_summary": str(result.summary or ""),
+    }
+    result.extracted_data = dict(result.extracted_data or {})
+    result.extracted_data["retry"] = retry_info
+    structured = dict(result.structured_result or {})
+    structured["retry"] = retry_info
+    result.structured_result = structured
+    return result
+
+
 def _publish_retry_snapshot(
     review_id: str,
     result: ReviewResult,
@@ -758,6 +871,7 @@ async def _run_with_retries(
     doc_type: str,
     run_attempt,
     start_time: float,
+    defer_retries: bool = False,
 ) -> ReviewResult:
     best_result: Optional[ReviewResult] = None
     attempts = _REVIEW_MAX_RETRIES + 1
@@ -809,6 +923,69 @@ async def _run_with_retries(
                     stage="后台复核中",
                     start_time=start_time,
                 )
+                if defer_retries:
+                    async def _run_deferred_retries(
+                        initial_best: ReviewResult,
+                        next_attempt: int,
+                    ) -> None:
+                        best_retry_result = initial_best
+                        completed_retry_attempts = next_attempt - 1
+                        retry_stop_reason = "max_retries_reached"
+                        for retry_attempt in range(next_attempt, attempts + 1):
+                            completed_retry_attempts = retry_attempt
+                            _update_processing_retry_status(
+                                review_id=review_id,
+                                doc_type=doc_type,
+                                attempt=retry_attempt,
+                                max_attempts=attempts,
+                                stage="后台复核中",
+                                last_result=best_retry_result,
+                            )
+                            try:
+                                retry_result = await run_attempt(retry_attempt)
+                            except Exception as exc:
+                                logger.exception("Review retry attempt failed: %s attempt=%s", review_id, retry_attempt)
+                                retry_result = _build_failure_result(
+                                    review_id=review_id,
+                                    doc_type=doc_type,
+                                    error=exc,
+                                    start_time=start_time,
+                                )
+                            if _result_rank(retry_result) < _result_rank(best_retry_result):
+                                best_retry_result = retry_result
+                            if _is_full_pass(retry_result):
+                                best_retry_result = retry_result
+                                retry_stop_reason = "full_pass"
+                                break
+                            if _has_document_type_mismatch(retry_result):
+                                best_retry_result = retry_result
+                                retry_stop_reason = "document_type_mismatch"
+                                break
+                        final_retry_result = _attach_retry_metadata(
+                            best_retry_result,
+                            attempts=completed_retry_attempts,
+                            used_retries=max(0, completed_retry_attempts - 1),
+                            stop_reason=retry_stop_reason,
+                            total_elapsed=time.time() - start_time,
+                            max_attempts=attempts,
+                        )
+                        _review_results[review_id] = final_retry_result
+                        _persist_review_result(final_retry_result)
+
+                    enqueued = await _enqueue_review_retry_job(
+                        review_id=review_id,
+                        doc_type=doc_type,
+                        job=lambda: _run_deferred_retries(best_result, attempt + 1),
+                    )
+                    if enqueued:
+                        return _attach_deferred_retry_metadata(
+                            best_result,
+                            attempts=attempt,
+                            used_retries=max(0, attempt - 1),
+                            stage="后台复核中",
+                            total_elapsed=time.time() - start_time,
+                            max_attempts=attempts,
+                        )
             _update_processing_retry_status(
                 review_id=review_id,
                 doc_type=doc_type,
@@ -1311,6 +1488,7 @@ async def submit_review(
                     metadata=meta_dict,
                     persist_result=False,
                 ),
+                defer_retries=True,
             )
             _review_results[review_id] = final
             _persist_review_result(final)
@@ -1433,6 +1611,7 @@ async def submit_review_by_path(
                 doc_type=normalized_doc_type,
                 start_time=start_time,
                 run_attempt=_run_single_attempt,
+                defer_retries=True,
             )
             if reward_service and reward_context and current.status == "done":
                 await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)

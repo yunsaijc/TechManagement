@@ -292,6 +292,8 @@ class RewardReviewService:
         target_values = context.get("target_values", {}) or {}
 
         if normalized_doc_type == "tjdwyj":
+            llm_analysis = result.llm_analysis or {}
+            stamp_quality = llm_analysis.get("stamp_quality") if isinstance(llm_analysis, dict) else None
             extras.extend(
                 self._filter_items(
                     [
@@ -301,6 +303,7 @@ class RewardReviewService:
                             expected=str(target_values.get("nomination_unit_name") or ""),
                             candidates=stamps,
                             verification=verification.get("nomination_unit_stamp"),
+                            stamp_quality=stamp_quality if isinstance(stamp_quality, dict) else None,
                         )
                     ],
                     effective_items,
@@ -1368,6 +1371,7 @@ class RewardReviewService:
         expected: str,
         candidates: List[str],
         verification: Optional[Dict[str, str]] = None,
+        stamp_quality: Optional[Dict[str, Any]] = None,
     ) -> CheckResult:
         verification_status = self._verification_status(verification)
         raw_state = _raw_candidate_state(expected, candidates)
@@ -1379,11 +1383,35 @@ class RewardReviewService:
         }
         if verification:
             evidence["verification"] = verification
+        if stamp_quality:
+            evidence["stamp_quality"] = stamp_quality
         if not expected:
             return CheckResult(
                 item=item,
                 status=CheckStatus.WARNING,
                 message=f"奖励库未提供可核验的{label}",
+                evidence=evidence,
+            )
+        if (
+            item == "nomination_unit_stamp_consistency"
+            and raw_state == "unknown"
+            and not candidates
+            and stamp_quality
+            and stamp_quality.get("red_present")
+            and stamp_quality.get("low_quality")
+            and verification_status != "yes"
+        ):
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"{label}印文过淡或残缺，无法确认单位名称，请人工复核",
+                evidence=evidence,
+            )
+        if item == "nomination_unit_stamp_consistency" and raw_state == "match":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{label}与奖励库记录一致",
                 evidence=evidence,
             )
         if verification_status == "no":
@@ -1478,6 +1506,19 @@ class RewardReviewService:
         # 条件串行：
         # 1. 先用抽取结果直接和奖励库比，命中就直接通过；
         # 2. 只有抽取没过时，才使用“是否是 xxx”的定向验证兜底。
+        if verification_status == "no":
+            reason = str((verification or {}).get("reason") or "").strip() if isinstance(verification, dict) else ""
+            if any(token in reason for token in ("姓名章", "签字章", "私章", "方章", "红章")):
+                message = f"完成人“{expected_name or contributor_name}”未见亲笔签名，检测到姓名章/签字章"
+            else:
+                message = f"完成人“{expected_name or contributor_name}”与本人签名不一致"
+            return CheckResult(
+                item="award_contributor_signature_consistency",
+                status=CheckStatus.FAILED,
+                message=message,
+                evidence=evidence,
+            )
+
         if raw_state == "match":
             return CheckResult(
                 item="award_contributor_signature_consistency",
@@ -1493,14 +1534,6 @@ class RewardReviewService:
                 message=f"完成人“{expected_name}”与本人签名一致",
                 evidence=evidence,
             )
-        if verification_status == "no":
-            return CheckResult(
-                item="award_contributor_signature_consistency",
-                status=CheckStatus.FAILED,
-                message=f"完成人“{expected_name or contributor_name}”与本人签名不一致",
-                evidence=evidence,
-            )
-
         if raw_state == "mismatch":
             return CheckResult(
                 item="award_contributor_signature_consistency",

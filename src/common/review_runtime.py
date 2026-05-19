@@ -16,8 +16,14 @@ class ReviewRuntime:
     # 在线单文件审查：后台 worker 并发数
     REVIEW_WORKER_CONCURRENCY = 2
 
+    # 在线单文件复核：低优先级后台 worker 并发数，不占用首次审查 worker
+    REVIEW_RETRY_WORKER_CONCURRENCY = 1
+
     # 在线单文件审查：进程内等待队列最大长度
     REVIEW_QUEUE_MAX_SIZE = 100
+
+    # 在线单文件复核：进程内等待队列最大长度
+    REVIEW_RETRY_QUEUE_MAX_SIZE = 100
 
     # 附件分类阈值
     ATTACHMENT_CLASSIFY_CONFIDENCE = 0.70

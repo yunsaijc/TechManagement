@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from pathlib import PureWindowsPath
@@ -13,6 +14,7 @@ from pathlib import PureWindowsPath
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _ENV_FILE = _PROJECT_ROOT / ".env"
+_SMB_SESSION_LOCK = threading.Lock()
 
 
 class SMBConfigurationError(RuntimeError):
@@ -133,16 +135,27 @@ class SMBReviewFileReader:
             ) from exc
 
         try:
+            return self._read_bytes_with_client(smbclient, unc_path)
+        except Exception as exc:
+            if not self._is_retryable_smb_error(exc):
+                raise SMBFileReadError(f"读取 SMB 文件失败: {unc_path}: {exc}") from exc
+
+            self._reset_smb_session(smbclient)
+            try:
+                return self._read_bytes_with_client(smbclient, unc_path)
+            except Exception as retry_exc:
+                raise SMBFileReadError(f"读取 SMB 文件失败: {unc_path}: {retry_exc}") from retry_exc
+
+    def _read_bytes_with_client(self, smbclient, unc_path: str) -> bytes:
+        with _SMB_SESSION_LOCK:
             smbclient.register_session(
                 self.settings.host,
                 username=self.settings.username,
                 password=self.settings.password,
                 port=self.settings.port,
             )
-            with smbclient.open_file(unc_path, mode="rb") as fp:
-                return fp.read()
-        except Exception as exc:
-            raise SMBFileReadError(f"读取 SMB 文件失败: {unc_path}: {exc}") from exc
+        with smbclient.open_file(unc_path, mode="rb", share_access="r") as fp:
+            return fp.read()
 
     def _extract_relative_parts(self, normalized_path: str) -> list[str]:
         if normalized_path.startswith("\\\\"):
@@ -185,3 +198,36 @@ class SMBReviewFileReader:
         if len(parts) < len(prefix):
             return False
         return [item.lower() for item in parts[: len(prefix)]] == [item.lower() for item in prefix]
+
+    @staticmethod
+    def _is_retryable_smb_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        retryable_markers = (
+            "failed to authenticate",
+            "spnegoerror",
+            "no username or password",
+            "unable to negotiate common mechanism",
+            "connection reset",
+            "connection aborted",
+            "remote end closed connection",
+            "transport",
+        )
+        non_retryable_markers = (
+            "no such file or directory",
+            "0xc0000034",
+            "0xc000003a",
+            "file_path",
+        )
+        return any(marker in text for marker in retryable_markers) and not any(
+            marker in text for marker in non_retryable_markers
+        )
+
+    def _reset_smb_session(self, smbclient) -> None:
+        with _SMB_SESSION_LOCK:
+            try:
+                smbclient.delete_session(self.settings.host, port=self.settings.port)
+            except Exception:
+                try:
+                    smbclient.reset_connection_cache(fail_on_error=False)
+                except Exception:
+                    pass

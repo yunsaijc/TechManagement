@@ -126,6 +126,7 @@ class StampExtractor:
         file_data: bytes,
         anchors: Optional[Dict[str, Dict[str, float]]] = None,
         image_data: Optional[bytes] = None,
+        expected_units: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """基于已知锚点提取主要完成人表公章。"""
         if image_data is None:
@@ -136,6 +137,8 @@ class StampExtractor:
 
         if not isinstance(anchors, dict):
             anchors = {}
+        if not isinstance(expected_units, dict):
+            expected_units = {}
         if not anchors:
             logger.warning("[StampExtractor] 未定位到主要完成人公章锚点，跳过公章 OCR")
             return self._empty_award_result()
@@ -151,6 +154,7 @@ class StampExtractor:
                 anchors=anchors,
                 role_key="work_unit",
                 role_label="工作单位（公章）",
+                expected_unit=str(expected_units.get("work_unit") or ""),
             )
             completion_result = self._retag_award_stamp_result(
                 work_output.get("result", {}),
@@ -175,6 +179,7 @@ class StampExtractor:
                         anchors=anchors,
                         role_key=role_key,
                         role_label=role_label,
+                        expected_unit=str(expected_units.get(role_key) or ""),
                     )
                     for role_key, role_label in role_specs
                 ]
@@ -197,6 +202,17 @@ class StampExtractor:
             if work_units and not completion_units:
                 completion_units = list(work_units)
             elif completion_units and not work_units:
+                work_units = list(completion_units)
+        work_expected = str(expected_units.get("work_unit") or "")
+        completion_expected = str(expected_units.get("completion_unit") or "")
+        if (
+            work_expected
+            and completion_expected
+            and self._normalize_unit_key(work_expected) == self._normalize_unit_key(completion_expected)
+        ):
+            if work_units and self._stamp_texts_cover_expected(work_units, work_expected) and not self._stamp_texts_cover_expected(completion_units, completion_expected):
+                completion_units = list(work_units)
+            elif completion_units and self._stamp_texts_cover_expected(completion_units, completion_expected) and not self._stamp_texts_cover_expected(work_units, work_expected):
                 work_units = list(completion_units)
 
         all_stamps = self._merge_award_stamps(
@@ -226,6 +242,7 @@ class StampExtractor:
         anchors: Dict[str, Dict[str, float]],
         role_key: str,
         role_label: str,
+        expected_unit: str = "",
     ) -> Dict[str, Any]:
         """并行提取单个公章角色区域。"""
         bbox = anchors.get(role_key)
@@ -265,6 +282,7 @@ class StampExtractor:
             polar_raw_source=ocr_bundle.get("polar_raw_source"),
             polar_enhanced_source=ocr_bundle.get("polar_enhanced_source"),
             polar_source_variant=str(ocr_bundle.get("polar_source_variant") or ""),
+            expected_unit=expected_unit,
         )
         return {
             "role": role_key,
@@ -460,6 +478,7 @@ class StampExtractor:
         polar_raw_source: Optional[Image.Image] = None,
         polar_enhanced_source: Optional[Image.Image] = None,
         polar_source_variant: str = "",
+        expected_unit: str = "",
     ) -> Dict[str, Any]:
         calls = [
             self._run_qwen_ocr(
@@ -493,6 +512,7 @@ class StampExtractor:
             polar_raw_source=polar_raw_source,
             polar_enhanced_source=polar_enhanced_source,
             polar_source_variant=polar_source_variant,
+            expected_unit=expected_unit,
         )
         if polar_payload is not None:
             variant_payloads.append(polar_payload)
@@ -976,6 +996,25 @@ class StampExtractor:
         gray = cv2.copyMakeBorder(gray, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255)
         return Image.fromarray(gray).convert("RGB")
 
+    def _build_red_ratio_stamp_gray(self, image: Image.Image) -> np.ndarray:
+        rgb = np.array(image.convert("RGB")).astype(np.float32)
+        red = rgb[:, :, 0]
+        green = rgb[:, :, 1]
+        blue = rgb[:, :, 2]
+        score = np.clip((red - 0.55 * green - 0.55 * blue + 18.0) * 2.2, 0, 255).astype(np.uint8)
+        low = float(np.percentile(score, 60))
+        high = float(np.percentile(score, 99.4))
+        if high > low:
+            score = np.clip((score.astype(np.float32) - low) * 255.0 / (high - low), 0, 255).astype(np.uint8)
+        gray = 255 - score
+        gray = cv2.bilateralFilter(gray, 5, 35, 35)
+        gray = cv2.resize(
+            gray,
+            (max(1, image.size[0] * 2), max(1, image.size[1] * 2)),
+            interpolation=cv2.INTER_CUBIC,
+        )
+        return cv2.copyMakeBorder(gray, 24, 24, 24, 24, cv2.BORDER_CONSTANT, value=255)
+
     def _build_stamp_ocr_variants(
         self,
         crop_image: Optional[Image.Image],
@@ -1071,6 +1110,7 @@ class StampExtractor:
             return []
         soft_gray = np.array(enhanced_image.convert("L"))
         hard_gray = self._build_hard_red_stamp_gray(raw_image)
+        red_ratio_gray = self._build_red_ratio_stamp_gray(raw_image)
         candidates: List[Tuple[str, Image.Image]] = []
         scale = 2.0
         border = 24.0
@@ -1091,8 +1131,16 @@ class StampExtractor:
                 ("widest", "soft", 0.42, 0.93, -214.0, 34.0, 2.40, 3.2, 320, True),
                 ("overscan", "soft", 0.43, 0.92, -226.0, 46.0, 2.40, 3.2, 320, True),
                 ("inner", "soft", 0.50, 0.86, -182.0, 2.0, 2.40, 3.2, 320, True),
+                ("red_ratio_full_loose", "red_ratio", 0.32, 1.10, -252.0, 72.0, 1.70, 2.2, 624, False),
+                ("red_ratio_more_left", "red_ratio", 0.32, 1.10, -278.0, 72.0, 1.70, 2.2, 624, False),
+                ("red_ratio_more_right", "red_ratio", 0.32, 1.10, -252.0, 102.0, 1.70, 2.2, 624, False),
             ):
-                source_gray = hard_gray if source_type == "hard" else soft_gray
+                if source_type == "hard":
+                    source_gray = hard_gray
+                elif source_type == "red_ratio":
+                    source_gray = red_ratio_gray
+                else:
+                    source_gray = soft_gray
                 band = self._unwrap_upper_annulus(
                     source_gray,
                     cx,
@@ -1310,6 +1358,7 @@ class StampExtractor:
         polar_raw_source: Optional[Image.Image],
         polar_enhanced_source: Optional[Image.Image],
         polar_source_variant: str,
+        expected_unit: str = "",
     ) -> Optional[Dict[str, Any]]:
         if polar_raw_source is None or polar_enhanced_source is None or not polar_source_variant:
             return None
@@ -1324,7 +1373,9 @@ class StampExtractor:
         best_image: Optional[Image.Image] = None
         best_score: Tuple[int, int, int, float] = (-1, -1, -1, -1.0)
 
-        selected_polar_variants = self._select_polar_ocr_variants(polar_variants)
+        selected_polar_variants = self._select_polar_ocr_variants(polar_variants, include_enhanced=False)
+        enhanced_polar_variants = self._select_polar_ocr_variants(polar_variants, include_enhanced=True)
+        selected_names = {name for name, _ in selected_polar_variants}
         for candidate_name, polar_image in selected_polar_variants:
             polar_bytes = self._image_to_png_bytes(polar_image)
             ocr_inputs: List[Tuple[str, bytes]] = [(candidate_name, polar_bytes)]
@@ -1389,6 +1440,72 @@ class StampExtractor:
                 best_score = score
                 best_payload = candidate_payload
                 best_image = polar_image
+            if expected_unit and self._stamp_texts_cover_expected(texts, expected_unit):
+                best_payload = candidate_payload
+                best_image = polar_image
+                break
+
+        current_texts = list(best_payload.get("texts") or []) if best_payload else []
+        should_enhance = bool(expected_unit) and not self._stamp_texts_cover_expected(current_texts, expected_unit)
+        if should_enhance:
+            for candidate_name, polar_image in enhanced_polar_variants:
+                if candidate_name in selected_names:
+                    continue
+                polar_bytes = self._image_to_png_bytes(polar_image)
+                ocr_inputs = [(candidate_name, polar_bytes)]
+                ocr_inputs.extend(self._build_polar_segments(polar_image))
+                calls = [
+                    self._run_qwen_ocr(
+                        image_data=image_data,
+                        prompt="请对这张公章文字展开图执行 OCR，只返回图片中实际可见文字，不要纠错，不要补全。",
+                        debug_name=f"stamp_{role_key}_{name}_ocr",
+                        task="advanced_recognition",
+                        enable_rotate=False,
+                    )
+                    for name, image_data in ocr_inputs
+                ]
+                results = await asyncio.gather(*calls, return_exceptions=True)
+                ocr_payloads: List[Dict[str, Any]] = []
+                ordered_segment_texts: List[str] = []
+                full_texts: List[str] = []
+                for (name, _), result in zip(ocr_inputs, results):
+                    if isinstance(result, Exception):
+                        ocr_payloads.append({"variant": name, "error": str(result), "texts": []})
+                        continue
+                    texts = self._extract_stamp_unit_texts(result, variant_name=name)
+                    ocr_payloads.append(
+                        {
+                            "variant": name,
+                            "texts": texts,
+                            "processed_text": result.get("processed_text", ""),
+                            "words_info": result.get("words_info", []),
+                        }
+                    )
+                    if name == candidate_name:
+                        full_texts = [self._normalize_stamp_unit_text(text) for text in texts if self._normalize_stamp_unit_text(text)]
+                    elif name.startswith("polar_upper_seg"):
+                        segment_text = self._merge_ordered_stamp_texts(texts)
+                        if segment_text:
+                            ordered_segment_texts.append(segment_text)
+                merged_segment_text = self._merge_overlapping_stamp_segments(ordered_segment_texts)
+                texts = []
+                for text in full_texts:
+                    if text and text not in texts:
+                        texts.append(text)
+                if merged_segment_text and merged_segment_text not in texts:
+                    texts.append(merged_segment_text)
+                candidate_payload = {
+                    "variant": candidate_name,
+                    "texts": texts[:2],
+                    "processed_text": "",
+                    "words_info": [],
+                    "ocr_payloads": ocr_payloads,
+                }
+                candidate_payloads.append(candidate_payload)
+                if self._stamp_texts_cover_expected(texts, expected_unit):
+                    best_payload = candidate_payload
+                    best_image = polar_image
+                    break
 
         if best_payload is None or best_image is None:
             return None
@@ -1398,17 +1515,26 @@ class StampExtractor:
         best_payload["candidate_variants"] = other_candidates
         return best_payload
 
-    def _select_polar_ocr_variants(self, polar_variants: List[Tuple[str, Image.Image]]) -> List[Tuple[str, Image.Image]]:
+    def _select_polar_ocr_variants(
+        self,
+        polar_variants: List[Tuple[str, Image.Image]],
+        include_enhanced: bool = False,
+    ) -> List[Tuple[str, Image.Image]]:
         selected: List[Tuple[str, Image.Image]] = []
         seen: set[str] = set()
         for candidate_name, image in polar_variants[:2]:
             selected.append((candidate_name, image))
             seen.add(candidate_name)
-        for candidate_name, image in polar_variants:
-            if "contour_shape_safe" not in candidate_name or candidate_name in seen:
-                continue
-            selected.append((candidate_name, image))
-            seen.add(candidate_name)
+        patterns = ["contour_shape_safe"]
+        if include_enhanced:
+            patterns.extend(["red_ratio_full_loose", "red_ratio_more_left", "red_ratio_more_right"])
+        for pattern in patterns:
+            for candidate_name, image in polar_variants:
+                if pattern not in candidate_name or candidate_name in seen:
+                    continue
+                selected.append((candidate_name, image))
+                seen.add(candidate_name)
+                break
         return selected
 
     def _polar_variant_priority(self, candidate_name: str) -> int:
@@ -1625,26 +1751,53 @@ class StampExtractor:
         return candidates
 
     def _choose_consensus_stamp_texts(self, variant_payloads: List[Dict[str, Any]]) -> List[str]:
+        flattened: List[Dict[str, Any]] = []
         for payload in variant_payloads:
-            if str(payload.get("variant") or "") != "polar_upper":
+            if not isinstance(payload, dict):
                 continue
-            texts: List[str] = []
-            for text in payload.get("texts") or []:
-                cleaned = self._normalize_stamp_unit_text(text)
-                if cleaned:
-                    texts.append(cleaned)
-            if texts:
-                return texts[:1]
-
+            flattened.append(payload)
+            for item in payload.get("candidate_variants") or []:
+                if isinstance(item, dict):
+                    flattened.append(item)
+        scored: List[Tuple[int, int, str]] = []
         variant_texts: List[List[str]] = []
-        for payload in variant_payloads:
+        for index, payload in enumerate(flattened):
+            variant_name = str(payload.get("variant") or "")
             texts: List[str] = []
             for text in payload.get("texts") or []:
                 cleaned = self._normalize_stamp_unit_text(text)
+                cleaned = self._clean_stamp_ring_repetition(cleaned)
                 if cleaned:
                     texts.append(cleaned)
             if texts:
                 variant_texts.append(texts)
+            for text in texts:
+                text_class = self._stamp_text_unit_class(text)
+                if text_class not in {"unit", "unit_weak"}:
+                    continue
+                score = len(text)
+                if text_class == "unit":
+                    score += 20
+                if variant_name == "polar_upper":
+                    score += 5
+                elif "red_ratio" in variant_name:
+                    score += 4
+                elif "shape_safe" in variant_name:
+                    score += 3
+                scored.append((score, -index, text))
+        if scored:
+            out: List[str] = []
+            seen: set[str] = set()
+            for _, _, text in sorted(scored, key=lambda item: (-item[0], item[1], -len(item[2]))):
+                if text in seen:
+                    continue
+                seen.add(text)
+                out.append(text)
+                if len(out) >= 1:
+                    break
+            if out:
+                return out
+
         candidates = [text for texts in variant_texts for text in texts]
         if not candidates:
             return []
@@ -1674,6 +1827,81 @@ class StampExtractor:
         if len(cleaned) < 3:
             return ""
         return cleaned
+
+    def _stamp_text_unit_class(self, text: Any) -> str:
+        cleaned = self._retain_chinese_only(text)
+        if not cleaned:
+            return "noise"
+        if cleaned in {"单位", "年月日", "工作单位", "完成单位", "签字", "签名"}:
+            return "noise"
+        unit_terms = (
+            "大学", "学院", "医院", "公司", "集团", "研究所", "研究院", "中心",
+            "学校", "委员会", "管理局", "科技局", "财政局", "办公室", "总站",
+            "工作站", "推广站", "工程局", "分部", "有限", "股份", "厂", "所", "院", "站",
+        )
+        if any(term in cleaned for term in unit_terms):
+            return "unit"
+        if len(cleaned) <= 4:
+            return "person_or_noise"
+        if len(cleaned) >= 6:
+            return "unit_weak"
+        return "unknown"
+
+    def _clean_stamp_ring_repetition(self, text: Any) -> str:
+        cleaned = self._retain_chinese_only(text)
+        if not cleaned:
+            return ""
+        for size in range(min(8, len(cleaned) // 2), 0, -1):
+            if cleaned[:size] == cleaned[-size:]:
+                return cleaned[size:]
+        return cleaned
+
+    def _normalize_unit_key(self, text: Any) -> str:
+        return self._retain_chinese_only(text).replace("有限责任公司", "有限公司")
+
+    def _stamp_expected_parts(self, expected: str) -> List[str]:
+        raw = str(expected or "").strip()
+        if not raw:
+            return []
+        parts: List[str] = []
+        buf: List[str] = []
+        in_paren = False
+        for ch in raw:
+            if ch in "（(":
+                if "".join(buf).strip():
+                    parts.append("".join(buf))
+                buf = []
+                in_paren = True
+                continue
+            if ch in "）)":
+                if "".join(buf).strip():
+                    parts.append("".join(buf))
+                buf = []
+                in_paren = False
+                continue
+            if ch in "/、;；，," and not in_paren:
+                if "".join(buf).strip():
+                    parts.append("".join(buf))
+                buf = []
+                continue
+            buf.append(ch)
+        if "".join(buf).strip():
+            parts.append("".join(buf))
+        out: List[str] = []
+        seen: set[str] = set()
+        for part in parts:
+            key = self._normalize_unit_key(part)
+            if key and key not in seen:
+                seen.add(key)
+                out.append(key)
+        return out or ([self._normalize_unit_key(raw)] if self._normalize_unit_key(raw) else [])
+
+    def _stamp_texts_cover_expected(self, texts: List[str], expected: str) -> bool:
+        parts = self._stamp_expected_parts(expected)
+        if not parts:
+            return False
+        keys = {self._normalize_unit_key(text) for text in texts if self._normalize_unit_key(text)}
+        return all(part in keys for part in parts)
 
     def _retain_chinese_only(self, text: Any) -> str:
         raw = str(text or "")
@@ -1754,6 +1982,9 @@ class StampExtractor:
         units: List[str] = []
         for stamp in stamps:
             unit = str(stamp.get("unit") or stamp.get("text") or "").strip()
+            unit = self._clean_stamp_ring_repetition(unit)
+            if self._stamp_text_unit_class(unit) not in {"unit", "unit_weak"}:
+                continue
             key = unit.replace(" ", "")
             if not unit or not key or key in seen:
                 continue

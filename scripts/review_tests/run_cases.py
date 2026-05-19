@@ -90,6 +90,7 @@ def _poll_result(
     poll_interval: float,
     max_wait: float,
     timeout: float,
+    wait_final_retry: bool = False,
 ) -> dict[str, Any]:
     deadline = time.time() + max_wait
     latest: dict[str, Any] = {}
@@ -116,7 +117,12 @@ def _poll_result(
         data = latest.get("data") if isinstance(latest.get("data"), dict) else {}
         status = data.get("status")
         retry = data.get("retry") if isinstance(data.get("retry"), dict) else {}
-        if status in {"done", "failed"} and not retry.get("in_progress"):
+        if status in {"done", "failed"}:
+            if retry.get("in_progress") and wait_final_retry:
+                time.sleep(poll_interval)
+                continue
+            if retry.get("in_progress"):
+                latest["returned_before_retry_final"] = True
             return latest
         time.sleep(poll_interval)
     latest["poll_timeout"] = True

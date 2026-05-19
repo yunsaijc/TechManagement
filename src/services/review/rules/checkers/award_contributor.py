@@ -31,6 +31,56 @@ def _unit_matches(expected: str, candidates: List[str]) -> bool:
     return _name_matches(expected, candidates)
 
 
+def _split_expected_units(expected: str) -> List[str]:
+    raw = str(expected or "").strip()
+    if not raw:
+        return []
+    parts: List[str] = []
+    buf: List[str] = []
+    in_paren = False
+    for ch in raw:
+        if ch in "（(":
+            if "".join(buf).strip():
+                parts.append("".join(buf))
+            buf = []
+            in_paren = True
+            continue
+        if ch in "）)":
+            if "".join(buf).strip():
+                parts.append("".join(buf))
+            buf = []
+            in_paren = False
+            continue
+        if ch in "/、;；，," and not in_paren:
+            if "".join(buf).strip():
+                parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    if "".join(buf).strip():
+        parts.append("".join(buf))
+
+    out: List[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        normalized = _normalize_text(part)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(part.strip())
+    return out or [raw]
+
+
+def _unit_parts_covered(expected: str, candidates: List[str]) -> bool:
+    parts = _split_expected_units(expected)
+    if not parts:
+        return False
+    if len(parts) == 1:
+        return _unit_matches(parts[0], candidates)
+    candidate_keys = {_normalize_text(item) for item in candidates if _normalize_text(item)}
+    return all(_normalize_text(part) in candidate_keys for part in parts)
+
+
 def _dedup_texts(values: List[str]) -> List[str]:
     out: List[str] = []
     seen: set[str] = set()
@@ -199,7 +249,7 @@ class _BaseAwardContributorStampRule(_BaseAwardContributorRule):
                 evidence=self._build_evidence(expected_unit, same_unit, role_units, all_stamp_units),
             )
 
-        if not _unit_matches(expected_unit, fallback_units):
+        if not _unit_parts_covered(expected_unit, fallback_units):
             return CheckResult(
                 item=self.name,
                 status=CheckStatus.FAILED,
