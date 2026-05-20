@@ -421,7 +421,8 @@ class FieldExtractor:
         field_key = self._normalize_field_key(field_name)
         no_left_expand_fields = {"排名", "姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
         margin_left = 0.0 if field_key in no_left_expand_fields else width * 0.04
-        margin_right = width * 0.04
+        no_right_expand_fields = {"工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
+        margin_right = 0.0 if field_key in no_right_expand_fields else width * 0.04
         margin_top = height * 0.10
         no_bottom_expand_fields = {"工作单位", "完成单位", "单位名称", "企业名称"}
         margin_bottom = 0.0 if field_key in no_bottom_expand_fields else height * 0.10
@@ -828,7 +829,7 @@ class FieldExtractor:
         merged_value_bbox = self._merge_word_bboxes(value_words)
         field_key = self._normalize_field_key(field_name)
         grid_cell_fields = {"姓名", "工作单位", "完成单位", "单位名称", "企业名称", "法定代表人"}
-        if field_key in {"工作单位", "完成单位"} and label_word and page_image is not None:
+        if field_key in grid_cell_fields and label_word and page_image is not None:
             label_text_norm = self._normalize_field_key(label_word.get("text"))
             if self._field_key_has_embedded_label(label_text_norm, field_key):
                 embedded_cell = self._find_embedded_value_table_cell(

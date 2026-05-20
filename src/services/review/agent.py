@@ -1331,9 +1331,17 @@ class ReviewAgent:
             }
             signature_names = [representative_name]
 
+        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        expected_enterprise_name = str(target_values.get("enterprise_name") or "").strip()
         company_stamp_result = await self._extract_stamps_from_image(company_stamp_crop, debug_prefix="enterprise")
         stamp_units = self._extract_company_like_stamp_units(company_stamp_result) or self._extract_stamp_units(company_stamp_result)
-        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        stamp_units = self._clean_enterprise_stamp_units(stamp_units)
+        stamp_units = await self._augment_enterprise_stamp_units_with_polar(
+            stamp_crop=company_stamp_crop,
+            expected_unit=expected_enterprise_name,
+            stamp_units=stamp_units,
+        )
+        company_stamp_result = self._merge_stamp_units_into_result(company_stamp_result, stamp_units)
         verification_result = await self._verify_target_signature_if_needed(
             image_data=rep_bytes,
             expected_name=str(target_values.get("legal_representative") or "").strip(),
@@ -1344,7 +1352,7 @@ class ReviewAgent:
         )
         enterprise_stamp_verification = await self._verify_target_enterprise_stamp_if_needed(
             stamp_crop=company_stamp_crop,
-            expected_unit=str(target_values.get("enterprise_name") or "").strip(),
+            expected_unit=expected_enterprise_name,
             stamp_units=stamp_units,
         )
         if enterprise_stamp_verification:
@@ -1421,6 +1429,71 @@ class ReviewAgent:
                 units.append(text)
         return units
 
+    def _clean_enterprise_stamp_units(self, units: List[str]) -> List[str]:
+        cleaned_units: List[str] = []
+        for text in units or []:
+            cleaned = self._strip_stamp_serial_number(text)
+            if cleaned and cleaned not in cleaned_units:
+                cleaned_units.append(cleaned)
+        return cleaned_units
+
+    def _strip_stamp_serial_number(self, text: Any) -> str:
+        value = str(text or "").strip()
+        if not value:
+            return ""
+        value = re.sub(r"\s+", "", value)
+        value = re.sub(r"\d{6,}$", "", value)
+        value = re.sub(r"^\d{6,}", "", value)
+        value = re.sub(r"(?<![\u4e00-\u9fff\d])\d{6,}(?![\u4e00-\u9fff\d])", "", value)
+        return value.strip()
+
+    def _merge_stamp_units_into_result(self, stamp_result: Dict[str, Any], units: List[str]) -> Dict[str, Any]:
+        result = dict(stamp_result or {})
+        stamps = [dict(item) for item in result.get("stamps", []) if isinstance(item, dict)]
+        existing = {str(item.get("unit") or item.get("text") or "").strip() for item in stamps}
+        for unit in units or []:
+            if not unit or unit in existing:
+                continue
+            stamps.append({"unit": unit, "text": unit, "bbox": None, "confidence": 0.8})
+            existing.add(unit)
+        result["stamps"] = stamps
+        return result
+
+    async def _augment_enterprise_stamp_units_with_polar(
+        self,
+        stamp_crop: Any,
+        expected_unit: str,
+        stamp_units: List[str],
+    ) -> List[str]:
+        if not expected_unit or self._text_exact_matches(expected_unit, stamp_units):
+            return stamp_units
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            payload = await extractor._build_polar_variant_payload(
+                role_key="enterprise_target",
+                polar_raw_source=stamp_crop,
+                polar_enhanced_source=extractor._prepare_stamp_crop_for_polar(stamp_crop),
+                polar_source_variant="enhanced",
+                expected_unit=expected_unit,
+            )
+            candidates: List[str] = []
+            for payload_item in [payload, *((payload or {}).get("candidate_variants") or [])]:
+                if not isinstance(payload_item, dict):
+                    continue
+                for text in payload_item.get("texts") or []:
+                    cleaned = self._strip_stamp_serial_number(text)
+                    if cleaned and cleaned not in candidates:
+                        candidates.append(cleaned)
+            if self._text_exact_matches(expected_unit, candidates):
+                for candidate in candidates:
+                    if candidate not in stamp_units:
+                        stamp_units.append(candidate)
+        except Exception as exc:
+            logger.warning("[REVIEW] 企业声明公章 polar 候选补充失败: %s", exc)
+        return stamp_units
+
     def _pick_short_person_name_from_stamps(self, stamp_result: Dict[str, Any]) -> str:
         for item in (stamp_result or {}).get("stamps", []):
             text = str(item.get("unit") or item.get("text") or "").strip()
@@ -1478,6 +1551,8 @@ class ReviewAgent:
             polar_bytes=None,
             task_name="企业声明企业公章定向验证",
         )
+        if primary.get("status") == "no" and self._is_contradictory_enterprise_stamp_no(primary, expected_unit):
+            primary = {}
         if primary.get("status") in {"yes", "no"}:
             return {"enterprise_stamp": primary}
 
@@ -1491,6 +1566,8 @@ class ReviewAgent:
             polar_bytes=polar_bytes,
             task_name="企业声明企业公章定向复核",
         )
+        if retry.get("status") == "no" and self._is_contradictory_enterprise_stamp_no(retry, expected_unit):
+            retry = {}
         final_entry = retry if retry.get("status") else primary
         return {"enterprise_stamp": final_entry} if final_entry.get("status") else {}
 
@@ -1545,6 +1622,48 @@ class ReviewAgent:
         if any(token in reason for token in positive_tokens):
             return True
         return bool(re.search(r"与目标(?:提名)?单位[^，。；;]*一致", reason))
+
+    def _is_contradictory_enterprise_stamp_no(self, entry: Dict[str, str], expected_unit: str) -> bool:
+        """企业章定向复核偶尔 status=no 但 reason 实际描述一致；这种 no 不能直接判失败。"""
+        reason = str((entry or {}).get("reason") or "")
+        expected = str(expected_unit or "").strip()
+        if not reason or not expected:
+            return False
+        expected_key = re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", expected).lower()
+        reason_key = re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", reason).lower()
+        hard_negative_tokens = (
+            "缺少",
+            "多了",
+            "不同",
+            "不一致",
+            "不相符",
+            "不匹配",
+            "不是目标",
+            "无法确认",
+            "看不清",
+            "不清晰",
+        )
+        if any(token in reason for token in hard_negative_tokens):
+            if expected_key and reason_key.count(expected_key) >= 2 and any(token in reason for token in ("公章上", "显示的是", "文字为")):
+                return True
+            positive_tail = (
+                "实际一致",
+                "完全一致",
+                "与目标单位完全一致",
+                "与目标单位一致",
+                "可以确认这枚公章的单位名称与目标单位一致",
+            )
+            return any(token in reason for token in positive_tail) and self._text_exact_matches(expected, [reason])
+        if self._text_exact_matches(expected, [reason]):
+            return True
+        positive_tokens = (
+            "与目标单位完全一致",
+            "与目标单位一致",
+            "与目标一致",
+            "单位名称一致",
+            "完全一致",
+        )
+        return any(token in reason for token in positive_tokens)
 
     def _text_exact_matches(self, expected: str, candidates: List[str]) -> bool:
         import re

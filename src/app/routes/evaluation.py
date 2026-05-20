@@ -29,6 +29,7 @@ from src.common.models.evaluation import (
     GuideEvaluationResult,
     EvaluationRequest,
     EvaluationResult,
+    PlatformEvaluationRequest,
     WeightValidateRequest,
     WeightValidateResponse,
     DEFAULT_WEIGHTS,
@@ -267,6 +268,31 @@ async def evaluate_by_guide(request: GuideEvaluationRequest):
         if detail.startswith("未找到已提交项目"):
             raise HTTPException(status_code=404, detail=detail)
         if detail.startswith("未找到项目申报文档"):
+            raise HTTPException(status_code=422, detail=detail)
+        raise HTTPException(status_code=400, detail=detail)
+
+
+@router.post("/platform", response_model=EvaluationResult)
+async def evaluate_by_platform(request: PlatformEvaluationRequest):
+    """按平台项目编号执行评审。"""
+    agent = get_agent()
+    try:
+        return await agent.evaluate_by_platform(request)
+    except ValueError as e:
+        detail = str(e)
+        if detail.startswith("奖励项目不存在"):
+            raise HTTPException(status_code=404, detail=detail)
+        if detail.startswith("未找到奖励提名书"):
+            raise HTTPException(status_code=422, detail=detail)
+        if detail.startswith("奖励项目缺少年度或提名号"):
+            raise HTTPException(status_code=422, detail=detail)
+        if detail.startswith("奖励项目编号无法识别奖种"):
+            raise HTTPException(status_code=400, detail=detail)
+        if detail.startswith("不支持的平台类型"):
+            raise HTTPException(status_code=400, detail=detail)
+        if detail.startswith("权重验证失败"):
+            raise HTTPException(status_code=400, detail=detail)
+        if detail.startswith("PARSE_ERROR"):
             raise HTTPException(status_code=422, detail=detail)
         raise HTTPException(status_code=400, detail=detail)
 

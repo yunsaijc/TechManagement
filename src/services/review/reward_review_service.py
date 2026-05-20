@@ -112,6 +112,79 @@ def _raw_candidate_state(expected: str, candidates: List[str]) -> str:
     return "match" if _matches(expected_text, normalized_candidates) else "mismatch"
 
 
+def _normalized_edit_similarity(left: str, right: str) -> float:
+    left_norm = _normalize_text(left)
+    right_norm = _normalize_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    previous = list(range(len(right_norm) + 1))
+    for i, left_char in enumerate(left_norm, start=1):
+        current = [i] + [0] * len(right_norm)
+        for j, right_char in enumerate(right_norm, start=1):
+            current[j] = min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + (0 if left_char == right_char else 1),
+            )
+        previous = current
+    distance = previous[-1]
+    return max(0.0, 1.0 - distance / max(len(left_norm), len(right_norm), 1))
+
+
+def _strip_company_suffix(text: str) -> str:
+    normalized = _normalize_text(text)
+    suffixes = ("有限责任公司", "股份有限公司", "集团有限公司", "有限公司", "股份公司")
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            suffix_norm = _normalize_text(suffix)
+            if normalized.endswith(suffix_norm) and len(normalized) > len(suffix_norm):
+                normalized = normalized[: -len(suffix_norm)]
+                changed = True
+    return normalized
+
+
+def _longest_common_substring_length(left: str, right: str) -> int:
+    left_norm = _strip_company_suffix(left)
+    right_norm = _strip_company_suffix(right)
+    if not left_norm or not right_norm:
+        return 0
+    previous = [0] * (len(right_norm) + 1)
+    best = 0
+    for left_char in left_norm:
+        current = [0] * (len(right_norm) + 1)
+        for j, right_char in enumerate(right_norm, start=1):
+            if left_char == right_char:
+                current[j] = previous[j - 1] + 1
+                best = max(best, current[j])
+        previous = current
+    return best
+
+
+def _target_stamp_has_supporting_text(expected: str, candidates: List[str]) -> Dict[str, Any]:
+    best_similarity = 0.0
+    best_core_run = 0
+    best_candidate = ""
+    for candidate in candidates or []:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        similarity = _normalized_edit_similarity(expected, text)
+        core_run = _longest_common_substring_length(expected, text)
+        if (similarity, core_run) > (best_similarity, best_core_run):
+            best_similarity = similarity
+            best_core_run = core_run
+            best_candidate = text
+    supported = best_similarity >= 0.72 or best_core_run >= 4
+    return {
+        "supported": supported,
+        "best_similarity": round(best_similarity, 4),
+        "best_core_run": best_core_run,
+        "best_candidate": best_candidate,
+    }
+
+
 def _raw_db_field_state(expected: str, observed: str) -> str:
     expected_text = str(expected or "").strip()
     observed_text = str(observed or "").strip()
@@ -1566,6 +1639,10 @@ class RewardReviewService:
         }
         if verification:
             evidence["verification"] = verification
+        supporting_text = {}
+        if item == "enterprise_stamp_consistency" and verification_status == "yes":
+            supporting_text = _target_stamp_has_supporting_text(expected_unit, role_units)
+            evidence["verification_supporting_text"] = supporting_text
 
         if raw_state == "match" and verification_status in {"", "yes"}:
             return CheckResult(
@@ -1586,6 +1663,18 @@ class RewardReviewService:
                 item=item,
                 status=CheckStatus.FAILED,
                 message=f"{role_label}“{expected_unit}”与对应公章不一致",
+                evidence=evidence,
+            )
+        if (
+            item == "enterprise_stamp_consistency"
+            and raw_state == "mismatch"
+            and verification_status == "yes"
+            and supporting_text.get("supported")
+        ):
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{role_label}“{expected_unit}”与对应公章一致",
                 evidence=evidence,
             )
         if raw_state == "mismatch":

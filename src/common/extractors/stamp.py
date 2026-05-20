@@ -1860,41 +1860,8 @@ class StampExtractor:
         return self._retain_chinese_only(text).replace("有限责任公司", "有限公司")
 
     def _stamp_expected_parts(self, expected: str) -> List[str]:
-        raw = str(expected or "").strip()
-        if not raw:
-            return []
-        parts: List[str] = []
-        buf: List[str] = []
-        in_paren = False
-        for ch in raw:
-            if ch in "（(":
-                if "".join(buf).strip():
-                    parts.append("".join(buf))
-                buf = []
-                in_paren = True
-                continue
-            if ch in "）)":
-                if "".join(buf).strip():
-                    parts.append("".join(buf))
-                buf = []
-                in_paren = False
-                continue
-            if ch in "/、;；，," and not in_paren:
-                if "".join(buf).strip():
-                    parts.append("".join(buf))
-                buf = []
-                continue
-            buf.append(ch)
-        if "".join(buf).strip():
-            parts.append("".join(buf))
-        out: List[str] = []
-        seen: set[str] = set()
-        for part in parts:
-            key = self._normalize_unit_key(part)
-            if key and key not in seen:
-                seen.add(key)
-                out.append(key)
-        return out or ([self._normalize_unit_key(raw)] if self._normalize_unit_key(raw) else [])
+        raw = self._normalize_unit_key(expected)
+        return [raw] if raw else []
 
     def _stamp_texts_cover_expected(self, texts: List[str], expected: str) -> bool:
         parts = self._stamp_expected_parts(expected)

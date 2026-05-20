@@ -23,6 +23,7 @@ from src.common.models.evaluation import (
     EvaluationRequest,
     EvaluationResult,
     IndustryFitResult,
+    PlatformEvaluationRequest,
     StructuredHighlights,
 )
 
@@ -44,6 +45,7 @@ from .config import EvaluationConfig, evaluation_config
 from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
+from .platforms import RewardEvaluationAdapter
 from .packet_builder import EvaluationPacketBuilder
 from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler, RubricManager
 from .scorers import EvaluationScorer, ReportGenerator
@@ -108,6 +110,7 @@ class EvaluationAgent:
         self.project_profiler = ProjectProfiler()
         self.rubric_manager = RubricManager()
         self.evidence_pack_builder = EvidencePackBuilder()
+        self.reward_platform_adapter: Optional[RewardEvaluationAdapter] = None
         self._task_semaphore = asyncio.Semaphore(max(1, self.config.concurrency))
         self._chat_answer_cache: Dict[str, EvaluationChatAskResponse] = {}
         self._chat_highlight_cache: Dict[str, EvaluationCitationHighlightResponse] = {}
@@ -311,6 +314,15 @@ class EvaluationAgent:
             results=results,
             errors=errors,
         )
+
+    async def evaluate_by_platform(self, request: PlatformEvaluationRequest) -> EvaluationResult:
+        """按平台项目编号执行评审"""
+        platform = str(request.platform or "").strip().lower()
+        if platform != "reward":
+            raise ValueError(f"不支持的平台类型: {request.platform}")
+        if self.reward_platform_adapter is None:
+            self.reward_platform_adapter = RewardEvaluationAdapter()
+        return await self.reward_platform_adapter.evaluate(self, request)
 
     async def ask(self, evaluation_id: str, question: str) -> EvaluationChatAskResponse:
         """基于历史评审记录进行问答"""
