@@ -626,7 +626,7 @@ class ReviewAgent:
         if normalized_doc_type == "dywcrcns":
             return await self._do_first_contributor_commitment_llm_analysis(file_data, doc_type, metadata or {})
         if normalized_doc_type == "dywcdwcns":
-            return await self._do_first_completion_unit_commitment_llm_analysis(file_data, doc_type)
+            return await self._do_first_completion_unit_commitment_llm_analysis(file_data, doc_type, metadata or {})
         if normalized_doc_type == "qysm":
             return await self._do_enterprise_statement_llm_analysis(file_data, doc_type, metadata or {})
         if normalized_doc_type == "tjdwyj":
@@ -1228,16 +1228,28 @@ class ReviewAgent:
         self,
         file_data: bytes,
         doc_type: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """第一完成单位承诺书：只走底部公章专项。"""
         page_image = self._load_page_image(file_data)
         if page_image is None:
             return {"document_type_llm": doc_type, "extracted_fields": {"单位名称": ""}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
 
+        target_values = ((metadata or {}).get("reward_review_context") or {}).get("target_values") or {}
+        expected_unit = str(target_values.get("unit_name") or "").strip()
         stamp_crop = self._crop_ratio_image(page_image, (0.34, 0.52, 0.82, 0.86))
         self._save_special_debug_crop("first_completion_unit_stamp_crop", stamp_crop)
         stamp_result = await self._extract_stamps_from_image(stamp_crop, debug_prefix="first_completion_unit")
         stamp_units = self._extract_stamp_units(stamp_result)
+        if expected_unit and not self._text_exact_matches(expected_unit, stamp_units):
+            fallback_units = await self._extract_first_completion_unit_stamp_units_wcr_style(
+                file_data=file_data,
+                page_image=page_image,
+                expected_unit=expected_unit,
+            )
+            if fallback_units:
+                stamp_result = self._merge_stamp_units_into_result(stamp_result, fallback_units)
+                stamp_units = self._extract_stamp_units(stamp_result)
 
         return {
             "document_type_llm": doc_type,
@@ -1248,6 +1260,54 @@ class ReviewAgent:
             "signatures_description": "未检测到签字",
             "verification_result": {},
         }
+
+    async def _extract_first_completion_unit_stamp_units_wcr_style(
+        self,
+        file_data: bytes,
+        page_image: Any,
+        expected_unit: str,
+    ) -> List[str]:
+        """第一完成单位承诺书：复用 wcr 的红章/polar OCR 作为补充候选。"""
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            bbox = self._detect_bottom_red_stamp_bbox(extractor, page_image)
+            if not bbox:
+                return []
+            result = await extractor.extract_award_contributor_stamps_from_anchors(
+                file_data,
+                anchors={"work_unit": bbox, "completion_unit": bbox},
+                expected_units={"work_unit": expected_unit, "completion_unit": expected_unit},
+            )
+        except Exception as exc:
+            logger.warning("[REVIEW] 第一完成单位公章 wcr-style OCR 补充失败: %s", exc)
+            return []
+
+        units: List[str] = []
+        for key in ("work_unit_stamp_units", "completion_unit_stamp_units", "all_stamp_units"):
+            for unit in result.get(key) or []:
+                text = str(unit or "").strip()
+                if text and text not in units:
+                    units.append(text)
+        return units
+
+    def _detect_bottom_red_stamp_bbox(self, extractor: Any, page_image: Any) -> Optional[Dict[str, float]]:
+        try:
+            regions = extractor._detect_red_stamp_regions(page_image, {})
+        except Exception as exc:
+            logger.warning("[REVIEW] 底部红章区域检测失败: %s", exc)
+            regions = []
+        if regions:
+            return sorted(
+                regions,
+                key=lambda item: (
+                    (float(item.get("y1", 0.0)) + float(item.get("y2", 0.0))) / 2.0,
+                    (float(item.get("x1", 0.0)) + float(item.get("x2", 0.0))) / 2.0,
+                ),
+                reverse=True,
+            )[0]
+        return {"x1": 0.34, "y1": 0.52, "x2": 0.82, "y2": 0.86}
 
     async def _do_nomination_opinion_llm_analysis(
         self,

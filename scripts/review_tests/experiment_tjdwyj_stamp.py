@@ -91,6 +91,39 @@ def _png_bytes(image: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
+def _normalize_unit_text(value: str) -> str:
+    return re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/\"'“”‘’]", "", str(value or "")).lower()
+
+
+def _edit_similarity(left: str, right: str) -> float:
+    left_norm = _normalize_unit_text(left)
+    right_norm = _normalize_unit_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    previous = list(range(len(right_norm) + 1))
+    for i, left_char in enumerate(left_norm, start=1):
+        current = [i] + [0] * len(right_norm)
+        for j, right_char in enumerate(right_norm, start=1):
+            current[j] = min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + (0 if left_char == right_char else 1),
+            )
+        previous = current
+    return 1.0 - previous[-1] / max(len(left_norm), len(right_norm), 1)
+
+
+def _best_similarity(expected: str, texts: list[str]) -> tuple[float, str]:
+    best_score = 0.0
+    best_text = ""
+    for text in texts:
+        score = _edit_similarity(expected, text)
+        if score > best_score:
+            best_score = score
+            best_text = text
+    return best_score, best_text
+
+
 async def _verify_crop(agent: ReviewAgent, crop: Image.Image, expected_unit: str) -> dict[str, str]:
     from langchain_core.messages import HumanMessage
 
@@ -147,6 +180,7 @@ async def _run_case(case: dict[str, Any], output_root: Path) -> dict[str, Any]:
     crop = _crop_ratio(page, (0.48, 0.68, 0.96, 0.96))
     crop_wide = _crop_ratio(page, (0.36, 0.62, 0.98, 0.98))
     enhanced = _red_enhance(crop)
+    stamp_quality = agent._analyze_red_stamp_quality(crop_wide)
 
     case_dir = output_root / str(case["case_id"])
     case_dir.mkdir(parents=True, exist_ok=True)
@@ -159,6 +193,34 @@ async def _run_case(case: dict[str, Any], output_root: Path) -> dict[str, Any]:
     current_wide = await agent._extract_stamps_from_image(crop_wide, debug_prefix="")
     current_enhanced = await agent._extract_stamps_from_image(enhanced, debug_prefix="")
     verification = await _verify_crop(agent, crop, expected_unit)
+    all_texts = _extract_texts(current_enhanced) or _extract_texts(current_crop) or _extract_texts(current_wide)
+    best_score, best_text = _best_similarity(expected_unit, all_texts)
+    verification_reason = str(verification.get("reason") or "")
+    verification_status = str(verification.get("status") or "")
+    verification_self_conflict = verification_status == "no" and (
+        "一致" in verification_reason and "不一致" not in verification_reason
+    )
+    if expected_unit and _normalize_unit_text(expected_unit) in [_normalize_unit_text(text) for text in all_texts]:
+        suggested_status = "passed"
+        suggested_reason = "stamp text exactly matched expected unit"
+    elif best_score >= 0.88 and not stamp_quality.get("low_quality"):
+        suggested_status = "passed"
+        suggested_reason = f"stamp text is highly similar to expected unit: {best_text} ({best_score:.3f})"
+    elif verification_self_conflict and best_score >= 0.75 and not stamp_quality.get("low_quality"):
+        suggested_status = "passed"
+        suggested_reason = f"verification status conflicts with its reason; OCR supports expected unit: {best_text} ({best_score:.3f})"
+    elif stamp_quality.get("red_present") and stamp_quality.get("low_quality"):
+        suggested_status = "warning"
+        suggested_reason = "red stamp exists but quality is too low for reliable OCR"
+    elif verification.get("status") == "yes" and not all_texts:
+        suggested_status = "warning"
+        suggested_reason = "visual verification sees target stamp but OCR has no supporting text"
+    elif verification.get("status") == "no":
+        suggested_status = "failed"
+        suggested_reason = "visual verification says target stamp is absent or inconsistent"
+    else:
+        suggested_status = "warning"
+        suggested_reason = "stamp result is uncertain"
 
     return {
         "case_id": case["case_id"],
@@ -169,7 +231,13 @@ async def _run_case(case: dict[str, Any], output_root: Path) -> dict[str, Any]:
         "crop_texts": _extract_texts(current_crop),
         "wide_texts": _extract_texts(current_wide),
         "enhanced_texts": _extract_texts(current_enhanced),
+        "stamp_quality": stamp_quality,
         "verification": verification,
+        "best_text": best_text,
+        "best_similarity": round(best_score, 4),
+        "verification_self_conflict": verification_self_conflict,
+        "suggested_status": suggested_status,
+        "suggested_reason": suggested_reason,
         "output_dir": str(case_dir),
     }
 

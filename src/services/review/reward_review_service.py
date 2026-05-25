@@ -185,6 +185,23 @@ def _target_stamp_has_supporting_text(expected: str, candidates: List[str]) -> D
     }
 
 
+def _best_candidate_similarity(expected: str, candidates: List[str]) -> Dict[str, Any]:
+    best_similarity = 0.0
+    best_candidate = ""
+    for candidate in candidates or []:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        similarity = _normalized_edit_similarity(expected, text)
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_candidate = text
+    return {
+        "best_similarity": round(best_similarity, 4),
+        "best_candidate": best_candidate,
+    }
+
+
 def _raw_db_field_state(expected: str, observed: str) -> str:
     expected_text = str(expected or "").strip()
     observed_text = str(observed or "").strip()
@@ -1454,6 +1471,8 @@ class RewardReviewService:
             "raw_state": raw_state,
             "verification_status": verification_status,
         }
+        if item == "nomination_unit_stamp_consistency":
+            evidence["candidate_similarity"] = _best_candidate_similarity(expected, candidates)
         if verification:
             evidence["verification"] = verification
         if stamp_quality:
@@ -1487,6 +1506,24 @@ class RewardReviewService:
                 message=f"{label}与奖励库记录一致",
                 evidence=evidence,
             )
+        if item == "nomination_unit_stamp_consistency":
+            similarity = evidence.get("candidate_similarity") or {}
+            best_similarity = float(similarity.get("best_similarity") or 0.0)
+            high_quality = not (stamp_quality or {}).get("low_quality")
+            if high_quality and best_similarity >= 0.88:
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.PASSED,
+                    message=f"{label}与奖励库记录一致",
+                    evidence=evidence,
+                )
+            if stamp_quality and stamp_quality.get("red_present") and stamp_quality.get("low_quality"):
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.WARNING,
+                    message=f"{label}印文过淡或残缺，无法确认单位名称，请人工复核",
+                    evidence=evidence,
+                )
         if verification_status == "no":
             return CheckResult(
                 item=item,

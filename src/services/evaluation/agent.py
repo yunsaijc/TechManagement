@@ -1039,8 +1039,8 @@ class EvaluationAgent:
 
         self._remember_debug_payload(result.project_id, debug_payload)
         self._remember_packet_assets(result.project_id, packet_assets)
-        self.report_generator.build_from_debug_file(json_path, html_path, debug_mode=False)
-        self.report_generator.build_from_debug_file(json_path, debug_html_path, debug_mode=True)
+        await self.report_generator.build_from_debug_file_async(json_path, html_path, debug_mode=False)
+        await self.report_generator.build_from_debug_file_async(json_path, debug_html_path, debug_mode=True)
         self._refresh_debug_index(debug_dir)
 
     async def _build_expert_qna(

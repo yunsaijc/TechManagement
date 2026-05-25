@@ -26,6 +26,8 @@ class ReportGenerator:
     """评审报告生成器"""
 
     HASH_SOURCE_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(?:pdf|docx)$", re.IGNORECASE)
+    REWARD_TABLE_MARKER_RE = re.compile(r"\[表格(?:表头|行|标题)\d+\]\s*")
+    REWARD_TABLE_ROW_RE = re.compile(r"\[表格行\d+\]\s*(.*?)(?=(?:\s*\[表格行\d+\])|\Z)", re.DOTALL)
 
     SECTION_PREVIEW_SKIP_PATTERNS = [
         r"附件",
@@ -147,6 +149,24 @@ class ReportGenerator:
         output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
         return output_html
 
+    async def build_from_debug_file_async(
+        self,
+        debug_json_path: Path | str,
+        output_html_path: Path | str,
+        debug_mode: bool = False,
+    ) -> Path:
+        """根据 debug JSON 生成 HTML 报告，供异步评审链路调用"""
+        debug_json = Path(debug_json_path)
+        output_html = Path(output_html_path)
+        data = json.loads(debug_json.read_text(encoding="utf-8"))
+        updated = await self._ensure_page_chunks_async(data)
+        updated = await self._ensure_highlight_payload_async(data) or updated
+        updated = self._ensure_packet_assets(data, debug_json.parent) or updated
+        if updated:
+            debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
+        return output_html
+
     def _collect_workspace_projects(self, debug_dir: Path, current_stem: str) -> List[Dict[str, Any]]:
         """收集同目录下可切换的项目列表，供单项目工作台左侧项目栏使用"""
         projects: List[Dict[str, Any]] = []
@@ -196,6 +216,35 @@ class ReportGenerator:
         source_name = str(data.get("source_name") or meta.get("file_name") or os.path.basename(file_path))
         parser = DocumentParser()
         parsed = asyncio.run(parser.parse(file_path, source_name=source_name))
+        recovered_chunks = parsed.get("page_chunks") or []
+        if not recovered_chunks:
+            return False
+
+        data["page_chunks"] = recovered_chunks
+        recovered_meta = parsed.get("meta") or {}
+        if isinstance(recovered_meta, dict):
+            merged_meta = dict(meta)
+            merged_meta.update(recovered_meta)
+            data["meta"] = merged_meta
+        return True
+
+    async def _ensure_page_chunks_async(self, data: Dict[str, Any]) -> bool:
+        """兼容旧 debug JSON，缺少 page_chunks 时尝试回源补齐"""
+        page_chunks = data.get("page_chunks")
+        if isinstance(page_chunks, list) and page_chunks:
+            return False
+
+        meta = data.get("meta") or {}
+        if not isinstance(meta, dict):
+            return False
+
+        file_path = str(meta.get("file_path") or "").strip()
+        if not file_path or not os.path.exists(file_path):
+            return False
+
+        source_name = str(data.get("source_name") or meta.get("file_name") or os.path.basename(file_path))
+        parser = DocumentParser()
+        parsed = await parser.parse(file_path, source_name=source_name)
         recovered_chunks = parsed.get("page_chunks") or []
         if not recovered_chunks:
             return False
@@ -276,9 +325,43 @@ class ReportGenerator:
 
     def _ensure_highlight_payload(self, data: Dict[str, Any]) -> bool:
         """兼容旧 debug JSON，缺少结构化摘要时按当前提取器回填"""
+        async def _extract_highlights():
+            sections, page_chunks, file_name = self._get_highlight_input(data)
+            if sections is None:
+                return None
+            extractor = HighlightExtractor()
+            return await extractor.extract(
+                sections=sections,
+                page_chunks=page_chunks,
+                file_name=file_name,
+            )
+
+        extracted_payload = asyncio.run(_extract_highlights())
+        if extracted_payload is None:
+            return False
+        highlights, evidence = extracted_payload
+        return self._merge_highlight_payload(data, highlights.model_dump(mode="json"), evidence)
+
+    async def _ensure_highlight_payload_async(self, data: Dict[str, Any]) -> bool:
+        """兼容旧 debug JSON，缺少结构化摘要时按当前提取器回填"""
+        highlight_input = self._get_highlight_input(data)
+        if highlight_input[0] is None:
+            return False
+
+        sections, page_chunks, file_name = highlight_input
+        extractor = HighlightExtractor()
+        highlights, evidence = await extractor.extract(
+            sections=sections,
+            page_chunks=page_chunks,
+            file_name=file_name,
+        )
+        return self._merge_highlight_payload(data, highlights.model_dump(mode="json"), evidence)
+
+    def _get_highlight_input(self, data: Dict[str, Any]) -> tuple[Dict[str, str] | None, List[Dict[str, Any]], str]:
+        """读取结构化摘要补齐所需输入"""
         result = data.get("result")
         if not isinstance(result, dict):
-            return False
+            return None, [], ""
 
         existing_highlights = result.get("highlights") or {}
         if not isinstance(existing_highlights, dict):
@@ -287,23 +370,23 @@ class ReportGenerator:
         has_innovation = bool(existing_highlights.get("innovations"))
         has_route = bool(existing_highlights.get("technical_route"))
         if has_goal and has_innovation and has_route:
-            return False
+            return None, [], ""
 
         sections = data.get("sections") or {}
         page_chunks = data.get("page_chunks") or []
         if not isinstance(sections, dict) or not sections or not isinstance(page_chunks, list) or not page_chunks:
+            return None, [], ""
+
+        return sections, page_chunks, str(data.get("source_name") or data.get("meta", {}).get("file_name") or "")
+
+    def _merge_highlight_payload(self, data: Dict[str, Any], extracted: Dict[str, Any], evidence: List[Any]) -> bool:
+        result = data.get("result")
+        if not isinstance(result, dict):
             return False
 
-        extractor = HighlightExtractor()
-        highlights, evidence = asyncio.run(
-            extractor.extract(
-                sections=sections,
-                page_chunks=page_chunks,
-                file_name=str(data.get("source_name") or data.get("meta", {}).get("file_name") or ""),
-            )
-        )
-        extracted = highlights.model_dump(mode="json")
-
+        existing_highlights = result.get("highlights") or {}
+        if not isinstance(existing_highlights, dict):
+            existing_highlights = {}
         changed = False
         merged_highlights = {
             "research_goals": list(existing_highlights.get("research_goals") or []),
@@ -361,6 +444,7 @@ class ReportGenerator:
         errors = result.get("errors") or []
         industry_fit = result.get("industry_fit")
         benchmark = result.get("benchmark")
+        platform = str(data.get("meta", {}).get("platform") or "").strip().lower()
         sections = data.get("sections") or {}
         page_chunks = data.get("page_chunks") or []
         packet_assets = data.get("packet_assets") or {}
@@ -379,7 +463,7 @@ class ReportGenerator:
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
         project_nav = self._render_project_nav(workspace_projects, debug_mode)
         document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode)
-        layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
+        layout_class = "content-grid debug-layout" if debug_mode else "content-grid evaluation-layout"
         result_tabs = [
             ("report-overview", "评审结论"),
             ("report-dimensions", "维度评分"),
@@ -413,6 +497,11 @@ class ReportGenerator:
                 {self._render_industry_fit(industry_fit)}
               </section>
 """
+        overview_html = (
+            self._render_reward_overview(sections, result)
+            if platform == "reward"
+            else self._render_project_overview(highlights, evidence_map, packet_assets, result)
+        )
         if debug_mode:
             left_tail = f"""
         <section class="panel">
@@ -599,7 +688,11 @@ class ReportGenerator:
       height: 100%;
     }}
     .workspace-layout {{
-      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
+      grid-template-columns: 150px minmax(0, 2.05fr) minmax(360px, 0.92fr);
+      overflow: hidden;
+    }}
+    .evaluation-layout {{
+      grid-template-columns: minmax(0, 2.05fr) minmax(360px, 0.92fr);
       overflow: hidden;
     }}
     .debug-layout {{
@@ -617,6 +710,9 @@ class ReportGenerator:
       overflow: hidden;
       padding-right: 6px;
       max-height: 100%;
+    }}
+    .main-stack {{
+      grid-template-rows: minmax(68vh, 1fr) auto;
     }}
     .side-stack {{
       padding-right: 2px;
@@ -764,29 +860,29 @@ class ReportGenerator:
     }}
     .doc-panel {{
       height: 100%;
-      min-height: 0;
+      min-height: 68vh;
       overflow: hidden;
       display: grid;
       grid-template-rows: minmax(0, 1fr);
     }}
     .doc-panel-inner {{
       height: 100%;
-      min-height: 0;
+      min-height: 68vh;
       display: grid;
       grid-template-rows: minmax(0, 1fr);
     }}
     .doc-viewer {{
-      min-height: 0;
       overflow: auto;
       padding-right: 2px;
       display: grid;
       gap: 14px;
       align-content: start;
+      min-height: 68vh;
     }}
     .packet-frame {{
       width: 100%;
-      height: 100%;
-      min-height: 0;
+      height: 74vh;
+      min-height: 68vh;
       border: 0;
       border-radius: 14px;
       background: #dfe5ec;
@@ -1750,7 +1846,7 @@ class ReportGenerator:
       display: grid;
       gap: 16px;
     }}
-    @media (max-width: 1320px) {{
+    @media (max-width: 1024px) {{
       body {{
         overflow: auto;
       }}
@@ -1847,23 +1943,7 @@ class ReportGenerator:
             </div>
             <div class="result-panels">
               <section class="result-panel is-active" id="report-overview">
-                <div class="summary-block">
-                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-                </div>
-                <div class="highlight-grid">
-                  <div class="highlight-card">
-                    <div class="highlight-label">研究目标</div>
-                    {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
-                  </div>
-                  <div class="highlight-card">
-                    <div class="highlight-label">创新点</div>
-                    {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
-                  </div>
-                  <div class="highlight-card">
-                    <div class="highlight-label">技术路线</div>
-                    {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
-                  </div>
-                </div>
+                {overview_html}
               </section>
 
               <section class="result-panel" id="report-dimensions">
@@ -1877,6 +1957,7 @@ class ReportGenerator:
                   chat_ready=bool(result.get("chat_ready")),
                   expert_qna=expert_qna,
                   debug_mode=debug_mode,
+                  platform=platform,
               )}
 
               {optional_panels}
@@ -2178,6 +2259,17 @@ class ReportGenerator:
               .doc-panel,
               .result-shell {{
                 overflow: hidden !important;
+              }}
+              .doc-panel {{
+                min-height: 68vh !important;
+              }}
+              .doc-panel-inner,
+              .doc-viewer {{
+                min-height: 68vh !important;
+              }}
+              .packet-frame {{
+                height: 74vh !important;
+                min-height: 68vh !important;
               }}
             `;
             doc.head.appendChild(style);
@@ -3062,6 +3154,7 @@ class ReportGenerator:
         chat_ready: bool,
         expert_qna: List[Dict[str, Any]],
         debug_mode: bool,
+        platform: str = "",
     ) -> str:
         """渲染报告内嵌聊天面板"""
         if debug_mode:
@@ -3070,7 +3163,21 @@ class ReportGenerator:
         default_port = os.getenv("APP_PORT", "8888")
         configured_api_base = str(os.getenv("EVALUATION_REPORT_API_BASE", "")).strip().rstrip("/")
         default_api_base = configured_api_base or f"http://127.0.0.1:{default_port}"
-        suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
+        if platform == "reward":
+            suggestions = [
+                "这个奖励项目的主要科学发现是什么？",
+                "项目简介里体现了哪些核心贡献？",
+                "客观评价材料主要支撑什么结论？",
+                "代表性论文支撑了哪些发现点？",
+                "这个项目的主要短板是什么？",
+                "这些材料能否支撑当前奖种评价？",
+            ]
+            empty_text = "围绕项目简介、重要科学发现、客观评价和代表性成果直接提问。回答会附证据并支持联动原文。"
+            placeholder = "输入专家问题，例如：代表性论文支撑了哪些发现点？"
+        else:
+            suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
+            empty_text = "围绕研究目标、创新点、验证数据、进展与量产可行性直接提问。回答会附证据并支持联动原文。"
+            placeholder = "输入专家问题，例如：这项技术有可能量产吗？"
         suggestion_html = "".join(
             f'<button type="button" class="chat-suggestion" data-question="{html.escape(question)}">{html.escape(question)}</button>'
             for question in suggestions[:6]
@@ -3122,13 +3229,13 @@ class ReportGenerator:
                 {suggestions_block}
               </div>
               <div class="chat-thread" id="chat-thread">
-                <div class="chat-empty" id="chat-empty">围绕研究目标、创新点、验证数据、进展与量产可行性直接提问。回答会附证据并支持联动原文。</div>
+                <div class="chat-empty" id="chat-empty">{html.escape(empty_text)}</div>
               </div>
               <form class="chat-form" id="chat-form">
                 <textarea
                   id="chat-question"
                   class="chat-textarea"
-                  placeholder="输入专家问题，例如：这项技术有可能量产吗？"
+                  placeholder="{html.escape(placeholder)}"
                   {textarea_disabled}
                 ></textarea>
                 <div class="chat-actions">
@@ -4255,6 +4362,182 @@ class ReportGenerator:
                 </div>
                 """
             )
+        return '<div class="highlight-list">' + "".join(rows) + "</div>"
+
+    def _render_project_overview(
+        self,
+        highlights: Dict[str, Any],
+        evidence_map: Dict[tuple[str, str], Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> str:
+        """渲染项目申报书口径的首页概览"""
+        return f"""
+                <div class="summary-block">
+                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
+                </div>
+                <div class="highlight-grid">
+                  <div class="highlight-card">
+                    <div class="highlight-label">研究目标</div>
+                    {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">创新点</div>
+                    {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">技术路线</div>
+                    {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
+                  </div>
+                </div>
+        """
+
+    def _render_reward_overview(self, sections: Dict[str, str], result: Dict[str, Any]) -> str:
+        """渲染奖励提名书口径的首页概览"""
+        cards = [
+            ("项目简介", self._first_section_text(sections, ["项目简介（限1200字）", "项目简介"])),
+            ("重要科学发现", self._first_section_text(sections, ["重要科学发现"])),
+            ("客观评价", self._first_section_text(sections, ["客观评价（不超过2页）", "客观评价"])),
+            ("代表性论文", self._first_section_text(sections, ["代表性论文(专著)目录（不超过6篇）", "代表性论文(专著)目录"])),
+        ]
+        card_html = "".join(
+            f"""
+                  <div class="highlight-card">
+                    <div class="highlight-label">{html.escape(label)}</div>
+                    {self._render_reward_section_preview(label, text)}
+                  </div>
+            """
+            for label, text in cards
+        )
+        return f"""
+                <div class="summary-block">
+                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
+                </div>
+                <div class="highlight-grid">
+                  {card_html}
+                </div>
+        """
+
+    def _first_section_text(self, sections: Dict[str, str], names: List[str]) -> str:
+        for name in names:
+            text = str(sections.get(name) or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _render_reward_section_preview(self, label: str, text: str) -> str:
+        if label == "重要科学发现":
+            rows = self._parse_reward_table_rows(text)
+            items = [
+                self._format_reward_table_item(
+                    row,
+                    ["序号", "主要发现点", "证明材料", "所属学科"],
+                    "主要发现点",
+                )
+                for row in rows
+            ]
+            items = [item for item in items if item]
+            if items:
+                return self._render_reward_preview_items(items)
+        if label == "代表性论文":
+            rows = self._parse_reward_table_rows(text)
+            items = [
+                self._format_reward_table_item(
+                    row,
+                    ["序号", "论文（专著） 名称", "论文（专著）名称", "发表刊物 (出版社)", "发表刊物(出版社)", "发表（出版）时间（年月日）", "他引总次数", "检索数据库", "所支持发现点"],
+                    "论文（专著）名称",
+                )
+                for row in rows
+            ]
+            items = [item for item in items if item]
+            if items:
+                return self._render_reward_preview_items(items)
+
+        cleaned = self._clean_reward_preview_text(text)
+        if not cleaned:
+            return '<div class="empty">暂无提取结果</div>'
+        preview = cleaned[:520]
+        if len(cleaned) > len(preview):
+            preview += "..."
+        return self._render_reward_preview_items([preview])
+
+    def _clean_reward_preview_text(self, text: str) -> str:
+        """清理奖励提名书展示层的表格标记，不影响底层解析结果。"""
+        cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        cleaned = self.REWARD_TABLE_MARKER_RE.sub("\n", cleaned)
+        cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])", "", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _parse_reward_table_rows(self, text: str) -> List[str]:
+        """提取奖励提名书表格行，过滤表头，供首页摘要展示。"""
+        raw = str(text or "")
+        rows = [match.group(1).strip() for match in self.REWARD_TABLE_ROW_RE.finditer(raw)]
+        if not rows:
+            return []
+        return [self._clean_reward_preview_text(row) for row in rows if row.strip()]
+
+    def _format_reward_table_item(self, row: str, field_order: List[str], primary_field: str) -> str:
+        values = self._parse_reward_key_values(row)
+        if not values:
+            return self._clean_reward_preview_text(row)[:260]
+
+        primary_value = self._first_reward_value(values, [primary_field])
+        if not primary_value and primary_field == "论文（专著）名称":
+            primary_value = self._first_reward_value(values, ["论文（专著） 名称"])
+        if not primary_value:
+            primary_value = self._first_reward_value(values, ["主要发现点", "论文（专著） 名称", "论文（专著）名称"])
+
+        prefix = self._first_reward_value(values, ["序号"])
+        if prefix and not re.fullmatch(r"\d+", prefix):
+            return ""
+        head = f"{prefix}. {primary_value}" if prefix and primary_value else (primary_value or "")
+        detail_parts = []
+        emitted_values: set[str] = set()
+        for field in field_order:
+            if field in {"序号", primary_field, "论文（专著） 名称", "论文（专著）名称"}:
+                continue
+            value = self._first_reward_value(values, [field])
+            if not value or value in emitted_values:
+                continue
+            emitted_values.add(value)
+            if value:
+                detail_parts.append(f"{field.replace('（年月日）', '')}：{value}")
+        detail = "；".join(detail_parts)
+        item = "；".join(part for part in [head, detail] if part).strip()
+        return item[:360] + ("..." if len(item) > 360 else "")
+
+    def _parse_reward_key_values(self, row: str) -> Dict[str, str]:
+        values: Dict[str, str] = {}
+        for part in re.split(r"\s*[;；]\s*", row):
+            if not part or not re.search(r"[:：]", part):
+                continue
+            key, value = re.split(r"[:：]", part, maxsplit=1)
+            key = re.sub(r"\s+", " ", key).strip(" ;|")
+            value = re.sub(r"\s+", " ", value).strip()
+            if key and value:
+                values[key] = value
+        return values
+
+    def _first_reward_value(self, values: Dict[str, str], names: List[str]) -> str:
+        for name in names:
+            if values.get(name):
+                return values[name]
+        normalized = {re.sub(r"\s+", "", key): value for key, value in values.items()}
+        for name in names:
+            value = normalized.get(re.sub(r"\s+", "", name))
+            if value:
+                return value
+        return ""
+
+    def _render_reward_preview_items(self, items: List[str]) -> str:
+        rows = [
+            f'<div class="highlight-item"><div class="highlight-item-text">{html.escape(item)}</div></div>'
+            for item in items
+            if item
+        ]
+        if not rows:
+            return '<div class="empty">暂无提取结果</div>'
         return '<div class="highlight-list">' + "".join(rows) + "</div>"
 
     def _render_flat_list(self, items: List[Any], empty_text: str) -> str:
