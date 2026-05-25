@@ -14,6 +14,7 @@ from src.common.models.evaluation import (
     EvaluationCitationHighlightResponse,
     EvaluationResult,
     GuideEvaluationResult,
+    PlatformEvaluationRequest,
 )
 
 
@@ -25,6 +26,7 @@ class StubEvaluationAgent:
         self.ask_calls = []
         self.highlight_calls = []
         self.evaluate_by_guide_calls = []
+        self.evaluate_by_platform_calls = []
 
     async def evaluate(self, request, file_path=None, content=None, source_name=""):
         self.evaluate_calls.append(
@@ -110,6 +112,24 @@ class StubEvaluationAgent:
                 )
             ],
             errors=[],
+        )
+
+    async def evaluate_by_platform(self, request):
+        self.evaluate_by_platform_calls.append({"request": request})
+        if request.platform == "missing":
+            raise ValueError(f"奖励项目不存在: {request.project_id}")
+        if request.platform == "bad":
+            raise ValueError(f"不支持的平台类型: {request.platform}")
+        return EvaluationResult(
+            project_id=request.project_id,
+            project_name="奖励平台示例项目",
+            overall_score=8.6,
+            grade="B",
+            dimension_scores=[],
+            summary="奖励平台评审完成",
+            recommendations=[],
+            evaluation_id="EVAL_REWARD_DEMO",
+            chat_ready=bool(request.enable_chat_index),
         )
 
     async def resolve_chat_citation_highlight(self, evaluation_id: str, file: str, page: int, snippet: str):
@@ -341,6 +361,66 @@ def test_evaluate_by_guide_route_forwards_zndm_request():
     assert call["request"].limit == 10
     assert call["request"].enable_highlight is True
     assert call["request"].enable_chat_index is True
+
+
+def test_evaluate_by_platform_route_forwards_reward_request():
+    """平台化评审路由应转发 reward 请求"""
+    route_module = load_evaluation_route_module()
+    stub_agent = StubEvaluationAgent()
+    route_module._agent = stub_agent
+
+    result = asyncio.run(
+        route_module.evaluate_by_platform(
+            PlatformEvaluationRequest(
+                platform="reward",
+                project_id="202520001",
+                enable_highlight=True,
+                enable_chat_index=True,
+            )
+        )
+    )
+
+    assert result.project_id == "202520001"
+    assert result.evaluation_id == "EVAL_REWARD_DEMO"
+    assert result.chat_ready is True
+    assert len(stub_agent.evaluate_by_platform_calls) == 1
+    call = stub_agent.evaluate_by_platform_calls[0]
+    assert call["request"].platform == "reward"
+    assert call["request"].project_id == "202520001"
+
+
+def test_evaluate_by_platform_route_maps_missing_project_to_404():
+    """平台化评审应把奖励项目不存在映射为 404"""
+    route_module = load_evaluation_route_module()
+    route_module._agent = StubEvaluationAgent()
+
+    try:
+        asyncio.run(
+            route_module.evaluate_by_platform(
+                PlatformEvaluationRequest(platform="missing", project_id="202520001")
+            )
+        )
+        raise AssertionError("预期抛出 HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 404
+        assert "奖励项目不存在" in exc.detail
+
+
+def test_evaluate_by_platform_route_maps_unsupported_platform_to_400():
+    """平台化评审应把不支持的平台映射为 400"""
+    route_module = load_evaluation_route_module()
+    route_module._agent = StubEvaluationAgent()
+
+    try:
+        asyncio.run(
+            route_module.evaluate_by_platform(
+                PlatformEvaluationRequest(platform="bad", project_id="202520001")
+            )
+        )
+        raise AssertionError("预期抛出 HTTPException")
+    except HTTPException as exc:
+        assert exc.status_code == 400
+        assert "不支持的平台类型" in exc.detail
 
 
 def test_evaluate_by_guide_route_maps_missing_document_to_422():

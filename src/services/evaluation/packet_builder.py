@@ -8,6 +8,9 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from html import escape
 from pathlib import Path
@@ -443,8 +446,47 @@ class EvaluationPacketBuilder:
         if suffix in {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif", ".tif", ".tiff"}:
             return self._image_to_pdf_document(path), "image_to_pdf"
         if suffix == ".docx":
+            converted = self._docx_to_pdf_with_soffice(path)
+            if converted is not None:
+                return converted, "docx_soffice"
             return self._docx_to_fallback_pdf_document(path), "docx_fallback"
         return None, "unsupported"
+
+    def _docx_to_pdf_with_soffice(self, path: Path) -> fitz.Document | None:
+        """优先使用 libreoffice/soffice 把 docx 转成真正的 PDF。"""
+        soffice = shutil.which("soffice") or shutil.which("libreoffice")
+        if not soffice:
+            return None
+
+        with tempfile.TemporaryDirectory(prefix="reward_docx_pdf_") as tmp_dir:
+            output_dir = Path(tmp_dir)
+            cmd = [
+                soffice,
+                "--headless",
+                "--nologo",
+                "--nolockcheck",
+                "--nodefault",
+                "--nofirststartwizard",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(output_dir),
+                str(path),
+            ]
+            try:
+                completed = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception:
+                return None
+            if completed.returncode != 0:
+                return None
+
+            pdf_path = output_dir / f"{path.stem}.pdf"
+            if not pdf_path.exists() or not pdf_path.is_file():
+                return None
+            try:
+                return fitz.open(pdf_path)
+            except Exception:
+                return None
 
     def _image_to_pdf_document(self, path: Path) -> fitz.Document:
         """图片转单页 PDF"""

@@ -27,6 +27,39 @@
 分组(可选前置)     ─┘
 ```
 
+## 奖励平台接入
+
+正文评审后续增加轻量平台入口，先接奖励平台，调用方只需要传入：
+
+```json
+{
+  "platform": "reward",
+  "project_id": "202520001"
+}
+```
+
+其中 `platform=reward` 表示奖励平台，`project_id` 对应奖励项目编号 `XMBH`。后续如果接计划项目，可以继续扩展新的 `platform`，不改变正文评审主链路。
+
+奖励平台材料按三类组织：
+
+1. 主材料：提名书，路径规则为 `FJCL\static\rpw\tjs{年度}\{提名号}.docx`
+2. 签字盖章类材料：来自 `t_xm_gzy`，路径规则为 `FJCL\static\rpw\gzy{年度}\{提名号}\{文件名}`
+3. 相关佐证材料：来自 `t_xm_qtfjcl` 与 `t_xm_gscl`，路径规则为 `FJCL\static\rpw\zmcl{年度}\{提名号}\{文件名}`
+
+奖励平台评审需要根据 `XMBH` 第 5 位识别奖种，并据此设置评审偏好与默认权重：
+
+| 第 5 位 | 奖种 |
+|------|------|
+| `1` | 突出贡献奖 |
+| `2` | 自然科学奖 |
+| `3` | 技术发明奖 |
+| `4` | 科学技术进步奖 |
+| `5` | 科学技术合作奖 |
+| `6` | 企业技术创新奖 |
+| `7` | 科学技术普及奖 |
+
+奖种偏好只在平台适配层生成，最终仍转成现有 `EvaluationRequest.weights/options` 后进入 `EvaluationAgent.evaluate()`。
+
 ## 核心能力
 
 ### 1. 九维正文评审（保留）
@@ -92,6 +125,7 @@
 ### 输入关键字段
 
 - `project_id`、`zndm` 或上传文件
+- `platform`（平台化入口使用；当前先支持 `reward`）
 - `dimensions`、`weights`、`include_sections`
 - `enable_highlight`
 - `enable_industry_fit`（暂不启用）
@@ -103,6 +137,7 @@
 - 支持按 `zndm` 查询真实已提交项目后批量评审
 - 项目列表来源：`Sb_Jbxx + Sb_Sbzt + sys_guide`
 - 正文路径固定为：`/mnt/remote_corpus/{year}/sbs/{id}/{id}.docx`
+- 支持按 `platform=reward + XMBH` 查询奖励平台项目，并自动定位提名书与相关材料
 
 ### 输出关键字段
 

@@ -115,7 +115,7 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert 'id="dimension-radar-svg"' in html
     assert 'class="dimension-detail-item is-active"' in html
     assert "风险控制" in html
-    assert 'class="content-grid workspace-layout"' in html
+    assert 'class="content-grid evaluation-layout"' in html
     assert "hero-nav" not in html
     assert 'id="chat-empty"' in html
     assert 'id="chat-progress"' in html
@@ -263,8 +263,61 @@ def test_report_generator_formal_html_locks_outer_scroll_and_keeps_inner_scroll_
     html = generator.build_html(_build_debug_payload(), debug_mode=False)
 
     assert "height: 100dvh;" in html
-    assert ".workspace-layout {\n      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);\n      overflow: hidden;" in html
+    assert ".evaluation-layout {\n      grid-template-columns: minmax(0, 2.05fr) minmax(360px, 0.92fr);\n      overflow: hidden;" in html
     assert ".result-panels {\n      min-height: 0;\n      height: 100%;\n      overflow: auto;" in html
+
+
+def test_report_generator_reward_overview_uses_nomination_sections():
+    """奖励平台首页应展示提名书口径，不影响项目申报书三段摘要"""
+    generator = ReportGenerator()
+    payload = _build_debug_payload()
+    payload["meta"] = {"platform": "reward"}
+    payload["sections"] = {
+        "项目简介（限1200字）": "奖励项目简介内容。",
+        "重要科学发现": "重要科学发现内容。",
+        "客观评价（不超过2页）": "客观评价内容。",
+        "代表性论文(专著)目录（不超过6篇）": "代表性论文内容。",
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert "项目简介" in html
+    assert "奖励项目简介内容。" in html
+    assert "重要科学发现" in html
+    assert "重要科学发现内容。" in html
+    assert "客观评价内容。" in html
+    assert "代表性论文内容。" in html
+    assert "研究目标</div>" not in html
+
+
+def test_report_generator_reward_overview_cleans_docx_table_markers():
+    """奖励平台首页不应把 DOCX 表格解析标记直接展示给评审人"""
+    generator = ReportGenerator()
+    payload = _build_debug_payload()
+    payload["meta"] = {"platform": "reward"}
+    payload["sections"] = {
+        "项目简介（限1200字）": "[表格表头4] 兔球虫病是一类由艾美耳属兔球虫引起的寄生性原虫病。",
+        "重要科学发现": (
+            "[表格表头6] 序号 | 主要发现点 | 证明材料 | 所属学科 "
+            "[表格行23] 序号:1 ; 主要发现点:发现了一种新的兔艾美耳球虫 ; 证明材料:1.1.1 ; 所属学科:家畜寄生虫学"
+        ),
+        "代表性论文(专著)目录（不超过6篇）": (
+            "[表格表头8] 序号 | 论文（专著） 名称 | 发表刊物 (出版社) | 发表（出版）时间（年月日） | 他引总次数 | 检索数据库 | 所支持发现点 "
+            "[表格行26] 序号:1 ; 论文（专著） 名称:A new species of Eimeria ; 发表刊物 (出版社):Parasitology Research ; "
+            "发表（出版）时间（年月日）:2024-01-01 ; 他引总次数:4 ; 检索数据库:SCI ; 所支持发现点:1"
+        ),
+        "客观评价（不超过2页）": "客观评价内容。",
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert "[表格表头" not in html
+    assert "[表格行" not in html
+    assert "兔球虫病是一类由艾美耳属兔球虫引起的寄生性原虫病。" in html
+    assert "1. 发现了一种新的兔艾美耳球虫" in html
+    assert "证明材料：1.1.1" in html
+    assert "A new species of Eimeria" in html
+    assert "发表刊物 (出版社)：Parasitology Research" in html
 
 
 def test_report_generator_formal_html_renders_highlights_as_flat_blocks():

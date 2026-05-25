@@ -112,6 +112,96 @@ def _raw_candidate_state(expected: str, candidates: List[str]) -> str:
     return "match" if _matches(expected_text, normalized_candidates) else "mismatch"
 
 
+def _normalized_edit_similarity(left: str, right: str) -> float:
+    left_norm = _normalize_text(left)
+    right_norm = _normalize_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    previous = list(range(len(right_norm) + 1))
+    for i, left_char in enumerate(left_norm, start=1):
+        current = [i] + [0] * len(right_norm)
+        for j, right_char in enumerate(right_norm, start=1):
+            current[j] = min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + (0 if left_char == right_char else 1),
+            )
+        previous = current
+    distance = previous[-1]
+    return max(0.0, 1.0 - distance / max(len(left_norm), len(right_norm), 1))
+
+
+def _strip_company_suffix(text: str) -> str:
+    normalized = _normalize_text(text)
+    suffixes = ("有限责任公司", "股份有限公司", "集团有限公司", "有限公司", "股份公司")
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            suffix_norm = _normalize_text(suffix)
+            if normalized.endswith(suffix_norm) and len(normalized) > len(suffix_norm):
+                normalized = normalized[: -len(suffix_norm)]
+                changed = True
+    return normalized
+
+
+def _longest_common_substring_length(left: str, right: str) -> int:
+    left_norm = _strip_company_suffix(left)
+    right_norm = _strip_company_suffix(right)
+    if not left_norm or not right_norm:
+        return 0
+    previous = [0] * (len(right_norm) + 1)
+    best = 0
+    for left_char in left_norm:
+        current = [0] * (len(right_norm) + 1)
+        for j, right_char in enumerate(right_norm, start=1):
+            if left_char == right_char:
+                current[j] = previous[j - 1] + 1
+                best = max(best, current[j])
+        previous = current
+    return best
+
+
+def _target_stamp_has_supporting_text(expected: str, candidates: List[str]) -> Dict[str, Any]:
+    best_similarity = 0.0
+    best_core_run = 0
+    best_candidate = ""
+    for candidate in candidates or []:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        similarity = _normalized_edit_similarity(expected, text)
+        core_run = _longest_common_substring_length(expected, text)
+        if (similarity, core_run) > (best_similarity, best_core_run):
+            best_similarity = similarity
+            best_core_run = core_run
+            best_candidate = text
+    supported = best_similarity >= 0.72 or best_core_run >= 4
+    return {
+        "supported": supported,
+        "best_similarity": round(best_similarity, 4),
+        "best_core_run": best_core_run,
+        "best_candidate": best_candidate,
+    }
+
+
+def _best_candidate_similarity(expected: str, candidates: List[str]) -> Dict[str, Any]:
+    best_similarity = 0.0
+    best_candidate = ""
+    for candidate in candidates or []:
+        text = str(candidate or "").strip()
+        if not text:
+            continue
+        similarity = _normalized_edit_similarity(expected, text)
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_candidate = text
+    return {
+        "best_similarity": round(best_similarity, 4),
+        "best_candidate": best_candidate,
+    }
+
+
 def _raw_db_field_state(expected: str, observed: str) -> str:
     expected_text = str(expected or "").strip()
     observed_text = str(observed or "").strip()
@@ -292,6 +382,8 @@ class RewardReviewService:
         target_values = context.get("target_values", {}) or {}
 
         if normalized_doc_type == "tjdwyj":
+            llm_analysis = result.llm_analysis or {}
+            stamp_quality = llm_analysis.get("stamp_quality") if isinstance(llm_analysis, dict) else None
             extras.extend(
                 self._filter_items(
                     [
@@ -301,6 +393,7 @@ class RewardReviewService:
                             expected=str(target_values.get("nomination_unit_name") or ""),
                             candidates=stamps,
                             verification=verification.get("nomination_unit_stamp"),
+                            stamp_quality=stamp_quality if isinstance(stamp_quality, dict) else None,
                         )
                     ],
                     effective_items,
@@ -1024,6 +1117,13 @@ class RewardReviewService:
         target_values: Dict[str, Any],
     ) -> Dict[str, Any]:
         llm_analysis = result.llm_analysis or {}
+        if doc_type == "tjdwyj":
+            payload = llm_analysis.get("verification_result") or {}
+            if isinstance(payload, dict) and payload:
+                return {
+                    "nomination_unit_stamp": self._normalize_verification_entry(payload.get("nomination_unit_stamp")),
+                }
+            return {}
         if doc_type in {"wcr", "wjwcr"}:
             payload = llm_analysis.get("verification_result") or {}
             if isinstance(payload, dict) and payload:
@@ -1361,6 +1461,7 @@ class RewardReviewService:
         expected: str,
         candidates: List[str],
         verification: Optional[Dict[str, str]] = None,
+        stamp_quality: Optional[Dict[str, Any]] = None,
     ) -> CheckResult:
         verification_status = self._verification_status(verification)
         raw_state = _raw_candidate_state(expected, candidates)
@@ -1370,8 +1471,12 @@ class RewardReviewService:
             "raw_state": raw_state,
             "verification_status": verification_status,
         }
+        if item == "nomination_unit_stamp_consistency":
+            evidence["candidate_similarity"] = _best_candidate_similarity(expected, candidates)
         if verification:
             evidence["verification"] = verification
+        if stamp_quality:
+            evidence["stamp_quality"] = stamp_quality
         if not expected:
             return CheckResult(
                 item=item,
@@ -1379,8 +1484,62 @@ class RewardReviewService:
                 message=f"奖励库未提供可核验的{label}",
                 evidence=evidence,
             )
+        if (
+            item == "nomination_unit_stamp_consistency"
+            and raw_state == "unknown"
+            and not candidates
+            and stamp_quality
+            and stamp_quality.get("red_present")
+            and stamp_quality.get("low_quality")
+            and verification_status != "yes"
+        ):
+            return CheckResult(
+                item=item,
+                status=CheckStatus.WARNING,
+                message=f"{label}印文过淡或残缺，无法确认单位名称，请人工复核",
+                evidence=evidence,
+            )
+        if item == "nomination_unit_stamp_consistency" and raw_state == "match":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{label}与奖励库记录一致",
+                evidence=evidence,
+            )
+        if item == "nomination_unit_stamp_consistency":
+            similarity = evidence.get("candidate_similarity") or {}
+            best_similarity = float(similarity.get("best_similarity") or 0.0)
+            high_quality = not (stamp_quality or {}).get("low_quality")
+            if high_quality and best_similarity >= 0.88:
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.PASSED,
+                    message=f"{label}与奖励库记录一致",
+                    evidence=evidence,
+                )
+            if stamp_quality and stamp_quality.get("red_present") and stamp_quality.get("low_quality"):
+                return CheckResult(
+                    item=item,
+                    status=CheckStatus.WARNING,
+                    message=f"{label}印文过淡或残缺，无法确认单位名称，请人工复核",
+                    evidence=evidence,
+                )
+        if verification_status == "no":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.FAILED,
+                message=f"{label}与奖励库记录不一致",
+                evidence=evidence,
+            )
+        if verification_status == "yes":
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{label}与奖励库记录一致",
+                evidence=evidence,
+            )
         if raw_state == "match":
-            if verification_status in {"", "yes"}:
+            if verification_status == "":
                 return CheckResult(
                     item=item,
                     status=CheckStatus.PASSED,
@@ -1394,13 +1553,6 @@ class RewardReviewService:
                 evidence=evidence,
             )
         if raw_state == "mismatch":
-            if verification_status == "no":
-                return CheckResult(
-                    item=item,
-                    status=CheckStatus.FAILED,
-                    message=f"{label}与奖励库记录不一致",
-                    evidence=evidence,
-                )
             return CheckResult(
                 item=item,
                 status=CheckStatus.WARNING,
@@ -1464,6 +1616,19 @@ class RewardReviewService:
         # 条件串行：
         # 1. 先用抽取结果直接和奖励库比，命中就直接通过；
         # 2. 只有抽取没过时，才使用“是否是 xxx”的定向验证兜底。
+        if verification_status == "no":
+            reason = str((verification or {}).get("reason") or "").strip() if isinstance(verification, dict) else ""
+            if any(token in reason for token in ("姓名章", "签字章", "私章", "方章", "红章")):
+                message = f"完成人“{expected_name or contributor_name}”未见亲笔签名，检测到姓名章/签字章"
+            else:
+                message = f"完成人“{expected_name or contributor_name}”与本人签名不一致"
+            return CheckResult(
+                item="award_contributor_signature_consistency",
+                status=CheckStatus.FAILED,
+                message=message,
+                evidence=evidence,
+            )
+
         if raw_state == "match":
             return CheckResult(
                 item="award_contributor_signature_consistency",
@@ -1479,14 +1644,6 @@ class RewardReviewService:
                 message=f"完成人“{expected_name}”与本人签名一致",
                 evidence=evidence,
             )
-        if verification_status == "no":
-            return CheckResult(
-                item="award_contributor_signature_consistency",
-                status=CheckStatus.FAILED,
-                message=f"完成人“{expected_name or contributor_name}”与本人签名不一致",
-                evidence=evidence,
-            )
-
         if raw_state == "mismatch":
             return CheckResult(
                 item="award_contributor_signature_consistency",
@@ -1519,6 +1676,10 @@ class RewardReviewService:
         }
         if verification:
             evidence["verification"] = verification
+        supporting_text = {}
+        if item == "enterprise_stamp_consistency" and verification_status == "yes":
+            supporting_text = _target_stamp_has_supporting_text(expected_unit, role_units)
+            evidence["verification_supporting_text"] = supporting_text
 
         if raw_state == "match" and verification_status in {"", "yes"}:
             return CheckResult(
@@ -1539,6 +1700,18 @@ class RewardReviewService:
                 item=item,
                 status=CheckStatus.FAILED,
                 message=f"{role_label}“{expected_unit}”与对应公章不一致",
+                evidence=evidence,
+            )
+        if (
+            item == "enterprise_stamp_consistency"
+            and raw_state == "mismatch"
+            and verification_status == "yes"
+            and supporting_text.get("supported")
+        ):
+            return CheckResult(
+                item=item,
+                status=CheckStatus.PASSED,
+                message=f"{role_label}“{expected_unit}”与对应公章一致",
                 evidence=evidence,
             )
         if raw_state == "mismatch":

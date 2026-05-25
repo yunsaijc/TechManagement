@@ -1,7 +1,9 @@
 """审查 Agent"""
 import asyncio
+import json
 import logging
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -624,9 +626,11 @@ class ReviewAgent:
         if normalized_doc_type == "dywcrcns":
             return await self._do_first_contributor_commitment_llm_analysis(file_data, doc_type, metadata or {})
         if normalized_doc_type == "dywcdwcns":
-            return await self._do_first_completion_unit_commitment_llm_analysis(file_data, doc_type)
+            return await self._do_first_completion_unit_commitment_llm_analysis(file_data, doc_type, metadata or {})
         if normalized_doc_type == "qysm":
             return await self._do_enterprise_statement_llm_analysis(file_data, doc_type, metadata or {})
+        if normalized_doc_type == "tjdwyj":
+            return await self._do_nomination_opinion_llm_analysis(file_data, doc_type, metadata or {})
 
         logger.info(f"[LLM] 深度分析开始，doc_type={doc_type}")
         print(f"[LLM] 深度分析开始，doc_type={doc_type}", flush=True)
@@ -735,7 +739,14 @@ class ReviewAgent:
 
         signature_image_data = self._build_award_contributor_signature_region(file_data)
         stamp_result, verification_result = await asyncio.gather(
-            self._extract_award_contributor_stamps(file_data, anchors=stamp_anchors),
+            self._extract_award_contributor_stamps(
+                file_data,
+                anchors=stamp_anchors,
+                expected_units={
+                    "work_unit": payload.get("work_unit", ""),
+                    "completion_unit": payload.get("completion_unit", ""),
+                },
+            ),
             self._verify_award_contributor_signature_if_needed(
                 multi_llm=multi_llm,
                 image_data=signature_image_data,
@@ -748,6 +759,13 @@ class ReviewAgent:
         payload["all_stamp_units"] = list(stamp_result.get("all_stamp_units", []))
         payload["stamp_regions"] = list(stamp_result.get("regions", []))
         payload["stamp_anchor_regions"] = dict(stamp_result.get("anchor_regions") or stamp_anchors or {})
+        visual_stamp_verification = await self._verify_award_contributor_stamps_visually_if_needed(
+            multi_llm=multi_llm,
+            file_data=file_data,
+            payload=payload,
+        )
+        if visual_stamp_verification:
+            verification_result.update(visual_stamp_verification)
 
         extracted_fields = {
             "排名": payload.get("rank", ""),
@@ -835,6 +853,7 @@ class ReviewAgent:
         self,
         file_data: bytes,
         anchors: Optional[Dict[str, Any]] = None,
+        expected_units: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """主要完成人公章：统一走 StampExtractor。"""
         try:
@@ -848,7 +867,11 @@ class ReviewAgent:
                 )
             else:
                 result = await asyncio.wait_for(
-                    extractor.extract_award_contributor_stamps_from_anchors(file_data, anchors),
+                    extractor.extract_award_contributor_stamps_from_anchors(
+                        file_data,
+                        anchors,
+                        expected_units=expected_units,
+                    ),
                     timeout=45,
                 )
         except asyncio.TimeoutError:
@@ -888,9 +911,112 @@ class ReviewAgent:
 
         if not isinstance(fields, dict):
             fields = {}
+        fields = await self._fallback_award_contributor_fields_from_upper_table(
+            file_data=file_data,
+            fields=fields,
+            field_names=field_names,
+        )
         return {
             name: str(fields.get(name) or "").strip()
             for name in field_names
+        }
+
+    async def _fallback_award_contributor_fields_from_upper_table(
+        self,
+        file_data: bytes,
+        fields: Dict[str, Any],
+        field_names: List[str],
+    ) -> Dict[str, Any]:
+        """WCR 字段定位失败时，只用上半页主表格做保守兜底。"""
+        bad_fields = [
+            name
+            for name in field_names
+            if self._is_bad_award_contributor_field(name, str((fields or {}).get(name) or ""))
+        ]
+        if not bad_fields:
+            return fields
+
+        page_image = self._load_review_image(file_data)
+        if page_image is None:
+            return fields
+        width, height = page_image.size
+        upper_crop = page_image.crop((
+            int(width * 0.03),
+            int(height * 0.06),
+            int(width * 0.97),
+            int(height * 0.48),
+        ))
+        image_data = self._image_to_png_bytes(upper_crop)
+        prompt = """这是一张“主要完成人情况表”的上半页主表格区域。只读取主表格中的四个字段值。
+
+返回严格 JSON：
+{"排名": "", "姓名": "", "工作单位": "", "完成单位": ""}
+
+规则：
+1. 只读上半页主表格，不要读取下半页声明正文、签名区、公章区。
+2. 不要根据上下文补全；看不清填空字符串。
+3. 只返回 JSON。"""
+        try:
+            raw = await self._analyze_image_with_timeout(
+                MultimodalLLM(self.llm),
+                image_data,
+                prompt,
+                "主要完成人上半页字段兜底",
+                timeout_sec=35,
+            )
+        except Exception as exc:
+            logger.warning("[REVIEW] 主要完成人字段上半页兜底失败: %s", exc)
+            return fields
+
+        fallback = self._parse_award_upper_fields_json(raw)
+        if not fallback:
+            return fields
+
+        merged = dict(fields or {})
+        for name in bad_fields:
+            value = str(fallback.get(name) or "").strip()
+            if value and not self._is_bad_award_contributor_field(name, value):
+                merged[name] = value
+        return merged
+
+    def _is_bad_award_contributor_field(self, field_name: str, value: str) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return True
+        if text in {"未定位", "区域太小", "裁剪区域太小"}:
+            return True
+        pollution_tokens = ("声明", "本单位", "本人", "按照", "承诺", "公章", "签名", "签字")
+        if any(token in text for token in pollution_tokens):
+            return True
+        key = str(field_name or "").strip()
+        if key == "排名":
+            return not bool(re.fullmatch(r"\d{1,2}", text))
+        if key == "姓名":
+            chinese = "".join(ch for ch in text if "\u4e00" <= ch <= "\u9fff")
+            if len(chinese) < 2 or len(chinese) > 4:
+                return True
+            if text.endswith(("名", "姓名")) and len(chinese) > 2:
+                return True
+        return False
+
+    def _parse_award_upper_fields_json(self, raw_text: str) -> Dict[str, str]:
+        text = str(raw_text or "").strip()
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            if len(parts) >= 2:
+                text = parts[1]
+                if text.startswith("json"):
+                    text = text[4:]
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            name: str(payload.get(name) or "").strip()
+            for name in ("排名", "姓名", "工作单位", "完成单位")
         }
 
     async def _do_first_contributor_commitment_llm_analysis(
@@ -1102,16 +1228,28 @@ class ReviewAgent:
         self,
         file_data: bytes,
         doc_type: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """第一完成单位承诺书：只走底部公章专项。"""
         page_image = self._load_page_image(file_data)
         if page_image is None:
             return {"document_type_llm": doc_type, "extracted_fields": {"单位名称": ""}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
 
+        target_values = ((metadata or {}).get("reward_review_context") or {}).get("target_values") or {}
+        expected_unit = str(target_values.get("unit_name") or "").strip()
         stamp_crop = self._crop_ratio_image(page_image, (0.34, 0.52, 0.82, 0.86))
         self._save_special_debug_crop("first_completion_unit_stamp_crop", stamp_crop)
         stamp_result = await self._extract_stamps_from_image(stamp_crop, debug_prefix="first_completion_unit")
         stamp_units = self._extract_stamp_units(stamp_result)
+        if expected_unit and not self._text_exact_matches(expected_unit, stamp_units):
+            fallback_units = await self._extract_first_completion_unit_stamp_units_wcr_style(
+                file_data=file_data,
+                page_image=page_image,
+                expected_unit=expected_unit,
+            )
+            if fallback_units:
+                stamp_result = self._merge_stamp_units_into_result(stamp_result, fallback_units)
+                stamp_units = self._extract_stamp_units(stamp_result)
 
         return {
             "document_type_llm": doc_type,
@@ -1121,6 +1259,109 @@ class ReviewAgent:
             "signatures_result": {"signatures": []},
             "signatures_description": "未检测到签字",
             "verification_result": {},
+        }
+
+    async def _extract_first_completion_unit_stamp_units_wcr_style(
+        self,
+        file_data: bytes,
+        page_image: Any,
+        expected_unit: str,
+    ) -> List[str]:
+        """第一完成单位承诺书：复用 wcr 的红章/polar OCR 作为补充候选。"""
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            bbox = self._detect_bottom_red_stamp_bbox(extractor, page_image)
+            if not bbox:
+                return []
+            result = await extractor.extract_award_contributor_stamps_from_anchors(
+                file_data,
+                anchors={"work_unit": bbox, "completion_unit": bbox},
+                expected_units={"work_unit": expected_unit, "completion_unit": expected_unit},
+            )
+        except Exception as exc:
+            logger.warning("[REVIEW] 第一完成单位公章 wcr-style OCR 补充失败: %s", exc)
+            return []
+
+        units: List[str] = []
+        for key in ("work_unit_stamp_units", "completion_unit_stamp_units", "all_stamp_units"):
+            for unit in result.get(key) or []:
+                text = str(unit or "").strip()
+                if text and text not in units:
+                    units.append(text)
+        return units
+
+    def _detect_bottom_red_stamp_bbox(self, extractor: Any, page_image: Any) -> Optional[Dict[str, float]]:
+        try:
+            regions = extractor._detect_red_stamp_regions(page_image, {})
+        except Exception as exc:
+            logger.warning("[REVIEW] 底部红章区域检测失败: %s", exc)
+            regions = []
+        if regions:
+            return sorted(
+                regions,
+                key=lambda item: (
+                    (float(item.get("y1", 0.0)) + float(item.get("y2", 0.0))) / 2.0,
+                    (float(item.get("x1", 0.0)) + float(item.get("x2", 0.0))) / 2.0,
+                ),
+                reverse=True,
+            )[0]
+        return {"x1": 0.34, "y1": 0.52, "x2": 0.82, "y2": 0.86}
+
+    async def _do_nomination_opinion_llm_analysis(
+        self,
+        file_data: bytes,
+        doc_type: str,
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """提名意见表：只裁右下提名单位公章区做红章专项核验。"""
+        page_image = self._load_page_image(file_data)
+        if page_image is None:
+            return {"document_type_llm": doc_type, "extracted_fields": {}, "stamps_description": "未检测到印章", "stamps_result": {"stamps": []}, "signatures_result": {"signatures": []}, "signatures_description": "未检测到签字", "verification_result": {}}
+
+        stamp_crop = self._crop_ratio_image(page_image, (0.48, 0.68, 0.96, 0.96))
+        wide_crop = self._crop_ratio_image(page_image, (0.36, 0.62, 0.98, 0.98))
+        enhanced_crop = self._enhance_red_stamp(stamp_crop)
+        stamp_quality = self._analyze_red_stamp_quality(wide_crop)
+        self._save_special_debug_crop("nomination_unit_stamp_crop", stamp_crop)
+        self._save_special_debug_crop("nomination_unit_stamp_crop_wide", wide_crop)
+        self._save_special_debug_crop("nomination_unit_stamp_red_enhanced", enhanced_crop)
+
+        enhanced_result = await self._extract_stamps_from_image(enhanced_crop, debug_prefix="nomination_unit")
+        stamp_units = self._extract_stamp_units(enhanced_result)
+        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        expected_unit = str(target_values.get("nomination_unit_name") or "").strip()
+        verification_result = await self._verify_target_nomination_unit_stamp_if_needed(
+            stamp_crop=stamp_crop,
+            expected_unit=expected_unit,
+            stamp_units=stamp_units,
+        )
+
+        if expected_unit and (verification_result.get("nomination_unit_stamp") or {}).get("status") == "yes":
+            stamp_units = [expected_unit]
+            enhanced_result = {
+                "stamps": [
+                    {
+                        "text": expected_unit,
+                        "unit": expected_unit,
+                        "bbox": None,
+                        "confidence": 0.9,
+                        "location": "提名单位（公章）",
+                    }
+                ],
+                "raw": enhanced_result.get("raw", ""),
+            }
+
+        return {
+            "document_type_llm": doc_type,
+            "extracted_fields": {},
+            "stamps_description": "；".join(stamp_units) if stamp_units else "未检测到印章",
+            "stamps_result": enhanced_result,
+            "stamp_quality": stamp_quality,
+            "signatures_result": {"signatures": []},
+            "signatures_description": "未检测到签字",
+            "verification_result": verification_result,
         }
 
     async def _do_enterprise_statement_llm_analysis(
@@ -1150,9 +1391,17 @@ class ReviewAgent:
             }
             signature_names = [representative_name]
 
+        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        expected_enterprise_name = str(target_values.get("enterprise_name") or "").strip()
         company_stamp_result = await self._extract_stamps_from_image(company_stamp_crop, debug_prefix="enterprise")
         stamp_units = self._extract_company_like_stamp_units(company_stamp_result) or self._extract_stamp_units(company_stamp_result)
-        target_values = (metadata.get("reward_review_context") or {}).get("target_values") or {}
+        stamp_units = self._clean_enterprise_stamp_units(stamp_units)
+        stamp_units = await self._augment_enterprise_stamp_units_with_polar(
+            stamp_crop=company_stamp_crop,
+            expected_unit=expected_enterprise_name,
+            stamp_units=stamp_units,
+        )
+        company_stamp_result = self._merge_stamp_units_into_result(company_stamp_result, stamp_units)
         verification_result = await self._verify_target_signature_if_needed(
             image_data=rep_bytes,
             expected_name=str(target_values.get("legal_representative") or "").strip(),
@@ -1163,7 +1412,7 @@ class ReviewAgent:
         )
         enterprise_stamp_verification = await self._verify_target_enterprise_stamp_if_needed(
             stamp_crop=company_stamp_crop,
-            expected_unit=str(target_values.get("enterprise_name") or "").strip(),
+            expected_unit=expected_enterprise_name,
             stamp_units=stamp_units,
         )
         if enterprise_stamp_verification:
@@ -1240,6 +1489,71 @@ class ReviewAgent:
                 units.append(text)
         return units
 
+    def _clean_enterprise_stamp_units(self, units: List[str]) -> List[str]:
+        cleaned_units: List[str] = []
+        for text in units or []:
+            cleaned = self._strip_stamp_serial_number(text)
+            if cleaned and cleaned not in cleaned_units:
+                cleaned_units.append(cleaned)
+        return cleaned_units
+
+    def _strip_stamp_serial_number(self, text: Any) -> str:
+        value = str(text or "").strip()
+        if not value:
+            return ""
+        value = re.sub(r"\s+", "", value)
+        value = re.sub(r"\d{6,}$", "", value)
+        value = re.sub(r"^\d{6,}", "", value)
+        value = re.sub(r"(?<![\u4e00-\u9fff\d])\d{6,}(?![\u4e00-\u9fff\d])", "", value)
+        return value.strip()
+
+    def _merge_stamp_units_into_result(self, stamp_result: Dict[str, Any], units: List[str]) -> Dict[str, Any]:
+        result = dict(stamp_result or {})
+        stamps = [dict(item) for item in result.get("stamps", []) if isinstance(item, dict)]
+        existing = {str(item.get("unit") or item.get("text") or "").strip() for item in stamps}
+        for unit in units or []:
+            if not unit or unit in existing:
+                continue
+            stamps.append({"unit": unit, "text": unit, "bbox": None, "confidence": 0.8})
+            existing.add(unit)
+        result["stamps"] = stamps
+        return result
+
+    async def _augment_enterprise_stamp_units_with_polar(
+        self,
+        stamp_crop: Any,
+        expected_unit: str,
+        stamp_units: List[str],
+    ) -> List[str]:
+        if not expected_unit or self._text_exact_matches(expected_unit, stamp_units):
+            return stamp_units
+        try:
+            from src.common.extractors import StampExtractor
+
+            extractor = StampExtractor()
+            payload = await extractor._build_polar_variant_payload(
+                role_key="enterprise_target",
+                polar_raw_source=stamp_crop,
+                polar_enhanced_source=extractor._prepare_stamp_crop_for_polar(stamp_crop),
+                polar_source_variant="enhanced",
+                expected_unit=expected_unit,
+            )
+            candidates: List[str] = []
+            for payload_item in [payload, *((payload or {}).get("candidate_variants") or [])]:
+                if not isinstance(payload_item, dict):
+                    continue
+                for text in payload_item.get("texts") or []:
+                    cleaned = self._strip_stamp_serial_number(text)
+                    if cleaned and cleaned not in candidates:
+                        candidates.append(cleaned)
+            if self._text_exact_matches(expected_unit, candidates):
+                for candidate in candidates:
+                    if candidate not in stamp_units:
+                        stamp_units.append(candidate)
+        except Exception as exc:
+            logger.warning("[REVIEW] 企业声明公章 polar 候选补充失败: %s", exc)
+        return stamp_units
+
     def _pick_short_person_name_from_stamps(self, stamp_result: Dict[str, Any]) -> str:
         for item in (stamp_result or {}).get("stamps", []):
             text = str(item.get("unit") or item.get("text") or "").strip()
@@ -1297,6 +1611,8 @@ class ReviewAgent:
             polar_bytes=None,
             task_name="企业声明企业公章定向验证",
         )
+        if primary.get("status") == "no" and self._is_contradictory_enterprise_stamp_no(primary, expected_unit):
+            primary = {}
         if primary.get("status") in {"yes", "no"}:
             return {"enterprise_stamp": primary}
 
@@ -1310,8 +1626,104 @@ class ReviewAgent:
             polar_bytes=polar_bytes,
             task_name="企业声明企业公章定向复核",
         )
+        if retry.get("status") == "no" and self._is_contradictory_enterprise_stamp_no(retry, expected_unit):
+            retry = {}
         final_entry = retry if retry.get("status") else primary
         return {"enterprise_stamp": final_entry} if final_entry.get("status") else {}
+
+    async def _verify_target_nomination_unit_stamp_if_needed(
+        self,
+        stamp_crop,
+        expected_unit: str,
+        stamp_units: List[str],
+    ) -> Dict[str, Any]:
+        """提名意见表：右下公章 crop 定向核验。"""
+        if not expected_unit or self._text_exact_matches(expected_unit, stamp_units):
+            return {}
+        multi_llm = MultimodalLLM(self.llm)
+        prompt = """你在做提名意见表公章定向核验。
+目标提名单位：%s
+
+图中是页面右下角“提名单位（公章）”附近裁剪区域。
+只判断红色公章上的单位名称是否就是目标提名单位，不要根据正文、表格字段或提示词补全。
+
+返回严格 JSON：
+{"nomination_unit_stamp": {"status": "yes|no|uncertain", "reason": ""}}
+
+规则：
+1. yes 仅表示红色公章文字可以清晰确认与目标提名单位一致。
+2. no 表示未见对应红章，或可清晰确认红章单位不是目标提名单位。
+3. uncertain 表示确有红章但看不清。
+4. 只返回 JSON，不要解释。""" % expected_unit
+        raw = await self._analyze_image_with_timeout(
+            multi_llm,
+            self._image_to_png_bytes(stamp_crop),
+            prompt,
+            "提名意见表提名单位公章定向验证",
+            timeout_sec=45,
+        )
+        entry = self._parse_named_verification(raw, "nomination_unit_stamp")
+        if entry.get("status") == "no" and self._is_contradictory_nomination_stamp_no(entry):
+            return {}
+        return {"nomination_unit_stamp": entry} if entry.get("status") else {}
+
+    def _is_contradictory_nomination_stamp_no(self, entry: Dict[str, str]) -> bool:
+        """模型偶尔 reason 说一致但 status=no；这种 no 不能推翻 OCR。"""
+        reason = str((entry or {}).get("reason") or "")
+        if any(token in reason for token in ("不一致", "不相符", "不匹配", "不是目标", "无法确认")):
+            return False
+        positive_tokens = (
+            "与目标单位一致",
+            "与目标提名单位一致",
+            "与目标一致",
+            "单位名称一致",
+            "目标单位一致",
+        )
+        if any(token in reason for token in positive_tokens):
+            return True
+        return bool(re.search(r"与目标(?:提名)?单位[^，。；;]*一致", reason))
+
+    def _is_contradictory_enterprise_stamp_no(self, entry: Dict[str, str], expected_unit: str) -> bool:
+        """企业章定向复核偶尔 status=no 但 reason 实际描述一致；这种 no 不能直接判失败。"""
+        reason = str((entry or {}).get("reason") or "")
+        expected = str(expected_unit or "").strip()
+        if not reason or not expected:
+            return False
+        expected_key = re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", expected).lower()
+        reason_key = re.sub(r"[\s\u3000（）()【】\[\]：:，,。.\-_/]", "", reason).lower()
+        hard_negative_tokens = (
+            "缺少",
+            "多了",
+            "不同",
+            "不一致",
+            "不相符",
+            "不匹配",
+            "不是目标",
+            "无法确认",
+            "看不清",
+            "不清晰",
+        )
+        if any(token in reason for token in hard_negative_tokens):
+            if expected_key and reason_key.count(expected_key) >= 2 and any(token in reason for token in ("公章上", "显示的是", "文字为")):
+                return True
+            positive_tail = (
+                "实际一致",
+                "完全一致",
+                "与目标单位完全一致",
+                "与目标单位一致",
+                "可以确认这枚公章的单位名称与目标单位一致",
+            )
+            return any(token in reason for token in positive_tail) and self._text_exact_matches(expected, [reason])
+        if self._text_exact_matches(expected, [reason]):
+            return True
+        positive_tokens = (
+            "与目标单位完全一致",
+            "与目标单位一致",
+            "与目标一致",
+            "单位名称一致",
+            "完全一致",
+        )
+        return any(token in reason for token in positive_tokens)
 
     def _text_exact_matches(self, expected: str, candidates: List[str]) -> bool:
         import re
@@ -1529,7 +1941,7 @@ class ReviewAgent:
         image_data: bytes,
         metadata: Dict[str, Any],
         payload: Dict[str, Any],
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """仅在签字 raw 对比未通过时，使用目标姓名做定向兜底。"""
         reward_context = metadata.get("reward_review_context") if isinstance(metadata, dict) else {}
         target_values = reward_context.get("target_values") if isinstance(reward_context, dict) else {}
@@ -1539,14 +1951,11 @@ class ReviewAgent:
 
         contributor_name = str(payload.get("contributor_name") or "").strip()
         signature_names = [str(item).strip() for item in payload.get("signature_names", []) if str(item).strip()]
-        if self._award_text_matches(expected_name, [contributor_name]) and self._award_text_matches(expected_name, signature_names):
-            return {}
-
         prompt = """这是一张“主要完成人情况表”的签名区裁剪图，只判断图中是否存在可清晰确认的亲笔手写签名。
 目标姓名：%s
 
 返回严格 JSON：
-{"signature_for_name": {"status": "yes|no|uncertain", "reason": ""}}
+{"signature_for_name": {"status": "yes|no|uncertain", "kind": "handwritten|name_stamp|printed|empty|other", "reason": ""}}
 
 规则：
 1. yes 仅表示图中能看到连续笔迹形成的亲笔手写签名，而且字形本身可清晰读成目标姓名。
@@ -1564,7 +1973,247 @@ class ReviewAgent:
             timeout_sec=45,
         )
         entry = self._parse_award_signature_verification(raw)
-        return {"signature_for_name": entry["status"]} if entry.get("status") else {}
+        return {"signature_for_name": entry} if entry.get("status") else {}
+
+    async def _verify_award_contributor_stamps_visually_if_needed(
+        self,
+        multi_llm: MultimodalLLM,
+        file_data: bytes,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """当公章 OCR 未直接匹配时，保守使用红章视觉复核兜底。"""
+        roles = [
+            ("work_unit", "work_unit_stamp", "工作单位", str(payload.get("work_unit") or "").strip()),
+            ("completion_unit", "completion_unit_stamp", "完成单位", str(payload.get("completion_unit") or "").strip()),
+        ]
+        targets = [
+            (role_key, verify_key, role_label, expected)
+            for role_key, verify_key, role_label, expected in roles
+            if expected
+            and not self._is_composite_award_unit(expected)
+            and not self._award_text_matches(expected, list(payload.get(f"{role_key}_stamp_units", []) or []))
+        ]
+        if not targets:
+            return {}
+
+        page_image = self._load_review_image(file_data)
+        if page_image is None:
+            return {}
+        stamp_images = self._build_award_contributor_red_stamp_images(page_image, payload)
+        if not stamp_images:
+            return {}
+
+        out: Dict[str, Any] = {}
+        for role_key, verify_key, role_label, expected in targets:
+            candidates = self._select_stamp_visual_candidates(role_key, stamp_images)
+            for index, image_data in enumerate(candidates[:2], start=1):
+                prompt = """这是一张从“主要完成人情况表”中裁出的红色公章图，只判断它是否为目标单位的公章。
+目标%s：%s
+
+返回严格 JSON：
+{"status": "yes|no|uncertain", "reason": ""}
+
+规则：
+1. yes 仅表示图中红色公章文字能清楚读成目标单位全称；缺字、少字、多字、只包含上级/下级单位都不能 yes。
+2. no 表示能清楚看出不是目标单位，或是姓名章/签字章/其他印章。
+3. uncertain 表示公章太淡、被遮挡、被裁切、文字不完整，无法确认。
+4. 不要根据目标单位补全，不要把“北京大学”和“北京大学物理学院”当作一致。
+5. 只返回 JSON。""" % (role_label, expected)
+                try:
+                    raw = await self._analyze_image_with_timeout(
+                        multi_llm,
+                        image_data,
+                        prompt,
+                        f"主要完成人{role_label}公章视觉复核{index}",
+                        timeout_sec=30,
+                    )
+                except Exception as exc:
+                    logger.warning("[REVIEW] %s公章视觉复核失败: %s", role_label, exc)
+                    continue
+                entry = self._parse_status_reason_json(raw)
+                if entry.get("status") == "yes" and not self._is_contradictory_visual_yes(entry):
+                    entry["source"] = "red_stamp_visual_fallback"
+                    out[verify_key] = entry
+                    units_key = f"{role_key}_stamp_units"
+                    units = [str(item).strip() for item in payload.get(units_key, []) if str(item).strip()]
+                    if expected not in units:
+                        units.append(expected)
+                    payload[units_key] = units
+                    all_units = [str(item).strip() for item in payload.get("all_stamp_units", []) if str(item).strip()]
+                    if expected not in all_units:
+                        all_units.append(expected)
+                    payload["all_stamp_units"] = all_units
+                    break
+        return out
+
+    def _is_composite_award_unit(self, text: str) -> bool:
+        """复合单位要求全部覆盖，不能让视觉兜底按“匹配之一”放过。"""
+        raw = str(text or "").strip()
+        if not raw:
+            return False
+        depth = 0
+        for ch in raw:
+            if ch in "（(":
+                depth += 1
+                continue
+            if ch in "）)" and depth > 0:
+                depth -= 1
+                continue
+            if depth == 0 and ch in "/／、;；，,":
+                return True
+        unit_suffixes = (
+            "股份有限公司",
+            "有限责任公司",
+            "有限公司",
+            "研究所",
+            "研究院",
+            "大学",
+            "学院",
+            "医院",
+            "公司",
+            "中心",
+            "总站",
+            "集团",
+            "学校",
+        )
+        for match in re.finditer(r"[（(]([^）)]+)[）)]", raw):
+            inner = match.group(1).strip()
+            before = raw[: match.start()].strip()
+            after = raw[match.end() :].strip()
+            if before and not after and inner.endswith(unit_suffixes):
+                return True
+        return False
+
+    def _is_contradictory_visual_yes(self, entry: Dict[str, str]) -> bool:
+        """模型偶尔会 status=yes 但 reason 明确说不一致，这种 yes 不能采纳。"""
+        reason = str((entry or {}).get("reason") or "")
+        negative_tokens = (
+            "不一致",
+            "不完全一致",
+            "不能视为",
+            "不能认为",
+            "不能判定",
+            "不是目标",
+            "不是该目标",
+            "并非目标",
+            "不相符",
+            "不匹配",
+            "无法确认",
+            "无法确定",
+        )
+        return any(token in reason for token in negative_tokens)
+
+    def _load_review_image(self, file_data: bytes):
+        import io
+        from PIL import Image, ImageOps
+
+        try:
+            image_data = self._pdf_to_image(file_data)
+            return ImageOps.exif_transpose(Image.open(io.BytesIO(image_data))).convert("RGB")
+        except Exception as exc:
+            logger.warning("[REVIEW] 页面图片加载失败: %s", exc)
+            return None
+
+    def _build_award_contributor_red_stamp_images(self, page_image, payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        import io
+        from PIL import Image
+
+        def _crop_bbox(bbox: Dict[str, Any]):
+            width, height = page_image.size
+            try:
+                x1 = int(max(0, float(bbox["x1"]) * width))
+                y1 = int(max(0, float(bbox["y1"]) * height))
+                x2 = int(min(width, float(bbox["x2"]) * width))
+                y2 = int(min(height, float(bbox["y2"]) * height))
+            except Exception:
+                return None
+            if x2 <= x1 or y2 <= y1:
+                return None
+            return page_image.crop((x1, y1, x2, y2))
+
+        items: List[Dict[str, Any]] = []
+        for region in payload.get("stamp_regions", []) or []:
+            if not isinstance(region, dict) or not isinstance(region.get("bbox"), dict):
+                continue
+            crop = _crop_bbox(region["bbox"])
+            red_image = self._isolate_red_stamp_object(crop) if crop is not None else None
+            if red_image is None:
+                continue
+            buf = io.BytesIO()
+            red_image.save(buf, format="PNG")
+            items.append(
+                {
+                    "role": str(region.get("role") or ""),
+                    "image": buf.getvalue(),
+                    "bbox": region.get("bbox"),
+                }
+            )
+        return items
+
+    def _select_stamp_visual_candidates(self, role_key: str, stamp_images: List[Dict[str, Any]]) -> List[bytes]:
+        exact = [item["image"] for item in stamp_images if item.get("role") == role_key and item.get("image")]
+        rest = [item["image"] for item in stamp_images if item.get("role") != role_key and item.get("image")]
+        return exact + rest
+
+    def _isolate_red_stamp_object(self, image):
+        if image is None:
+            return None
+        from PIL import Image, ImageFilter, ImageOps
+
+        rgb = image.convert("RGB")
+        width, height = rgb.size
+        pixels = rgb.load()
+        xs: List[int] = []
+        ys: List[int] = []
+        for y in range(height):
+            for x in range(width):
+                r, g, b = pixels[x, y]
+                if r >= 105 and r >= g + 22 and r >= b + 22:
+                    xs.append(x)
+                    ys.append(y)
+        if len(xs) < 80:
+            return None
+        pad_x = max(8, int(width * 0.04))
+        pad_y = max(8, int(height * 0.04))
+        x1 = max(0, min(xs) - pad_x)
+        y1 = max(0, min(ys) - pad_y)
+        x2 = min(width, max(xs) + pad_x)
+        y2 = min(height, max(ys) + pad_y)
+        if x2 <= x1 or y2 <= y1:
+            return None
+        crop = rgb.crop((x1, y1, x2, y2))
+        out = Image.new("RGB", crop.size, "white")
+        src = crop.load()
+        dst = out.load()
+        for y in range(crop.size[1]):
+            for x in range(crop.size[0]):
+                r, g, b = src[x, y]
+                if r >= 105 and r >= g + 22 and r >= b + 22:
+                    dst[x, y] = (180, 0, 0)
+        out = out.filter(ImageFilter.MedianFilter(size=3))
+        scale = 2
+        out = out.resize((max(1, out.size[0] * scale), max(1, out.size[1] * scale)), Image.LANCZOS)
+        return ImageOps.expand(out, border=24, fill="white")
+
+    def _parse_status_reason_json(self, raw_text: str) -> Dict[str, str]:
+        text = str(raw_text or "").strip()
+        if text.startswith("```"):
+            parts = text.split("```", 2)
+            if len(parts) >= 2:
+                text = parts[1]
+                if text.startswith("json"):
+                    text = text[4:]
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        try:
+            payload = json.loads(match.group(0)) if match else {}
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return {}
+        status = str(payload.get("status") or "").strip().lower()
+        if status not in {"yes", "no", "uncertain"}:
+            return {}
+        return {"status": status, "reason": str(payload.get("reason") or "").strip()}
 
     def _award_text_matches(self, expected: str, candidates: List[str]) -> bool:
         """严格文本匹配，用于决定是否需要签字兜底。"""
@@ -1688,6 +2337,56 @@ class ReviewAgent:
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
         return buffer.getvalue()
+
+    def _enhance_red_stamp(self, image):
+        """保留红章像素、弱化黑字和表格线，供公章 OCR 使用。"""
+        import cv2
+        import numpy as np
+        from PIL import Image
+
+        rgb = np.array(image.convert("RGB"))
+        r = rgb[:, :, 0].astype(np.int16)
+        g = rgb[:, :, 1].astype(np.int16)
+        b = rgb[:, :, 2].astype(np.int16)
+        mask = (r > 110) & (r - g > 25) & (r - b > 25)
+        out = np.full_like(rgb, 255)
+        out[mask] = [220, 0, 0]
+        mask_u8 = (mask.astype(np.uint8) * 255)
+        kernel = np.ones((2, 2), np.uint8)
+        mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_CLOSE, kernel, iterations=1)
+        mask_u8 = cv2.dilate(mask_u8, kernel, iterations=1)
+        out[mask_u8 > 0] = [220, 0, 0]
+        return Image.fromarray(out)
+
+    def _analyze_red_stamp_quality(self, image) -> Dict[str, Any]:
+        """估计红章是否存在，以及是否过淡到无法稳定 OCR。"""
+        import numpy as np
+
+        rgb = np.array(image.convert("RGB"))
+        r = rgb[:, :, 0].astype(np.int16)
+        g = rgb[:, :, 1].astype(np.int16)
+        b = rgb[:, :, 2].astype(np.int16)
+        loose = (r > 80) & (r - g > 8) & (r - b > 8)
+        current = (r > 110) & (r - g > 25) & (r - b > 25)
+        strict = (r > 140) & (r - g > 45) & (r - b > 45)
+        loose_count = int(loose.sum())
+        current_count = int(current.sum())
+        strict_count = int(strict.sum())
+        current_ratio = float(current_count / max(1, loose_count))
+        strict_ratio = float(strict_count / max(1, loose_count))
+        red_present = loose_count >= 1000
+        low_quality = red_present and (
+            current_count < 800 or current_ratio < 0.35 or strict_ratio < 0.08
+        )
+        return {
+            "red_present": red_present,
+            "low_quality": low_quality,
+            "loose_red_pixels": loose_count,
+            "current_red_pixels": current_count,
+            "strict_red_pixels": strict_count,
+            "current_to_loose_ratio": round(current_ratio, 4),
+            "strict_to_loose_ratio": round(strict_ratio, 4),
+        }
 
     def _save_special_debug_crop(self, name: str, image) -> None:
         import os
