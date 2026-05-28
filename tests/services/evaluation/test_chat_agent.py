@@ -1,4 +1,5 @@
 """聊天问答测试"""
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,6 +17,14 @@ class BrokenLLM:
 
     async def ainvoke(self, prompt):
         raise RuntimeError("Connection error")
+
+
+class HangingLLM:
+    """模拟模型调用迟迟不返回"""
+
+    async def ainvoke(self, prompt):
+        await asyncio.sleep(10)
+        return StreamingChunk("不应返回")
 
 
 class StreamingChunk:
@@ -138,6 +147,33 @@ async def test_evaluation_agent_chat_index_and_ask_degrades_without_llm(tmp_path
     assert answer.answer
     assert answer.citations
     assert answer.citations[0].file == "demo.pdf"
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_ask_times_out_to_fallback(monkeypatch: pytest.MonkeyPatch):
+    """非流式问答模型卡住时，应快速回退到证据模板"""
+    monkeypatch.setattr(qa_agent_module.EvaluationQAAgent, "_build_native_client", lambda self, llm: None)
+    monkeypatch.setenv("EVALUATION_CHAT_TIMEOUT", "1")
+    agent = EvaluationQAAgent(llm=HangingLLM())
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_TIMEOUT",
+        page_chunks=[
+            {
+                "file": "reward.docx",
+                "page": 4,
+                "section": "重要科学发现",
+                "text": "重要科学发现：发现了一种新的兔艾美耳球虫，并成功选育出三个兔球虫种的早熟株。",
+            }
+        ],
+    )
+
+    answer = await agent.ask("这个奖励项目的主要科学发现是什么？", index_payload)
+
+    assert "结论：" in answer.answer
+    assert "依据：" in answer.answer
+    assert "新的兔艾美耳球虫" in answer.answer
+    assert answer.citations
+    assert answer.citations[0].file == "reward.docx"
     assert answer.citations[0].page in {4, 5}
 
 
@@ -462,6 +498,54 @@ async def test_evaluation_agent_ask_stream_returns_delta_and_done_events(
     assert events[-1]["event"] == "done"
     assert "研究目标明确" in events[-1]["answer"]
     assert events[-1]["citations"]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_ask_total_timeout_returns_friendly_answer(monkeypatch: pytest.MonkeyPatch):
+    """非流式问答整条链路超时时，应返回中文兜底回答"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.chat_total_timeout = 0.01
+
+    async def hanging_ask(*, evaluation_id: str, question: str):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(agent, "_ask_without_timeout", hanging_ask)
+
+    answer = await agent.ask("EVAL_TIMEOUT", "研究目标是什么？")
+
+    assert "问答生成超时" in answer.answer
+    assert answer.citations == []
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_ask_stream_timeout_returns_done(monkeypatch: pytest.MonkeyPatch):
+    """流式问答生成卡住时，应结束为 done，避免前端一直等待"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.chat_total_timeout = 0.01
+
+    async def prepare_context(evaluation_id: str):
+        return None, {"chunk_count": 1, "chunks": []}
+
+    async def hanging_stream(question: str, index_payload):
+        yield {"event": "status", "message": "正在请求模型生成回答"}
+        await asyncio.sleep(10)
+        yield {"event": "done", "answer": "不应返回", "citations": []}
+
+    monkeypatch.setattr(agent, "_prepare_chat_context", prepare_context)
+    monkeypatch.setattr(agent.qa_agent, "ask_stream", hanging_stream)
+
+    events = [
+        event
+        async for event in agent.ask_stream(
+            evaluation_id="EVAL_TIMEOUT",
+            question="研究目标是什么？",
+        )
+    ]
+
+    assert events[-2]["event"] == "delta"
+    assert "问答生成超时" in events[-2]["text"]
+    assert events[-1]["event"] == "done"
+    assert "问答生成超时" in events[-1]["answer"]
 
 
 @pytest.mark.asyncio

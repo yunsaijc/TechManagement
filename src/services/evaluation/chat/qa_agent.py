@@ -1,4 +1,5 @@
 """聊天问答代理"""
+import asyncio
 from dataclasses import dataclass
 import os
 import re
@@ -117,7 +118,7 @@ class EvaluationQAAgent:
         QuestionPlan(
             intent="创新点",
             label="创新点",
-            query_hints=("创新点", "创新亮点", "技术创新", "模式创新", "特色"),
+            query_hints=("创新点", "科学发现", "主要发现点", "重要科学发现", "技术创新", "模式创新", "特色"),
         ),
         QuestionPlan(
             intent="研究目标",
@@ -164,6 +165,7 @@ class EvaluationQAAgent:
         self.native_client = self._build_native_client(llm)
         self.native_model = llm_config.model or "qwen3.5-flash"
         self.native_timeout = float(llm_config.timeout or 30.0)
+        self.answer_timeout = max(8.0, min(float(os.getenv("EVALUATION_CHAT_TIMEOUT", self.native_timeout)), 60.0))
         self.native_temperature = 0.2
         self.native_max_tokens = min(220, max(96, int(llm_config.max_tokens or 220)))
 
@@ -179,11 +181,25 @@ class EvaluationQAAgent:
         plan = prepared["plan"]
         evidence_items = prepared["evidence_items"]
         citations = prepared["citations"]
-        native_answer = await self._generate_answer_native(question, plan, evidence_items)
+        fallback_answer = self._build_fallback_answer(question, plan, evidence_items)
+        native_answer = await self._with_answer_timeout(
+            self._generate_answer_native(question, plan, evidence_items),
+            fallback="",
+        )
         if native_answer:
             return EvaluationChatAskResponse(answer=native_answer, citations=citations)
-        answer = await self._generate_answer(question, plan, evidence_items)
+        answer = await self._with_answer_timeout(
+            self._generate_answer(question, plan, evidence_items),
+            fallback=fallback_answer,
+        )
         return EvaluationChatAskResponse(answer=answer, citations=citations)
+
+    async def _with_answer_timeout(self, coro: Any, fallback: str) -> str:
+        """限制问答模型等待时间，避免接口长时间挂起。"""
+        try:
+            return await asyncio.wait_for(coro, timeout=self.answer_timeout)
+        except Exception:
+            return fallback
 
     async def ask_stream(
         self,
@@ -312,7 +328,7 @@ class EvaluationQAAgent:
     def _matches_intent(self, question: str, intent: str) -> bool:
         """判断问题是否命中指定意图"""
         if intent == "创新点":
-            return any(token in question for token in ("创新点", "创新亮点", "技术创新", "模式创新", "创新性"))
+            return any(token in question for token in ("创新点", "创新亮点", "技术创新", "模式创新", "创新性", "科学发现", "主要发现", "发现点"))
         if intent == "研究目标":
             return any(token in question for token in ("研究目标", "项目目标", "总体目标", "建设目标", "目的"))
         if intent == "验证数据":

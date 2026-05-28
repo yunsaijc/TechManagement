@@ -27,7 +27,7 @@ class ReportGenerator:
 
     HASH_SOURCE_NAME_RE = re.compile(r"^[0-9a-f]{32}\.(?:pdf|docx)$", re.IGNORECASE)
     REWARD_TABLE_MARKER_RE = re.compile(r"\[表格(?:表头|行|标题)\d+\]\s*")
-    REWARD_TABLE_ROW_RE = re.compile(r"\[表格行\d+\]\s*(.*?)(?=(?:\s*\[表格行\d+\])|\Z)", re.DOTALL)
+    REWARD_TABLE_ROW_RE = re.compile(r"\[表格行\d+\]\s*(.*?)(?=(?:\s*\[表格(?:行|表头|标题)\d+\])|\Z)", re.DOTALL)
 
     SECTION_PREVIEW_SKIP_PATTERNS = [
         r"附件",
@@ -488,17 +488,17 @@ class ReportGenerator:
         optional_panels = ""
         optional_panels += f"""
               <section class="result-panel" id="report-benchmark">
-                {self._render_benchmark(benchmark)}
+                {self._render_benchmark(benchmark, page_chunks, packet_assets)}
               </section>
 """
         if industry_fit:
             optional_panels += f"""
               <section class="result-panel" id="report-fit">
-                {self._render_industry_fit(industry_fit)}
+                {self._render_industry_fit(industry_fit, page_chunks, packet_assets)}
               </section>
 """
         overview_html = (
-            self._render_reward_overview(sections, result)
+            self._render_reward_overview(sections, result, page_chunks, packet_assets)
             if platform == "reward"
             else self._render_project_overview(highlights, evidence_map, packet_assets, result)
         )
@@ -1948,7 +1948,7 @@ class ReportGenerator:
 
               <section class="result-panel" id="report-dimensions">
                 <div class="score-list">
-                  {self._render_dimension_scores(dimension_scores)}
+                  {self._render_dimension_scores(dimension_scores, page_chunks, packet_assets)}
                 </div>
               </section>
 
@@ -2305,7 +2305,12 @@ class ReportGenerator:
 </body>
 </html>"""
 
-    def _render_dimension_scores(self, dimension_scores: List[Dict[str, Any]]) -> str:
+    def _render_dimension_scores(
+        self,
+        dimension_scores: List[Dict[str, Any]],
+        page_chunks: List[Dict[str, Any]] | None = None,
+        packet_assets: Dict[str, Any] | None = None,
+    ) -> str:
         if not dimension_scores:
             return '<div class="empty">暂无维度评分</div>'
 
@@ -2316,7 +2321,7 @@ class ReportGenerator:
             for sector in self.DIMENSION_SECTORS
             if any(item.get("sector_id") == sector["id"] for item in items)
         )
-        detail_html = self._render_dimension_detail(items, default_index)
+        detail_html = self._render_dimension_detail(items, default_index, page_chunks or [], packet_assets or {})
         radar_html = self._render_dimension_radar(items, default_index)
         script = """
         <script>
@@ -2420,14 +2425,22 @@ class ReportGenerator:
                 return sector
         return self.DIMENSION_SECTORS[-1]
 
-    def _render_dimension_detail(self, items: List[Dict[str, Any]], default_index: int) -> str:
+    def _render_dimension_detail(
+        self,
+        items: List[Dict[str, Any]],
+        default_index: int,
+        page_chunks: List[Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+    ) -> str:
         details: List[str] = []
         for item in items:
             active_class = " is-active" if item["dashboard_index"] == default_index else ""
             summary, basis = self._split_dimension_opinion(str(item["opinion"]))
             highlights = self._normalize_dimension_highlight_items(item.get("highlights") or [])
             issues = self._filter_dimension_issue_items(item.get("issues") or [])
+            basis = self._build_dimension_basis_fallback(basis, highlights, issues)
             actions = self._build_dimension_action_items(issues)
+            summary_evidence = self._find_dimension_evidence(item, summary, basis, page_chunks)
             details.append(
                 f"""
                 <section
@@ -2447,16 +2460,132 @@ class ReportGenerator:
                     <div class="dimension-detail-meter-value">{html.escape(str(item["score"]))} / 10</div>
                   </div>
                   <div class="dimension-detail-blocks">
-                    {self._render_dimension_text_block("一句话判断", [summary], "暂无判断")}
-                    {self._render_dimension_text_block("主要依据", basis, "暂无明确依据")}
-                    {self._render_dimension_text_block("优势", highlights[:4], "暂无明显优势")}
-                    {self._render_dimension_text_block("短板 / 待补充", issues[:4], "暂无明显短板")}
-                    {self._render_dimension_text_block("建议动作", actions[:3], "暂无明确建议动作")}
+                    {self._render_dimension_item_block("一句话判断", [summary], "暂无判断", summary_evidence, packet_assets)}
+                    {self._render_dimension_item_block("主要依据", basis, "暂无明确依据", summary_evidence, packet_assets)}
+                    {self._render_dimension_item_block("优势", highlights[:4], "暂无明显优势", summary_evidence, packet_assets)}
+                    {self._render_dimension_item_block("短板 / 待补充", issues[:4], "暂无明显短板", summary_evidence, packet_assets)}
+                    {self._render_dimension_item_block("建议动作", actions[:3], "暂无明确建议动作", summary_evidence, packet_assets)}
                   </div>
                 </section>
                 """
             )
         return f'<section class="dimension-detail-stage">{"".join(details)}</section>'
+
+    def _find_dimension_evidence(
+        self,
+        item: Dict[str, Any],
+        summary: str,
+        basis: List[str],
+        page_chunks: List[Dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        """给维度结论找一个最接近的原文片段，供跳转使用。"""
+        candidates: List[str] = []
+        for value in [summary, *basis, *list(item.get("highlights") or []), *list(item.get("issues") or [])]:
+            text = self._normalize_search_text(str(value or ""))
+            if text:
+                candidates.append(text)
+        if not candidates:
+            return None
+
+        best: Dict[str, Any] | None = None
+        best_score = 0
+        dimension_name = str(item.get("name") or "").strip()
+        dimension = str(item.get("dimension") or "").strip()
+        for chunk in page_chunks:
+            text = self._normalize_search_text(str(chunk.get("text") or ""))
+            if not text:
+                continue
+            score = 0
+            section = str(chunk.get("section") or "")
+            if section and (section in dimension_name or section in dimension):
+                score += 3
+            for candidate in candidates[:4]:
+                if candidate and candidate in text:
+                    score += 10 + min(len(candidate), 40)
+                    break
+                overlap = self._sequence_overlap_score(candidate, text)
+                score = max(score, overlap)
+            if score > best_score:
+                best_score = score
+                raw_text = str(chunk.get("text") or "")
+                best = {
+                    "page": chunk.get("page"),
+                    "file": chunk.get("file") or "",
+                    "snippet": self._build_evidence_display_snippet(raw_text, summary or (basis[0] if basis else "")),
+                    "highlight_snippet": self._build_evidence_highlight_snippet(raw_text, summary or (basis[0] if basis else "")),
+                }
+        return best if best_score >= 12 else None
+
+    def _sequence_overlap_score(self, left: str, right: str) -> int:
+        """用保守的公共子串长度估算文本匹配程度。"""
+        left = re.sub(r"\s+", "", str(left or ""))
+        right = re.sub(r"\s+", "", str(right or ""))
+        if len(left) < 8 or len(right) < 8:
+            return 0
+        short, long = (left, right) if len(left) <= len(right) else (right, left)
+        best = 0
+        for window in range(min(40, len(short)), 7, -1):
+            for start in range(0, len(short) - window + 1):
+                part = short[start:start + window]
+                if part and part in long:
+                    return window
+        return best
+
+    def _build_evidence_display_snippet(self, source_text: str, target_text: str, max_len: int = 90) -> str:
+        """从长原文中截取命中附近的短证据，避免卡片被整页原文撑爆。"""
+        return self._build_evidence_snippet(source_text, target_text, max_len=max_len)
+
+    def _build_evidence_highlight_snippet(self, source_text: str, target_text: str, max_len: int = 120) -> str:
+        """给跳转高亮使用的短定位片段，避免把整页原文写进 HTML 属性。"""
+        return self._build_evidence_snippet(source_text, target_text, max_len=max_len)
+
+    def _build_evidence_snippet(self, source_text: str, target_text: str, max_len: int) -> str:
+        """从长原文中截取命中附近的片段，并清理 DOCX 表格解析标记。"""
+        source = self._clean_reward_preview_text(source_text)
+        target = self._clean_reward_preview_text(target_text)
+        if not source:
+            return ""
+        if not target:
+            return source[:max_len].rstrip() + ("..." if len(source) > max_len else "")
+
+        direct_index = source.find(target)
+        if direct_index >= 0:
+            context = max(0, (max_len - min(len(target), max_len)) // 2)
+            start = max(0, direct_index - context)
+            snippet = source[start:start + max_len].strip()
+            prefix = "..." if start > 0 else ""
+            suffix = "..." if start + max_len < len(source) else ""
+            return f"{prefix}{snippet}{suffix}"
+
+        source_norm = self._normalize_search_text(source)
+        target_norm = self._normalize_search_text(target)
+        anchor = ""
+        if target_norm and target_norm in source_norm:
+            anchor = target[: min(len(target), 40)]
+        if not anchor:
+            for window in (40, 32, 24, 16, 10):
+                if len(target_norm) < window:
+                    continue
+                for start in range(0, len(target_norm) - window + 1, max(1, window // 2)):
+                    candidate = target_norm[start:start + window]
+                    if candidate and candidate in source_norm:
+                        anchor = target[start:start + window]
+                        break
+                if anchor:
+                    break
+
+        start = 0
+        if anchor:
+            raw_anchor = re.sub(r"\s+", "", anchor)
+            compact_source = re.sub(r"\s+", "", source)
+            compact_index = compact_source.find(raw_anchor)
+            if compact_index >= 0:
+                ratio = compact_index / max(len(compact_source), 1)
+                start = max(0, int(len(source) * ratio))
+        snippet = source[start:start + max_len].strip()
+        prefix = "..." if start > 0 else ""
+        suffix = "..." if start + max_len < len(source) else ""
+        return f"{prefix}{snippet}{suffix}"
 
     def _split_dimension_opinion(self, opinion: str) -> tuple[str, List[str]]:
         """将维度长评语拆成一句话判断和依据列表"""
@@ -2473,6 +2602,25 @@ class ReportGenerator:
         if not basis and len(summary) > 80:
             basis = []
         return summary, basis
+
+    def _build_dimension_basis_fallback(
+        self,
+        basis: List[str],
+        highlights: List[str],
+        issues: List[str],
+    ) -> List[str]:
+        """模型未单独给依据时，用优势/短板补齐主要依据，避免详情卡空白。"""
+        if basis:
+            return basis
+        fallback: List[str] = []
+        for item in [*(highlights[:1]), *(issues[:1])]:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            if self._normalize_text_for_compare(text) in {self._normalize_text_for_compare(value) for value in fallback}:
+                continue
+            fallback.append(text)
+        return fallback
 
     def _filter_dimension_issue_items(self, issues: List[Any]) -> List[str]:
         """过滤不应作为短板展示的中性说明"""
@@ -2543,7 +2691,9 @@ class ReportGenerator:
             normalized = re.sub(r"已基于.+$", "", normalized).strip(" ，。；;")
             if not normalized:
                 continue
-            if any(keyword in text for keyword in ["缺少", "缺乏", "未提及", "不足"]):
+            if "人工复核" in text:
+                action = normalized if normalized.startswith("人工复核") else "人工复核该维度评分和主要结论"
+            elif any(keyword in text for keyword in ["缺少", "缺乏", "未提及", "不足"]):
                 action = f"补充{normalized}"
             elif any(keyword in text for keyword in ["不够", "不清晰", "偏弱"]):
                 action = f"完善{normalized}"
@@ -2570,6 +2720,42 @@ class ReportGenerator:
                 + "".join(f'<div class="dimension-detail-list-item">{html.escape(item)}</div>' for item in cleaned)
                 + "</div>"
             )
+        return (
+            '<section class="dimension-detail-block">'
+            f'<div class="dimension-detail-label">{html.escape(label)}</div>'
+            f'{body}'
+            '</section>'
+        )
+
+    def _render_dimension_item_block(
+        self,
+        label: str,
+        items: List[str],
+        empty_text: str,
+        evidence: Dict[str, Any] | None,
+        packet_assets: Dict[str, Any],
+    ) -> str:
+        """渲染维度详情块，保持计划项目的可读文本结构，证据只作为补充。"""
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            body = f'<div class="dimension-empty">{html.escape(empty_text)}</div>'
+        elif len(cleaned) == 1:
+            body = f'<div class="dimension-detail-summary">{html.escape(cleaned[0])}</div>'
+        else:
+            body = (
+                '<div class="dimension-detail-list">'
+                + "".join(f'<div class="dimension-detail-list-item">{html.escape(item)}</div>' for item in cleaned)
+                + "</div>"
+            )
+        if cleaned and evidence:
+            snippet = evidence.get("snippet") or ""
+            highlight_snippet = evidence.get("highlight_snippet") or snippet
+            source_file = str(evidence.get("file") or "")
+            jump_link = self._render_jump_link(evidence.get("page"), highlight_snippet, source_file, packet_assets)
+            if snippet:
+                body += f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
+            if jump_link:
+                body += f'<div class="jump-link-row">{jump_link}</div>'
         return (
             '<section class="dimension-detail-block">'
             f'<div class="dimension-detail-label">{html.escape(label)}</div>'
@@ -3160,7 +3346,7 @@ class ReportGenerator:
         if debug_mode:
             return ""
 
-        default_port = os.getenv("APP_PORT", "8888")
+        default_port = os.getenv("APP_PORT", "8000")
         configured_api_base = str(os.getenv("EVALUATION_REPORT_API_BASE", "")).strip().rstrip("/")
         default_api_base = configured_api_base or f"http://127.0.0.1:{default_port}"
         if platform == "reward":
@@ -3268,7 +3454,7 @@ class ReportGenerator:
               if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
                 return window.location.origin;
               }}
-              return configuredBase || `http://127.0.0.1:${{configuredPort || "8888"}}`;
+              return configuredBase || `http://127.0.0.1:${{configuredPort || "8000"}}`;
             }};
 
             const apiBase = detectDefaultBase();
@@ -3540,6 +3726,16 @@ class ReportGenerator:
             }};
 
             const normalizeBase = (value) => String(value || "").trim().replace(/\\/+$/, "");
+            const apiRoot = normalizeBase(apiBase);
+
+            const fetchWithFriendlyError = async (url, options, label) => {{
+              try {{
+                return await fetch(url, options);
+              }} catch (error) {{
+                const detail = error && error.message ? String(error.message) : "网络连接失败";
+                throw new Error(`${{label}}连接失败：请确认正文评审服务已启动，并且页面可访问 ${{apiRoot}}。浏览器返回：${{detail}}`);
+              }}
+            }};
 
             const fetchCitationHighlight = async (trigger) => {{
               const payload = {{
@@ -3548,13 +3744,13 @@ class ReportGenerator:
                 page: Number(trigger.dataset.page || 0),
                 snippet: trigger.dataset.highlightText || "",
               }};
-              const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/citation-highlight`, {{
+              const response = await fetchWithFriendlyError(`${{apiRoot}}/api/v1/evaluation/chat/citation-highlight`, {{
                 method: "POST",
                 headers: {{
                   "Content-Type": "application/json",
                 }},
                 body: JSON.stringify(payload),
-              }});
+              }}, "证据高亮");
               const data = await response.json().catch(() => ({{ detail: "高亮补全响应不可解析" }}));
               if (!response.ok) {{
                 throw new Error(data.detail || `请求失败：${{response.status}}`);
@@ -3568,7 +3764,7 @@ class ReportGenerator:
             }};
 
             const requestChatAnswer = async (text) => {{
-              const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/ask`, {{
+              const response = await fetchWithFriendlyError(`${{apiRoot}}/api/v1/evaluation/chat/ask`, {{
                 method: "POST",
                 headers: {{
                   "Content-Type": "application/json",
@@ -3577,7 +3773,7 @@ class ReportGenerator:
                   evaluation_id: evaluationId,
                   question: text,
                 }}),
-              }});
+              }}, "问答接口");
 
               const payload = await response.json().catch(() => ({{ detail: "服务返回了不可解析响应，请检查 API 地址是否指向正文评审服务" }}));
               if (!response.ok) {{
@@ -3609,7 +3805,7 @@ class ReportGenerator:
             }};
 
             const requestChatAnswerStream = async (text, streamMessage) => {{
-              const response = await fetch(`${{normalizeBase(apiBase)}}/api/v1/evaluation/chat/ask-stream`, {{
+              const response = await fetchWithFriendlyError(`${{apiRoot}}/api/v1/evaluation/chat/ask-stream`, {{
                 method: "POST",
                 headers: {{
                   "Content-Type": "application/json",
@@ -3618,7 +3814,7 @@ class ReportGenerator:
                   evaluation_id: evaluationId,
                   question: text,
                 }}),
-              }});
+              }}, "流式问答接口");
 
               if (!response.ok) {{
                 const payload = await response.json().catch(() => ({{ detail: "流式接口返回了不可解析响应" }}));
@@ -4364,6 +4560,55 @@ class ReportGenerator:
             )
         return '<div class="highlight-list">' + "".join(rows) + "</div>"
 
+    def _render_evidence_item_list(
+        self,
+        items: List[str],
+        evidence_by_text: Dict[str, Dict[str, Any] | None],
+        packet_assets: Dict[str, Any],
+        empty_text: str = "暂无提取结果",
+    ) -> str:
+        """渲染统一的短句 + 证据 + 跳转卡片。"""
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            return f'<div class="empty">{html.escape(empty_text)}</div>'
+
+        rows: List[str] = []
+        for text in cleaned:
+            evidence = evidence_by_text.get(text)
+            meta_html = ""
+            if evidence:
+                page = evidence.get("page")
+                snippet = evidence.get("snippet") or text
+                highlight_snippet = evidence.get("highlight_snippet") or snippet
+                source_file = str(evidence.get("file") or "")
+                jump_link = self._render_jump_link(page, highlight_snippet, source_file, packet_assets)
+                meta_html = f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
+                if jump_link:
+                    meta_html += f'<div class="jump-link-row">{jump_link}</div>'
+            rows.append(
+                f"""
+                <div class="highlight-item">
+                  <div class="highlight-item-text">{html.escape(text)}</div>
+                  {meta_html}
+                </div>
+                """
+            )
+        return '<div class="highlight-list">' + "".join(rows) + "</div>"
+
+    def _render_auto_evidence_items(
+        self,
+        items: List[Any],
+        page_chunks: List[Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+        empty_text: str = "暂无提取结果",
+    ) -> str:
+        """自动给文本项补证据和跳转。"""
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            return f'<div class="empty">{html.escape(empty_text)}</div>'
+        evidence_by_text = {item: self._find_reward_item_evidence(item, page_chunks) for item in cleaned}
+        return self._render_evidence_item_list(cleaned, evidence_by_text, packet_assets, empty_text)
+
     def _render_project_overview(
         self,
         highlights: Dict[str, Any],
@@ -4392,26 +4637,53 @@ class ReportGenerator:
                 </div>
         """
 
-    def _render_reward_overview(self, sections: Dict[str, str], result: Dict[str, Any]) -> str:
+    def _render_reward_overview(
+        self,
+        sections: Dict[str, str],
+        result: Dict[str, Any],
+        page_chunks: List[Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+    ) -> str:
         """渲染奖励提名书口径的首页概览"""
         cards = [
-            ("项目简介", self._first_section_text(sections, ["项目简介（限1200字）", "项目简介"])),
-            ("重要科学发现", self._first_section_text(sections, ["重要科学发现"])),
-            ("客观评价", self._first_section_text(sections, ["客观评价（不超过2页）", "客观评价"])),
-            ("代表性论文", self._first_section_text(sections, ["代表性论文(专著)目录（不超过6篇）", "代表性论文(专著)目录"])),
+            (
+                "核心贡献",
+                self._combine_reward_section_texts(
+                    sections,
+                    [
+                        "重要科学发现",
+                        "主要科学发现",
+                        "主要技术发明",
+                        "主要科技创新",
+                        "科技创新内容",
+                        "科学技术合作内容",
+                        "企业技术创新情况",
+                        "项目详细内容（不超过6页）",
+                        "项目简介（限1200字）",
+                        "项目简介",
+                    ],
+                    max_sections=3,
+                ),
+                "intro",
+            ),
+            ("重要科学发现", self._first_section_text(sections, ["重要科学发现"]), "discoveries"),
+            ("客观评价", self._first_section_text(sections, ["客观评价（不超过2页）", "客观评价"]), "text"),
+            ("成果支撑", self._first_section_text(sections, ["代表性论文(专著)目录（不超过6篇）", "代表性论文(专著)目录"]), "papers"),
         ]
         card_html = "".join(
             f"""
                   <div class="highlight-card">
                     <div class="highlight-label">{html.escape(label)}</div>
-                    {self._render_reward_section_preview(label, text)}
+                    {self._render_reward_section_preview(kind, text, page_chunks, packet_assets)}
                   </div>
             """
-            for label, text in cards
+            for label, text, kind in cards
         )
+        summary_items = self._split_reward_preview_fragments(str(result.get("summary") or "暂无"), max_items=4, fragment_limit=220)
         return f"""
                 <div class="summary-block">
-                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
+                  <div class="highlight-label">总体判断</div>
+                  {self._render_auto_evidence_items(summary_items, page_chunks, packet_assets, "暂无")}
                 </div>
                 <div class="highlight-grid">
                   {card_html}
@@ -4425,8 +4697,40 @@ class ReportGenerator:
                 return text
         return ""
 
-    def _render_reward_section_preview(self, label: str, text: str) -> str:
-        if label == "重要科学发现":
+    def _combine_reward_section_texts(
+        self,
+        sections: Dict[str, str],
+        names: List[str],
+        max_sections: int = 3,
+    ) -> str:
+        """按奖励提名书优先级合并少量贡献相关章节，避免只从背景简介里抽取。"""
+        chunks: List[str] = []
+        seen: set[str] = set()
+        for expected in names:
+            expected_key = re.sub(r"\s+", "", str(expected or ""))
+            if not expected_key:
+                continue
+            for actual, value in sections.items():
+                actual_key = re.sub(r"\s+", "", str(actual or ""))
+                text = str(value or "").strip()
+                if not actual_key or not text or actual_key in seen:
+                    continue
+                if actual_key == expected_key or expected_key in actual_key or actual_key in expected_key:
+                    chunks.append(text)
+                    seen.add(actual_key)
+                    break
+            if len(chunks) >= max_sections:
+                break
+        return "\n".join(chunks)
+
+    def _render_reward_section_preview(
+        self,
+        kind: str,
+        text: str,
+        page_chunks: List[Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+    ) -> str:
+        if kind == "discoveries":
             rows = self._parse_reward_table_rows(text)
             items = [
                 self._format_reward_table_item(
@@ -4438,8 +4742,9 @@ class ReportGenerator:
             ]
             items = [item for item in items if item]
             if items:
-                return self._render_reward_preview_items(items)
-        if label == "代表性论文":
+                evidence_by_text = {item: self._find_reward_item_evidence(item, page_chunks) for item in items}
+                return self._render_evidence_item_list(items, evidence_by_text, packet_assets)
+        if kind == "papers":
             rows = self._parse_reward_table_rows(text)
             items = [
                 self._format_reward_table_item(
@@ -4451,23 +4756,172 @@ class ReportGenerator:
             ]
             items = [item for item in items if item]
             if items:
-                return self._render_reward_preview_items(items)
+                evidence_by_text = {item: self._find_reward_item_evidence(item, page_chunks) for item in items}
+                return self._render_evidence_item_list(items, evidence_by_text, packet_assets)
+
+        if kind == "intro":
+            fragments = self._split_reward_core_contribution_fragments(text)
+        else:
+            fragments = self._split_reward_preview_fragments(text)
+        if not fragments:
+            return '<div class="empty">暂无提取结果</div>'
+        evidence_by_text = {item: self._find_reward_item_evidence(item, page_chunks) for item in fragments}
+        return self._render_evidence_item_list(fragments, evidence_by_text, packet_assets)
+
+    def _split_reward_preview_fragments(
+        self,
+        text: str,
+        max_items: int = 3,
+        fragment_limit: int = 180,
+        preferred_keywords: List[str] | None = None,
+    ) -> List[str]:
+        """把奖励文本切成更适合评审扫读的短片段。"""
+        cleaned = self._clean_reward_preview_text(text)
+        if not cleaned:
+            return []
+
+        parts = self._split_reward_preview_parts(cleaned)
+
+        preferred = []
+        if preferred_keywords:
+            preferred = [part for part in parts if any(keyword in part for keyword in preferred_keywords)]
+        source_parts = preferred or parts
+
+        fragments: List[str] = []
+        for part in source_parts:
+            if not part:
+                continue
+            snippet = part[:fragment_limit].rstrip()
+            if len(part) > fragment_limit:
+                snippet += "..."
+            if snippet:
+                fragments.append(snippet)
+            if len(fragments) >= max_items:
+                break
+
+        if not fragments and cleaned:
+            snippet = cleaned[:fragment_limit].rstrip()
+            if len(cleaned) > fragment_limit:
+                snippet += "..."
+            fragments.append(snippet)
+        return fragments
+
+    def _split_reward_core_contribution_fragments(
+        self,
+        text: str,
+        max_items: int = 3,
+        fragment_limit: int = 180,
+    ) -> List[str]:
+        """从奖励项目简介中提取真正的核心贡献，过滤背景、现状、研究热点。"""
+        table_items: List[str] = []
+        for row in self._parse_reward_table_rows(text):
+            item = self._format_reward_table_item(
+                row,
+                ["证明材料", "所属学科", "知识产权", "应用情况"],
+                "主要发现点",
+            )
+            if item and not self._is_reward_background_fragment(item):
+                table_items.append(item[:fragment_limit] + ("..." if len(item) > fragment_limit else ""))
+            if len(table_items) >= max_items:
+                return table_items
+        if table_items:
+            return table_items
 
         cleaned = self._clean_reward_preview_text(text)
         if not cleaned:
-            return '<div class="empty">暂无提取结果</div>'
-        preview = cleaned[:520]
-        if len(cleaned) > len(preview):
-            preview += "..."
-        return self._render_reward_preview_items([preview])
+            return []
+
+        parts = self._split_reward_preview_parts(cleaned)
+        action_keywords = [
+            "本项目",
+            "成功",
+            "发现",
+            "分离",
+            "鉴定",
+            "纯化",
+            "选育",
+            "形成",
+            "获得",
+            "结果表明",
+            "提供",
+            "建立",
+            "组成",
+        ]
+        candidates = [
+            part
+            for part in parts
+            if not self._is_reward_background_fragment(part)
+            and any(keyword in part for keyword in action_keywords)
+        ]
+        if not candidates:
+            candidates = [part for part in parts if not self._is_reward_background_fragment(part)]
+
+        fragments: List[str] = []
+        for part in candidates:
+            snippet = part[:fragment_limit].rstrip()
+            if len(part) > fragment_limit:
+                snippet += "..."
+            if snippet:
+                fragments.append(snippet)
+            if len(fragments) >= max_items:
+                break
+        return fragments
+
+    def _split_reward_preview_parts(self, cleaned: str) -> List[str]:
+        """将清理后的奖励文本拆成候选短句。"""
+        parts = [part.strip() for part in re.split(r"\n+", cleaned) if part.strip()]
+        if len(parts) <= 1:
+            parts = [part.strip() for part in re.split(r"(?<=[。！？；])", cleaned) if part.strip()]
+        if len(parts) <= 1:
+            parts = [part.strip() for part in re.split(r"(?<=[，,])", cleaned) if part.strip()]
+        return parts
+
+    def _is_reward_background_fragment(self, text: str) -> bool:
+        """识别疾病背景、行业现状、研究热点等不应作为核心贡献的句子。"""
+        fragment = str(text or "").strip()
+        if not fragment:
+            return True
+        background_patterns = [
+            "尽管",
+            "随着",
+            "目前控制",
+            "常用手段",
+            "药物残留",
+            "越来越多",
+            "研究逐渐成为热点",
+            "成为热点",
+            "危害较严重",
+            "重大经济损失",
+            "感染率",
+            "死亡率",
+        ]
+        if any(pattern in fragment for pattern in background_patterns):
+            return True
+        return False
 
     def _clean_reward_preview_text(self, text: str) -> str:
         """清理奖励提名书展示层的表格标记，不影响底层解析结果。"""
         cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
-        cleaned = self.REWARD_TABLE_MARKER_RE.sub("\n", cleaned)
+        cleaned = re.sub(r"\[表格表头\d+\]\s*([^\[]*)", self._replace_reward_table_header, cleaned)
+        cleaned = re.sub(r"\[表格(?:行|标题)\d+\]\s*", "\n", cleaned)
         cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])", "", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
         return cleaned
+
+    def _replace_reward_table_header(self, match: re.Match[str]) -> str:
+        """只删除真正的表格列头；项目简介、客观评价等正文型表头仍保留。"""
+        payload = str(match.group(1) or "")
+        return "\n" if self._looks_like_reward_column_header(payload) else f"\n{payload}"
+
+    def _looks_like_reward_column_header(self, text: str) -> bool:
+        """识别“序号 | 名称 | 证明材料”这类列头。"""
+        value = re.sub(r"\s+", " ", str(text or "")).strip()
+        if "：" in value or ":" in value:
+            return False
+        if "|" not in value and "｜" not in value:
+            return False
+        markers = ("序号", "名称", "发表", "时间", "作者", "证明材料", "所属学科", "数据库", "次数")
+        return sum(1 for marker in markers if marker in value) >= 3
 
     def _parse_reward_table_rows(self, text: str) -> List[str]:
         """提取奖励提名书表格行，过滤表头，供首页摘要展示。"""
@@ -4530,15 +4984,36 @@ class ReportGenerator:
                 return value
         return ""
 
-    def _render_reward_preview_items(self, items: List[str]) -> str:
-        rows = [
-            f'<div class="highlight-item"><div class="highlight-item-text">{html.escape(item)}</div></div>'
-            for item in items
-            if item
-        ]
-        if not rows:
-            return '<div class="empty">暂无提取结果</div>'
-        return '<div class="highlight-list">' + "".join(rows) + "</div>"
+    def _find_reward_item_evidence(
+        self,
+        item_text: str,
+        page_chunks: List[Dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        """为奖励页条目寻找最接近的原文证据。"""
+        candidate = self._normalize_search_text(item_text)
+        if not candidate:
+            return None
+        best: Dict[str, Any] | None = None
+        best_score = 0
+        for chunk in page_chunks:
+            text = self._normalize_search_text(str(chunk.get("text") or ""))
+            if not text:
+                continue
+            score = 0
+            if candidate in text:
+                score = len(candidate)
+            else:
+                score = self._sequence_overlap_score(candidate, text)
+            if score > best_score:
+                best_score = score
+                raw_text = str(chunk.get("text") or "")
+                best = {
+                    "page": chunk.get("page"),
+                    "file": chunk.get("file") or "",
+                    "snippet": self._build_evidence_display_snippet(raw_text, item_text),
+                    "highlight_snippet": self._build_evidence_highlight_snippet(raw_text, item_text),
+                }
+        return best if best_score >= 10 else None
 
     def _render_flat_list(self, items: List[Any], empty_text: str) -> str:
         """渲染扁平条目列表"""
@@ -4550,19 +5025,29 @@ class ReportGenerator:
             return f'<div class="empty">{html.escape(empty_text)}</div>'
         return '<div class="flat-list">' + "".join(rows) + "</div>"
 
-    def _render_industry_fit(self, industry_fit: Dict[str, Any] | None) -> str:
+    def _render_industry_fit(
+        self,
+        industry_fit: Dict[str, Any] | None,
+        page_chunks: List[Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+    ) -> str:
         if not industry_fit:
             return '<div class="empty">未启用或暂无结果</div>'
         return (
             '<div class="flat-stack">'
             f'<section class="flat-section"><div class="flat-label">贴合度</div><div class="flat-value">{html.escape(str(industry_fit.get("fit_score", "-")))}</div></section>'
-            f'<section class="flat-section"><div class="flat-label">匹配项</div>{self._render_flat_list(industry_fit.get("matched") or [], "暂无")}</section>'
-            f'<section class="flat-section"><div class="flat-label">差距项</div>{self._render_flat_list(industry_fit.get("gaps") or [], "暂无")}</section>'
-            f'<section class="flat-section"><div class="flat-label">建议</div>{self._render_flat_list(industry_fit.get("suggestions") or [], "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">匹配项</div>{self._render_auto_evidence_items(industry_fit.get("matched") or [], page_chunks, packet_assets, "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">差距项</div>{self._render_auto_evidence_items(industry_fit.get("gaps") or [], page_chunks, packet_assets, "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">建议</div>{self._render_auto_evidence_items(industry_fit.get("suggestions") or [], page_chunks, packet_assets, "暂无")}</section>'
             '</div>'
         )
 
-    def _render_benchmark(self, benchmark: Dict[str, Any] | None) -> str:
+    def _render_benchmark(
+        self,
+        benchmark: Dict[str, Any] | None,
+        page_chunks: List[Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+    ) -> str:
         if not benchmark:
             return '<div class="empty">未执行技术摸底</div>'
         novelty_level = str(benchmark.get("novelty_level") or "").strip().lower()
@@ -4570,9 +5055,9 @@ class ReportGenerator:
         return (
             '<div class="flat-stack">'
             f'<section class="flat-section"><div class="flat-label">新颖性</div><div class="flat-value">{html.escape(novelty_label)}</div></section>'
-            f'<section class="flat-section"><div class="flat-label">文献定位</div><div class="flat-value">{html.escape(str(benchmark.get("literature_position") or "-"))}</div></section>'
-            f'<section class="flat-section"><div class="flat-label">专利重叠</div><div class="flat-value">{html.escape(str(benchmark.get("patent_overlap") or "-"))}</div></section>'
-            f'<section class="flat-section"><div class="flat-label">综合结论</div><div class="flat-value">{html.escape(str(benchmark.get("conclusion") or "-"))}</div></section>'
+            f'<section class="flat-section"><div class="flat-label">文献定位</div>{self._render_auto_evidence_items([benchmark.get("literature_position") or "-"], page_chunks, packet_assets, "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">专利重叠</div>{self._render_auto_evidence_items([benchmark.get("patent_overlap") or "-"], page_chunks, packet_assets, "暂无")}</section>'
+            f'<section class="flat-section"><div class="flat-label">综合结论</div>{self._render_auto_evidence_items([benchmark.get("conclusion") or "-"], page_chunks, packet_assets, "暂无")}</section>'
             f'<section class="flat-section"><div class="flat-label">对比参考</div>{self._render_benchmark_references(benchmark.get("references") or [])}</section>'
             '</div>'
         )

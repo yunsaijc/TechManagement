@@ -500,8 +500,18 @@ class BaseChecker(ABC):
             )
 
         section_names = list(sections.keys())
-        opinion = f"已定位到 {len(section_names)} 个相关章节，当前基于现有章节证据完成基础评审判断。"
-        highlights = [f"已识别章节：{name}" for name in section_names[:2]]
+        section_label = "、".join(section_names[:3])
+        evidence_summary = self._build_degraded_evidence_summary(sections)
+        opinion_parts = [
+            f"模型评审未正常生成，当前仅基于已命中的{section_label}等材料进行兜底判断。",
+        ]
+        if evidence_summary:
+            opinion_parts.append(f"命中材料显示：{evidence_summary}。")
+        opinion_parts.append("该维度评分和细项结论需要人工复核。")
+        opinion = "".join(opinion_parts)
+        highlights = self._build_degraded_highlights(sections)
+        issues = ["需人工复核该维度评分和主要结论。"]
+        items = self._build_degraded_items(section_names)
 
         return CheckResult(
             dimension=self.dimension,
@@ -509,11 +519,259 @@ class BaseChecker(ABC):
             score=6.0,
             confidence=0.45,
             opinion=opinion,
-            issues=[],
+            issues=issues,
             highlights=highlights,
-            items=[],
+            items=items,
             details={"degraded": True, "reason": reason, "matched_sections": section_names},
         )
+
+    DEGRADE_BACKGROUND_MARKERS = (
+        "是一类",
+        "列为",
+        "危害",
+        "常用手段",
+        "耐药",
+        "残留问题",
+        "越来越多",
+        "成为热点",
+        "研究逐渐",
+    )
+    DEGRADE_FIELD_PRIORITIES: Dict[str, List[str]] = {
+        "innovation": ["主要发现点", "主要发明点", "主要创新点", "科技创新", "技术创新", "项目创新"],
+        "outcome": ["主要发现点", "论文（专著） 名称", "论文名称", "知识产权名称", "标准规范名称", "成果名称"],
+        "social_benefit": ["社会效益", "推广应用", "应用情况", "引用情况", "客观评价", "主要发现点"],
+        "economic_benefit": ["经济效益", "推广应用", "应用情况", "产业化", "减损", "成本", "效益"],
+        "schedule": ["完成情况", "推广应用", "应用情况", "实施情况", "研究计划", "工作计划", "项目创新"],
+        "feasibility": ["技术路线", "实施方案", "主要发现点", "主要发明点", "科技创新", "技术创新"],
+        "team": ["技术职称", "工作单位", "完成单位", "专业、专长", "参加本项目起止时间", "曾获科学技术奖励情况"],
+        "risk_control": ["风险", "声明", "附件", "公示", "异议"],
+        "compliance": ["声明", "公示", "附件", "伦理", "政策", "预算"],
+    }
+    DEGRADE_DIMENSION_KEYWORDS: Dict[str, List[str]] = {
+        "outcome": ["发现", "论文", "专著", "知识产权", "标准", "成果", "证明材料"],
+        "economic_benefit": ["经济", "效益", "推广", "应用", "产业", "减损", "成本", "残留", "养殖"],
+        "social_benefit": ["社会", "效益", "推广", "应用", "引用", "安全", "学科", "行业"],
+        "schedule": ["完成", "推广", "应用", "实施", "计划", "开展", "验证", "选育"],
+        "innovation": ["发现", "创新", "首次", "提出", "建立", "揭示", "发明"],
+    }
+
+    def _build_degraded_evidence_summary(self, sections: Dict[str, Any]) -> str:
+        """为降级结果生成一句可读依据，避免只显示章节命中数量。"""
+        snippets: List[str] = []
+        for name, text in list(sections.items())[:2]:
+            snippet = self._short_degraded_snippet(text, section_name=name)
+            if snippet:
+                snippets.append(f"{name}中提到{snippet}")
+        return "；".join(snippets)
+
+    def _build_degraded_highlights(self, sections: Dict[str, Any]) -> List[str]:
+        """将命中章节转成可读亮点，而不是调试味的“已识别章节”。"""
+        highlights: List[str] = []
+        for name, text in list(sections.items())[:3]:
+            snippet = self._short_degraded_snippet(text, section_name=name)
+            if snippet:
+                highlights.append(f"{name}：{snippet}")
+            else:
+                highlights.append(f"已命中{name}章节，可作为该维度的基础依据")
+        return highlights
+
+    def _build_degraded_items(self, section_names: List[str]) -> List[CheckItem]:
+        """按当前维度检查项生成基础细项，供报告页保持结构完整。"""
+        source_label = "、".join(section_names[:3])
+        if not self._check_items:
+            return []
+        items: List[CheckItem] = []
+        for item in self._check_items:
+            name = str(item.get("name") or "").strip()
+            if not name:
+                continue
+            try:
+                weight = float(item.get("weight", 1.0))
+            except (TypeError, ValueError):
+                weight = 1.0
+            items.append(
+                CheckItem(
+                    name=name,
+                    score=6.0,
+                    weight=weight,
+                    comment=f"模型未生成该检查项的完整评语；当前仅参考{source_label}等命中材料作基础判断，需人工复核。",
+                )
+            )
+        return items
+
+    def _short_degraded_snippet(self, text: Any, max_len: int = 90, section_name: str = "") -> str:
+        """清理章节文本并截取短证据。"""
+        value = str(text or "").strip()
+        if not value:
+            return ""
+        candidates = self._degraded_snippet_candidates(value, section_name=section_name)
+        if not candidates:
+            return ""
+        best = max(candidates, key=lambda item: item[0])[1]
+        best = re.sub(r"\s+", " ", best).strip(" ，。；;")
+        if len(best) <= max_len:
+            return best
+        return best[:max_len].rstrip(" ，。；;") + "..."
+
+    def _degraded_snippet_candidates(self, text: str, section_name: str = "") -> List[tuple[int, str]]:
+        """从降级命中材料中提取短证据候选，过滤表头和背景段。"""
+        value = str(text or "").replace("\r", "\n")
+        value = re.sub(r"\[表格表头\d+\][^\[]*", "\n", value)
+        value = re.sub(r"\[表格标题\d+\]\s*", "\n", value)
+        value = re.sub(r"\[表格行\d+\]\s*", "\n", value)
+        value = re.sub(r"【([^】]+)】", r"\n【\1】", value)
+        raw_parts = re.split(r"[\n。！？]+", value)
+
+        candidates: List[tuple[int, str]] = []
+        for raw in raw_parts:
+            part = self._clean_degraded_candidate(raw)
+            if not part or self._is_degraded_table_header(part):
+                continue
+            structured = self._extract_degraded_structured_fields(part)
+            if structured:
+                candidates.append((self._score_degraded_candidate(structured, section_name) + 20, structured))
+                continue
+            if len(part) < 8 or self._is_degraded_background_sentence(part):
+                continue
+            candidates.append((self._score_degraded_candidate(part, section_name), part))
+
+        if candidates:
+            return candidates
+
+        fallback = self._clean_degraded_candidate(value)
+        if fallback and not self._is_degraded_table_header(fallback):
+            return [(0, fallback)]
+        return []
+
+    def _clean_degraded_candidate(self, text: str) -> str:
+        """清理降级候选片段中的表格和章节噪声。"""
+        value = str(text or "").strip()
+        value = re.sub(r"^【[^】]+】\s*", "", value)
+        value = re.sub(r"\s*[|｜]\s*", " | ", value)
+        value = re.sub(r"\s*[:：]\s*", "：", value)
+        value = re.sub(r"\s*[;；]\s*", "；", value)
+        value = re.sub(r"\s+", " ", value).strip(" ，。；;|")
+        return value
+
+    def _is_degraded_table_header(self, text: str) -> bool:
+        """识别无实质内容的表格表头。"""
+        value = str(text or "").strip()
+        if not value:
+            return True
+        if "：" in value:
+            return False
+        if "|" not in value and "｜" not in value:
+            return False
+        header_markers = ("序号", "名称", "发表", "时间", "作者", "证明材料", "所属学科", "数据库", "次数")
+        return sum(1 for marker in header_markers if marker in value) >= 3
+
+    def _extract_degraded_structured_fields(self, text: str) -> str:
+        """从 key:value 表格行中提取当前维度更有用的字段。"""
+        if "：" not in text:
+            return ""
+        fields: List[tuple[str, str]] = []
+        for part in re.split(r"[；;]", text):
+            if "：" not in part:
+                continue
+            key, value = part.split("：", 1)
+            key = key.strip(" ，。；;|")
+            value = value.strip(" ，。；;|")
+            if not key or not value or key == "序号":
+                continue
+            if re.fullmatch(r"[\d.、（）() -]+", value):
+                continue
+            fields.append((key, value))
+        if not fields:
+            return ""
+
+        if self.dimension == "team":
+            team_summary = self._extract_degraded_team_fields(fields)
+            if team_summary:
+                return team_summary
+
+        priorities = self.DEGRADE_FIELD_PRIORITIES.get(self.dimension, [])
+        selected: List[str] = []
+        for priority in priorities:
+            for key, value in fields:
+                if key in {item.split("：", 1)[0] for item in selected}:
+                    continue
+                if priority in key or priority in value:
+                    selected.append(f"{key}：{value}")
+                    break
+            if len(selected) >= 2:
+                break
+        if not selected:
+            selected = [f"{key}：{value}" for key, value in fields[:2]]
+        return "；".join(selected)
+
+    def _extract_degraded_team_fields(self, fields: List[tuple[str, str]]) -> str:
+        """奖励主要完成人横向表需要按“标签-值”相邻关系取团队信息。"""
+        wanted_labels = {
+            "技术职称",
+            "工作单位",
+            "完成单位",
+            "专业、专长",
+            "参加本项目起止时间",
+            "曾获科学技术奖励情况",
+            "文化程度",
+            "最高学位",
+        }
+        name = ""
+        for key, _ in fields:
+            match = re.match(r"([^/：:]+)/(?:19|20)\d{2}-\d{1,2}-\d{1,2}", key)
+            if match:
+                name = match.group(1).strip()
+                break
+
+        selected: List[str] = []
+        for index, (key, value) in enumerate(fields):
+            if value not in wanted_labels:
+                continue
+            if index + 1 >= len(fields):
+                continue
+            _, next_value = fields[index + 1]
+            next_value = str(next_value or "").strip()
+            if not next_value or next_value in wanted_labels or "承诺" in next_value:
+                continue
+            selected.append(f"{value}：{next_value}")
+            if len(selected) >= 2:
+                break
+
+        if not selected:
+            for key, value in fields:
+                if any(label in key for label in wanted_labels) and "承诺" not in value:
+                    selected.append(f"{key}：{value}")
+                if len(selected) >= 2:
+                    break
+        if not selected:
+            return ""
+        prefix = name if name else "主要完成人"
+        return "；".join([prefix, *selected])
+
+    def _is_degraded_background_sentence(self, text: str) -> bool:
+        """过滤行业背景或疾病背景句，避免当作维度结论。"""
+        value = str(text or "")
+        if "本项目" in value or "项目" in value:
+            return False
+        return any(marker in value for marker in self.DEGRADE_BACKGROUND_MARKERS)
+
+    def _score_degraded_candidate(self, text: str, section_name: str = "") -> int:
+        """给降级候选片段打分，优先选择和当前维度更贴近的证据。"""
+        value = str(text or "")
+        score = 0
+        for keyword in self.DEGRADE_DIMENSION_KEYWORDS.get(self.dimension, []):
+            if keyword in value:
+                score += 4
+        for keyword in self.DEGRADE_FIELD_PRIORITIES.get(self.dimension, []):
+            if keyword in value or keyword in section_name:
+                score += 3
+        if "本项目" in value:
+            score += 2
+        if self._is_degraded_background_sentence(value):
+            score -= 20
+        if len(value) > 140:
+            score -= 2
+        return score
 
     def _build_missing_sections_issue(self) -> str:
         """生成缺失章节提示"""

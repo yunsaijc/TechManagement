@@ -181,8 +181,6 @@ class LeadershipHtmlRenderer:
     .sidebar {{
       display: grid;
       gap: 12px;
-      position: sticky;
-      top: 16px;
       align-self: start;
     }}
     .card {{
@@ -337,6 +335,31 @@ class LeadershipHtmlRenderer:
       color: var(--muted);
       font-size: 11px;
       font-family: var(--mono);
+    }}
+    .intervention-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }}
+    .intervention-item {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper-soft);
+      padding: 10px 12px;
+    }}
+    .intervention-item span {{
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      font-weight: 600;
+    }}
+    .intervention-item strong {{
+      display: block;
+      margin-top: 4px;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
     }}
     .run-btn {{
       appearance: none;
@@ -1070,9 +1093,6 @@ class LeadershipHtmlRenderer:
           "graph"
           "table"
           "side";
-      }}
-      .sidebar {{
-        position: static;
       }}
     }}
     @media (max-width: 820px) {{
@@ -1959,8 +1979,15 @@ class LeadershipHtmlRenderer:
       }}
 
       if (rangeInput && rangeValue) {{
+        const supportLabel = (rawValue) => {{
+          const value = Number(rawValue || 0);
+          if (value <= 0) return '弱支持';
+          if (value <= 35) return '一般支持';
+          if (value <= 70) return '中等偏强';
+          return '强支持';
+        }};
         const syncRange = () => {{
-          rangeValue.textContent = String(rangeInput.value || '0');
+          rangeValue.textContent = supportLabel(rangeInput.value);
         }};
         rangeInput.addEventListener('input', syncRange);
         syncRange();
@@ -2040,10 +2067,7 @@ def _render_sidebar(selection_groups: Sequence[Mapping[str, Any]], adjustment_pa
     <aside class="sidebar">
       <section class="card sidebar-card">
         <div class="step-head"><span class="step-index">1</span><span>选择调整对象</span></div>
-        <div class="toggle-row">
-          <button class="toggle-btn active" type="button">按研究方向选择</button>
-          <button class="toggle-btn" type="button">按方向选择</button>
-        </div>
+        <div class="hint-box">按研究方向选择调整对象。</div>
         <div class="field">
           <label for="selection-search">搜索研究方向</label>
           <input class="input" id="selection-search" type="search" placeholder="搜索研究方向">
@@ -2051,36 +2075,39 @@ def _render_sidebar(selection_groups: Sequence[Mapping[str, Any]], adjustment_pa
         <div class="selection-panel">{_render_selection_groups(selection_groups)}</div>
       </section>
       <section class="card sidebar-card">
-        <div class="step-head"><span class="step-index">2</span><span>设置调整方案</span></div>
-        <div class="hint-box">本次怎么调：先选方式，再拖动幅度，最后确定生效时间。</div>
+        <div class="step-head"><span class="step-index">2</span><span>本次干预</span></div>
+        <div class="hint-box">{_escape(adjustment_panel.get('note') or '对已选研究方向增加支持，观察下一年立项、经费和相邻方向变化。')}</div>
         <div class="field">
-          <label for="adjustment-method">调整方式</label>
+          <label for="adjustment-method">干预方式</label>
           <select class="select" id="adjustment-method">{_render_select_options(adjustment_panel.get('method_options'), adjustment_panel.get('method'))}</select>
         </div>
         <div class="field">
-          <label for="adjustment-intensity">调整幅度</label>
-          <div class="range-shell">
-            <div class="range-row">
-              <input class="range-input" id="adjustment-intensity" type="range" min="-50" max="100" step="1" value="{_escape(adjustment_panel.get('intensity_display'))}">
-              <div class="range-value" id="adjustment-intensity-value">{_escape(adjustment_panel.get('intensity_display'))}</div>
+          <label>新增支持</label>
+          <div class="intervention-grid">
+            <div class="intervention-item">
+              <span>新增项目</span>
+              <strong>{_escape(adjustment_panel.get('project_delta_label'))}</strong>
             </div>
-            <div class="range-scale"><span>-50%</span><span>0%</span><span>+50%</span><span>+100%</span></div>
+            <div class="intervention-item">
+              <span>新增经费</span>
+              <strong>{_escape(adjustment_panel.get('funding_delta_label'))}</strong>
+            </div>
           </div>
         </div>
         <div class="field">
-          <label for="effective-year">生效时间</label>
+          <label for="effective-year">推演窗口</label>
           <select class="select" id="effective-year">{_render_select_options(adjustment_panel.get('year_options'), adjustment_panel.get('year'))}</select>
         </div>
         <div class="field">
-          <label for="scenario-note">方案备注（选填）</label>
-          <textarea class="textarea" id="scenario-note" placeholder="请输入方案备注...">{_escape(adjustment_panel.get('note'))}</textarea>
+          <label for="scenario-note">干预说明</label>
+          <textarea class="textarea" id="scenario-note" placeholder="说明这次对哪些研究方向增加项目或经费支持。">{_escape(adjustment_panel.get('note'))}</textarea>
         </div>
       </section>
       <section class="card sidebar-card">
         <div class="step-head"><span class="step-index">3</span><span>运行推演</span></div>
         <button class="run-btn" id="run-simulation" type="button">运行推演</button>
         <div class="eta">预计耗时：约 30 秒</div>
-        <div class="hint-box">提示：结果基于已有数据和模型测算，适合快速比较不同调法的方向性影响。</div>
+        <div class="hint-box">先看立项和经费变化，再看变化主要落在哪些方向，最后看有没有传导到相邻方向。</div>
       </section>
     </aside>"""
 
@@ -2822,15 +2849,22 @@ def _build_adjustment_panel(scenario_contract: Mapping[str, Any], leadership_pag
         numeric = _as_number(actions[0].get("intensity"))
         if numeric:
             intensity = int(round(numeric * 100))
-    display_year = _display_result_year(_as_dict(leadership_page.get("control_panel")).get("scenario_window"))
+    control_panel = _as_dict(leadership_page.get("control_panel"))
+    targets = [_as_dict(item) for item in control_panel.get("targets", []) if _as_dict(item)]
+    total_projects = sum(_as_number(item.get("projects")) for item in targets)
+    total_funding = sum(_as_number(item.get("funding")) for item in targets)
+    display_year = _display_result_year(control_panel.get("scenario_window"))
     return {
         "method_options": [
-            {"value": "increase_support", "label": "增加支持"},
+            {"value": "increase_support", "label": "增加项目和经费支持"},
             {"value": "quota_adjustment", "label": "调整配额"},
-            {"value": "budget_raise", "label": "增加经费"},
+            {"value": "budget_raise", "label": "增加经费支持"},
         ],
         "method": "increase_support",
         "intensity_display": intensity,
+        "intensity_label": _intensity_label(intensity),
+        "project_delta_label": f"+{_format_plain_number(total_projects, 'int')} 项",
+        "funding_delta_label": f"+{_format_plain_number(total_funding, 'currency')} 万元",
         "year_options": _build_year_options(display_year),
         "year": display_year,
         "note": _build_adjustment_note(leadership_page),
@@ -2859,6 +2893,17 @@ def _build_adjustment_note(leadership_page: Mapping[str, Any]) -> str:
     control_panel = _as_dict(leadership_page.get("control_panel"))
     summary = str(control_panel.get("summary") or "").strip()
     return summary if len(summary) <= 80 else summary[:78] + "..."
+
+
+def _intensity_label(value: Any) -> str:
+    numeric = int(round(_as_number(value)))
+    if numeric <= 0:
+        return "弱支持"
+    if numeric <= 35:
+        return "一般支持"
+    if numeric <= 70:
+        return "中等偏强"
+    return "强支持"
 
 
 def _build_overview_cards(

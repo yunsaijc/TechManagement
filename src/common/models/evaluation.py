@@ -110,6 +110,7 @@ class DimensionScore(BaseModel):
     issues: List[str] = Field(default_factory=list, description="问题列表")
     highlights: List[str] = Field(default_factory=list, description="亮点列表")
     items: List[CheckItem] = Field(default_factory=list, description="检查项详情")
+    details: Dict[str, Any] = Field(default_factory=dict, description="额外信息")
     
     def model_post_init(self, __context: Any) -> None:
         """初始化后自动填充维度名称"""

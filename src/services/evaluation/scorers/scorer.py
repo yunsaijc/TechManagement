@@ -104,6 +104,7 @@ class EvaluationScorer:
             issues=check_result.issues,
             highlights=check_result.highlights,
             items=check_result.items,
+            details=check_result.details,
         )
     
     def generate_summary(

@@ -1,5 +1,6 @@
 """评审报告生成器测试"""
 import json
+import os
 from pathlib import Path
 
 import fitz
@@ -108,8 +109,10 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert "/api/v1/evaluation/chat/ask-stream" in html
     assert "/api/v1/evaluation/chat/citation-highlight" in html
     assert 'data-evaluation-id="EVAL_DEMO"' in html
-    assert 'data-default-api-base="http://127.0.0.1:8888"' in html
+    expected_port = os.getenv("APP_PORT", "8000")
+    assert f'data-default-api-base="http://127.0.0.1:{expected_port}"' in html
     assert "return window.location.origin;" in html
+    assert "请确认正文评审服务已启动" in html
     assert "研究目标是什么" in html
     assert 'id="dimension-accordion"' in html
     assert 'id="dimension-radar-svg"' in html
@@ -281,11 +284,13 @@ def test_report_generator_reward_overview_uses_nomination_sections():
 
     html = generator.build_html(payload, debug_mode=False)
 
-    assert "项目简介" in html
-    assert "奖励项目简介内容。" in html
+    assert "总体判断" in html
+    assert "核心贡献" in html
+    assert "总体可行。" in html
     assert "重要科学发现" in html
     assert "重要科学发现内容。" in html
     assert "客观评价内容。" in html
+    assert "成果支撑" in html
     assert "代表性论文内容。" in html
     assert "研究目标</div>" not in html
 
@@ -308,6 +313,29 @@ def test_report_generator_reward_overview_cleans_docx_table_markers():
         ),
         "客观评价（不超过2页）": "客观评价内容。",
     }
+    payload["page_chunks"] = [
+        {
+            "id": 1,
+            "file": "reward.docx",
+            "page": 2,
+            "section": "项目简介（限1200字）",
+            "text": "无关开头。" * 40 + "兔球虫病是一类由艾美耳属兔球虫引起的寄生性原虫病。" + "无关结尾。" * 40,
+        },
+        {
+            "id": 2,
+            "file": "reward.docx",
+            "page": 3,
+            "section": "重要科学发现",
+            "text": "发现了一种新的兔艾美耳球虫，证明材料为1.1.1。",
+        },
+        {
+            "id": 3,
+            "file": "reward.docx",
+            "page": 4,
+            "section": "代表性论文",
+            "text": "A new species of Eimeria 发表刊物 Parasitology Research。",
+        },
+    ]
 
     html = generator.build_html(payload, debug_mode=False)
 
@@ -318,6 +346,45 @@ def test_report_generator_reward_overview_cleans_docx_table_markers():
     assert "证明材料：1.1.1" in html
     assert "A new species of Eimeria" in html
     assert "发表刊物 (出版社)：Parasitology Research" in html
+    assert "核心贡献" in html
+    assert "成果支撑" in html
+    assert "兔球虫病是一类由艾美耳属兔球虫引起的寄生性原虫病" in html
+    assert "证据：" in html
+    assert 'class="jump-link"' in html
+    assert 'data-file="reward.docx"' in html
+    overview_html = html.split('id="report-overview"', 1)[1].split('id="report-dimensions"', 1)[0]
+    visible_evidence = overview_html.split('data-highlight-text="', 1)[0]
+    assert ("无关开头。" * 20) not in visible_evidence
+    assert ("无关开头。" * 20) not in overview_html
+    assert ("无关结尾。" * 20) not in overview_html
+
+
+def test_report_generator_reward_core_contribution_filters_background_sentences():
+    """奖励核心贡献不应展示疾病背景、行业现状或研究热点句"""
+    generator = ReportGenerator()
+    payload = _build_debug_payload()
+    payload["meta"] = {"platform": "reward"}
+    payload["sections"] = {
+        "项目简介（限1200字）": (
+            "兔球虫病危害较严重。"
+            "尽管化学药物是目前控制兔球虫病的常用手段，但随着耐药虫株的不断出现和化学药物残留问题的日益凸现，"
+            "越来越多的学者寻求用免疫学方法来防控该病，使得活疫苗接种在不久的将来成为控制球虫病的主要措施，"
+            "兔球虫诸多方面的研究逐渐成为热点。"
+            "本项目首先进行虫种调查，在调查基础上，然后对致病性强的优势虫种进行早熟选育。"
+            "成功分离出大型艾美耳球虫、黄艾美耳球虫、肠艾美耳球虫、中型艾美耳球虫及穿孔艾美耳球虫。"
+        ),
+        "重要科学发现": "",
+        "客观评价（不超过2页）": "",
+        "代表性论文(专著)目录（不超过6篇）": "",
+    }
+
+    html = generator.build_html(payload, debug_mode=False)
+    core_html = html.split("核心贡献", 1)[1].split("重要科学发现", 1)[0]
+
+    assert "尽管化学药物" not in core_html
+    assert "研究逐渐成为热点" not in core_html
+    assert "本项目首先进行虫种调查" in core_html
+    assert "成功分离出大型艾美耳球虫" in core_html
 
 
 def test_report_generator_formal_html_renders_highlights_as_flat_blocks():

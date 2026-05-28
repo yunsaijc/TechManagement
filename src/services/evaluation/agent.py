@@ -118,6 +118,7 @@ class EvaluationAgent:
         self._chat_index_payload_cache: Dict[str, Dict[str, Any]] = {}
         self._debug_payload_cache: Dict[str, Dict[str, Any]] = {}
         self._packet_assets_cache: Dict[str, Dict[str, Any]] = {}
+        self.chat_total_timeout = self._resolve_chat_total_timeout()
 
     def get_checker(
         self,
@@ -171,6 +172,7 @@ class EvaluationAgent:
             sections=sections,
             dimensions=request.get_dimensions(),
             profile_result=profile_result,
+            options=request.options,
         )
         meta["dimension_rubrics"] = dimension_contexts["rubrics"]
         meta["dimension_evidence_packs"] = {
@@ -326,6 +328,19 @@ class EvaluationAgent:
 
     async def ask(self, evaluation_id: str, question: str) -> EvaluationChatAskResponse:
         """基于历史评审记录进行问答"""
+        try:
+            return await asyncio.wait_for(
+                self._ask_without_timeout(evaluation_id=evaluation_id, question=question),
+                timeout=self.chat_total_timeout,
+            )
+        except asyncio.TimeoutError:
+            return EvaluationChatAskResponse(
+                answer=self._build_chat_timeout_answer(),
+                citations=[],
+            )
+
+    async def _ask_without_timeout(self, evaluation_id: str, question: str) -> EvaluationChatAskResponse:
+        """执行问答主流程，由 ask 统一控制总超时"""
         _, index_payload = await self._prepare_chat_context(evaluation_id)
 
         cache_key = self._build_chat_cache_key(evaluation_id, question)
@@ -341,7 +356,16 @@ class EvaluationAgent:
         """基于历史评审记录流式返回问答结果"""
         yield {"event": "status", "message": "正在定位评审记录"}
         yield {"event": "status", "message": "正在准备聊天索引"}
-        _, index_payload = await self._prepare_chat_context(evaluation_id)
+        try:
+            _, index_payload = await asyncio.wait_for(
+                self._prepare_chat_context(evaluation_id),
+                timeout=self.chat_total_timeout,
+            )
+        except asyncio.TimeoutError:
+            answer = self._build_chat_timeout_answer()
+            yield {"event": "delta", "text": answer}
+            yield {"event": "done", "answer": answer, "citations": []}
+            return
 
         cache_key = self._build_chat_cache_key(evaluation_id, question)
         cached = self._chat_answer_cache.get(cache_key)
@@ -355,13 +379,29 @@ class EvaluationAgent:
             }
             return
 
-        async for event in self.qa_agent.ask_stream(question=question, index_payload=index_payload):
+        answer_parts: List[str] = []
+        async for event in self._iter_chat_events_with_timeout(
+            self.qa_agent.ask_stream(question=question, index_payload=index_payload)
+        ):
             if event.get("event") == "done":
                 response = EvaluationChatAskResponse(
                     answer=str(event.get("answer") or ""),
                     citations=event.get("citations") or [],
                 )
                 self._remember_chat_answer(cache_key, response)
+            elif event.get("event") == "delta":
+                answer_parts.append(str(event.get("text") or ""))
+            elif event.get("event") == "timeout":
+                timeout_text = self._build_chat_timeout_answer()
+                answer = "".join(answer_parts).strip()
+                if answer:
+                    answer = f"{answer}\n\n{timeout_text}"
+                    yield {"event": "delta", "text": f"\n\n{timeout_text}"}
+                else:
+                    answer = timeout_text
+                    yield {"event": "delta", "text": answer}
+                yield {"event": "done", "answer": answer, "citations": []}
+                return
             yield event
 
     async def resolve_chat_citation_highlight(
@@ -700,6 +740,7 @@ class EvaluationAgent:
         sections: Dict[str, str],
         dimensions: List[str],
         profile_result: ProjectProfileResult,
+        options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Dict[str, Any]]:
         """预构建维度级 rubric、证据包和 checker"""
         checkers: Dict[str, BaseChecker] = {}
@@ -717,8 +758,13 @@ class EvaluationAgent:
                 profile_result=profile_result,
             )
             rubrics[dimension] = rubric
-            evidence_packs[dimension] = self.evidence_pack_builder.build(
+            context_sections = self._build_dimension_context_sections(
                 sections=sections,
+                dimension=dimension,
+                options=options or {},
+            )
+            evidence_packs[dimension] = self.evidence_pack_builder.build(
+                sections=context_sections,
                 rubric=rubric,
             )
 
@@ -727,6 +773,60 @@ class EvaluationAgent:
             "rubrics": rubrics,
             "evidence_packs": evidence_packs,
         }
+
+    def _build_dimension_context_sections(
+        self,
+        sections: Dict[str, str],
+        dimension: str,
+        options: Dict[str, Any],
+    ) -> Dict[str, str]:
+        """按平台配置为维度证据包临时补充章节别名，不污染原始章节。"""
+        aliases_by_dimension = options.get("dimension_section_aliases") if isinstance(options, dict) else None
+        if not isinstance(aliases_by_dimension, dict):
+            return sections
+        aliases = aliases_by_dimension.get(dimension)
+        if not isinstance(aliases, dict):
+            return sections
+
+        enhanced = dict(sections)
+        for alias_name, source_names in aliases.items():
+            alias = str(alias_name or "").strip()
+            if not alias or str(enhanced.get(alias) or "").strip():
+                continue
+            source_text = self._collect_dimension_alias_text(sections, source_names)
+            if source_text:
+                enhanced[alias] = source_text
+        return enhanced
+
+    def _collect_dimension_alias_text(self, sections: Dict[str, str], source_names: Any) -> str:
+        """按章节名或包含关系合并奖励材料中的真实章节内容。"""
+        if isinstance(source_names, str):
+            names = [source_names]
+        elif isinstance(source_names, list):
+            names = [str(name or "").strip() for name in source_names]
+        else:
+            return ""
+
+        chunks: List[str] = []
+        seen: set[str] = set()
+        for expected in names:
+            if not expected:
+                continue
+            for actual, text in sections.items():
+                actual_name = str(actual or "").strip()
+                value = str(text or "").strip()
+                if not actual_name or not value or actual_name in seen:
+                    continue
+                if self._section_name_matches(actual_name, expected):
+                    chunks.append(f"【{actual_name}】\n{value}")
+                    seen.add(actual_name)
+        return "\n\n".join(chunks).strip()
+
+    def _section_name_matches(self, actual_name: str, expected_name: str) -> bool:
+        """宽松匹配章节名，用于奖励提名书章节别名映射。"""
+        actual = re.sub(r"\s+", "", str(actual_name or ""))
+        expected = re.sub(r"\s+", "", str(expected_name or ""))
+        return bool(actual and expected and (actual == expected or expected in actual or actual in expected))
 
     def _build_checker_content(
         self,
@@ -1101,6 +1201,48 @@ class EvaluationAgent:
         if isinstance(payload, dict):
             self._remember_chat_index_payload(evaluation_id, payload)
         return payload
+
+    def _resolve_chat_total_timeout(self) -> float:
+        """解析问答总超时，限制整条聊天链路最长等待时间。"""
+        raw = os.getenv("EVALUATION_CHAT_TOTAL_TIMEOUT", "30")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 30.0
+        return max(10.0, min(value, 90.0))
+
+    def _build_chat_timeout_answer(self) -> str:
+        """构造问答超时时的中文兜底回答。"""
+        return (
+            "本次问答生成超时，系统已停止继续等待模型返回。\n"
+            "建议稍后重试，或检查正文评审服务与模型服务是否正常。"
+        )
+
+    async def _iter_chat_events_with_timeout(
+        self,
+        events: AsyncIterator[Dict[str, Any]],
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """限制流式问答总等待时间，避免前端长时间无响应。"""
+        iterator = events.__aiter__()
+        deadline = asyncio.get_running_loop().time() + self.chat_total_timeout
+        try:
+            while True:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    yield {"event": "timeout"}
+                    return
+                try:
+                    event = await asyncio.wait_for(iterator.__anext__(), timeout=remaining)
+                except StopAsyncIteration:
+                    return
+                except asyncio.TimeoutError:
+                    yield {"event": "timeout"}
+                    return
+                yield event
+        finally:
+            aclose = getattr(iterator, "aclose", None)
+            if callable(aclose):
+                await aclose()
 
     async def _prepare_chat_context(
         self,
