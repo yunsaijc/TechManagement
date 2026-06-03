@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 3d56426ee0874de3b6388e5b718ac8e5.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：3d56426ee0874de3b6388e5b718ac8e5.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,748</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>3d56426ee0874de3b6388e5b718ac8e5.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>瑞立美联制动技术（廊坊）有限公司高效节能空压机研发及产业化创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>瑞立美联制动技术（廊坊）有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李传武</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>廊坊市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-02</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-10</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>瑞立美联制动技术（廊坊）有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>廊坊市安次经济开发区安中路2号北区</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91131000321692984T</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-廊坊市-安次区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2014-12-23</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>29522.7698万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>张晓平</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>13958851743</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0316-7161908</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>hejj@sorl-lf.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>张双</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>15369609897</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0316-7161859</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>zhangs@sorl-lf.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>瑞立美联制动技术（廊坊）有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>102146015527</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>工行廊坊解放道支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>0410000109300103585</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>506人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>52人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>11人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>R</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>R</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>安次智能网联汽车特色产业集群</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>61872.8</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>48429</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>63.87</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>3.57</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司建有国内领先的车用空压机CNAS认证实验室，具备空压机产品自主研发设计、性能测试、可靠性验证等全流程研发验证能力；公司占地面积5万平方米，现有员工500余人，年产能160万台，先后通过IATF16949质量管理体系、知识产权管理体系、两化融合管理体系等认证，研发基础扎实、设施完善、体系健全。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司拥有知识产权60多项，荣获5项国家发明奖，核心专利“空压机卸荷装置”（专利号：ZL200510135242.2）荣获2019年河北省专利奖三等奖；公司（含前身亚新科美联制动技术(廊坊)有限公司）作为主要起草单位参与制定汽车行业标准《汽车用空气压缩机性能要求及台架试验方法》（QC/T 29078-2016），公司技术副总经理肖海燕为主要起草人。建立了完善的知识产权管理体系并通过认证，在空压机领域形成了较强的核心技术和自主知识产权储备。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>公司作为国家专精特新小巨人企业、河北省高新技术企业、河北省车用空压机制造业单项冠军企业，科研成果产业化能力突出，主要为山东潍柴、广西玉柴、北京福田康明斯、欧康动力、一汽等国内外40余家主机厂提供配套服务，国内主机配套市场占有率40%左右，年产能160万台，依托河北省科技厅认定的“专精特新‘小巨人’企业科技特派团”任务，开展大排量进气卸荷水冷空压机改进提升项目，实现了科研成果的持续转化与应用。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司与北华航天工业学院建立产学研合作关系，2019年双方共建“河北省车用空压机技术创新中心”和“产学研合作示范工程基地”；2024年河北省科技厅认定组建“专精特新‘小巨人’企业科技特派团”（团长：北华航天工业学院蔡毅教授），专项支持公司技术改进；1994年与美国亚新科合资合作，2016年与瑞立集团战略重组，具备丰富的国际合作与产业资源整合经验；与国内外40余家主机厂建立长期配套关系，产学研协同创新能力持续提升。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">8</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">9</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1人</p></td><td colspan="4"><p class="docx-paragraph">0人</p></td><td colspan="5"><p class="docx-paragraph">4人</p></td><td colspan="3"><p class="docx-paragraph">5人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">0人</p></td><td colspan="4"><p class="docx-paragraph">0人</p></td><td colspan="5"><p class="docx-paragraph">9人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">李传武</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1975-01</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">车辆工程</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2025-10-10</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">瑞立集团瑞安汽车零部件有限公司</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">浙江省瑞安市</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">副总经理兼总工程师</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">柔性引进专家</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">325200</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">浙江省瑞安市经济开发区开发区大道2666号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">0577-65003276</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13967703389</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">leo@sorl.com.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>R享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>工业和信息化部制造业人才支持计划（先进制造技术人才）、浙江省高层次人才特殊支持计划领军人才、省级重点研发项目负责人  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1994-09-01至1998-07-01</p></td><td colspan="9"><p class="docx-paragraph">浙江工业大学</p></td><td colspan="4"><p class="docx-paragraph">学生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1998-10-01至2004-04-30</p></td><td colspan="9"><p class="docx-paragraph">瑞立集团有限公司</p></td><td colspan="4"><p class="docx-paragraph">技术员、技术部长</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2004-05-01至2012-10-01</p></td><td colspan="9"><p class="docx-paragraph">瑞立集团瑞安汽车零部件有限公司</p></td><td colspan="4"><p class="docx-paragraph">技术部长、总经理助理</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2012-10-02至2026-02-25</p></td><td colspan="9"><p class="docx-paragraph">瑞立集团瑞安汽车零部件有限公司</p></td><td colspan="4"><p class="docx-paragraph">副总经理兼总工程师</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">商用车智能电控气制动系统及其产业化装备关键技术研发</p></td><td colspan="7"><p class="docx-paragraph">2020.07-2023.06</p></td><td colspan="4"><p class="docx-paragraph">浙江省科学技术厅</p></td><td colspan="4"><p class="docx-paragraph">省级重点研发计划</p></td><td><p class="docx-paragraph">项目总负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">智能制动助力系统</p></td><td colspan="7"><p class="docx-paragraph">2017.04-2019.08</p></td><td colspan="4"><p class="docx-paragraph">浙江省科学技术厅</p></td><td colspan="4"><p class="docx-paragraph">2018年度重点研发计划项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">面向智能产线的工业物联关键技术与示范应用</p></td><td colspan="7"><p class="docx-paragraph">2020.01-2022.01</p></td><td colspan="4"><p class="docx-paragraph">中国科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">项目子课题负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">新能源商用车高性能制动系统</p></td><td colspan="4"><p class="docx-paragraph">浙江省科学技术进步奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2020-12-30</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">浙江省人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">具有电控和气控双回路信号的制动 总阀</p></td><td colspan="4"><p class="docx-paragraph">中国专利优秀奖</p></td><td colspan="3"><p class="docx-paragraph">优秀奖</p></td><td colspan="2"><p class="docx-paragraph">2020-07-30</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">一种车用电驱动空气压缩机、气动系统和车辆</p></td><td colspan="4"><p class="docx-paragraph">浙江省专利奖</p></td><td colspan="3"><p class="docx-paragraph">金奖</p></td><td colspan="2"><p class="docx-paragraph">2016-11-22</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">浙江省科学技术厅、浙江省知识产权局</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">一种应用于EBS系统的单通道桥控模块研究</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">汽车测试报告</p></td><td colspan="5"><p class="docx-paragraph">2022年</p></td><td colspan="2"><p class="docx-paragraph">无</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">商用车AMT选换挡执行结构研究</p></td><td colspan="6"><p class="docx-paragraph">第二作者</p></td><td colspan="5"><p class="docx-paragraph">汽车测试报告</p></td><td colspan="5"><p class="docx-paragraph">2022年</p></td><td colspan="2"><p class="docx-paragraph">无</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Analysis and study of transient characteristics of hydrogen circulation pump under different stopping modes</p></td><td colspan="6"><p class="docx-paragraph">第二作者</p></td><td colspan="5"><p class="docx-paragraph">International Journal of Hydrogen Energy</p></td><td colspan="5"><p class="docx-paragraph">2024年</p></td><td colspan="2"><p class="docx-paragraph">被SCI收录</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种车用水冷空气压缩机气源系统</p></td><td colspan="5"><p class="docx-paragraph">CN112555126B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2023-02-14</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种车用压缩空气智能集成控制系统</p></td><td colspan="5"><p class="docx-paragraph">CN113635844B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2023-07-21</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种电机驱动与ECU控制的智能制动助力系统及其工作方法</p></td><td colspan="5"><p class="docx-paragraph">CN109204278B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2023-06-23</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国汽车工业协会制动器委员会专家委员会</p></td><td colspan="9"><p class="docx-paragraph">技术组专家</p></td><td colspan="6"><p class="docx-paragraph">2018.3.1-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">浙江省汽车工程学会</p></td><td colspan="9"><p class="docx-paragraph">常务理事</p></td><td colspan="6"><p class="docx-paragraph">2015年-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">全国汽车标准化技术委员会底盘分技术委员会</p></td><td colspan="9"><p class="docx-paragraph">委员</p></td><td colspan="6"><p class="docx-paragraph">2023年-至今</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>李传武，正高级工程师，现任瑞立集团副总经理兼总工程师，同时担任国家企业技术中心主任、浙江省瑞立汽车控制系统企业重点研究院院长、浙江省智能制动系统工程研究中心主任。此外，其还兼任全国汽车标准化技术委员会底盘分技术委会委员、中国汽车工业协会制动器委员会专家委员会技术组专家、浙江省汽车工程学常务理事。曾入选工信部制造业人才支持计划、浙江省高层次人才特殊支持计划，享受国务院政府特殊津贴。</p><p class="docx-paragraph">从事车辆底盘控制系统研发与技术革新工作27年，掌握行业领先的制动系统关键核心技术及系统集成能力，在新能源汽车、商用车、军车及轨道交通制动系统领域取得了一系列创新成果。作为技术带头人，参与建设了国家认定企业技术中心、国家CNAS认可实验室中心、浙江省智能制造系统工程研究中心等高水平研发与试验平台。</p><p class="docx-paragraph">在关键技术攻关方面，带领团队突破低温密封结构、高分子材料及制动协同匹配技术，开发出耐低温与涉水环境的制动系统，解决了极端温度下的车辆制动安全问题，成为第三代军车制动系统的独家供应商，有力支持了国防建设。通过应用制动空气供给、两级扩容过滤消音及自润滑耐磨技术，率先将电控系统模块化设计引入空气处理系统，创新提出电控干燥器与空压机智能联动能效管理方案，成功开发新能源车用智能空气处理系统。其中，两级无油活塞机实现免维护寿命超10年，寿命比竞品提升2倍以上，全球市场占有率第一，为新能源汽车产业发展提供了关键支撑。</p><p class="docx-paragraph">在轨道交通领域，主导开发了23项关键制动系统产品，成功配套“复兴号”动车组，实现了进口替代，推动了中国轨道交通关键零部件的国产化进程。此外，他运用电子电控与主动安全技术，研发出商用车智能电控气制动系统，打破国外技术垄断，产品已批量装车并替代进口，新增销售收入超12亿元，为保障汽车产业链的自主可控和安全稳定作出了重要贡献。</p><p class="docx-paragraph">截至目前，李传武累计主持省部级以上科研项目10余项，获授权专利303项，其中发明专利46项；以第一完成人获中国专利优秀奖3项、浙江省专利金奖3项，以及中国机械工业科技进步三等奖、浙江省科技进步二等奖、三等奖、浙江省技术发明奖三等奖等奖项。发表技术论文11篇，参与制修订国家、行业标准9项。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李传武</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1975-01</p></td><td><p class="docx-paragraph">330326197501212211</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">新型汽车关键零部件</p></td><td><p class="docx-paragraph">流体机械及流体动力工程</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">瑞立集团瑞安汽车零部件有限公司    副总经理兼总工程师</p></td><td><p class="docx-paragraph">享受国务院政府特殊津贴人员,国家百千万人才工程人才</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">张创科</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1970-07</p></td><td><p class="docx-paragraph">132801197007243615</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">机器装配工艺</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  技术负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">姚晓禹</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-07</p></td><td><p class="docx-paragraph">130982199107199819</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">数控技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  工艺技术研发人员</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">梁浩</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1984-12</p></td><td><p class="docx-paragraph">131026198412150612</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">数控技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  工艺技术研发人员</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">刘佳林</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1992-01</p></td><td><p class="docx-paragraph">131002199201142413</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">新型汽车关键零部件</p></td><td><p class="docx-paragraph">成组技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  工艺技术研发人员</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">黄旭</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1999-04</p></td><td><p class="docx-paragraph">131002199904111816</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">新型汽车关键零部件</p></td><td><p class="docx-paragraph">车辆工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  工艺技术研发人员</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">张大双</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1982-10</p></td><td><p class="docx-paragraph">131025198210013365</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">工业工程学(亦称工程系统工程)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  工艺技术研发人员</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">贾清江</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1990-11</p></td><td><p class="docx-paragraph">130635199011220037</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">计算机过程控制</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  试验验证技术员</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">魏恩发</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-03</p></td><td><p class="docx-paragraph">131026198703250031</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">计算机辅助制造</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  生产管理部长</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">李广海</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-11</p></td><td><p class="docx-paragraph">131002198311143818</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">汽车发动机零部件</p></td><td><p class="docx-paragraph">工业会计学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司  财务管理部长</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>瑞立美联制动技术（廊坊）有限公司高效节能空压机研发及产业化创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-02</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>200.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>140.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>R高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>R新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>高效节能空压机；齿条齿盘卸荷结构；商用车；节能降耗。</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>培养专业技术人员2人，一线产业工人参与技术攻关，提升技能水平。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>1、转化应用科技成果1项，实现收入5500万。</p><p class="docx-paragraph">2、申请发明专利2项、实用新型专利5项。</p><p class="docx-paragraph">3、发表学术期刊论文2篇。</p><p class="docx-paragraph">4、团队成员中的企业人员主持企业科研项目1项。</p><p class="docx-paragraph">5、培养专业技术人员2人。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>申请发明专利2项，实用新型专利5项，发表学术期刊论文2篇，相关知识产权归瑞立美联制动技术（廊坊）有限公司所有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、必要性、及科技、经济和社会意义</p><p class="docx-paragraph">随着国家“双碳”战略的持续深入，交通运输领域已成为节能减排重点。优化商用车辅助系统的能耗，对实现减排目标和产业高质量发展至关重要。空压机作为商用车动力传输系统的核心部件，广泛应用于制动、转向、悬挂等关键环节。但传统产品普遍存在能耗偏高、维护繁琐、使用成本高等问题，难以满足环保法规和市场需求。河北省是商用车生产和应用大省，保有量超过300万辆，其中重型卡车和工程车辆占比超过60%。且气候和路况复杂，高温、多尘、高负荷的运行环境对空压机的可靠性、节能性和适应性要求极高。瑞立美联虽为空压机行业的龙头企业，但在高端节能空压机领域，市场仍被克诺尔、威伯科等国际品牌主导，公司目前占有率不足15%。省内专用节能空压机供给存在明显缺口。</p><p class="docx-paragraph">本项目是落实国家“双碳”战略和装备制造业升级的具体行动，有助于打破国外技术垄断、填补本地空白。科技层面，推动高效节能空压机核心技术实现本地化突破和产业化，提升我国空压机行业的整体创新能力。经济层面，项目达产后可实现年产5.5万台高效节能空压机，年营业收入5500万元、利润350万元，间接拉动上下游原材料、加工、物流等相关产业产值超过5亿元。社会效益，每年可节约燃油5万吨，减少碳排放10万至15万吨，为河北省完成节能减排目标、推动交通运输行业绿色低碳转型提供有力支撑。</p><p class="docx-paragraph">2、项目概述</p><p class="docx-paragraph">本项目围绕高效节能商用车空压机的研发与规模化生产展开，核心研究内容包括优化“齿条+齿盘”联动卸荷结构以实现怠速工况下的超低功耗，针对高温、多尘等复杂工况优化冷却、过滤和密封系统以提升产品环境适应性，以及建立规模化、标准化的生产工艺流程以确保产品一致性和可靠性。本项目由瑞立美联主导，联合外聘行业顶尖专家及本地优质供应商共同实施，符合河北省新能源和智能网联汽车产业方向，属于高端装备制造领域关键零部件技术攻关，对提升区域装备制造业水平具有重要推动作用。</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">本项目设定了明确的技术指标和经济指标。技术指标方面，产品较传统空压机节能8%至15%，怠速工况卸荷轴功率不超过0.5kW，产品使用寿命延长50%以上，极端工况下运行稳定，同时计划申请发明专利2项、实用新型专利5项，发表与项目相关的学术论文2篇。经济指标方面，项目执行期第三年实现年产5.5万台高效节能空压机，年营业收入5500万元，在目标细分市场的占有率达到30%。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">本公司是国内空压机行业的领军企业，股权结构清晰，公司治理规范。公司现有员工500余人，其中技术人员占比10%，拥有国内车用空压机领域的CNAS认证实验室，配备20余台先进检测台架，可独立完成产品全流程研发与验证。公司占地面积50000㎡，拥有3个标准化车间和多条自动化生产线，年产能达160万台，是国内规模最大、实力最强的空压机生产基地之一，近三年经营状况稳定向好，资金储备充足，具备实施本项目的坚实基础。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作等情况</p><p class="docx-paragraph">瑞立美联整合了拥有数十年空压机研发制造经验的技术团队与产业资源，技术水平国内领先，拥有知识产权60多项，斩获5项国家级创新奖项，并参与制定1项行业标准。公司年科研投入占营收比例超过3%，已成功转化4项核心成果，累计创造产值超2亿元。作为省内科技骨干企业，公司建有省级技术创新中心，与高校院校保持紧密的产学研合作关系，具备整合产业链资源、攻关产业共性技术的能力。</p><p class="docx-paragraph">3、项目负责人及团队核心成员等基本情况</p><p class="docx-paragraph">项目负责人李传武，教授级高级工程师，从事车辆工程领域技术研发工作27年，在商用车、新能源汽车及轨道交通制动系统方面积累了丰富的研发与工程实践经验。主持省级重点研发等省部级以上科研项目10余项，获得授权专利303项，其中发明专利46项，发表学术论文11篇，参与制定国家及行业标准9项。曾获国务院政府特殊津贴，入选工信部制造业人才支持计划先进制造技术人才、浙江省高层次人才特殊支持计划领军人才，获得浙江省科技进步二等奖、浙江省专利金奖、浙江省技术发明三等奖、中国专利优秀奖等多项奖励。团队成员共10人，涵盖结构优化、工艺设计、生产管理等领域，均具备多年从业经验和扎实专业知识，其中45周岁以下青年人才占比80%，团队结构合理，分工明确，可为本项目提供坚实的技术支撑。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">瑞立美联已围绕高效节能空压机技术开展预研超过5年，积累了丰富的经验，目前已完成齿条+齿盘卸荷结构的原理性设计和性能仿真测试，验证了技术路线的可行性，完成原型机试制及初步台架测试，核心性能指标接近设计目标，已申请2项实用新型专利，并完成了项目的可行性论证、设备选型和立项备案工作。上述前期成果为本项目的顺利实施奠定了坚实的技术基础。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">本项目旨在攻克精密联动卸荷技术、复杂工况适应性技术和规模化生产一致性技术三大关键技术问题，确保怠速卸荷轴功率不超过0.5kW的核心目标。精密联动卸荷技术方面需要优化齿条+齿盘联动结构，解决受力不均、啮合精度低、磨损快等问题；复杂工况适应性技术方面需要优化冷却、过滤及密封系统，保障产品在多尘、高温、重载等极端工况下的长期稳定运行；规模化生产一致性技术方面需要开发标准化、高精度的装配与测试工艺，确保批量生产的产品性能高度一致。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">本项目团队由经验丰富的内部研发骨干和外聘行业顶尖专家组成，可自主解决常规技术难题，并通过专家指导破解技术瓶颈。技术支撑途径包括组建专项攻关小组负责核心技术研发，依托外聘专家进行技术方案评审和难题攻关，定期组织技术研讨和交流，以及通过“传帮带”机制培养青年人才，形成标准化技术手册，保障技术传承与应用。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">本项目由瑞立美联主导实施，核心产品为高效节能型商用车空压机，产品采用齿条+齿盘一体化结构设计，具有节能效果显著、运行稳定可靠、工况适配性强、维护成本低廉、使用寿命长久等核心优势，可广泛应用于各类燃油商用车及工程机械领域。项目总投资200万元，建设周期36个月，分两期推进，最终实现年产5.5万台高效节能空压机的产能规模。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较</p><p class="docx-paragraph">从国内外技术比较来看，国际品牌如克诺尔、威伯科等产品性能优良，但价格高昂且售后成本高；国内多数企业产品仍以传统柱塞式为主，节能效果有限，难以稳定达到卸荷功率不超过0.5kW的先进水平。本项目产品与国际品牌相比在核心性能指标上持平，但具有显著的性价比和本地化服务优势，与国内同类产品相比则节能效果更显著、寿命更长，完全契合商用车零部件向高效、可靠、轻量化发展的行业趋势。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">项目预期技术指标包括：产品较传统空压机节能8%至15%，怠速工况卸荷轴功率不超过0.5kW，使用寿命不低于20万公里，维护周期4至6万公里，极端工况下运行稳定，产品合格率不低于99.5%，申请发明专利2项、实用新型专利5项，发表学术论文2篇。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">针对可能的技术风险，本项目制定了相应的对策。核心技术攻关风险方面，已组建由李传武牵头的专项攻关小组，外聘顶尖专家提供技术支持，同时准备多套备选技术方案；技术升级风险方面，通过持续关注行业趋势、建立技术预警机制、布局下一代产品研发等方式应对；成果转化风险方面，项目将研发与工艺优化并行，通过小批量试产提前识别并解决生产难题，确保技术成果顺利产业化。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">本项目采用自主研发、专家指导与试验验证相结合的技术路线，研究手段主要依托CNAS实验室进行台架试验与耐久性测试，利用CAE仿真技术优化关键部件结构，并通过小批量中试验证工艺可行性。工艺路线涵盖采购、检测、加工、装配、测试、包装等完整环节，建立标准化质量控制体系。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">项目前期准备工作已基本完成，包括市场、技术、政策调研及可行性论证，与3家本地供应商签订合作协议，组建研发团队并配备科研设备，落实自筹资金并制定详细资金使用计划，完成关键设备选型及人员培训，具备开工条件。</p><p class="docx-paragraph">3、项目的具体实施方案</p><p class="docx-paragraph">本项目采用协同合作模式，各方投入明确：瑞立美联投入研发团队、生产设备、试验平台及自筹资金140万元，负责项目整体统筹、技术研发、生产建设、市场推广及政府对接；外聘专家提供核心技术指导与咨询；本地供应商保障原材料供应与零部件试制。建立定期人员交流机制，包括月度技术例会、季度现场指导、年度总结评估。合作机制方面，签订正式合作协议明确各方权责，建立联合工作组和沟通协调机制，确保项目高效推进。</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">项目总周期为36个月，围绕高效节能空压机的技术研发和产业化分四个阶段有序推进。</p><p class="docx-paragraph">第一阶段（1-8个月）为技术方案深化与研发准备阶段。完成研发团队组建和任务分工，在外聘专家指导下对齿条+齿盘联动卸荷结构、冷却过滤系统等核心部件进行方案细化和仿真分析，确定最优技术路线，同时完成关键研发设备和试验台架的选型采购。</p><p class="docx-paragraph">第二阶段（9-16个月）为样机试制与核心攻关阶段。完成核心部件的加工试制和样机组装，依托CNAS实验室开展台架测试和性能验证，重点攻克怠速工况卸荷轴功率≤0.5kW的技术难题，优化产品在高温、多尘工况下的环境适应性，同步编制工艺文件和测试规范。申请发明专利1项，实用新型专利2项，发表学术论文1篇。</p><p class="docx-paragraph">第三阶段（17-24个月）为小批量试产与工艺验证阶段。完成中试线建设，开展小批量试产，验证生产工艺的稳定性和产品一致性，根据测试反馈进行设计优化。申请发明专利1项，实用新型专利2项，发表学术论文1篇。</p><p class="docx-paragraph">第四阶段（25-36个月）为批量生产与技术总结阶段。完善规模化生产工艺流程，完成项目验收。实现年产5.5万台、营收5500万元、利润350万元的目标。申请实用新型专利1项。</p><p class="docx-paragraph">5、项目知识产权状况</p><p class="docx-paragraph">项目研究成果遵循利益共享、责任共担原则，项目产出的知识产权归瑞立美联所有，合作方享有署名权。瑞立美联将主导专利申请并承担维护费用，相关著作权归瑞立美联所有。已建立完善的保密制度，与所有参与人员签订保密协议，保障核心技术安全。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">本项目实施期间，计划通过老带新、专家指导等方式，为企业培养专业技术人员2人，进一步完善企业人才梯队，缓解人才短缺。团队成员将通过项目实践提升科研能力和工程经验，形成可持续发展的创新团队。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">本项目产品在综合竞争力方面优势明显。与国际品牌相比，核心性能指标达到同等水平，但性价比更高，售后响应更及时、服务更便利；与国内同类产品相比，节能效果更显著，使用寿命更长，工况适应性更强。产品凭借技术领先、性价比高、服务完善的优势，有望成为国内高效节能空压机领域的标杆产品。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">随着双碳政策的持续推进，高效节能零部件的市场需求将持续扩大。河北省及周边地区商用车保有量大，存量替换和新增需求旺盛，预计项目第十年市场占有率可达25%以上，海外出口占比达15%。瑞立美联已具备完整的研发、生产、销售体系，产业化条件成熟，项目落地后将推动核心技术本地化，完善河北省商用车产业链，打造国内知名的空压机研发与生产基地，显著提升企业竞争力。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">本项目经济效益与社会效益显著，可实现多方共赢。经济效益方面：项目达产后第三年，可实现营收5500万元、利润350万元，为企业持续发展提供资金保障；带动上下游原材料供应、加工制造、物流运输、售后服务等相关产业协同发展，拉动相关产业产值超5亿元；项目产品节能效果显著，单台每年可节省燃油费用7000元，按年销量5万台计算，每年可帮助用户节省运营成本3.5亿元；项目第三年可实现税收贡献200万元，为地方财政增收提供有力支撑。社会效益方面，每年可节省燃油5万吨，减碳10至15万吨，减少有害气体排放；间接带动500人以上就业，为当地群众提供稳定就业岗位；打破国外垄断，填补河北市场空白，推动产业升级；同时减环境污染，改善居民生活品质。综上，项目可行性强、前景广阔，对区域发展具有重要推动作用。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">瑞立美联制动技术（廊坊）有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">项目整体工作</p></td><td><p class="docx-paragraph">李传武</p></td><td><p class="docx-paragraph">200.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">140.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1、转化应用科技成果1项，实现收入5500万。</p><p class="docx-paragraph">2、申请发明专利2项、实用新型专利5项。</p><p class="docx-paragraph">3、发表学术期刊论文2篇。</p><p class="docx-paragraph">4、团队成员中的企业人员主持企业科研项目1项。</p><p class="docx-paragraph">5、培养专业技术人员2人。</p></td><td><p class="docx-paragraph">1、申请发明专利1项、实用新型专利2项。</p><p class="docx-paragraph">2、发表学术期刊论文1篇。</p><p class="docx-paragraph">3、培养专业技术人员1人。</p></td><td><p class="docx-paragraph">1、申请发明专利1项、实用新型专利2项。</p><p class="docx-paragraph">2、发表学术期刊论文1篇。</p><p class="docx-paragraph">3、团队成员中的企业人员主持企业科研项目1项。</p><p class="docx-paragraph">4、培养专业技术人员1人。</p></td><td><p class="docx-paragraph">1、转化应用科技成果1项，实现收入5500万。</p><p class="docx-paragraph">2、申请实用新型专利1项。</p></td></tr><tr><td rowspan="8"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">实现收入（万元）</p></td><td><p class="docx-paragraph">5500</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">5500</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">申请实用新型专利（件）</p></td><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">项目负责人身份证、学历、职称</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">项目负责人任职情况</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">与项目负责人合作协议</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">项目负责人代表性论文</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">项目负责人参与标准制定1</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">项目负责人参与标准制定2</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">项目负责人参与标准制定3</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">项目负责人-国务院特殊津贴及人才计划</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-项目负责人1</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-项目负责人2</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业1</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业2</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业3</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业4</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业5</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业6</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权-企业7</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">承担的科研项目-项目负责人</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">项目任务书-团队1</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">项目任务书-团队2</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">项目任务书-团队3</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">科技奖励证书-项目负责人1</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">科技奖励证书-项目负责人2</p></td></tr><tr><td><p class="docx-paragraph">24</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">企业奖励证书</p></td></tr><tr><td><p class="docx-paragraph">25</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">资质荣誉1</p></td></tr><tr><td><p class="docx-paragraph">26</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">资质荣誉2</p></td></tr><tr><td><p class="docx-paragraph">27</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队成员（张创科、姚晓禹）合同、身份证、毕业证、职称证</p></td></tr><tr><td><p class="docx-paragraph">28</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队成员（梁浩、刘佳林）合同、身份证、毕业证、职称证</p></td></tr><tr><td><p class="docx-paragraph">29</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队成员（黄旭、张大双）合同、身份证、毕业证、职称证</p></td></tr><tr><td><p class="docx-paragraph">30</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队成员（贾清江、魏恩发）合同、身份证、毕业证、职称证</p></td></tr><tr><td><p class="docx-paragraph">31</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队成员（李广海）合同、身份证、毕业证、职称证</p></td></tr><tr><td><p class="docx-paragraph">32</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">营业执照</p></td></tr><tr><td><p class="docx-paragraph">33</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">公司章程</p></td></tr><tr><td><p class="docx-paragraph">34</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">标准制定-企业</p></td></tr><tr><td><p class="docx-paragraph">35</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研-企业</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 """检索报告完整性规则"""
 from src.common.models.review import CheckResult, CheckStatus
-from src.common.vision import MultimodalLLM
+from src.common.vision.multimodal import MultimodalLLM
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 

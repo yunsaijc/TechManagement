@@ -323,7 +323,6 @@ export const useSandboxStore = defineStore('sandbox', () => {
     const controller = new AbortController();
     req.attachController(moduleId, controller);
     const url = endpoint(action.path);
-
     const bodyPayload = action.id === 'leadership_forecast'
       ? {
           question: String(forecastQuestion.value || '').trim(),

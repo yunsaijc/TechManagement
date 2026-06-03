@@ -3,7 +3,6 @@
 """
 import pymysql
 import pyodbc
-from typing import Optional
 from src.common.database.config import db_settings
 
 
@@ -40,6 +39,24 @@ def get_project_connection() -> pyodbc.Connection:
         f"SERVER={db_settings.project_host},{db_settings.project_port};"
         f"DATABASE={db_settings.project_database};"
         f"UID={db_settings.project_user};PWD={db_settings.project_password};"
+        "Encrypt=no;"
+        "TrustServerCertificate=yes;"
+    )
+    return pyodbc.connect(conn_str)
+
+
+def get_kjjh_connection() -> pyodbc.Connection:
+    """
+    获取科技计划合同库连接 (SQL Server)
+
+    Returns:
+        pyodbc.Connection
+    """
+    conn_str = (
+        "DRIVER={ODBC Driver 18 for SQL Server};"
+        f"SERVER={db_settings.kjjh_host},{db_settings.kjjh_port};"
+        f"DATABASE={db_settings.kjjh_database};"
+        f"UID={db_settings.kjjh_user};PWD={db_settings.kjjh_password};"
         "Encrypt=no;"
         "TrustServerCertificate=yes;"
     )
@@ -83,5 +100,27 @@ def project_execute(sql: str, params: tuple = None):
         with conn.cursor() as cursor:
             cursor.execute(sql, params or ())
             return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+def kjjh_execute(sql: str, params: tuple = None):
+    """
+    执行科技计划合同库查询
+
+    Args:
+        sql: SQL语句
+        params: 参数
+
+    Returns:
+        查询结果列表
+    """
+    conn = get_kjjh_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(sql, params or ())
+            columns = [column[0] for column in cursor.description] if cursor.description else []
+            rows = cursor.fetchall()
+            return [dict(zip(columns, row)) for row in rows]
     finally:
         conn.close()

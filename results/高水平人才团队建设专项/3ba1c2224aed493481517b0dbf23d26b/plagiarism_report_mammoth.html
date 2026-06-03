@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 3ba1c2224aed493481517b0dbf23d26b.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：3ba1c2224aed493481517b0dbf23d26b.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,266</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>3ba1c2224aed493481517b0dbf23d26b.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010201-“科技人才飞地”项目</p><p class="docx-paragraph">项 目 名 称：<a id="xmmc"></a>中航试金石检测科技（大厂）有限公司科技人才飞地</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>中航试金石检测科技（大厂）有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>潘波</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>廊坊市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2028-02</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-28</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+科技人才飞地”格式填写，如：****公司科技人才飞地。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">单位名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwmc1"></a>中航试金石检测科技（大厂）有限公司</p></td><td colspan="2"><p class="docx-paragraph">单位性质</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">通讯地址</p></td><td colspan="9"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省廊坊市大厂回族自治县潮白河经济开发区</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwxydm"></a>91131028MA07KQYW1M</p></td><td colspan="2"><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-廊坊市-大厂回族自治县</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">注册时间</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwzcsj"></a>2015-11-05</p></td><td colspan="2"><p class="docx-paragraph">注册资本</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzczb"></a>6544.44万元</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">法定代表人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwfr1"></a>黄兆祥</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="lclxrsj"></a>18905330804</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="frbgdh"></a>18905330804</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="frEmail"></a>huangzhaoxiang@touchstone-tic.com</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">项目联系人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxr"></a>周峰峦</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxrsj"></a>13810323975</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxrdh"></a>13810323975</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxryx"></a>zhoufengluan@touchstone-tic.com</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhmc"></a>中航试金石检测科技（大厂）有限公司</p></td><td colspan="2"><p class="docx-paragraph">开户银行行号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwhh"></a>104146800017</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户银行</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhh"></a>中国银行股份有限公司大厂大安街支行</p></td><td colspan="2"><p class="docx-paragraph">帐号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzh"></a>101157381900</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>497人</p></td><td colspan="2"><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwjjsry"></a>152人</p></td><td colspan="2"><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzgjry"></a>46人</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">企业类型</p></td><td colspan="5"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>R</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td colspan="2"><p class="docx-paragraph">所属产业（集群）</p></td><td colspan="2"><p class="docx-paragraph"><a id="tscyjq"></a>大厂智能制造产业集群</p></td></tr><tr><td colspan="11"><p class="docx-paragraph">近三年研发投入和销售收入（万元）</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2023"></a>2023 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2023"></a>1353.51</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2023"></a>23106.11</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2023"></a>5.86</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2024"></a>2024 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2024"></a>1690.24</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2024"></a>21212.82</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2024"></a>7.97</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2025"></a>2025 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2025"></a>1713.76</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2025"></a>26381.31</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2025"></a>6.50</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">研发平台情况</p></td><td colspan="8"><p class="docx-paragraph"><a id="ptqksys"></a><a id="ptqkgjjsys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><strong>申报单位简介</strong></p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><a id="xmjj"></a>  一、研发基础条件</p><p class="docx-paragraph">  中航试金石检测科技（大厂）有限公司成立于2015年，是国内航空材料与结构性能检测领域领先的第三方检测、评价机构，服务对象涵盖航空、航天、汽车、船舶、轨道交通、核电等多个行业。公司总部位于河北省大厂回族自治县，在北京设有研发中心基地，同时在西安、无锡、成都、株洲、盘锦、淄博等地布局了多家分支机构，形成了覆盖全国多个重点区域的业务网络。</p><p class="docx-paragraph">  公司配备先进检测设备，构建完善技术体系，具备高水平的材料性能检测、综合评定及科技研发能力，核心竞争力突出。公司获评“工业（航空材料）产品质量控制和技术评价实验室”、“ 专精特新小巨人”企业，并斩获河北省高新技术企业、河北省创新型中小企业等多项荣誉资质；同时获批建设河北省企业技术中心、河北省航空金属及复合材料检测技术创新中心等高水平创新平台。在行业协作层面，公司担任河北省中试服务联盟理事单位、河北工业大学卓越工程师学院理事单位、中国航空学会专家服务站，连续入选2023年、2024年河北服务业创新领先50强。</p><p class="docx-paragraph">  公司现有静态力学、疲劳断裂、持久蠕变、物理性能、化学成分分析、微观物理与失效分析、无损检测、高速旋转试验、元件/结构件检测、热冲击及换热、环境与可靠性试验、软件测评、计量校准、复材制备、机加中心等15个专业试验室及加工单位，拥有专业检测仪器设备超900台套，设备原值超12000万元，拥有国内航空材料与结构性能检测研发试验平台、专业的研发试验人员以及信息化办公平台，能够为客户提供高效精准、专业独立、客观公正的全流程检测服务。</p><p class="docx-paragraph">  公司以高标准质量管理体系为核心支撑，已通过中国合格评定国家认可委员会实验室认可（CNAS）、检验检测机构资质认定（CMA）、国军标质量管理体系认证等多项权威资质认证，跻身国内航空材料检测资质覆盖最全面的机构行列。此外，公司还成功获得中国航发材料试验和检测机构资质认定、中国航空工业集团有限公司材料试验和检测机构资质认定等多家头部供应商资质认可，具备相应的材料试验、检测及特种工艺资质，市场认可度与行业影响力持续提升。</p><p class="docx-paragraph">  二、单位知识产权</p><p class="docx-paragraph">  公司高度重视支持产权的规范化、体系化管理，截至2025年底，中航试金石检测科技（大厂）有限公司累计获得授权专利37项，其中发明专利17项，实用新型20项；参与制修订国家标准 7项，填补国内技术空白；参与制定团体标准5项，推动行业规范化发展；取得软件著作权46件，覆盖智能检测、检验检测分析、数据分析等核心技术领域，为科技创新提供有力支撑。</p><p class="docx-paragraph">  三、科研成果转化</p><p class="docx-paragraph">  公司坚持“研发驱动、市场导向”的创新战略，紧扣民用航空产业的检验检测需求，依托“检测验证+成果转化+产业赋能”全链条服务体系，推动实验室技术走向工程化应用，提供从材料级检测到部件级验证的一站式服务。如在复杂结构件动态响应失真这一行业痛点上，公司攻关了力限控制振动试验技术，补齐试验控制技术短板，发挥40吨级大型振动台推力优势，协同材料力学性能评估与失效分析能力，能够在强振极端工况下精准还原产品的真实服役环境，验证产品的环境适应性。</p><p class="docx-paragraph">  四、产学研合作与国际交流合作</p><p class="docx-paragraph">  公司积极构建开放协同的创新生态，与北京航空航天大学、西北工业大学、东北大学、山东理工大学、河北工业大学等知名高校建立长期产学研合作关系，与中国航空学会共建“中国航空学会中航试金石专家服务站”，打造“产学研用”一体化平台。在国际交流合作方面，公司积极拓展与相关机构的技术交流与合作渠道，提升国际化创新能力。</p></td></tr></table><p class="docx-paragraph"><strong>二、人才飞地基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">人才飞地名称</p></td><td colspan="7"><p class="docx-paragraph"><a id="fdmc"></a>中航试金石北京研发中心</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">负责人</p></td><td colspan="3"><p class="docx-paragraph"><a id="fdfzr"></a>潘波</p></td><td><p class="docx-paragraph">职务</p></td><td><p class="docx-paragraph"><a id="fdfzrzw"></a>主任</p></td><td><p class="docx-paragraph">联系电话</p></td><td><p class="docx-paragraph"><a id="fdfzrdh"></a>15811002159</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">是否独立法人</p></td><td colspan="4"><p class="docx-paragraph"><a id="fdsfdlfr"></a>否</p></td><td><p class="docx-paragraph">注册资本</p><p class="docx-paragraph">（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzczb"></a>0</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">场地面积（㎡）</p></td><td><p class="docx-paragraph"><a id="fdcdmj"></a>2723</p></td><td colspan="4"><p class="docx-paragraph">注册地址</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzcdz"></a>北京市海淀北清路68号院、昌平马池口镇仁杰路5号院</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">飞地研发人员数量</p></td><td><p class="docx-paragraph"><a id="fdyfrysl"></a>19</p></td><td colspan="4"><p class="docx-paragraph">专职研发人员数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfyrysl"></a>7</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">硕士研究生及以上学历或高级专业技术职称人员占比</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdryzb"></a>57.89</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度在高层次人才引进培育使用和技术研发方面</p><p class="docx-paragraph">支出的费用（万元）</p></td><td colspan="2"><p class="docx-paragraph"> <a id="fdzcfy"></a>508.86 （万元）</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度飞地为申报单位引进副高及以上人才数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfgry"></a>4</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">在飞地所在地签订产学研合作协议数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdhzxy"></a>3</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">申报单位对人才飞地是否拥有实际控制权	</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdgzq"></a>是</p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">股权</p><p class="docx-paragraph">构成</p></td><td colspan="2"><p class="docx-paragraph">第1大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc1"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl1"></a>0 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第2大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc2"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl2"></a>0 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第3大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc3"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl3"></a>0 %</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">上年度营业收入（万元）</p></td><td colspan="6"><p class="docx-paragraph"><a id="fdyye"></a>2927.4</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">主要研发设备情况</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="3"><p class="docx-paragraph">设备名称</p></td><td colspan="3"><p class="docx-paragraph">主要用途</p></td><td colspan="2"><p class="docx-paragraph">设备价值</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="3"><p class="docx-paragraph">场发射扫描电子 显微镜</p></td><td colspan="3"><p class="docx-paragraph">sigma300，通用型高分辨场发射扫描电子显微镜， 实现高精度、更快速、更开放的显微镜成像和纳米分析工作，用于微观物理与失效分析。</p></td><td colspan="2"><p class="docx-paragraph">245.61 万元</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="3"><p class="docx-paragraph">电动振动台16吨</p></td><td colspan="3"><p class="docx-paragraph">ES-160LS3-650，水冷式振动测试系统，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">144.34 万元</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="3"><p class="docx-paragraph">电动振动试验系统10T</p></td><td colspan="3"><p class="docx-paragraph">ES-100-480/LTB1515，振动试验系统，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">88.35 万元</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="3"><p class="docx-paragraph">温湿度振动综合试验机</p></td><td colspan="3"><p class="docx-paragraph">WS-SZH-13000G，温湿度振动三综合试验箱，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">54.51 万元</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="3"><p class="docx-paragraph">电动振动试验系统8T</p></td><td colspan="3"><p class="docx-paragraph">ES-80W-445/LT1111，电动振动试验系统，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">52.43万元</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="3"><p class="docx-paragraph">低温液体贮槽</p></td><td colspan="3"><p class="docx-paragraph">特种设备，贮存和供应低温液化气体的专用压力容器。</p></td><td colspan="2"><p class="docx-paragraph">43.71 万元</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="3"><p class="docx-paragraph">电动振动试验系统(叶片振动疲劳试验系统)</p></td><td colspan="3"><p class="docx-paragraph">ATS-10，用于叶片振动疲劳试验研究。</p></td><td colspan="2"><p class="docx-paragraph">39.38 万元</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td colspan="3"><p class="docx-paragraph">温度速变湿热试验箱</p></td><td colspan="3"><p class="docx-paragraph">SC7-1000/32，高低温湿热快速试验箱，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">36.55 万元</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td colspan="3"><p class="docx-paragraph">全自动梯度应力检测及分析系统</p></td><td colspan="3"><p class="docx-paragraph">SCGS20-BX-ZH，用于失效分析。</p></td><td colspan="2"><p class="docx-paragraph">33.27 万元</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td colspan="3"><p class="docx-paragraph">冷却水塔</p></td><td colspan="3"><p class="docx-paragraph">通过水与空气热交换实现降温的装置，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">32.44 万元</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td colspan="3"><p class="docx-paragraph">电动振动试验系统4T</p></td><td colspan="3"><p class="docx-paragraph">ES-40LS4-445/LT0808，用于环境与可靠性试验研究。</p></td><td colspan="2"><p class="docx-paragraph">32.42 万元</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td colspan="3"><p class="docx-paragraph">相变点专用试样热处理炉</p></td><td colspan="3"><p class="docx-paragraph">XBD3-8-12，辅助开展材料在温度变化过程中发生的晶体结构转变、磁性转变、有序-无序转变等各种相变行为揭示研发。</p></td><td colspan="2"><p class="docx-paragraph">25.66 万元</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td colspan="3"><p class="docx-paragraph">激光位移传感器</p></td><td colspan="3"><p class="docx-paragraph">ILD2310-50BL，用于精确测量物体的位置和位移。</p></td><td colspan="2"><p class="docx-paragraph">9.12 万元</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td colspan="3"><p class="docx-paragraph">酸废气净化器</p></td><td colspan="3"><p class="docx-paragraph">WGL-3，处理硝酸、硫酸、盐酸、氢氟酸等含酸废气，辅助开展微观物理与失效分析。</p></td><td colspan="2"><p class="docx-paragraph">7.35 万元</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td colspan="3"><p class="docx-paragraph">升降架</p></td><td colspan="3"><p class="docx-paragraph">辅助环境与可靠性试验高空作业。</p></td><td colspan="2"><p class="docx-paragraph">7.04 万元</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td colspan="3"><p class="docx-paragraph">冷水机</p></td><td colspan="3"><p class="docx-paragraph">辅助试验制冷。</p></td><td colspan="2"><p class="docx-paragraph">6.31 万元</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td colspan="3"><p class="docx-paragraph">淋雨试验箱</p></td><td colspan="3"><p class="docx-paragraph">HT-LY-1000，用于模拟淋雨气候条件下的性能测试试验。</p></td><td colspan="2"><p class="docx-paragraph">1.34 万元</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td colspan="3"><p class="docx-paragraph">低倍组织热酸蚀装置</p></td><td colspan="3"><p class="docx-paragraph">用于检测钢材原材料缺陷的设备。</p></td><td colspan="2"><p class="docx-paragraph">1.59 万元</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td colspan="3"><p class="docx-paragraph">气密性检漏仪</p></td><td colspan="3"><p class="docx-paragraph">D67012RP，用于检测产品密封性能。</p></td><td colspan="2"><p class="docx-paragraph">3.89 万元</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td colspan="3"><p class="docx-paragraph">砂尘试验箱</p></td><td colspan="3"><p class="docx-paragraph">TL-SC-1000L-IP56型，用于模拟气候环境，检测产品外壳密封性能。</p></td><td colspan="2"><p class="docx-paragraph">0.98 万元</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td colspan="3"><p class="docx-paragraph">模拟运输振动台</p></td><td colspan="3"><p class="docx-paragraph">模拟物品运输途中路况情况。</p></td><td colspan="2"><p class="docx-paragraph">0.53 万元</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td colspan="3"><p class="docx-paragraph">精密型盐水喷雾试验机</p></td><td colspan="3"><p class="docx-paragraph">用于模拟盐雾试验研究。</p></td><td colspan="2"><p class="docx-paragraph">0.32 万元</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td colspan="3"><p class="docx-paragraph">恒温恒湿试验机</p></td><td colspan="3"><p class="docx-paragraph">WS-HH-800G，用于材料耐热、耐寒、耐干、耐湿性能测试研究。</p></td><td colspan="2"><p class="docx-paragraph">0.99 万元</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">副高及以上职称人才情况（ <a id="fgjzcrs"></a>10 人）</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">专业</p></td><td colspan="3"><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">工作单位</p></td><td><p class="docx-paragraph">是否专职研发人员</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">潘波</p></td><td><p class="docx-paragraph">可靠性系统工 程</p></td><td colspan="3"><p class="docx-paragraph">副研究员</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">杨春</p></td><td><p class="docx-paragraph">材料科学与工程</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">王贞</p></td><td><p class="docx-paragraph">材料工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">方建锋</p></td><td><p class="docx-paragraph">金属材料</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">黄华</p></td><td><p class="docx-paragraph">材料学</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">朱小平</p></td><td><p class="docx-paragraph">材料科学与工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">马懿宣</p></td><td><p class="docx-paragraph">项目管理</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">王海洋</p></td><td><p class="docx-paragraph">动力机械及工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">王美月</p></td><td><p class="docx-paragraph">材料科学与工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">谈正阳</p></td><td><p class="docx-paragraph">会计</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr></table><p class="docx-paragraph"><strong>三、近三年人才飞地成效情况</strong></p><table class="docx-table"><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年开发新技术、新产品、新工艺、专利、软著等情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2023"></a>2023 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2023"></a>2023年，依托北京研发中心，公司引进2项实用新型专利：“一种模拟自然环境试验平台系统”和“一种复杂振动环境模拟试验系统”；同时，获得1项授权实用新型专利：“低倍图像采集系统”。</p><p class="docx-paragraph">在新技术、新产品开发方面，重点推进了以下项目并取得成果：</p><p class="docx-paragraph">1.新技术：760℃高温高周振动疲劳试验系统研制与完整试验方法。通过系统研究夹具表面氧化对装配特性的影响、高温箱透光玻璃厚度对激光位移传感器折射的影响、温度稳定时间对试验结果的影响，以及高温下应力-振幅关系修正方法，成功研制出一套集成电磁振动台与高温试验箱的半自动化、高集成度高温高周振动疲劳试验系统。该系统最高温度可达1100℃，频率达7000Hz，有效解决了高温下位移传感器测温及高温夹具设计等关键技术难题。</p><p class="docx-paragraph">2.新工艺：结构件失效分析模块化。将失效分析流程整合为六大模块：信息收集、工况分析（含受力分析及环境分析）、实验设计矩阵、结果分析、聚焦原因、材料/工艺改进，实现了分析过程的系统化和标准化。目前，该工艺已成功应用于曲轴开裂及前连接体法兰断裂等实际案例，通过深入剖析失效原因并提出有效解决方案，为故障快速归零及装备研发进度提供了关键技术保障。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2024"></a>2024 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2024"></a>2024年，依托北京研发中心，公司取得2项计算机软件著作权：“基于MMPDS 强度设计许用值计算软件”和“拉伸数据综合分析软件”；同时，获得2项发明专利授权：“一种自动送样磨抛机床”及“一种用于组合轮盘的动平衡机”。</p><p class="docx-paragraph">在新技术开发方面，重点推进了以下项目并取得成果：</p><p class="docx-paragraph">1.新技术：振动试验中的力限控制技术。攻克了力信号闭环控制系统构建、力传感器专用工装设计与调试等关键难题，成功研制并完成一套振动试验力限控制系统。通过总结力限控制对振动试验共振点放大对样品的影响，掌握了成熟可操作的力限控制试验方法，为高精度振动环境试验提供了技术支撑。</p><p class="docx-paragraph">2.新技术：振动台冲击试验极限能力提升工装。基于频率耦合放大、共振放大及多质量碰撞放大三种技术原理，结合工装动力学特性，成功研制出悬臂梁式冲击试验放大工装。该工装可根据被试产品的尺寸与重量灵活拓展使用数量，配合电动振动台实现冲击试验波形的有效放大，显著提升了电动振动台在冲击试验领域的极限加载能力与适应性。</p><p class="docx-paragraph">3.新技术：形成一套系统的材料与工艺检测评价方法，能够有效识别未知材料及零部件的性能数据、加工工艺及热处理状态，为产品逆向开发、性能优化及国产化替代提供了可靠的技术支持。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2025"></a>2025 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2025"></a>2025年，依托北京研发中心，公司在新技术与新工艺研发方面重点推进了以下项目并取得成果：</p><p class="docx-paragraph">1.新技术：单晶材料残余应力的 X 射线测量方法研究。开发了基于 X 射线衍射的单晶合金表面残余应力测试方法，成功实现典型镍基单晶高温合金表面残余应力的定量测定，为研究单晶合金在制备及服役过程中残余应力的演化规律及其对力学性能的影响提供了关键分析手段。</p><p class="docx-paragraph">2.新技术：航天芯级管路带介质温控系统及综合应力试验方法。设计了航天芯级管路带介质温控系统，实现管路内部最低温度-191℃、最高温度500℃、压力 0.2MPa~2.0MPa 的介质控温控压试验，气体控温控压装置联合电动振动试验可以完成管路带介质控温控压振动试验，明确综合应力施加试验方法，系统填补了国内大推力运载火箭综合应力施加设备的市场空白。</p><p class="docx-paragraph">3.新工艺：单晶高温合金定向切割工艺。基于对（001）取向单晶空间取向的精确测定，建立了高精度单晶定向切割工艺，可制备出（001）、（011）及（111）等特征取向的单晶试样。该工艺为开展不同晶体取向下的硬度测试及纳米压痕实验提供了可靠的样品基础，有力支撑了单晶合金各向异性力学行为的研究与性能评价。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在当地开展产学研合作情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">合作单位</p></td><td colspan="2"><p class="docx-paragraph">合作方式</p></td><td colspan="3"><p class="docx-paragraph">合作成果</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">北京科技大学</p></td><td colspan="2"><p class="docx-paragraph">委托研发</p></td><td colspan="3"><p class="docx-paragraph">开发烧结试样热等静压致密化处理技术。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">中国矿业大学 （北京）</p></td><td colspan="2"><p class="docx-paragraph">实践基地</p></td><td colspan="3"><p class="docx-paragraph">中国矿业大学（北京）研究生专业实践基地挂牌</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="2"><p class="docx-paragraph">联合开发</p></td><td colspan="3"><p class="docx-paragraph">联合开发基于位错密度演化的残余应力松弛机理及跨尺度模拟方法项目，成功入选 2025 年度北京市自然基金面上项目。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在河北省科技成果转化及效益情况</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="2"><p class="docx-paragraph">知识产权类别</p></td><td colspan="2"><p class="docx-paragraph">知识产权名称</p></td><td><p class="docx-paragraph">知识产权所有人</p></td><td><p class="docx-paragraph">经济效益(万元)</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="2"><p class="docx-paragraph">实用新型</p></td><td colspan="2"><p class="docx-paragraph">一种模拟自然环境试验平台系统</p></td><td><p class="docx-paragraph">中航试金石检测 科技（大厂）有 限公司</p></td><td><p class="docx-paragraph">48.51</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="2"><p class="docx-paragraph">实用新型</p></td><td colspan="2"><p class="docx-paragraph">一种复杂振动环境模拟试验系统</p></td><td><p class="docx-paragraph">中航试金石检测 科技（大厂）有 限公司</p></td><td><p class="docx-paragraph">263.06</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">一种自动送样磨抛机床</p></td><td><p class="docx-paragraph">中航试金石检测 科技（大厂）有 限公司</p></td><td><p class="docx-paragraph">1105.67</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="2"><p class="docx-paragraph">实用新型</p></td><td colspan="2"><p class="docx-paragraph">低倍图像采集系统</p></td><td><p class="docx-paragraph">中航试金石检测 科技（大厂）有 限公司</p></td><td><p class="docx-paragraph">90.1</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">一种用于组合轮盘的动平衡机</p></td><td><p class="docx-paragraph">中航试金石检测 科技（大厂）有 限公司</p></td><td><p class="docx-paragraph">89.1</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="2"><p class="docx-paragraph">软件著作权</p></td><td colspan="2"><p class="docx-paragraph">拉伸数据综合分析软件</p></td><td><p class="docx-paragraph">袁珂；王强；方向；黄子琳；王卓涛；高莆</p></td><td><p class="docx-paragraph">0.5</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="2"><p class="docx-paragraph">软件著作权</p></td><td colspan="2"><p class="docx-paragraph">基于MMPDS强度设计许用值计算软件</p></td><td><p class="docx-paragraph">袁珂；雷鸣；曾佳敏;石瑶;王卓涛;高莆</p></td><td><p class="docx-paragraph">0.5</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述申报单位支持人才飞地建设的制度和举措，主要从投入、人才、管理、产出、产学研合作等方面阐述。</p><p class="docx-paragraph"><a id="zdjc"></a>为深入实施创新驱动发展战略，打破地域壁垒、整合优质资源，公司以北京研发中心为核心载体，高标准建设运营 “人才飞地”，系统构建投入保障、人才汇聚、管理协同、产出高效、产学研深度融合的五位一体运行机制，全力将其打造成为技术创新策源地与成果转化前沿阵地，为公司总部引育高端人才、提升核心竞争力提供坚实支撑。</p><p class="docx-paragraph">一、构建多元化投入保障机制</p><p class="docx-paragraph">在资源投入上，公司建立构建以企业投入为主体、政策支持为赋能、专项激励为补充的多元化研发投入体系。1.设立研发专项资金。大厂总部每年发布研发项目计划，对北京研发中心申报的项目进行审核，对立项项目提供专项经费支持，用于设备采购和科研条件升级，保障技术攻关与飞地研发活动常态化开展。2.争取政策支持。北京研发中心积极申报自然科学基金、科技专项等政府项目，总部协助组织专家评审，提供申报建议，争取北京区域政策资源。3.强化研发激励。对飞地优秀研发及前沿技术探索项目给予专项经费奖励，鼓励团队攻坚克难；同时，总部每年设立优秀研发项目奖励金，飞地项目可参与评奖，获得奖励资金。</p><p class="docx-paragraph">二、创新人才引进与培育机制</p><p class="docx-paragraph">公司实施柔性引才机制，吸引行业优秀技术人才，通过提供北京研发中心工作地点，提高人才留存率。建立人才双向交流通道，飞地新员工入职初期在总部进行基础培训，定期选派飞地成员到总部进行生产实践与技术应用锻炼，同时鼓励总部技术人员深入飞地参与前沿研发，推动基础研究、应用研究与产业落地深度融合。</p><p class="docx-paragraph">三、建立高效协同管理模式</p><p class="docx-paragraph">公司建立双线并行管理体系，推动远程规范管控与北京研发中心自主创新有机融合。在行政管理上，北京研发中心遵循总部的战略统领与制度规范，确保执行方向统一；在业务运行上，全面推行研发项目负责制，充分赋予飞地项目负责人团队组建、研发推进等自主权，在符合公司整体战略前提下实现灵活创新。项目负责人动态跟进研发进展，总部技术研发部远程协同调度资源，实现管理可控与效率提升的统一。</p><p class="docx-paragraph">四、强化创新成果产出与产学研协同</p><p class="docx-paragraph">在成果转化上，公司坚持研发与产出并重，推动北京研发中心在失效分析及环境可靠性领域的研发技术工程化应用，将研发成果转化为总部检验检测新工艺、新方法，导入业务线，提升劳动生产率、成果应用率和公司业务能力。在产学研方面，总部主动对接北京地区高校、科研院所，深化其与飞地的合作关系，共建联合培养基地。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述人才飞地近三年取得的重大成效，包括技术创新、管理创新、生产效率、市场开拓等方面。</p><p class="docx-paragraph"><a id="zdcx"></a>近三年，北京研发中心在技术创新、管理创新、生产效率及市场开拓等方面取得了显著成效，强力推动总部核心竞争力跃升、产业结构优化升级，为公司高质量发展注入强劲动能。</p><p class="docx-paragraph">一、技术创新方面</p><p class="docx-paragraph">人才飞地充分发挥创新高地作用，聚焦高端测试技术、先进材料工艺两大核心领域，形成一批可转化、高价值的创新成果。1.成功研制760℃高温高周振动疲劳试验系统及航天芯级管路带介质温控系统，解决了高温下位移传感器测温、大推力火箭管路综合应力施加等关键卡脖子技术，最高试验温度达1100℃，介质温区覆盖-191℃至500℃。2.掌握了振动试验力限控制技术与悬臂梁式冲击试验放大工装设计方法，形成了一套成熟可操作的试验规范，显著提升了复杂环境下的试验精度与能力。3.开发单晶合金残余应力X射线测试方法与高精度定向切割工艺，成功实现（001）、（011）、（111）特征取向单晶试样的精准制备与力学性能表征，为镍基单晶高温合金的性能优化、失效分析提供关键技术支撑，助力公司在高端材料检测领域形成差异化优势。近三年，飞地累计引进并转化实用新型专利2项，授权发明专利2项、实用新型1项，登记软件著作权2项，技术创新成果丰硕。</p><p class="docx-paragraph">二、管理创新方面</p><p class="docx-paragraph">在管理层面，人才飞地探索出一套适应跨地域研发协同的新模式。1.构建投入保障、人才汇聚、管理协同、产出高效、产学研深度融合的五位一体运行机制，通过双线管理架构与数智化研发平台，实现了北京研发与总部生产基地的高效协同。2.建立了研发骨干与总部工艺团队的双向交流机制，有效解决了高端人才引进难、留才难的痛点。3.实施全周期项目负责制与里程碑节点考核，实现项目管控流程闭环优化，提升了成果转化率。</p><p class="docx-paragraph">三、生产效率方面</p><p class="docx-paragraph">坚持创新成果落地赋能生产的导向，推动飞地技术成果快速转化应用，有效提升公司制造能力、问题解决效率与检测水平。结合已有重型内燃机曲轴开裂、前连接体法兰断裂等典型失效分析经验，人才飞地已沉淀形成覆盖失效机理识别、原因追溯与改进方案制定的快速分析能力，有效支撑了装备研制过程中的问题归零与生产进度保障。同时，团队系统构建了材料与工艺综合评价方法，能够高效识别未知零部件的性能参数、加工工艺特征及热处理状态，为产品逆向开发、性能优化及国产化替代提供了可靠的技术依据。</p><p class="docx-paragraph">四、市场开拓方面</p><p class="docx-paragraph">依托飞地产出的专利、软件著作权等核心创新成果，显著增强公司技术创新硬实力，打破市场边界，进一步提升公司在行业内的技术话语权与品牌美誉度，树立检验检测服务标杆。</p></td></tr></table><p class="docx-paragraph"><strong>四、未来2年发展规划</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><a id="zdrw"></a>未来两年，公司将持续深化北京研发中心人才飞地建设，坚持“投入牵引、人才核心、产出导向、生态共赢”的发展思路，重点围绕航空航天、重型装备等领域的前沿测试技术及关键材料工艺，聚焦环境可靠性分析与失效分析两大方向，系统布局测试技术能力建设。充分发挥北京研发中心“筑巢引凤”的窗口作用，加速高端人才集聚与技术创新突破。</p><p class="docx-paragraph">一、总体建设规划</p><p class="docx-paragraph">1.人才引进：坚持高端引领与后备培养双轮驱动。</p><p class="docx-paragraph">依托北京科教资源集聚优势，重点引进高温合金疲劳、复杂环境模拟试验领域的领军专家为技术顾问，为前沿技术方向提供战略指导。同时，深化与北京航空航天大学、北京理工大学等高校的产学研合作，参照联合培养方式吸纳优秀在校生，为公司总部定向培养技术骨干，形成可持续的人才输送机制。</p><p class="docx-paragraph">2.科研团队建设：构建“技术预研+应用转化”协同体系。</p><p class="docx-paragraph">优化内部团队结构，组建“技术预研组”与“应用转化组”。技术预研组立足失效分析与环境可靠性领域，聚焦基础前沿检测技术开展项目研发；应用转化组负责衔接科研成果与总部检验检测业务，推动工艺方法与检测流程的工程化落地。同时，建立常态化技术交流机制，通过定期研讨、项目协作等方式，促进北京研发中心与总部技术研发部的深度融合。</p><p class="docx-paragraph">3.代表性技术成果转化</p><p class="docx-paragraph">高温/综合环境试验系统系列化： 在现有 760℃高温疲劳试验系统、航天管路带介质温控系统基础上，持续推进研发，形成标准化试验装备与测试服务能力，拓展市场应用场景；搭建失效分析数据库与专家系统： 系统梳理典型失效案例，构建结构化失效分析案例库，探索开发辅助诊断专家系统，提升失效分析的快速响应能力与智能化水平。</p><p class="docx-paragraph">4.经济社会生态效益</p><p class="docx-paragraph">通过新技术、新装备的转化应用，培育新的检验检测服务增长点，扩大业务收入规模；同时，依托技术优化与流程改进，持续降低内部检验检测时间成本，提升整体运营效益。在区域协同方面，推动测试平台开放共享，为京津冀地区中小企业及高校提供检验检测技术咨询与服务支持，助力降低社会研发创新成本，深度融入区域协同创新网络。</p><p class="docx-paragraph">二、分年度绩效指标</p><p class="docx-paragraph">1.2026年2月-2027年2月</p><p class="docx-paragraph">建立健全“前沿探索—应用转化”内部运行机制；全职引进硕博骨干人才1-2名；申请发明专利2项；实现对外新增销售收入200万元。</p><p class="docx-paragraph">2.2027年2月—2028年2月</p><p class="docx-paragraph">引进1名高级职称研发人员，选派2-3名飞地骨干人员赴公司总部交流；申请发明专利2项；飞地研发人员中承担市级及以上科研项目1项；实现对外新增销售收入300万元。</p></td></tr></table><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">围绕航空航天、重型装备等领域的前沿测试技术及关键材料工艺，聚焦环境可靠性分析与失效分析两大方向，系统布局测试技术能力建设，实现高温/综合环境试验系统系列化，搭建失效分析数据库系统。建立健全“前沿探索—应用转化”内部运行机制。引进 1 名高级职称研发人员，实现对外新增销售收入500万元以上，申请发明专利4项，中航试金石北京研发中心（人才飞地）形成的新工艺/新产品在河北省内落地成果转化2项，飞地研发人员中承担市级及以上科研项目1项。</p></td><td><p class="docx-paragraph">建立健全“ 前沿探索 —应用转化”内部运行机制；引进硕博骨干人才1-2 名；申请发明专利2项；中航试金石北京研发中心（人才飞地）形成的新工艺/新产品在河北省内落地成果转化1项；实现对外新增销售收入200万元。</p></td><td><p class="docx-paragraph">引进1名高级职称研发人员，选派2-3名飞地骨干人员赴公司总部交流；申请发明专利2项；中航试金石北京研发中心（人才飞地）形成的新工艺/新产品在河北省内落地成果转化1项；飞地研发人员中承担市级及以上科研项目1项；实现对外新增销售收入300万元。</p></td></tr><tr><td rowspan="6"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">落地成果转化项目（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">引进高级技术人才（人）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新增销售（万元）</p></td><td><p class="docx-paragraph">500</p></td><td><p class="docx-paragraph">200</p></td><td><p class="docx-paragraph">300</p></td></tr><tr><td><p class="docx-paragraph">负责市级以上科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"><strong>六、项目组主要成员</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">年龄</p></td><td><p class="docx-paragraph">证件号码</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">分工</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">潘波</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">47</p></td><td><p class="docx-paragraph">511222197901196111</p></td><td><p class="docx-paragraph">副研究员</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">拓展新材料产品产业链技术服务</p></td><td><p class="docx-paragraph">航空、航天可靠性工程</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">周峰峦</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">46</p></td><td><p class="docx-paragraph">421181198001068437</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">材料力学</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">杨春</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">44</p></td><td><p class="docx-paragraph">372925198203107739</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">拓展新材料产品产业链技术服务</p></td><td><p class="docx-paragraph">材料的组织、结构、缺陷与性能</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">方建锋</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">51</p></td><td><p class="docx-paragraph">61012519750702713x</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">特殊性能合金及粉末冶金新材料</p></td><td><p class="docx-paragraph">材料的组织、结构、缺陷与性能</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">王贞</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">35</p></td><td><p class="docx-paragraph">13072519910929132x</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">低成本、高性能金属复合材料</p></td><td><p class="docx-paragraph">金属基复合材料(包括多相复合材料等)</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">冯艳</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">43</p></td><td><p class="docx-paragraph">120106198306285043</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">拓展新材料产品产业链技术服务</p></td><td><p class="docx-paragraph">有色金属冶金</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">高莆</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">29</p></td><td><p class="docx-paragraph">130481199708041810</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">拓展新材料产品产业链技术服务</p></td><td><p class="docx-paragraph">航天动力学</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">张晓昭</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">26</p></td><td><p class="docx-paragraph">130627200006010065</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">特殊性能合金及粉末冶金新材料</p></td><td><p class="docx-paragraph">金属学</p></td><td><p class="docx-paragraph">中航试金石检测科技（大厂）有限公司</p></td><td><p class="docx-paragraph">项目组成员，参与人才飞地项目建设</p></td></tr></table><p class="docx-paragraph">                </p><p class="docx-paragraph"><strong>预算填写说明</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p><p class="docx-paragraph">预算的编制要坚持任务相关性、政策相符性和经济合理性，实事求是编制提出项目预算。填报时，直接费用应按设备费、业务费、劳务费三个类别填报。直接费用中除50万元以上的设备费外，其他费用只提供基本测算说明，不需要提供明细。</p><p class="docx-paragraph">（一）直接费用</p><p class="docx-paragraph">指在项目实施过程中发生的与之直接相关的费用，具体包括：</p><p class="docx-paragraph">1.设备费：指在项目实施过程中购置或试制专用仪器设备，对现有仪器设备进行升级改造，以及租赁外单位仪器设备而发生的费用。计算类仪器设备和软件工具可在设备费科目列支。应当严格控制设备购置，鼓励开放共享、自主研制、租赁专用仪器设备以及对现有仪器设备进行升级改造，避免重复购置。填报时，50万元以上的设备详细说明。</p><p class="docx-paragraph">2.业务费：指在项目实施过程中消耗的各种材料、辅助材料等低值易耗品的采购、运输、装卸、整理等费用，发生的测试化验加工、燃料动力、出版／文献／信息传播／知识产权事务、会议／差旅／国际合作交流等费用，以及其他相关支出。填报时，对单笔大额支出、对外委托支出重点说明。</p><p class="docx-paragraph">3.劳务费：指在项目实施过程中支付给参与项目研究的研究生、博士后、访问学者以及项目科研辅助人员等的劳务性费用，以及支付给临时聘请的咨询专家的费用等。</p><p class="docx-paragraph">项目聘用人员的劳务费开支标准，参照当地科学研究和技术服务业从业人员平均工资水平，根据其在项目研究中承担的工作任务确定，其由单位缴纳的社会保险补助、住房公积金等“五险一金”纳入劳务费科目开支。</p><p class="docx-paragraph">专家咨询费不得支付给参与项目及其项目管理相关的工作人员。专家咨询费标准参照《中央财政科研项目专家咨询费管理办法》（财科教〔2017〕128号）规定，由项目申报单位结合实际自行确定。</p><p class="docx-paragraph">（二）间接费用</p><p class="docx-paragraph">指项目申报单位和项目合作单位在组织实施项目过程中发生的无法在直接费用中列支的相关费用。主要包括：项目申报单位为项目研究提供的房屋占用，日常水、电、气、暖消耗，有关管理费用的补助支出，以及激励科研人员的绩效支出等。</p><p class="docx-paragraph">间接费用实行总额控制，项目申报单位申请的间接费用总额按照不超过直接费用扣除设备购置费的一定比例核定，其中：100万元以下的部分为30%，100万元至300万元的部分为25%；300万元以上的部分为20%；数学等纯理论基础研究项目间接费用比例可提高到不超过60%。</p><p class="docx-paragraph">间接费用由项目承担单位统筹安排使用，可全部用于绩效支出，并向创新绩效突出的团队、个人和青年人才倾斜。</p><p class="docx-paragraph"><strong>二、自筹资金</strong></p><p class="docx-paragraph">对自筹资金主要用途、支出预算做简要说明。</p></td></tr></table><p class="docx-paragraph"><strong>七、项目预算表</strong></p><p class="docx-paragraph">                                             单位：万元</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>序号</strong></p></td><td><p class="docx-paragraph"><strong>预算科目名称</strong></p></td><td><p class="docx-paragraph"><strong>金额</strong></p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">（一）直接费用</p></td><td><p class="docx-paragraph">40.00</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1.设备费</p></td><td><p class="docx-paragraph">20.00</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">其中：购置设备费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2.业务费</p></td><td><p class="docx-paragraph">17.00</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">3.劳务费</p></td><td><p class="docx-paragraph">3.00</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">（二）间接费用</p></td><td><p class="docx-paragraph">10.00</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">其中：绩效支出</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph"><strong>二、自筹资金</strong></p></td><td><p class="docx-paragraph">100.00</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph"><strong>合 计</strong></p></td><td><p class="docx-paragraph">150.00</p></td></tr></table><p class="docx-paragraph">注：1.间接费用无需编制预算说明；2.绩效支出在间接费用中无比例限制。</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目预算基本测算说明（不包含单价50万以上的设备详细说明）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="qtzc"></a>一、省级财政资金：50万元</p><p class="docx-paragraph">1. 设备费：20万元。</p><p class="docx-paragraph">其中试制设备费20万元，用于项目实施过程中环境可靠性试验如商业航天使用阀门振动功能性试验研究、整车/系统级环境试验能力建设、产品通用质量特性研究及失效分析试验如复杂环境下陶瓷基复合材料失效模式等研发活动所需检测设备的试制加工。</p><p class="docx-paragraph">2. 业务费：17万元</p><p class="docx-paragraph">（1）材料费：用于设备质量可靠性检测所需材料、失效分析陶瓷复合材料及金属材料等试验件材料等费用的支出。高温应变片3000元/件，5件计1.5万元；电测小规格应力分析应变片15元/件，500件计0.75万元；应变片用测试线缆0.5万元；金相热镶嵌料300元/件，12件计0.36万元；冷镶嵌用模具13元/件，200件计0.26万元；金相砂纸3元/张，2100张计0.63万元；其他零部件、工装夹具等计3万元。以上合计7万元。</p><p class="docx-paragraph">（2）燃料动力费：用于各检测测试设备正常运转发生的电费支出，计3万元。</p><p class="docx-paragraph">（3）知识产权事务费：用于申请专利及发表论文的费用支出。其中发明专利代理费及第一年官费按0.75万元/件，4件计3万元。</p><p class="docx-paragraph">（4）会议/差旅/国际合作交流费：两年按出差20人次，每次出差3天，每人次差旅费平均2000元（住宿费+伙食交通费+机票或火车票），20人次×0.2万元/人次=4万元。</p><p class="docx-paragraph">3. 劳务费：3万元。用于支付给参与项目的科研辅助人员，以及邀请专家对该项目进行咨询指导发生的专家咨询费。</p><p class="docx-paragraph">4. 间接经费：10万元。用于项目人员的绩效支出。</p><p class="docx-paragraph">二、企业自筹资金：100万元</p><p class="docx-paragraph">用于项目实施过程中设备费、材料费、燃料动力费、差旅费、劳务费等不足部分的补充支出。</p><p class="docx-paragraph">以上合计150万元整。</p></td></tr><tr><td><p class="docx-paragraph"><strong>单价50万元以上的设备详细说明（无相关情况，本栏填“无”）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="sbxxsm"></a>无</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a></p><p class="docx-paragraph">               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>八、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>九、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人学历、学位证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">团队负责人全职引进劳务合同</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">实用新型 低倍图像采集系统</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">发明专利 一种用于组合轮盘的动平衡机</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">发明专利 一种自动送样磨抛机床</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">软著证书-基于MMPDS强度设计许用值计算软件</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">软著证书-拉伸数据综合分析软件</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">转入实用新型 一种复杂振动环境模拟试验系统</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">转入实用新型 一种模拟自然环境试验平台系统</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">营业执照、高新技术企业、专精特新小巨人企业及省部级研 发平台证明材料</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">北京研发中心（人才飞地）成员名单</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">北京研发中心部分成员劳动合同</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研协议北京科技大学-热等静压合同</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研协议-北京科技大学</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研协议-北京航空航天大学</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

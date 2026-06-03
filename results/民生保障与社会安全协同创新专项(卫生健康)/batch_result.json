@@ -1,0 +1,216 @@
+{
+  "status": "success",
+  "data": {
+    "dir_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)",
+    "selected_projects": 10,
+    "resolved_projects": 10,
+    "available_docs": 10,
+    "missing_docs": [],
+    "failed_projects": [],
+    "debug_report_path": "/home/tdkx/ljh/Tech/results/民生保障与社会安全协同创新专项(卫生健康)/plagiarism_batch_report.html",
+    "results": [
+      {
+        "project": {
+          "id": "f2176afa9c1b49aba21ba0e3ecebb25f",
+          "xmmc": "f2176afa9c1b49aba21ba0e3ecebb25f",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/f2176afa9c1b49aba21ba0e3ecebb25f.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868135866",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 10849,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 17.9
+        }
+      },
+      {
+        "project": {
+          "id": "cff3273b14724d55bd6ad67b73a88607",
+          "xmmc": "cff3273b14724d55bd6ad67b73a88607",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/cff3273b14724d55bd6ad67b73a88607.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868142450",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 12374,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 18.81
+        }
+      },
+      {
+        "project": {
+          "id": "705f6ef654114abfa56eaa857bee0538",
+          "xmmc": "705f6ef654114abfa56eaa857bee0538",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/705f6ef654114abfa56eaa857bee0538.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868157191",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 11156,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 17.89
+        }
+      },
+      {
+        "project": {
+          "id": "40ae7dee0ee44f948e5dcf200156fc4a",
+          "xmmc": "40ae7dee0ee44f948e5dcf200156fc4a",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/40ae7dee0ee44f948e5dcf200156fc4a.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868149278",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 9378,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 2.46
+        }
+      },
+      {
+        "project": {
+          "id": "c4a5476d5a884ef997ad86eff842c472",
+          "xmmc": "c4a5476d5a884ef997ad86eff842c472",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/c4a5476d5a884ef997ad86eff842c472.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868165073",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 9905,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 14.82
+        }
+      },
+      {
+        "project": {
+          "id": "1077c7e134f4458a8410b2566fcd1673",
+          "xmmc": "1077c7e134f4458a8410b2566fcd1673",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/1077c7e134f4458a8410b2566fcd1673.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868184417",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 9598,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 24.49
+        }
+      },
+      {
+        "project": {
+          "id": "8be0bf1166aa4a13a28f25d44bf4e17b",
+          "xmmc": "8be0bf1166aa4a13a28f25d44bf4e17b",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/8be0bf1166aa4a13a28f25d44bf4e17b.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868195661",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 11102,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 28.68
+        }
+      },
+      {
+        "project": {
+          "id": "0246843193cb4b6d8af11d8d869d0f10",
+          "xmmc": "0246843193cb4b6d8af11d8d869d0f10",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/0246843193cb4b6d8af11d8d869d0f10.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868206527",
+          "total_pairs": 4,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 9874,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 20.5
+        }
+      },
+      {
+        "project": {
+          "id": "c369bd6540c1461c9f1093773f2ef666",
+          "xmmc": "c369bd6540c1461c9f1093773f2ef666",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/c369bd6540c1461c9f1093773f2ef666.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868218490",
+          "total_pairs": 8,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 10891,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 20.17
+        }
+      },
+      {
+        "project": {
+          "id": "3b309b6a01cd42c8be55bc1a769b2b0f",
+          "xmmc": "3b309b6a01cd42c8be55bc1a769b2b0f",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/民生保障与社会安全协同创新专项(卫生健康)/3b309b6a01cd42c8be55bc1a769b2b0f.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868224806",
+          "total_pairs": 3,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 9605,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 17.27
+        }
+      }
+    ]
+  },
+  "message": "",
+  "code": 200
+}

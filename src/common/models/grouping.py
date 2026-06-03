@@ -118,7 +118,10 @@ class ProjectInGroup(BaseModel):
     # 新增debug字段
     original_subject_code: Optional[str] = Field(None, description="原始学科代码")
     original_subject_name: Optional[str] = Field(None, description="原始学科名称")
+    original_subject_code_2: Optional[str] = Field(None, description="原始第二学科代码")
+    original_subject_name_2: Optional[str] = Field(None, description="原始第二学科名称")
     keywords: List[str] = Field(default_factory=list, description="项目关键词")
+    risk_flags: List[str] = Field(default_factory=list, description="项目级风险标记")
 
     class Config:
         from_attributes = True
@@ -146,6 +149,9 @@ class ProjectGroup(BaseModel):
     
     # 兼容旧版
     summary: Optional[GroupSummary] = Field(None, description="分组摘要(兼容)")
+    subject_code_2_distribution: Dict[str, int] = Field(default_factory=dict, description="组内第二学科代码分布")
+    risk_flags: List[str] = Field(default_factory=list, description="组级风险标记")
+    risk_details: List[str] = Field(default_factory=list, description="组级风险详情")
 
     class Config:
         from_attributes = True
@@ -277,7 +283,9 @@ class FullGroupingResult(BaseModel):
 
 class GroupingRequest(BaseModel):
     """分组请求"""
+    guide_codes: Optional[List[str]] = Field(None, description="按 zndm 过滤的代码列表（可选）")
     category: Optional[str] = Field(None, description="奖种类别")
+    min_per_group: int = Field(3, description="每组最小项目数")
     max_per_group: int = Field(15, description="每组目标项目数")
     strategy: GroupingStrategy = Field(GroupingStrategy.SEMANTIC, description="分组策略")
     merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
@@ -304,7 +312,9 @@ class MatchingRequest(BaseModel):
 
 class FullGroupingRequest(BaseModel):
     """完整分组与匹配请求"""
+    guide_codes: Optional[List[str]] = Field(None, description="按 zndm 过滤的代码列表（可选）")
     category: Optional[str] = Field(None, description="奖种类别")
+    min_per_group: int = Field(3, description="每组最小项目数")
     max_per_group: int = Field(15, description="每组目标项目数")
     merge_min_total_score: Optional[float] = Field(None, description="小组合并总分阈值（可选）")
     merge_min_text_score: Optional[float] = Field(None, description="小组合并语义分阈值（可选）")

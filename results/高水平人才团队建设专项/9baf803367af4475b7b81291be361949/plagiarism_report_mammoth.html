@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 9baf803367af4475b7b81291be361949.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：9baf803367af4475b7b81291be361949.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,195</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>9baf803367af4475b7b81291be361949.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010201-“科技人才飞地”项目</p><p class="docx-paragraph">项 目 名 称：<a id="xmmc"></a>中信戴卡股份有限公司科技人才飞地</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>中信戴卡股份有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>王凯庆</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>秦皇岛市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2027-12</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-12</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+科技人才飞地”格式填写，如：****公司科技人才飞地。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">单位名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwmc1"></a>中信戴卡股份有限公司</p></td><td colspan="2"><p class="docx-paragraph">单位性质</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">通讯地址</p></td><td colspan="9"><p class="docx-paragraph"><a id="cddwdz1"></a>河北秦皇岛经济技术开发区龙海道185号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwxydm"></a>91130300601149636T</p></td><td colspan="2"><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-秦皇岛市-秦皇岛市经济技术开发区</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">注册时间</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwzcsj"></a>1988-05-25</p></td><td colspan="2"><p class="docx-paragraph">注册资本</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzczb"></a>197134.2713万元</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">法定代表人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwfr1"></a>朱志华</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="lclxrsj"></a>18633545855</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="frbgdh"></a></p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">项目联系人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxr"></a>王凯庆</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxrsj"></a>15733529358</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhmc"></a>中信戴卡股份有限公司</p></td><td colspan="2"><p class="docx-paragraph">开户银行行号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwhh"></a>104126000029</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户银行</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhh"></a>中行秦皇岛分行营业部</p></td><td colspan="2"><p class="docx-paragraph">帐号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzh"></a>100147854537</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>3479人</p></td><td colspan="2"><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwjjsry"></a>1111人</p></td><td colspan="2"><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzgjry"></a>544人</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">企业类型</p></td><td colspan="5"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>R</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>R</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td colspan="2"><p class="docx-paragraph">所属产业（集群）</p></td><td colspan="2"><p class="docx-paragraph"><a id="tscyjq"></a>秦皇岛经开区汽车零部件产业集群</p></td></tr><tr><td colspan="11"><p class="docx-paragraph">近三年研发投入和销售收入（万元）</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2023"></a>2023 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2023"></a>128271.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2023"></a>3560648.0</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2023"></a>3.60</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2024"></a>2024 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2024"></a>128443.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2024"></a>3850212.0</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2024"></a>3.34</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2025"></a>2025 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2025"></a>145610.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2025"></a>4697089.0</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2025"></a>3.10</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">研发平台情况</p></td><td colspan="8"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>R重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>□技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><strong>申报单位简介</strong></p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><a id="xmjj"></a>   <strong>一、公司概况</strong></p><p class="docx-paragraph">中信戴卡股份有限公司是中国第一家铝车轮制造企业，位于河北省秦皇岛市，主营产品是轻量化铝车轮和汽车底盘零部件。2025年营业收入469亿，利润总额15亿元，研发投入约14.5亿。铝车轮产品市场占有率连续18年全球第一，全球份额超过35%，是首家进入全球汽车零部件百强榜的中国企业，2025年排名第42位。</p><p class="docx-paragraph"><strong>二、研发能力</strong></p><p class="docx-paragraph">1.研发平台</p><p class="docx-paragraph">国家企业技术中心、国家地方联合工程实验室、国家工业设计中心、技术创新中心、企业重点实验室、国际合作基地、轻量化汽车零部件工程实验室。</p><p class="docx-paragraph">2.科技荣誉</p><p class="docx-paragraph">国家高新技术企业、国家制造业单项冠军示范企业、国家技术创新示范企业、国家智能制造与人工智能应用示范企业、国家绿色工厂、科技领军企业、全球行业首家“灯塔工厂”。</p><p class="docx-paragraph"><strong>3</strong>.标准与专利</p><p class="docx-paragraph">行业标准的制定者，累计152项，2025年完成16项。拥有SAE车轮标准委员会的唯一中国籍成员。拥有ISO国际标准化组织车轮行业注册专家2人，2022年代表中国车轮行业首次参与制定发布ISO国际标准，标志着我国车轮提升国际话语权迈出了突破性、跨越性、历史性的关键一步。2025年底，拥有有效专利1965件，其中发明专利930件，2025年授权专利169件。</p><p class="docx-paragraph">4.研发队伍与人才</p><p class="docx-paragraph">公司全职研发人员七百余人，参与科技活动研发项目人员1180人。享受国务院政府津贴人员3人，国家高层次人才特殊支持计划1人，行业标准专家2人，正高级职称30余人，副高级职称300余人，拥有在职博士18人。</p><p class="docx-paragraph">与清华大学、北京大学、燕山大学等多个高校与科研院所有密切合作。</p><p class="docx-paragraph">5.研发投入与基础</p><p class="docx-paragraph">园区建有中国合格评定国家认可委员会（CNAS）ISO/IEC17025 实验室认证。拥有双轴试验机、弯曲试验机等主要检测仪器设备 110 多套，具备材料性能、零部件性能等100多个项目检测能力，研发试验检测设备仪器原值超5亿元。</p><p class="docx-paragraph">6.科技奖项与成果</p><p class="docx-paragraph">2019年，《大尺寸铝合金车轮成型关键技术及应用》获国家科技进步二等奖。2021年，《铝合金车轮全流程智能制造关键技术及产业化》项目获河北省科技进步一等奖。公司深耕汽车零部件制造领域，实现了在制产品全部应用“新技术”成果验证的能力，在产品轻量化、材料科学、制造工艺等方面取得了丰富的科技成果和巨大的经济效益。</p><p class="docx-paragraph">7.承担政府科技专项</p><p class="docx-paragraph">承担并完成的河北省科技计划14项，获得专项资金支持1300万元。2022年获得研发费用加计扣奖补资金1000万元，每年享受高企减免税和研发费用加计扣除减免税超2亿元。</p><p class="docx-paragraph">项目包括：（1）2024年中央引导地方科技发展资金，科技成果转移转化专项，新能源车用高强韧轻量化铝车轮智能铸造技术开发与产业化课题，省科技厅科技资源统筹处支持资金200万元；（2）2024年省级科技计划资金，重大科技支撑计划国际科技合作专项，中摩铝制汽车零部件工业人工智能联合实验室课题，省科技厅国际合作处支持资金60万元；（3） 2025年京津冀协同创新专项，数字孪生驱动的成组智能铝铸造单元研发与产业化应用，省科技厅发展规划处支持资金150万元。</p><p class="docx-paragraph"><strong>三、产业布局及未来发展</strong></p><p class="docx-paragraph">公司已在河北省秦皇岛市累计投资约50亿，建成汽车零部件产业园区，在本地区成立产业链上下游创新型子公司9家，成功培育子公司高新技术企业4家，带动并引领秦皇岛地区汽车零部件产业的快速发展。在全球拥有30家主要制造基地，其中海外11家，分布在亚洲、欧洲、美洲和非洲，已实现全球化研产销模式。</p><p class="docx-paragraph">2026年重点创新工作：加强基础材料研究布局；加大原创技术研究力度；加快关键核心技术攻关；加速虚拟研发技术进阶；推动绿色化智能化发展。</p></td></tr></table><p class="docx-paragraph"><strong>二、人才飞地基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">人才飞地名称</p></td><td colspan="7"><p class="docx-paragraph"><a id="fdmc"></a>中信戴卡股份有限公司东北研究分院</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">负责人</p></td><td colspan="3"><p class="docx-paragraph"><a id="fdfzr"></a>王凯庆</p></td><td><p class="docx-paragraph">职务</p></td><td><p class="docx-paragraph"><a id="fdfzrzw"></a>负责人</p></td><td><p class="docx-paragraph">联系电话</p></td><td><p class="docx-paragraph"><a id="fdfzrdh"></a>15733529358</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">是否独立法人</p></td><td colspan="4"><p class="docx-paragraph"><a id="fdsfdlfr"></a>否</p></td><td><p class="docx-paragraph">注册资本</p><p class="docx-paragraph">（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzczb"></a>0</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">场地面积（㎡）</p></td><td><p class="docx-paragraph"><a id="fdcdmj"></a>400</p></td><td colspan="4"><p class="docx-paragraph">注册地址</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzcdz"></a>长春经济技术开发区中山大街5555号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">飞地研发人员数量</p></td><td><p class="docx-paragraph"><a id="fdyfrysl"></a>17</p></td><td colspan="4"><p class="docx-paragraph">专职研发人员数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfyrysl"></a>17</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">硕士研究生及以上学历或高级专业技术职称人员占比</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdryzb"></a>65</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度在高层次人才引进培育使用和技术研发方面</p><p class="docx-paragraph">支出的费用（万元）</p></td><td colspan="2"><p class="docx-paragraph"> <a id="fdzcfy"></a>2331 （万元）</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度飞地为申报单位引进副高及以上人才数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfgry"></a>1</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">在飞地所在地签订产学研合作协议数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdhzxy"></a>3</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">申报单位对人才飞地是否拥有实际控制权	</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdgzq"></a>是</p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">股权</p><p class="docx-paragraph">构成</p></td><td colspan="2"><p class="docx-paragraph">第1大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc1"></a>中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl1"></a>100 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第2大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc2"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl2"></a>0 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第3大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc3"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl3"></a>0 %</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">上年度营业收入（万元）</p></td><td colspan="6"><p class="docx-paragraph"><a id="fdyye"></a>0</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">主要研发设备情况</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="3"><p class="docx-paragraph">设备名称</p></td><td colspan="3"><p class="docx-paragraph">主要用途</p></td><td colspan="2"><p class="docx-paragraph">设备价值</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="3"><p class="docx-paragraph">光谱分析仪</p></td><td colspan="3"><p class="docx-paragraph">铝块化学成分检测</p></td><td colspan="2"><p class="docx-paragraph">59.8万</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="3"><p class="docx-paragraph">万能试验机</p></td><td colspan="3"><p class="docx-paragraph">机械性能检测</p></td><td colspan="2"><p class="docx-paragraph">18.2万</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="3"><p class="docx-paragraph">三座标测量仪</p></td><td colspan="3"><p class="docx-paragraph">产品尺寸检测</p></td><td colspan="2"><p class="docx-paragraph">44.5万</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂制样机</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂样砂制作</p></td><td colspan="2"><p class="docx-paragraph">14万</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="3"><p class="docx-paragraph">热分析密度当量仪</p></td><td colspan="3"><p class="docx-paragraph">铝水密度检测</p></td><td colspan="2"><p class="docx-paragraph">11.7万</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="3"><p class="docx-paragraph">疲劳试验机</p></td><td colspan="3"><p class="docx-paragraph">机械性能检测</p></td><td colspan="2"><p class="docx-paragraph">10.5万</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="3"><p class="docx-paragraph">3D 扫描仪</p></td><td colspan="3"><p class="docx-paragraph">产品尺寸、轮廓度检测</p></td><td colspan="2"><p class="docx-paragraph">72.1万</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂强度试验机</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂抗弯、抗拉强度检测</p></td><td colspan="2"><p class="docx-paragraph">6.2万</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td colspan="3"><p class="docx-paragraph">X光探伤机</p></td><td colspan="3"><p class="docx-paragraph">产品内部质量检测</p></td><td colspan="2"><p class="docx-paragraph">107万</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td colspan="3"><p class="docx-paragraph">台式、体式金相显微镜</p></td><td colspan="3"><p class="docx-paragraph">产品内部组织检测</p></td><td colspan="2"><p class="docx-paragraph">4.4万</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td colspan="3"><p class="docx-paragraph">轮廓仪</p></td><td colspan="3"><p class="docx-paragraph">产品轮廓度检测</p></td><td colspan="2"><p class="docx-paragraph">3.2万</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td colspan="3"><p class="docx-paragraph">筛砂机测量粒度机</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂颗粒度检测</p></td><td colspan="2"><p class="docx-paragraph">8.3万</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td colspan="3"><p class="docx-paragraph">荧光检测线</p></td><td colspan="3"><p class="docx-paragraph">产品裂纹检测</p></td><td colspan="2"><p class="docx-paragraph">124万</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td colspan="3"><p class="docx-paragraph">硬度计（布氏、洛氏）</p></td><td colspan="3"><p class="docx-paragraph">产品硬度检测</p></td><td colspan="2"><p class="docx-paragraph">3.2万</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td colspan="3"><p class="docx-paragraph">在线综合检具</p></td><td colspan="3"><p class="docx-paragraph">产品尺寸、轮廓检测</p></td><td colspan="2"><p class="docx-paragraph">24万</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂发气量检测仪</p></td><td colspan="3"><p class="docx-paragraph">覆膜砂发气量检测</p></td><td colspan="2"><p class="docx-paragraph">3.8万</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">副高及以上职称人才情况（ <a id="fgjzcrs"></a>10 人）</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">专业</p></td><td colspan="3"><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">工作单位</p></td><td><p class="docx-paragraph">是否专职研发人员</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">王凯庆</p></td><td><p class="docx-paragraph">金属材料加工</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">殷庆付</p></td><td><p class="docx-paragraph">机械工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">任长久</p></td><td><p class="docx-paragraph">机械设计制造及自动化</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">李秋芳</p></td><td><p class="docx-paragraph">机械电子</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">于越</p></td><td><p class="docx-paragraph">材料学</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">孙玉兰</p></td><td><p class="docx-paragraph">高分子材料与工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">宋兵</p></td><td><p class="docx-paragraph">矿产勘察</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">王东旭</p></td><td><p class="docx-paragraph">材料成型</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">阎妍</p></td><td><p class="docx-paragraph">会计学</p></td><td colspan="3"><p class="docx-paragraph">高级经济师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">王晓迪</p></td><td><p class="docx-paragraph">材料加工工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr></table><p class="docx-paragraph"><strong>三、近三年人才飞地成效情况</strong></p><table class="docx-table"><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年开发新技术、新产品、新工艺、专利、软著等情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2023"></a>2023 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2023"></a>（1）新产品开发：全年共计完成45款铝轮毂新产品开发，基本覆盖一汽集团所有新车型，供货占比高达70%以上。全年共计完成47款铝铸件新产品开发，包括高压壳体、转向节、副车架等，业务已拓展至红旗、极氪、华人运通等10余家国内主流汽车企业，基本实现底盘铝制零部件的全覆盖。其中，与一汽红旗共同完成行业首款空心砂型铸造转向节轻量化产品开发，共计3款项目E001/E202/E702，较实心设计方案相比，实现轻量化减重1kg，整车降本20元以上；此外联合一汽红旗共同成功开发首款4.5mm薄壁深腔铝制副车架E001，实现产品减重25%以上，目前已顺利实现量产供货。</p><p class="docx-paragraph">（2）新技术研发：开发高压模具防跑铝、抽真空、精准点冷及精益化浇铸系统成组技术，在红旗HDU35项目应用，实现烫模废品数量减少40%、综合成品率提升5%、生产效率提升10%，年创造经济效益超百万元。针对客户对整车NVH严格要求，开发车轮空腔共振噪声仿真分析系统，新技术应用将在两件式车轮应用，噪声优化周期将缩短50%；一汽奥迪项目通过升级CAE仿真分析技术，将新品弯曲试验K值通过率提升15%，轻量化指标达成率98%。</p><p class="docx-paragraph">（3）专利申报：将新产品、新技术进行科技成果转化，全年完成多项国家专利申报。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2024"></a>2024 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2024"></a>（1）新产品开发：全年共计完成38款铝轮毂新产品开发，新车型轻量化要求日益严苛，100%高质量完成设计方案制定，获得客户高度认可。全年共计完成44款铝铸件新产品开发，积极拓展上汽奥迪、岚图等新客户，其中联合比亚迪客户成功完成仰望系列高端车型，同时也是公司首款越野车铝制副车架SGHL新产品开发。首次开发铝制空心控制臂新产品，完成红旗、长安、极氪、雷诺等多家汽车企业的产品设计开发，进一步拓宽了公司产品序列。首次开发一体化大铸件新产品，联合红旗完成汽车前舱预研设计，持续提升全产品设计能力。</p><p class="docx-paragraph">（2）新技术研发：车轮产品上，研发新拓扑仿真技术，技术应用到红旗电动车型低风阻车轮风阻系数降 8%、轻量化达 10%；联合红旗开发 H5车型18 寸极限轻量化车轮，降重 1.5kg 且强度达标率 100%。铸件产品打造差压铸造、免钻孔等成组成套制造技术，生产效率提升超 30%，综合成品率提升 3-5%，工艺优化年增值超百万元。汽车轻量化零部件用重稀土铝合金制备技术开发，研发提升机械性能的重稀土铝合金，应用于车轮、转向节轻量化，已完成成分调控。</p><p class="docx-paragraph">（3）专利申报：将新产品、新技术进行科技成果转化，全年完成多项国家专利申报。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2025"></a>2025 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2025"></a>（1）新产品开发：全年共计完成42款铝轮毂新产品开发，年供货量&gt;500万件，在红旗市场首次成功开发并应用PVD差异化车轮新产品，年创经济效益超千万。全年共计完成52款铝铸件新产品开发，成功拓展北汽新能源、长安汽车等新客户群体，副车架业务版图进一步扩大。首次承接铝制空心控制臂新产品，并成功开发红旗P701新项目，产品轻量化减重30%以上。成功开发红旗C206-10后副车架，产品壁厚3.8mm，进一步实现5%的轻量化减重，属于国内领先水平。</p><p class="docx-paragraph">（2）新技术研发：车轮产品方面，红旗高耐蚀零VOC PVD涂层新技术顺利开发应用，将红旗海外项目耐腐蚀性提升40%；成功开发奥迪Q521寸项目极限轮辋2.25mm壁厚新产品，系国内首次，打破国外产品垄断；低成本差异化轻量化插件车轮成本降低20%，大众J01车型适配率100%。铸件产品方面，开发副车架底铸浇铸系统、防飞边变形、保温冷却排气、热处理料架优化等成组技术，将红旗E702副车架金属利用率提升至55%以上，较行业水平提升15%，同时无需热处理矫形，显著降低生产成本。</p><p class="docx-paragraph">（3）专利申报：完成公司内部设计规范4项，申报多项国家专利，涵盖空腔副车架轻量化、浇注系统、真空排气、过滤网结构、模具加热器等。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在当地开展产学研合作情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">合作单位</p></td><td colspan="2"><p class="docx-paragraph">合作方式</p></td><td colspan="3"><p class="docx-paragraph">合作成果</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">中国科学院长春应用化学研究所</p></td><td colspan="2"><p class="docx-paragraph">委托开发</p></td><td colspan="3"><p class="docx-paragraph">重稀土铝合金制备技术：开发了车轮/转向节用铝合金，屈服强度提升（如车轮由220MPa提升至245MPa），疲劳寿命提升30%以上，已形成成分及热处理工艺标准，申请专利2件。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">吉林大学</p></td><td colspan="2"><p class="docx-paragraph">委托开发</p></td><td colspan="3"><p class="docx-paragraph">结构储能一体式碳纤维覆盖皮肤：开发了可作为备用电源的结构功能件，实现3V电压、&gt;3mAh容量，完成原理样机2套、专利申请文件2项以上、学术论文2篇及科技成果评价</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">吉林大学</p></td><td colspan="2"><p class="docx-paragraph">委托开发</p></td><td colspan="3"><p class="docx-paragraph">模块化智能车轮研究：建立了基于AI的智能车轮预研体系，完成动力学模型、仿真测试模型，实现单车轮转向角范围-40°~80°，产出发明专利2项及设计报告。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在河北省科技成果转化及效益情况</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="2"><p class="docx-paragraph">知识产权类别</p></td><td colspan="2"><p class="docx-paragraph">知识产权名称</p></td><td><p class="docx-paragraph">知识产权所有人</p></td><td><p class="docx-paragraph">经济效益(万元)</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">一种改进的铝车轮低压铸造模具</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">400.0</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">基于优化仿真的高强度轻量化车轮轮辋结构设计方法与装置</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">320.0</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">铸造模具服役过程热应力仿真方法、装置及储存介质</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司、中国中信有限公司</p></td><td><p class="docx-paragraph">205.0</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="2"><p class="docx-paragraph">实用新型专利</p></td><td colspan="2"><p class="docx-paragraph">改进的铝合金副车架</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">43.8</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="2"><p class="docx-paragraph">实用新型专利</p></td><td colspan="2"><p class="docx-paragraph">一种整体空心铸造铝合金后副车架及电动汽车</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">43.8</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="2"><p class="docx-paragraph">实用新型专利</p></td><td colspan="2"><p class="docx-paragraph">一种双工位转向节去毛刺装置</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">43.1</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述申报单位支持人才飞地建设的制度和举措，主要从投入、人才、管理、产出、产学研合作等方面阐述。</p><p class="docx-paragraph"><a id="zdjc"></a>为突破地域限制，实现“研发在外地、转化在当地”的引才用才新模式，中信戴卡股份有限公司特制定以下制度和举措，全方位支持人才飞地建设，旨在突破传统地理与组织边界，高效集聚全球顶尖科技人才，以支撑公司技术创新与全球业务拓展。</p><p class="docx-paragraph">在管理模式上，中信戴卡建立了全球化的研发网络布局，先后在长春、上海、长沙、广州以及美国设立研究中心，形成覆盖国内主要汽车产业集聚区和北美核心市场的“人才飞地”体系。各研究中心在公司总部的统一战略规划下，实行矩阵式管理架构，既承接总部下达的共性技术研发任务，又可根据区域产业特点和资源优势自主开展特色课题研究。总部在预算范围内赋予研发中心充分的人、财、物自主支配权，同时通过数字化研发管理平台实现项目进度、实验数据、技术成果的实时共享与协同，确保全球研发资源的高效整合与一体化运作。</p><p class="docx-paragraph">在投入机制方面，公司每年投入研发费用数千万元，专项用于东北、华南、华东及北美研究中心的建设与运营。资金重点投向四个方向：一是支持新材料、新工艺、新产品的前沿技术研发；二是保障产品试制所需的样件开发与小批量验证；三是深化与高校、科研院所的外部合作，支持联合实验室建设与协同攻关项目；四是覆盖各研究中心的场地租赁、设备购置及日常运维支出。</p><p class="docx-paragraph">在人才引育方面，公司为各研究分院配置专职研发人员15人以上，形成属地化的核心技术团队。在此基础上，依托各分院区位优势积极拓展引才渠道，面向全球招聘材料科学、机械制造等专业高层次人才，并通过项目合作、技术咨询等方式吸纳当地高校和科研院所的优秀人才参与研发工作。公司注重研发团队的梯队建设，通过校园招聘吸纳优秀毕业生进入分院培养，同时为现有研发人员提供系统的技术培训和职业发展通道，构建结构合理、富有活力的属地化研发队伍。</p><p class="docx-paragraph">在产出机制方面，公司建立了全面的科技成果转化管理机制，涵盖项目立项、过程跟踪、绩效评估、转化激励等全流程。各研究中心的研发绩效与总部产业化需求紧密挂钩，将新产品新工艺在总部基地的应用情况等作为核心考核指标。近年来，各研究中心年度专利总申请量保持在100项以上，形成了高质量的知识产权储备。</p><p class="docx-paragraph">在产学研合作方面，公司依托各研究中心的区位优势，分别与吉林大学、中南大学、上海交通大学、上海大学等国内顶尖高校建立了深度合作关系，在新型合金材料、轻量化及低碳技术、先进铸造工艺、具身智能等领域取得了一系列显著技术突破，有力支撑了公司核心竞争力的持续提升。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述人才飞地近三年取得的重大成效，包括技术创新、管理创新、生产效率、市场开拓等方面。</p><p class="docx-paragraph"><a id="zdcx"></a>近三年，东北研究分院作为中信戴卡股份有限公司异地研发机构，立足东北、服务现地客户及长春KSM工厂，形成“技术研发—工艺突破—产品转化—市场拓展”一体化创新体系，取得系统性成效：</p><p class="docx-paragraph">一、技术创新系统能力显著增强</p><p class="docx-paragraph">累计开发高压、差压、低压新产品超100款，覆盖红旗、比亚迪、极氪、长安、大众、奥迪等主流品牌，涵盖空心转向节、空心控制臂、薄壁副车架、极限轻量化车轮等核心产品。掌握空心转向节、空心控制臂、副车架电泳、3.8mm薄壁空腔副车架、零VOC PVD涂层等10余项关键核心技术，形成“项管—产品—工艺”全周期研发能力。近三年累计申报专利及软著20余项，编制《铝合金空心副车架设计规范》《铸铝副车架电泳技术规范》《乘用车铝合金车轮轮辋压溃试验方法》等企业标准，填补多项技术空白。汽车轻量化零部件用重稀土铝合金制备技术开发研发提升机械性能的重稀土铝合金，应用于车轮、转向节轻量化，需完成成分调控、试制及 2 项共有专利申请。</p><p class="docx-paragraph">二、管理创新与生产效率持续优化</p><p class="docx-paragraph">构建高压、差压、低压三大工艺平台化开发体系，实现模腔精益化布局、模具无飞边、免钻孔、防拉伤、防变形等技术突破，模具烤模时间减少50%，生产效率提升30%，综合成品率提升10%以上。推动热处理料架兼容性设计，实现多产品共用，减少校形工序，副车架实现少校形/免校形，量产周期显著缩短。工艺改进、技术赋能累计120余项，高压新品成品率≥94%、差压≥93%、低压≥90%，差压产品80%以上实现“试制即量产”，大幅提升研发与制造协同效率。</p><p class="docx-paragraph">三、经济价值创造能力持续提升</p><p class="docx-paragraph">产品轻量化成效显著：空心转向节减重1kg/车、空心控制臂减重30%、副车架减重25%、车轮极限壁厚突破2.25mm、同尺寸降重0.5kg，支撑客户降本增效。成本控制能力增强：大众迈腾车轮轻量化形成3套可行方案，低成本差异化插件车轮生产成本降低20%，整车级降本20元/车以上，具备规模化推广价值。</p><p class="docx-paragraph">四、市场开拓与新业务布局成效突出</p><p class="docx-paragraph">立足东北基地，辐射南方及海外市场，近三年新开拓客户8家，涵盖极氪、岚图、上汽乘用车、长安、北汽新能源、华人运通、大运新能源等，拓展海外业务进入实质性阶段。新业务领域不断延伸：从传统转向节、副车架向空心控制臂、一体化铸件、电机后端盖、车轮支架等高附加值产品拓展，产品谱系持续丰富。累计实现量产产品45款，2025年量产项目达21款。</p></td></tr></table><p class="docx-paragraph"><strong>四、未来2年发展规划</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><a id="zdrw"></a>1. 研发团队建设</p><p class="docx-paragraph">  持续推进研发团队架构升级与人才梯队建设，计划两年内引进高水平技术人才1-2名，培育核心技术骨干5名以上，着力打造一支20人以上的专业化、复合型科技研发队伍，构建覆盖项目管理、材料开发、产品设计、工艺技术、试验验证的全链条技术能力体系，为河北汽车产业创新发展注入人才新动能。</p><p class="docx-paragraph">2. 核心研发方向</p><p class="docx-paragraph">  聚焦新能源汽车轻量化底盘零部件核心产品赛道，围绕高质量研发与产业化落地，开展成套关键技术攻关。重点推进：</p><p class="docx-paragraph">   ① 多品类差异化铝轮毂新品开发、轻量化大尺寸薄壁空腔铝副车架开发、高端车型薄壁空腔铝控制臂开发、极致轻量化空腔薄壁铝转向节开发、大型一体化集成产品开发等。突破产品拓扑优化、变截面产品设计、大尺寸模具防变形与飞边控制、铝液均衡充型及定向凝固、模具快速加热等核心技术，构筑自主产品开发技术壁垒，强化核心技术竞争力。</p><p class="docx-paragraph">  ② 推进模块化智能车轮研究，基于 AI 的模块化智能车轮，完成动力学模型、性能测试模型搭建及实物样机制造，推动轮毂产业向智能化、数字化方向发展。</p><p class="docx-paragraph">  ③ 推进汽车轻量化零部件用重稀土铝合金制备技术开发，研发提升机械性能的重稀土铝合金，应用于车轮、转向节轻量化，将完成成分调控、试制，通过技术成果高质量转化，实现零部件产业降本增效，创造持续经济价值。</p><p class="docx-paragraph">3. 技术成果转化</p><p class="docx-paragraph">   以新能源汽车轻量化底盘零部件核心产品及关键技术为依托，开展高端轻量化铝制部件研发与成果转化。计划完成多款差异化、轻量化底盘新产品设计研发落地；完成模块化智能车轮开发；完成轻量化零部件用重稀土铝合金开发。申报并授权国家专利4项以上，在河北省实现2项以上技术成果落地转化，并完成1项市级及以上科研项目申报，全面提升产品技术水平与市场竞争力，推动轻量化核心技术高质量产业化落地。</p><p class="docx-paragraph">4. 效益价值</p><p class="docx-paragraph">   依托人才飞地开展新产品与新技术研发，推动技术成果高质量转化落地，为企业新增销售收入500万元以上。以产业化价值反哺研发投入持续增长，提升企业核心竞争力与产品附加值，助力河北省汽车零部件产业高质量发展。 推动汽车零部件产业向轻量化、高端化、智能化转型升级，带动上下游配套企业协同发展，强化区域产业链配套能力，形成特色产业集聚效应，提升本地产业整体竞争力。 依托汽车轻量化技术降低整车能耗与碳排放，助力河北省“双碳”目标落地实施。</p></td></tr></table><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">围绕 “轻量化汽车底盘零部件集成制造技术研发及产业化应用”，通过 2 年建设，将东北研究中心打造成为国内领先的轻量化汽车零部件研发人才飞地，实现核心技术突破、成果在河北高效转化、人才团队提质、产业带动显著，为河北省汽车零部件产业高质量发展提供技术和人才支撑。</p></td><td><p class="docx-paragraph">科技成果（项）：1</p><p class="docx-paragraph">河北落地成果：1</p><p class="docx-paragraph">新增销售收入：≥300万</p></td><td><p class="docx-paragraph">科技成果（项）：3</p><p class="docx-paragraph">河北落地成果：1</p><p class="docx-paragraph">引育高级人才：1</p><p class="docx-paragraph">科研项目或奖励：1</p><p class="docx-paragraph">新增销售收入：≥300万</p></td></tr><tr><td rowspan="6"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">新增销售（万元）</p></td><td><p class="docx-paragraph">600</p></td><td><p class="docx-paragraph">300</p></td><td><p class="docx-paragraph">300</p></td></tr><tr><td><p class="docx-paragraph">落地成果转化项目（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">参与获得省级以上科技奖励（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养高水平科研人员（名）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">授权实用新型专利（件）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">3</p></td></tr></table><p class="docx-paragraph"><strong>六、项目组主要成员</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">年龄</p></td><td><p class="docx-paragraph">证件号码</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">分工</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">王凯庆</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">41</p></td><td><p class="docx-paragraph">130281198508183915</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">交通工具轻量化用铝、镁、钛轻合金材料制品及深加工产</p></td><td><p class="docx-paragraph">有色金属及其合金</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">团队负责人，负责整个团队的建设管理、科研计划制定、人才引起等工作</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">殷庆付</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">37</p></td><td><p class="docx-paragraph">230125198902025218</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">铸造工艺与设备</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责铝轮毂新产品设计开发工作</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">宋兵</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">54</p></td><td><p class="docx-paragraph">429001197211185178</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">有色金属及其合金</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责铝铸件新工艺新技术开发工作</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">张念光</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">45</p></td><td><p class="docx-paragraph">220221198111111919</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责铝铸件新产品设计开发工作</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">任长久</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">41</p></td><td><p class="docx-paragraph">220183198504011613</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责铝铸件新产品开发项目管理工作</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">于越</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">44</p></td><td><p class="docx-paragraph">220722198205043834</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">高分子材料学</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责铝轮毂新产品设计开发工作</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">王晓迪</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">36</p></td><td><p class="docx-paragraph">130302199006023537</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">有色金属及其合金</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责新项目技术攻关与方案设计</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">于宏达</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">29</p></td><td><p class="docx-paragraph">120221199707033019</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">材料化学</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责新项目数据分析与报告撰写</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">阎妍</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">39</p></td><td><p class="docx-paragraph">130324198701050047</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">有色金属材料先进制备、加工和成形</p></td><td><p class="docx-paragraph">工业会计学</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责价值分析、财务数据核算等</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">王东旭</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">42</p></td><td><p class="docx-paragraph">220204198405222132</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">新材料产品研发技术服务</p></td><td><p class="docx-paragraph">黑色金属及其合金</p></td><td><p class="docx-paragraph">中信戴卡股份有限公司</p></td><td><p class="docx-paragraph">负责铝铸件新工艺新技术开发工作</p></td></tr></table><p class="docx-paragraph">                </p><p class="docx-paragraph"><strong>预算填写说明</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p><p class="docx-paragraph">预算的编制要坚持任务相关性、政策相符性和经济合理性，实事求是编制提出项目预算。填报时，直接费用应按设备费、业务费、劳务费三个类别填报。直接费用中除50万元以上的设备费外，其他费用只提供基本测算说明，不需要提供明细。</p><p class="docx-paragraph">（一）直接费用</p><p class="docx-paragraph">指在项目实施过程中发生的与之直接相关的费用，具体包括：</p><p class="docx-paragraph">1.设备费：指在项目实施过程中购置或试制专用仪器设备，对现有仪器设备进行升级改造，以及租赁外单位仪器设备而发生的费用。计算类仪器设备和软件工具可在设备费科目列支。应当严格控制设备购置，鼓励开放共享、自主研制、租赁专用仪器设备以及对现有仪器设备进行升级改造，避免重复购置。填报时，50万元以上的设备详细说明。</p><p class="docx-paragraph">2.业务费：指在项目实施过程中消耗的各种材料、辅助材料等低值易耗品的采购、运输、装卸、整理等费用，发生的测试化验加工、燃料动力、出版／文献／信息传播／知识产权事务、会议／差旅／国际合作交流等费用，以及其他相关支出。填报时，对单笔大额支出、对外委托支出重点说明。</p><p class="docx-paragraph">3.劳务费：指在项目实施过程中支付给参与项目研究的研究生、博士后、访问学者以及项目科研辅助人员等的劳务性费用，以及支付给临时聘请的咨询专家的费用等。</p><p class="docx-paragraph">项目聘用人员的劳务费开支标准，参照当地科学研究和技术服务业从业人员平均工资水平，根据其在项目研究中承担的工作任务确定，其由单位缴纳的社会保险补助、住房公积金等“五险一金”纳入劳务费科目开支。</p><p class="docx-paragraph">专家咨询费不得支付给参与项目及其项目管理相关的工作人员。专家咨询费标准参照《中央财政科研项目专家咨询费管理办法》（财科教〔2017〕128号）规定，由项目申报单位结合实际自行确定。</p><p class="docx-paragraph">（二）间接费用</p><p class="docx-paragraph">指项目申报单位和项目合作单位在组织实施项目过程中发生的无法在直接费用中列支的相关费用。主要包括：项目申报单位为项目研究提供的房屋占用，日常水、电、气、暖消耗，有关管理费用的补助支出，以及激励科研人员的绩效支出等。</p><p class="docx-paragraph">间接费用实行总额控制，项目申报单位申请的间接费用总额按照不超过直接费用扣除设备购置费的一定比例核定，其中：100万元以下的部分为30%，100万元至300万元的部分为25%；300万元以上的部分为20%；数学等纯理论基础研究项目间接费用比例可提高到不超过60%。</p><p class="docx-paragraph">间接费用由项目承担单位统筹安排使用，可全部用于绩效支出，并向创新绩效突出的团队、个人和青年人才倾斜。</p><p class="docx-paragraph"><strong>二、自筹资金</strong></p><p class="docx-paragraph">对自筹资金主要用途、支出预算做简要说明。</p></td></tr></table><p class="docx-paragraph"><strong>七、项目预算表</strong></p><p class="docx-paragraph">                                             单位：万元</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>序号</strong></p></td><td><p class="docx-paragraph"><strong>预算科目名称</strong></p></td><td><p class="docx-paragraph"><strong>金额</strong></p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">（一）直接费用</p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1.设备费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">其中：购置设备费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2.业务费</p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">3.劳务费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">（二）间接费用</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">其中：绩效支出</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph"><strong>二、自筹资金</strong></p></td><td><p class="docx-paragraph">180.00</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph"><strong>合 计</strong></p></td><td><p class="docx-paragraph">230.00</p></td></tr></table><p class="docx-paragraph">注：1.间接费用无需编制预算说明；2.绩效支出在间接费用中无比例限制。</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目预算基本测算说明（不包含单价50万以上的设备详细说明）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="qtzc"></a>1. 总体说明：预算总额230万元、资金来源省政府补贴50万元和自筹180万元、预算使用周期是2026.02-2027.12；</p><p class="docx-paragraph">2. 分科目测算说明：</p><ul class="docx-list docx-ul"><li>低压空腔控制臂新产品工艺开发，费用40万（自筹40万）</li><li>多浇口、短浇道，底铸式副车架工艺开发，费用50万（自筹50万）</li><li>极致轻量化空腔转向节产品工艺研究，费用40万（专项20万，自筹20万）</li><li>完成3.8mm副车架产品落地，完成3.5mm副车架预研，费用60万（专项30万，自筹30万）</li><li>模块化智能车轮研究项目研发合同，费用20万（自筹15万）</li><li>模块化智能车轮研究项目研发合同，费用20万（自筹15万）</li></ul><p class="docx-paragraph">3. 资金使用计划：按年度制定资金使用计划，2026年使用预算115万元（占比50%），2027年使用预算115万元（占比50%），确保资金使用与研发进度同步。</p></td></tr><tr><td><p class="docx-paragraph"><strong>单价50万元以上的设备详细说明（无相关情况，本栏填“无”）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="sbxxsm"></a>无</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a></p><p class="docx-paragraph">               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>八、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>九、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">条件6佐证：引进人才证明</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权证书</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">高新技术企业证书</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">条件4佐证：研发人人员证书1~3</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">条件4佐证：研发人人员证书4~6</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">条件4佐证：研发人人员证书7~10</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">条件1佐证：营业执照及飞地机构设置调整通知</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">国家级研发平台数</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">条件2佐证：研发投入（高企证书+研发投入）</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">条件3作证：场地证明（不动产权证及办公设备条件）</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">条件5佐证：飞地技术研发支出说明</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">条件7佐证：研发成果转化情况</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地建设情况说明</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研合作证明材料(合同首页、金额页及签字盖章页)</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

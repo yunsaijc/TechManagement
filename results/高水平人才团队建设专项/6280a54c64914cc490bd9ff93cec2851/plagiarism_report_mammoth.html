@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 6280a54c64914cc490bd9ff93cec2851.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：6280a54c64914cc490bd9ff93cec2851.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,169</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>6280a54c64914cc490bd9ff93cec2851.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>唐山钢铁集团有限责任公司低熔点镀层超高强钢热浴成形技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>唐山钢铁集团有限责任公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李小强</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>河钢集团有限公司</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-04 至 2029-03</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-22</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>唐山钢铁集团有限责任公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省唐山市路北区滨河路9号</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>911302001047928234</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-唐山市-路北区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>1995-12-28</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>553073.12万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>张弛</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18833365223</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0315-5810441</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>zhangjing05@hbisco.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>张静</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>18833365223</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0315-5810441</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>zhangjing05@hbisco.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>唐山钢铁集团有限责任公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>104124000228</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国银行唐钢支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>100148347491</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>16821人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>3305人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>2161人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>🞎</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>R</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>现代化钢铁</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>25001141.46</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>7443659.01</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>76.07</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>3.22</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>唐钢公司具有国家级企业技术中心，同时建有国家级国际科技合作基地、河北省高品质钢连铸技术创新中心、河北省高强高耐蚀汽车板技术创新中心、博士后科研工作站等研发平台，与华北理工大学共建了河北省现代冶金技术重点实验室、拥有河北省制造业创新中心、 河北省产教融合型企业等科技创新平台，并享有“国家级技术创新示范企业”、“国家级知识产权示范企业”等荣誉，拥有经 CNAS 认可的实验室，科研人员涵盖来自国内知名高校的博士、硕士以及具备多年工作经验的专家，为企业科技创新提供了有效的基础 条件和人力支撑。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>唐钢公司持续加强知识产权管理，以高质量发展为主题，以知识产权保护为出发点，以实施《企业知识产权管理规范》为推手，将知识产权工作切实纳入企业的技术创新、生产、经营等各个环节中，围绕知识产权创造、运用和保护积极开展工作，不断探索适应公司发展战略需要、具有自身特色的知识产权管理模式。截至目前 ，唐钢有效专利总数是770项，其中发明 381项，软件著作权 804 项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>唐钢公司主要科技成果转化形式为自行投产和产学研联合，为了更好地推进科研成果转化,必须加强科研环境建设,唐钢公司为技术人员提供更好的实验室设备和研究条件，公司加大对科技研究的资金支持,鼓励科研人员在创新方向上进行更大胆的尝试，充分利用河钢集团所搭建的合作平台，发挥产学研合作在科技成果转化中的作用，为成果转化提供更加快捷、高效的途径，设计了合适的长效激励约束机制，更好实现公司与研发人员的利益绑定。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>唐钢公司通过不断完善产学研合作联盟，形成全面系统的合作创新机制，与各个高校以及科研机构从零散小型、短期的项目式合 作，转向系统规模、中长期机构性战略联盟，寻求产学研方面更 深层次更广泛的合作。以亟需解决的限制产线能力发挥、制约产 线降本增效的技术难题，公司或行业需要解决的低碳绿色、智能 制造、产品研发、工艺优化等关键共性问题，前沿引领性技术和新兴产业技术为需求导向。产学研合作项目，通过充分发掘唐钢公司的技术需求，并充分调动其他子公司的技术交换动力，使得高校及科研机构的科学研发成果能够得到最大程度的技术转化，在为科研成果提供工业场景的同时给予更好的转化土壤和环境，从而极大的增强公司的科技创新动力，也较大程度的促进了人才智力的交流。基于河钢集团所搭建的研发合作平台，唐钢与与昆士兰大学、伍伦贡大学、贝尔格莱德大学、瑞典国家冶金研究院等国外知名高校和科研院所在高端金属材料研发、新工艺新技术、板形质量控制等领域开展了深度研究。唐钢公司充分利用与塞尔维亚共建“中国-塞尔维亚钢铁绿色制造‘一带一路’联合实验室”，整合全球技术创新资源，开展智能制造、全流程能效提升、高端材料研发研究。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">8</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">8</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">5人</p></td><td colspan="4"><p class="docx-paragraph">3人</p></td><td colspan="5"><p class="docx-paragraph">2人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">4人</p></td><td colspan="4"><p class="docx-paragraph">2人</p></td><td colspan="5"><p class="docx-paragraph">3人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">李小强</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1979-06</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">金属及其塑性加工</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2025-06-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市海淀区学院路37号</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">教授</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">团队负责人</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">063012</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省唐山市路北区滨河路9号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">0315-5810441</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13810937753</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">lixiaoqiang@buaa.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1996-08-01至2000-08-31</p></td><td colspan="9"><p class="docx-paragraph">西北工业大学</p></td><td colspan="4"><p class="docx-paragraph">本科生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2000-09-01至2003-04-30</p></td><td colspan="9"><p class="docx-paragraph">西北工业大学</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2003-09-01至2008-07-31</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4"><p class="docx-paragraph">博士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2008-10-01至2010-10-31</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4"><p class="docx-paragraph">博士后</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2010-10-01至2014-07-20</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4"><p class="docx-paragraph">讲师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2012-11-01至2013-12-31</p></td><td colspan="9"><p class="docx-paragraph">美国俄亥俄州立大学</p></td><td colspan="4"><p class="docx-paragraph">访问学者</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2014-07-21至2021-09-30</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4"><p class="docx-paragraph">副教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2021-10-01至2026-02-24</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4"><p class="docx-paragraph">教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2014-05-01至2026-02-24</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学</p></td><td colspan="4"><p class="docx-paragraph">机械工程及自动化学院院长助理</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">大飞机智能制造关键技术研究及网络示范</p></td><td colspan="7"><p class="docx-paragraph">2022.01-2024.12</p></td><td colspan="4"><p class="docx-paragraph">工业与信息化部</p></td><td colspan="4"><p class="docx-paragraph">民机科研专项</p></td><td><p class="docx-paragraph">主持</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">热固性编织复合材料双面渐进成形变形机理及缺陷调控</p></td><td colspan="7"><p class="docx-paragraph">2025.01-2028.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金面上项目</p></td><td><p class="docx-paragraph">主持</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">超高强车身管梁与下车身架构一体化成形装备项目</p></td><td colspan="7"><p class="docx-paragraph">2023.07-2026.06</p></td><td colspan="4"><p class="docx-paragraph">工业与信息化部</p></td><td colspan="4"><p class="docx-paragraph">工信部重点项目课题</p></td><td><p class="docx-paragraph">主持</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">航空发动机数字化精密装配关键技术及应用</p></td><td colspan="4"><p class="docx-paragraph">中国航空学会科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-12-09</p></td><td colspan="4"><p class="docx-paragraph">4</p></td><td colspan="4"><p class="docx-paragraph">中国航空学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">超高强管梁车身构件热气胀成形工艺及应用</p></td><td colspan="4"><p class="docx-paragraph">中国汽车工程学会技术发明奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2024-11-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">中国汽车工程学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">智能化高端蒙皮拉伸成形成套装备开发及应用化</p></td><td colspan="4"><p class="docx-paragraph">机械工业科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2024-10-20</p></td><td colspan="4"><p class="docx-paragraph">2</p></td><td colspan="4"><p class="docx-paragraph">中国机械工业联合会</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Experimental and numerical investigation on surface quality for two-point incremental sheet forming with interpolator</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Chinese Journal of Aeronautics</p></td><td colspan="5"><p class="docx-paragraph">2020</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Effect of strain rate difference between inside and outside groove in M-K model on prediction of forming limit curve of Ti6Al4V at elevated temperatures</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Transactions of Nonferrous Metals Society of China</p></td><td colspan="5"><p class="docx-paragraph">2020</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Experimental and theoretical analysis of the thickness distribution in multistage two point incremental sheet forming</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">International Journal of Advanced Manufacturing Technology</p></td><td colspan="5"><p class="docx-paragraph">2020</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种面向大盘径比压气机盘间螺栓拧紧装置及方法</p></td><td colspan="5"><p class="docx-paragraph">ZL 202310378689.0</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2025-08-08</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种复杂金属表面数控渐进强化的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201910861063.9</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2021-01-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种纤维增强复合材料预制体的渐进成形方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202210144003.7</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2023-02-03</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">塑性工程学报</p></td><td colspan="9"><p class="docx-paragraph">青年编辑委员会委员</p></td><td colspan="6"><p class="docx-paragraph">2024-2026</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">精密成形工程</p></td><td colspan="9"><p class="docx-paragraph">编委会通讯编委</p></td><td colspan="6"><p class="docx-paragraph">2016-2020，2024-2026</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>李小强教授长期从事塑性成形理论、创新工艺及数字孪生、航空制造、汽车制造零部件工艺及装备设计等研究。主持国家自然科学基金、航空科学基金、国家科技重大专项、国家重点研发计划等项目课题10余项。参与国家自然科学基金、国家科技重大专项、国家863计划、国家科技支撑计划、及企业合作项目多项。围绕零部件精密成形与装配的理论、技术、工艺与设备等开展了系列性研究。开展了渐进成形、热气胀成形、蒙皮拉形、超塑成形、热拉弯、近等温锻等工艺研究，自主或与企业合作开发了相应装备，攻克了多个重点型号研制难题；开展了复材无模成形、叶片自动铺丝技术研究；开展了能场辅助线性摩擦焊、搅拌摩擦沉积增材研究，开发了国产线性摩擦焊装备；开展了螺栓连接试验及仿真、脉动装配生产线设计等研究工作，开发了多个型号转子盲腔螺栓阵列自动化拧紧装备。相关技术成果在新一代飞机、汽车制造中得到成功应用。取得国家科技进步二等奖1项，国防科技进步一等奖2项，中国航空学会科技进步一等奖1项。以第一完成人获国家发明专利授权27项，发表期刊论文150余篇，其中以第一作者身份在国内外高水平期刊发表论文36篇，获批软件著作权5项，在国内外知名学术会议中作特邀报告20余次，出版学术专著6本。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李小强</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1979-06</p></td><td><p class="docx-paragraph">142427197906280034</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">交通工具轻量化用铝、镁、钛轻合金材料制品及深加工产</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京航空航天大学教授、机械工程及自动化学院院长助理</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">冉浩</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-09</p></td><td><p class="docx-paragraph">130604198309161210</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">黑色金属及其合金</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">长城汽车股份有限公司技术中心材料部金属材料室主任</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">宋卓斐</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1978-07</p></td><td><p class="docx-paragraph">132524197807271014</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">黑色金属及其合金</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">华北理工大学教授</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">邝霜</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1981-09</p></td><td><p class="docx-paragraph">510523198109221113</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">轧制</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司总经理助理</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">韩冰</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1984-03</p></td><td><p class="docx-paragraph">130684198403137016</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">黑色金属及其合金</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司专业专家</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">李贺</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1985-12</p></td><td><p class="docx-paragraph">130623198512291538</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">交通工具轻量化用铝、镁、钛轻合金材料制品及深加工产</p></td><td><p class="docx-paragraph">材料化学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">长城汽车股份有限公司技术中心材料部部长</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">杨峰</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-12</p></td><td><p class="docx-paragraph">430724198312100058</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">黑色金属及其合金</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司专业专家</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">纪明龙</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-07</p></td><td><p class="docx-paragraph">21132419910725363x</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司主管工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">刘立学</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1984-10</p></td><td><p class="docx-paragraph">13063519841005465x</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">黑色金属及其合金</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司主任工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">张静</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1986-10</p></td><td><p class="docx-paragraph">131102198610210828</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">特种钢铁材料</p></td><td><p class="docx-paragraph">金属学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司专业专家</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>唐山钢铁集团有限责任公司低熔点镀层超高强钢热浴成形技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-04 至 2029-03</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>210.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>150.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>R新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>现代化钢铁   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">长城汽车股份有限公司</p></td></tr><tr><td><p class="docx-paragraph">华北理工大学</p></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>低熔点镀层热浴成形，热成形钢、耐蚀性、点焊性</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>通过本项目实施将本团队建设成汽车零部件新型热成形及特种钢铁材料技术领域有影响力的高水平团队。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>旨为打破国外专利垄断，形成一项完善的具有市场生命力的新技术，从而摆脱国外通过汽车超高强材料专利限制对中国汽车出海的制约，促进我国新能源汽车由先行优势转化为规模优势，同时辐射我国燃油车制造竞争力的提升。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>项目各合作单位基于平等、自愿和互惠互利的原则，共同分享合作研究取得的研究成果。各方按照协议共同申请专利对知识产权进行保护。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">随着汽车行业电动化、轻量化的快速发展，热成形超高强钢已成为车身安全结构件的核心材料。目前全球车用热成形钢年需求量达500万吨，中国市场约160万吨，国内已建成200多条热冲压零部件生产线，市场规模巨大。汽车超高强钢产品系列也被河北省列为钢铁领域十大拳头产品。</p><p class="docx-paragraph">当前，Al-Si镀层热成形钢占据主导，但使用中存在难以回避的痛点：一是制造端焊接飞溅严重、需特殊工艺，推高成本；二是安赛乐米塔尔、新日铁等钢铁巨头设置全面专利壁垒，国内主机厂面临“卡脖子”风险；三是服役期下车体部件易发生剪切边腐蚀，影响安全性。为此，开发具有自主知识产权、成本更低、耐蚀性更优的新型锌基镀层热成形钢，成为保障产业链安全、推动技术升级的较好选择。</p><p class="docx-paragraph">本项目旨在通过材料成分设计、镀层结构调控及创新热浴成形工艺，破解锌基镀层在传统热成形过程中的液态金属致脆（LMIE）难题，实现工业化应用。科技上，新产品与新工艺为我省拳头产品创新赋能；经济上，可替代进口，规避专利限制，降低主机厂采购成本和侵权风险，提升产业链利润空间；社会意义上，优异耐蚀性可延长汽车寿命，轻量化降低能耗，契合国家绿色制造与“双碳”战略。</p><p class="docx-paragraph">2、项目概述（包括研究内容、合作分工，与我省重点产业领域战略发展方向的相关性）</p><p class="docx-paragraph">（1）研究内容</p><p class="docx-paragraph">1）探究应变路径对锌基镀层相结构演变及微裂纹萌生的影响机理。综合运用高温拉伸、热成形试验与CAE仿真，明确镀层微观结构与应变路径的耦合作用机制；建立表面应变路径与微裂纹分布、尺度的关联模型，提出微裂纹特征判据，实现成形过程裂纹风险预测。</p><p class="docx-paragraph">2）开发热浴成形新工艺，并研究热浴成形对零件表面微裂纹的控制效果，解决LMIE难题。基于热浴成形工艺，配套开发纯锌镀层新型热成形钢，性能指标达到目前Al-Si镀层热成形钢同等指标。</p><p class="docx-paragraph">3）开发适配锌基镀层特性的焊接工艺，攻克加热后表面电阻波动及低熔点引起的焊接飞溅控制难题，优化三层板点焊工艺。</p><p class="docx-paragraph">4）结合电化学特性确立电泳涂装工艺路线，建立车身高耐蚀设计准则。</p><p class="docx-paragraph">5）同时突破激光拼焊工艺瓶颈，形成不同料厚、强度材料的拼焊工艺窗口，并通过量产验证确保工艺稳定性。</p><p class="docx-paragraph">6）围绕锌基镀层热浴成形工业化应用，开展模具设计、制造加工及配套智能装备研发。综合考虑热力耦合与工艺适配性，开发专用模块化装备，确保生产全流程稳定运行与高效产出。</p><p class="docx-paragraph">（2）合作分工</p><p class="docx-paragraph">唐山钢铁集团有限责任公司负责配套镀层热成形钢材料开发、生产及镀层技术研究，实现钢板试制与生产。</p><p class="docx-paragraph">长城汽车股份有限公司低熔点镀层热浴成形工艺和工装开发，实现在汽车车身上的应用。</p><p class="docx-paragraph">华北理工大学负责材料镀层裂纹机理、电阻电焊飞溅、激光拼焊及电泳工艺的微观表征、加工及服役的基础研究。</p><p class="docx-paragraph">（3）与我省重点产业领域战略发展方向的相关性</p><p class="docx-paragraph">本项目与河北省重点产业战略发展方向高度契合。现代化钢铁产业方面，直接响应我省钢铁产业向高端化、材料级转型的战略要求。汽车产业方面，破解新能源汽车轻量化与耐腐蚀性痛点，满足我省汽车产业稳增长对高品质用钢的迫切需求。通过联合开发模式实现产业链上下游协同验证，具有明确的产业化前景。</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">（1）经济指标：</p><p class="docx-paragraph">实现年新增热成形钢产值5000万元。产品应用的车型销售产值达10亿元。</p><p class="docx-paragraph">（2）技术性能指标：</p><p class="docx-paragraph">1）强度指标：实现1.5GPa纯锌热成形钢汽车零部件的应用，在现有车型等效替代Al-Si镀层产品；</p><p class="docx-paragraph">2）瓶颈指标：解决LMIE问题，零件LMIE微裂纹深度≤5μm；</p><p class="docx-paragraph">3）焊接指标：点焊飞溅率≤10%（行业现状目前飞溅率约40%）；</p><p class="docx-paragraph">4）耐蚀指标：热成形后零部件镀层锌含量≥40%，电化学电势差≥150mV，防锈性能（电泳后）单边扩蚀≤4mm。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">唐山钢铁集团有限责任公司拥有国家级企业技术中心，河北省高强高耐蚀汽车板技术创新中心、博士后科研工作站等研发平台；享有“国家级技术创新示范企业”、“国家级知识产权示范企业”等荣誉；科研人员涵盖来自国内知名高校的博士、硕士以及具备多年工作经验的专家，为企业科技创新提供了有效的基础条件和人力支撑。唐钢公司总资产超过2500亿元，2022-2024三年营收达到2229亿元，利润总额达到36亿元，研发费用投入超过53亿元，银行信用等级AAA级。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">唐钢公司是河钢集团的核心骨干企业。产品广泛用于汽车、家电、机械制造、基建工程、等重要领域，远销欧美、非洲、东南亚等100多个国家和地区。与国内外知名高校和科研院所在高端金属材料研发、新工艺新技术等领域均有深度合作。截至目前，唐钢有效专利853项。近三年来获得省部级奖励17项，承担省级以上科技计划项目9项。</p><p class="docx-paragraph">3、项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">（1）项目负责人</p><p class="docx-paragraph">李小强，博士，教授，毕业于西北工业大学和北京航空航天大学，长期从事塑性成形理论、数字孪生及航空、汽车零部件工艺制造研究。系统开展了热气胀成形、蒙皮拉形、超塑成形等工艺研究。主持国家自然科学基金、国家科技重大专项、国家重点研发计划等课题10余项。</p><p class="docx-paragraph">（2）核心成员</p><p class="docx-paragraph">邝霜，博士，正高级工程师，毕业于北京科技大学，长期从事钢铁材料开发、轧制工艺及智能制造研究。主持3项河北省科技项目、省部级科技奖5项。</p><p class="docx-paragraph">宋卓斐，博士，教授，毕业于北京科技大学，主要研究方向为黑色金属材料、低熔点合金制备及加工、材料计算机模拟。主持总装备部配套项目、省自然科学基金等多项课题。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果。</p><p class="docx-paragraph">唐钢在高强汽车钢开发方面处于国内领先地位，前期在纯锌热成形钢方面已形成相关的自主知识产权技术。长城汽车股份有限公司在车身用高强钢的成形和装车应用方面具有深厚积累。华北理工大学在钢铁材料开发方面依托燕赵钢铁实验室具有强大的创新能力。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">项目拟采用热浴成形，采用纯锌镀层热成形钢取代Al-Si镀层热成形钢，旨在破解当前主流Al-Si镀层技术面临的三大核心痛点：生产成本高（焊接飞溅严重、需特殊工艺）、国外专利封锁（安赛乐米塔尔等巨头设置壁垒）以及服役安全隐患（剪切边腐蚀）。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">团队在相关技术领域具备深厚积累，可提供有力支撑。尤其在构建热浴成形方面，依托长城汽车股份有限公司先进试验平台和装车验证平台以及唐钢高强汽车板产线的优势装备，借助产学研合作，为热浴成形及配套的纯锌热成形钢开发和应用提供坚实的技术保障与智力支持。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">项目属于现代化钢铁及汽车及关键零部件领域，通过热浴成形技术开发及配套热成形钢开发，解决高强韧锌基镀层板热成形钢关键应用技术卡点，产品和技术在车身零部件（热冲压零部件、管状零部件等）获得典型应用，形成具有自主知识产权的热浴成形工艺及配套钢材、模具设计准则和制造装备，打破国外技术封锁和专利限制。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">国内外热成形钢防护主要围绕Al-Si与锌基镀层两大路线。Al-Si镀层技术成熟但被安赛乐米塔尔专利垄断，给国内主机厂带来“卡脖子”风险。为突破封锁，东北大学、宝钢等正加速自主研发，通过减薄镀层优化性能或开发新型材料绕开专利壁垒。</p><p class="docx-paragraph">锌基镀层因成本低、耐蚀优异且能提供阴极保护，被视为最具潜力的替代方向，但液态金属致脆（LMIE）曾是其主要瓶颈。宝钢、首钢等也在聚焦开发创新成形工艺与预处理技术，目的是要抑制LMIE，探索了纯锌热成形钢零件的产业化应用。</p><p class="docx-paragraph">国内外总体趋势正从单纯替代转向开发具有自主知识产权的新一代高性能镀层体系，以满足汽车轻量化、安全性、耐腐蚀性及成本控制的极致要求。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">1）实现1.5GPa纯锌热成形钢汽车零部件的应用；</p><p class="docx-paragraph">2）解决LME问题，零件LME微裂纹深度≤5μm；</p><p class="docx-paragraph">3）焊接飞溅率≤10%（行业现状目前飞溅率约40%）；</p><p class="docx-paragraph">4）成形后零部件镀层锌含量≥40%，电化学电势差≥150mV，零部件防锈性能（电泳后）单边扩蚀≤4mm。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">项目主要技术风险包括：锌基镀层在热冲压过程中可能发生的液态金属致脆（LMIE）问题，导致零件开裂失效；工业化生产中的工艺稳定性与一致性控制；以及国外巨头专利封锁带来的知识产权风险。</p><p class="docx-paragraph">对策：针对LMIE问题，优化基板及镀层成分、控制热成形加热曲线，抑制裂纹萌发；通过数字化仿真与产线试制验证，确保工艺窗口的稳定性；开展全球专利导航，建立自主知识产权体系，规避侵权风险，并布局核心工艺专利形成技术壁垒。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">见第七部分：附件，技术路线图。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">团队前期根据热浴成形原理，进行了汽车典型零部件A柱上加强板热浴模具的设计和加工，并在产线初步试制了纯锌热成形钢用于前期可行性研究，生产所得到的零件性能理想，初步验证了工艺的可行性。</p><p class="docx-paragraph">3、项目的具体实施方案（包括合作各方在人才、技术、理论、资金、设备等方面的投入，任务分工，人员交流计划，合作机制）</p><p class="docx-paragraph">唐钢通过引进的李小强教授组建攻关团队与长城汽车股份有限公司、华北理工大学开展合作研发，唐钢主要负责自筹经费的筹集，钢种的开发及工艺优化及现场试制；长城汽车股份有限公司组建热浴成形试验平台和工装，并提供装车验证的场景；华北理工大学负责材料镀层裂纹机理、电阻电焊飞溅、激光拼焊及电泳工艺的微观表征、加工及服役的基础研究。本项目三方秉承平等自愿、互惠互利、诚实守信的合作原则开展项目研究。设立专门的管理机构或工作小组，负责合作项目的日常管理和协调工作，并制定完善的合作制度和流程，确保合作项目的顺利实施和有效管理。</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">2026年4-2027年3月：基于热浴成形工艺的热循环曲线，开展纯锌镀层热成形钢组织性能调控和轧制、镀锌工艺研究，实现热浴成形配套纯锌热成形钢的材料开发；</p><p class="docx-paragraph">2027年4-2028年3月：开发热浴成形新工艺，实现1.5GPa纯锌热成形钢汽车零部件的应用，在现有车型等效替代Al-Si镀层产品，达到电焊技术指标；</p><p class="docx-paragraph">2028年4-2029年3月：涂装工艺设计，零部件达到耐蚀指标，实现整车批量应用。</p><p class="docx-paragraph">5、项目知识产权状况（包括研究成果分享、专利申请、著作权归属、资源及其它合作权益的保护）</p><p class="docx-paragraph">本项目成果校企双方应基于平等、自愿和互惠互利的原则，共同分享合作研究取得的研究成果。对于取得的成果，由唐山钢铁集团有限责任公司与长城汽车股份有限公司通过共同申请专利、发表论文等形式对知识产权进行保护。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">通过本项目实施，并将本团队建设成新能源车新型高强度特种钢铁材料及关于技术领域有影响力的高水平团队。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">技术层面，通过破解液态金属致脆（LMIE）难题，解决了传统锌基镀层无法直接热冲压的痛点，同时保留了其优于Al-Si镀层的阴极保护耐蚀性；经济层面，热浸镀锌工艺制备成本显著低于进口Al-Si镀层，可为主机厂降低采购成本超20%；战略层面，产品拥有完全自主知识产权，可突破安赛乐米塔尔的全球专利封锁，保障供应链安全。其综合性能兼顾了轻量化、安全性（抗剪切边腐蚀）与成本经济性，是面向未来汽车低碳耐腐蚀需求的国产化替代优选方案。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">项目市场需求旺盛，国内热成形钢年需求量达160万吨，随着新能源汽车渗透率提升，先进高强钢需求持续增长。部分汽车厂已率先实现锌基热成形钢热气胀零件的产业化应用，验证了&quot;材料-设计-制造&quot;协同开发模式的可行性。预计未来5年，随着自主技术突破和成本优势凸显，锌基镀层产品将逐步替代进口Al-Si镀层，市场前景广阔。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">经济效益上，相比进口Al-Si镀层，锌基镀层成本可降低20%以上，为国内200余条产线及主机厂大幅削减采购成本，提升国产材料利润率。社会效益上，产品具有优异的耐蚀性，可提升汽车服役寿命与安全性；同时突破国外专利封锁，保障产业链供应链自主可控，符合国家绿色制造与双碳战略。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">唐山钢铁集团有限责任公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责配套镀层热成形钢材料开发、生产及成形技术研究，工业生产技术开发和现场试制。</p></td><td><p class="docx-paragraph">李小强</p></td><td><p class="docx-paragraph">162.00</p></td><td><p class="docx-paragraph">12.00</p></td><td><p class="docx-paragraph">150.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">长城汽车股份有限公司</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">低熔点镀层热浴成形工艺开发及在汽车车身上的应用。</p></td><td><p class="docx-paragraph">冉浩</p></td><td><p class="docx-paragraph">6.00</p></td><td><p class="docx-paragraph">6.00</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">华北理工大学</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">负责材料镀层裂纹机理、电阻电焊飞溅、激光拼焊及电泳工艺的微观表征、加工及服役的基础研究。</p></td><td><p class="docx-paragraph">宋卓斐</p></td><td><p class="docx-paragraph">42.00</p></td><td><p class="docx-paragraph">42.00</p></td><td><p class="docx-paragraph">0.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1）实现1.5GPa纯锌热成形钢汽车零部件的应用，在现有车型等效替代Al-Si镀层产品；</p><p class="docx-paragraph">2）解决LMIE问题，零件LMIE微裂纹深度≤5μm；</p><p class="docx-paragraph">3）点焊飞溅率≤10%（行业现状目前飞溅率约40%）；</p><p class="docx-paragraph">4）热成形后零部件镀层锌含量≥40%，电化学电势差≥150mV，防锈性能（电泳后）单边扩蚀≤4mm；</p><p class="docx-paragraph">5）实现在零部件在主机厂的批量化装车应用。</p></td><td><p class="docx-paragraph">获得应变历程对锌基镀层相结构和高强韧零部件微裂纹的影响机理，基于热浴成形工艺的热循环曲线，开展纯锌镀层热成形钢组织性能调控和轧制、镀锌工艺研究，实现热浴成形配套纯锌热成形钢的材料开发。</p></td><td><p class="docx-paragraph">开发热浴成形新工艺，并研究热浴成形对零件表面微裂纹的控制效果，解决LMIE 难题，零件LMIE微裂纹深度≤5μm，零部件镀层锌含量≥40%。实现点焊性能提升，点焊飞溅率≤10%；实现1.5GPa纯锌热成形钢汽车零部件的应用，在现有车型等效替代Al-Si镀层产品。</p></td><td><p class="docx-paragraph">结合电化学特性确立电泳涂装工艺路线，建立车身高耐蚀设计准则。实现耐腐蚀指标电化学电势差≥150mV，零部件防锈性能（电泳后）单边扩蚀≤4mm。实现在零部件在主机厂的批量化装车应用。</p></td></tr><tr><td rowspan="5"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">突破关键技术（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">身份+学历+学位+职称</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">学术期刊职务</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">人才引进协议-李小强</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">省部级人才计划</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人知识产权证书1</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人知识产权证书2</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人知识产权证书3</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队其他知识产权证书集合</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">科研项目证明-自然基金项目</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">科研项目证明-工信部项目1</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">科研项目证明-工信部项目2</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">科技奖励证书</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">公司营业执照</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">公司章程-首页</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">公司章程-末页</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">省级科技平台-1</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">省级科技平台-2</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队负责人代表性论文</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">三方合作协议</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-邝霜-唐钢</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-杨峰-唐钢</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-刘立学-唐钢</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-韩冰-唐钢</p></td></tr><tr><td><p class="docx-paragraph">24</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-纪明龙-唐钢</p></td></tr><tr><td><p class="docx-paragraph">25</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-张静-唐钢</p></td></tr><tr><td><p class="docx-paragraph">26</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-冉浩-长城汽车</p></td></tr><tr><td><p class="docx-paragraph">27</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">劳动合同-李贺-长城汽车</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -40,8 +40,15 @@ dependencies = [
     "mammoth>=1.12.0",
     "scikit-learn>=1.8.0",
     "scipy>=1.17.1",
+    "smbprotocol>=1.16.1",
 ]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+]

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - f1692eed14514ab89b6302abe8671205.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：f1692eed14514ab89b6302abe8671205.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,721</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>f1692eed14514ab89b6302abe8671205.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>中轻特种纤维材料有限公司隔膜国产化替代创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>中轻特种纤维材料有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>赵涛</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>廊坊市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-03 至 2029-03</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-06</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>中轻特种纤维材料有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省廊坊开发区紫杉路50号</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91131001678540844F</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-廊坊市-廊坊经济技术开发区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2008-08-22</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>8000.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>赵涛</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18001155572</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>孙德文</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>13103260063</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>中轻特种纤维材料有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>103146065803</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国农业银行股份有限公司廊坊临空支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>50658301040001809</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>120人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>41人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>14人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>绿色化工</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>10995</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>4720</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>4.18</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>10.78</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司建有市级以上研发平台5个，其中国家级1个（国家工程实验室）、省级1个（先进纸基功能材料技术创新中心）、市级3个（纸基功能新型材料技术研发中心、超级电容器隔膜技术研发中心、纸基功能新材料中试熟化基地）。公司近三年承担中央引导地方科技发展资金自由探索类基础研究项目“木聚糖基变色室温磷光碳化聚合物点的可控构建及其发光中心耦合机制研究”1项，河北省重大科技成果转化项目“超薄型超级电容器隔膜关键技术研发及产业化”1项，河北省科技成果转化产业化奖补资金项目“纸基功能新材料中试熟化基地”1项。公司实验室面积2300㎡，分析仪器、设备装备35台套，大型中试试验设备13套，设备原值11325.6万元。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司牵头起草了行业标准1项，参与修订国家标准1项；获授权发明专利7项，实用新型专利8项；发表论文31篇，其中SCI 13篇，国内核心18篇；</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>公司专注于电池隔膜、白色家电配套材料、密封材料和过滤材料的基础研究和产业化工作，开发了纤维微纳比调控技术、多源异质纤维差异化排布技术、纤维素基双向连续互穿网络构建技术等关键核心技术，完成了超级电容隔膜、碱锰电池隔膜、冰箱感湿保鲜系列、绿色纤维密封材料等功能材料的国产化替代，相关成果入选《中央企业科技创新成果产品手册（2022版）》和《中央企业科技创新成果产品手册（2023版）》，先后荣获中国技术市场协会金桥奖三等奖1项，河北省高新技术企业协会科技进步奖二等奖1项、三等奖1项，中国产学研合作促进会科技创新奖-创新成果二等奖1项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>多年来，公司始终以“生物基纤维复合材料国产化的开拓者”为使命，以打造“纸基复合纤维材料行业一流的工程化、产业化研究生产平台”为方向，通过“产研结合，以产促研，以研保产”的科学发展模式，深耕白电家居、电气/新能源、生物医药检测、机械总成、过滤吸附等多个领域，产品及技术方案覆盖全国 20 +省市，主要产品有：超级电容器隔膜、电池隔膜、感湿保湿材料、基因检测载体材料、免疫层析吸收材料等纸基功能新材料。同时面向全社会各领域，为工程化、产业化和规模化生产提供中试孵化和小批量生产服务。并与北京林业大学、应急管理大学等高校签订长期实习基地协议，与海尔集团、南孚电池等多家头部企业成立联合研发中心。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">9</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">7</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">3人</p></td><td colspan="4"><p class="docx-paragraph">5人</p></td><td colspan="5"><p class="docx-paragraph">1人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">5人</p></td><td colspan="5"><p class="docx-paragraph">3人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">赵涛</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1982-09</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">生物基纤维功能材料</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>R全职引进  <a id="yjlx_hz"></a>□柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2021-11-12</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">中国制浆造纸研究院有限公司</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市朝阳区启阳路4号院</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">纸基功能新材料事业部总经理</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">总经理</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">065001</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省廊坊市开发区紫杉路50号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">03162575008</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">18001155572</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">zhaotao@cpmcchina.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>□国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>作为主要完成人获得过省部级及以上科技奖励、担任省部级科技项目主要负责人  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2001-09-01至2005-07-01</p></td><td colspan="9"><p class="docx-paragraph">北京林业大学</p></td><td colspan="4"><p class="docx-paragraph">本科</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2008-11-01至2013-06-28</p></td><td colspan="9"><p class="docx-paragraph">天津科技大学</p></td><td colspan="4"><p class="docx-paragraph">研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2005-07-15至2011-01-01</p></td><td colspan="9"><p class="docx-paragraph">中国制浆造纸研究院</p></td><td colspan="4"><p class="docx-paragraph">研发部工程师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2011-01-03至2016-06-01</p></td><td colspan="9"><p class="docx-paragraph">中轻特种纤维材料有限公司</p></td><td colspan="4"><p class="docx-paragraph">销售部副部长；技术市场部部长；党支部书记、总经理助理；党支部书记、副总经理</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2016-06-01至2020-10-01</p></td><td colspan="9"><p class="docx-paragraph">中国造纸装备有限公司</p></td><td colspan="4"><p class="docx-paragraph">综合部部长、技术市场部部长、廊坊党支部书记</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2016-08-01至2026-02-26</p></td><td colspan="9"><p class="docx-paragraph">中轻国泰机械有限公司</p></td><td colspan="4"><p class="docx-paragraph">董事、董事长</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2021-11-12至2026-02-26</p></td><td colspan="9"><p class="docx-paragraph">中轻特种纤维材料有限公司</p></td><td colspan="4"><p class="docx-paragraph">总经理</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">超薄型超级电容器隔膜关键技术研发及产业化</p></td><td colspan="7"><p class="docx-paragraph">2022.07-2025.06</p></td><td colspan="4"><p class="docx-paragraph">河北省科技厅</p></td><td colspan="4"><p class="docx-paragraph">重大科技成果转化专项</p></td><td><p class="docx-paragraph">主要完成人排名第2</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">超级电容器纸的开发及产业化示范</p></td><td colspan="7"><p class="docx-paragraph">2017.07-2020.12</p></td><td colspan="4"><p class="docx-paragraph">科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">主要完成人排名第5</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">纤维素基隔膜的设计和产业化及在电化学储能器件的应用研究</p></td><td colspan="7"><p class="docx-paragraph">2025.11-2027.11</p></td><td colspan="4"><p class="docx-paragraph">北京市科委</p></td><td colspan="4"><p class="docx-paragraph">京津冀科技创新协同</p></td><td><p class="docx-paragraph">主要负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">全热空气换热器用高阻隔性纸基芯体材料</p></td><td colspan="4"><p class="docx-paragraph">中国技术市场协会金桥奖</p></td><td colspan="3"><p class="docx-paragraph">三等奖</p></td><td colspan="2"><p class="docx-paragraph">2024-11-08</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">中国技术市场协会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">全热空气换热纸的研制</p></td><td colspan="4"><p class="docx-paragraph">中国轻工业联合会科学技术进步奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2008-03-18</p></td><td colspan="4"><p class="docx-paragraph">5</p></td><td colspan="4"><p class="docx-paragraph">中国轻工业联合会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">生物质基仿生保鲜材料关键技术及其在制冷设备的应用</p></td><td colspan="4"><p class="docx-paragraph">中国产学研合作促进会科技创新奖-创新成果奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2026-02-11</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">中国产学研合作促进会</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">活性炭滤纸的制备及其在空气净化中的应用研究</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">中国造纸</p></td><td colspan="5"><p class="docx-paragraph">2023</p></td><td colspan="2"><p class="docx-paragraph">否</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Preparation of microfibrillated cellulose by in situ and one step method using calcium hydroxide asswelling and grinding agent</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Nord. Pulp Paper Res</p></td><td colspan="5"><p class="docx-paragraph">2024</p></td><td colspan="2"><p class="docx-paragraph">是</p></td></tr><tr><td colspan="2"></td><td colspan="6"></td><td colspan="5"></td><td colspan="5"></td><td colspan="2"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">碱性锌锰电池隔膜及其制备工艺</p></td><td colspan="5"><p class="docx-paragraph">ZL202510533827.7</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2025-11-25</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td><p class="docx-paragraph">一种可反复使用的超高纯净纸及其制备方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202410308113.1</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">3</p></td><td colspan="5"><p class="docx-paragraph">2025-11-25</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td><p class="docx-paragraph">一种活性炭空气滤纸及其制作工艺和空气滤纸板</p></td><td colspan="5"><p class="docx-paragraph">ZL202111411746.8</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">3</p></td><td colspan="5"><p class="docx-paragraph">2023-06-23</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省创造创新学会</p></td><td colspan="9"><p class="docx-paragraph">常务理事</p></td><td colspan="6"><p class="docx-paragraph">2024.12-2029.12</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国电子工业标准化技术协会超级电容与双碳专业委员会</p></td><td colspan="9"><p class="docx-paragraph">委员会委员</p></td><td colspan="6"><p class="docx-paragraph">2025.1-2030.1</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">超级电容产业联盟</p></td><td colspan="9"><p class="docx-paragraph">编委会专家委员</p></td><td colspan="6"><p class="docx-paragraph">长期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国造纸学会</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">2024.5-2029.5</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省科技型中小企业协会</p></td><td colspan="9"><p class="docx-paragraph">专家</p></td><td colspan="6"><p class="docx-paragraph">长期</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>过去几十年，超级电容器隔膜一直被日本、美国企业垄断，技术壁垒高，国内没有能够攻克和生产的企业。而随着国家新能源战略的实施，超级电容器纸隔膜的国产化替代被提上日程。作为纸基功能材料行业的引领者，中轻特材责无旁贷。项目负责人带领团队经历了上千次实验室工艺调整、近百次中试试验，终于攻克难关，实现了产业生产和应用。隔膜项目的成功落地意味着超级电容所有材料都完成国产化，产业链唯一“堵点”得到疏通。目前，隔膜已在各大超容企业得到批量应用，产品性能优异，可实现对进口产品的全替代，共计实现销售6000余万元。该成果入选 《中央企业科技创新成果产品手册（2023年版）》，并获2023年中国能源电子超级电容器领域应用优秀案例一等奖。</p><p class="docx-paragraph">项目负责人带领团队开发了纤维素基自适应感湿保鲜模块。该模块应用于冰箱冷藏保鲜，能够在零能耗条件下智能地将密闭空间内的湿度维持在果蔬最适应的湿度范围，从而将果蔬的保鲜周期从3-5天延长至7-10天，提升果蔬口感，降低果蔬浪费。该模块产品被誉为“冰箱行业三十年最大的创新”。该产品为公司带来超亿元营收。该项目成果获中国产学研合作促进会科技创新奖-创新成果二等奖。</p><p class="docx-paragraph">在钢材制造行业，项目负责人带领团队开发的不锈钢复合板隔离材料属颠覆性产品，工艺技术全球首创，该材料的应用将提高不锈钢-碳钢复合板生产效率30%以上，吨板成本节约640元，具有极高的工业价值。本项目的研发工作获得客户的好评，为企业和行业赢得了良好的口碑，也为钢铁制造行业的产业升级提供了契机和方向。</p><p class="docx-paragraph">活性炭纸基复合滤材在欧美及日韩等发达国家室内空气和饮用水净化端有较为广泛的市场。国内对该滤材的研究已有一段时间，但产品工艺、性能与品质距实际应用仍有较大差距。如江苏某企业为提高活性炭粉末的含量，在生产过程中使用大量熔融纤维，导致活性炭表面被大量胶膜覆盖，极大影响了吸附效率。国内活性炭纸产品的工艺和性能升级迭代十分必要。项目负责人带领团队，颠覆了活性炭复合滤材的生产方式，在不使用熔融纤维情况下，大幅提升了活性炭粉末在滤材中的含量，间接提升了滤材吸附效率。该项目成果获河北省高新技术企业协会科技进步奖三等奖。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">赵涛</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1982-09</p></td><td><p class="docx-paragraph">610402198209175210</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司总经理</p></td><td><p class="docx-paragraph">其他:河北省科技英才“双百双千”工程科技型中小企业创新英才</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">刘文波</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1981-12</p></td><td><p class="docx-paragraph">422826198112210015</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">工业工程学(亦称工程系统工程)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司副总经理</p></td><td><p class="docx-paragraph">其他:河北省科技英才“双百双千”工程科技型中小企业创新英才</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">江骁雅</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1989-07</p></td><td><p class="docx-paragraph">362523198907210017</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司副总工</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">肖贵华</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1989-08</p></td><td><p class="docx-paragraph">450330198908051014</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">工业工程学(亦称工程系统工程)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">中国制浆造纸研究院有限公司纸基功能新材料事业部总经理助理</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">陈雪峰</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1971-03</p></td><td><p class="docx-paragraph">413001197103170027</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">中国制浆造纸研究院有限公司纸基功能新材料事业部副总经理</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">许传波</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-03</p></td><td><p class="docx-paragraph">370284198703084318</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">工业工程学(亦称工程系统工程)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司副总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">杜秀</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1993-02</p></td><td><p class="docx-paragraph">230281199302163319</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">工业工程学(亦称工程系统工程)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司技术质量部部长</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">王月江</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-05</p></td><td><p class="docx-paragraph">371327198705042014</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司总经理助理</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">杨博文</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1998-08</p></td><td><p class="docx-paragraph">130121199808031019</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">工业工程学(亦称工程系统工程)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司技术质量部工艺工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">白媛媛</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1989-09</p></td><td><p class="docx-paragraph">141102198909140061</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型纤维材料</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">中国制浆造纸研究院有限公司纸基功能新材料事业部工艺工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>中轻特种纤维材料有限公司隔膜国产化替代创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-03 至 2029-03</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>180.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>120.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>R新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">中国制浆造纸研究院有限公司</p></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>碱锰电池隔膜</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>项目将培养一批具备跨学科背景的高层次人才，打造一支从隔膜材料研发到产品应用的复合型技术团队。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>转化应用科技成果1项并取得较好经济效益；申请与项目相关的专利2项（其中发明专利至少1项）；发表科技论文1-2篇；团队成员中的企业人员主持企业科研项目1项；培养人才2人；隔膜销售收入1000万元。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>研究成果由双方共享，专利申请、论文发表按贡献分配，确保知识产权清晰、权益明确。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">碱锰电池作为一次电池的重要代表，广泛应用于家用电器、电动工具、玩具、照相机、遥控器等各类设备，具有近80年的产业化历史。近年来，尽管锂一次电池等新型储能器件发展迅速，但碱锰电池因其安全性、经济性和适用性优势，市场需求仍持续增长。2020年全球碱锰电池产量约160亿只，预计2025年将突破200亿只。我国南孚公司年销售额超33亿元，市场占有率超20%。</p><p class="docx-paragraph">隔膜是碱锰电池的核心部件之一，直接影响电池的容量、放电性能、使用寿命和安全性。目前，国内高端碱锰电池隔膜市场几乎被日本Sansho、法国Mauduit、美国HV等国外企业垄断，国产隔膜仅能满足中低端市场需求，高端市场国产化率为零。2020年国内碱锰电池隔膜年消耗量约2200吨，市场规模超4000万美元，但85%依赖进口，成为产业链的“堵点”。</p><p class="docx-paragraph">本项目旨在突破高端碱锰电池隔膜的“卡脖子”技术，实现自主国产化，提升我国碱锰电池产业链的自主可控能力。项目具有重要的战略意义、科技意义和经济意义，符合国家关于关键核心技术攻关、产业链供应链安全的战略部署。</p><p class="docx-paragraph">2、项目概述</p><p class="docx-paragraph">本项目由中轻特种纤维材料有限公司牵头，联合中国制浆造纸研究院有限公司共同实施。项目聚焦高性能碱锰电池隔膜的国产化研发与产业化应用，主要内容包括：隔膜原材料筛选与性能评价；隔膜厚度、孔隙结构等关键指标的调控技术研究；隔膜对碱锰电池电化学性能的影响机理研究；隔膜在碱性锌锰体系中的劣化机制研究；中试试验及产业化应用。项目符合我省重点产业领域（新能源、新材料）战略发展方向，具有显著的前瞻性和带动性。</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">（1）技术指标：</p><p class="docx-paragraph">定量：40.0±3.0 g/m²</p><p class="docx-paragraph">厚度：100±10 μm</p><p class="docx-paragraph">抗张强度：≥1.8 kN/m</p><p class="docx-paragraph">吸碱速度：≥25 mm/180s</p><p class="docx-paragraph">保液率：≥350%</p><p class="docx-paragraph">碱损失率：≤5%</p><p class="docx-paragraph">耐碱伸缩性：≤1.5%</p><p class="docx-paragraph">铁含量：≤70 μg/g</p><p class="docx-paragraph">铜含量：≤5 μg/g</p><p class="docx-paragraph">最大孔径：25±5 μm</p><p class="docx-paragraph">电池放电性能：LR6、LR03电池在多种放电模式下综合性能≥98%</p><p class="docx-paragraph">（2）成果形式</p><p class="docx-paragraph">转化应用科技成果1项并取得较好经济效益；申请与项目相关的专利2项（其中发明专利至少1项）；发表科技论文1-2篇；团队成员中的企业人员主持企业科研项目1项；培养人才2人；隔膜销售收入1000万元。</p><p class="docx-paragraph">（3）经济效益 </p><p class="docx-paragraph">本项目的成功开发可新增产值1000万元。</p><p class="docx-paragraph">（4）社会效益</p><p class="docx-paragraph">实现高端碱锰电池隔膜国产化，提升产业链安全，推动行业技术进步，增强民族品牌影响力。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">中轻特材：公司建有市级以上研发平台5个，其中国家级1个（国家工程实验室）、省级1个（先进纸基功能材料技术创新中心）、市级3个（纸基功能新型材料技术研发中心、超级电容器隔膜技术研发中心、纸基功能新材料中试熟化基地）。公司近三年承担中央引导地方科技发展资金自由探索类基础研究项目“木聚糖基变色室温磷光碳化聚合物点的可控构建及其发光中心耦合机制研究”1项，河北省重大科技成果转化项目“超薄型超级电容器隔膜关键技术研发及产业化”1项，河北省科技成果转化产业化奖补资金项目“纸基功能新材料中试熟化基地”1项。公司实验室面积2300㎡，分析仪器、设备装备35台套，大型中试试验设备13套，设备原值11325.6万元。</p><p class="docx-paragraph">中国纸院：国家级造纸科研机构，拥有制浆造纸国家工程实验室，科研团队结构合理，设备齐全，具备从原料处理到中试生产的全链条研发能力，尤其在电气及能源用纸基新材料的研发及产业化方面拥有独到见解。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph"> 中轻特材始终以“生物基纤维复合材料国产化的开拓者”为使命，以打造“纸基复合纤维材料行业一流的工程化、产业化研究生产平台”为方向，通过“产研结合，以产促研，以研保产”的科学发展模式，深耕白电家居、电气/新能源、生物医药检测、机械总成、过滤吸附等多个领域，产品及技术方案覆盖全国 20 +省市，主要产品有：超级电容器隔膜、电池隔膜、感湿保湿材料、基因检测载体材料、免疫层析吸收材料等纸基功能新材料。同时面向全社会各领域，为工程化、产业化和规模化生产提供中试孵化和小批量生产服务。并与北京林业大学、应急管理大学等高校签订长期实习基地协议，与海尔集团、南孚电池等多家头部企业成立联合研发中心。   </p><p class="docx-paragraph">中国纸院是制浆造纸国家工程实验室的依托承建单位，拥有仪器设备300余台套，满足隔膜的物理性能、孔隙率、孔径、交流阻抗等相关性能的分析手段。在电气及新能源用纸基材料方面具有深厚积累，曾成功实现超级电容器隔膜国产化。</p><p class="docx-paragraph">3、项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">项目负责人赵涛科研经历丰富，并取得了丰硕的科研成果。先后承担或参与项目23项，其中包括国家重点研发计划——“超级电容器隔膜的开发及产业化示范”，国资委关键核心技术攻关清单项目以及京津冀协同创新、军民融合、保利集团关键技术攻关项目、中轻集团科技创新项目、海尔智家基金项目以及多项省部级重大成果转化在内的高层次项目。该同志负责的“超级电容器隔膜”成果入选 《中央企业科技创新成果产品手册（2023年版）》、“碱锰电池隔膜项目”获得国务院国资委赋权试点改革审批立项。参与发表国内外核心期刊论文23篇，授权专利11项，参与制定行业标准1项、团体标准5项，申报中国轻工业联合会项目成果鉴定1项；先后荣获中国产学研合作促进会科技创新奖-创新成果奖二等奖、中国轻工业联合会科技进步二等奖、中国技术市场协会金桥奖、2023年中国能源电子超级电容器领域应用优秀案例一等奖、2023年《中国造纸》杂志优秀论文奖等。</p><p class="docx-paragraph">核心成员陈雪峰教授，现任中国纸院纸基功能新材料事业部副总经理，拥有多年纸基材料的研发和生产经验，担任高级工程师专业技术职务以来，先后主持参与了多项重大科研项目、企业委托研究开发和技术服务项目大小70余项，获得中国轻工业联合会科学技术进步二等奖、三等奖、“神华杯”中央企业青年创新奖铜奖、中国烟草总公司2012年度科学技术进步三等奖等奖项。陈雪峰教授自2007年以来一直专注于电气及新能源用纸基材料的开发工作，主持的十三五国家重点研发计划子课题“超级电容器纸的开发及产业化示范”项目成功落地并实现产业化应用。陈雪峰教授突出的研发能力及丰富的电气新能源用纸基材料开发经验为本项目的实施奠定了智力和技术基础。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">中国纸院研发团队已较深入的了解碱锰电池隔膜的研究及市场现状。首先，从物理性能和微观结构等方面分析了进口隔膜的特征，确定了微孔结构、吸碱耐碱性能作为隔膜研究的两大核心要点；接着从原料出发，对纤维的选取和微、纳纤化制备进行了初步探索；理解掌握了碱性锌锰体系下可能存在及可能对隔膜产生影响的电化学特性，为本项目的顺利实施奠定了预研基础。中国纸院是制浆造纸国家工程实验室的依托承建单位，拥有仪器设备300余台套，满足隔膜的物理性能、孔隙率、孔径、交流阻抗等相关性能的分析手段。中轻特种纤维材料有限公司建有多条中试生产试验线。从备料系统、浆料流送系统、成形系统、分切系统到质量检测控制系统一应俱全。为满足碱锰电池隔膜的中试及生产要求，中轻特材自筹资金数百万元，用于生产设备的改造，如全系统的除锈改造、烘缸和施胶辊的磨削和涂层电镀、机内压榨系统改造等。双方对研发及中试生产设备的投入为碱锰电池国产化替代提供了优良的硬件保障。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">（1）隔膜孔径不均、金属杂质控制不严；</p><p class="docx-paragraph">（2）隔膜对电池性能影响机理不明；</p><p class="docx-paragraph">（3）隔膜在碱性体系中的劣化机制不清；</p><p class="docx-paragraph">（4）国产隔膜无法满足高端电池需求。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">项目团队涵盖电池、纸基功能材料、检测等多学科背景，具备从理论研究、工艺开发到产业化应用的全链条技术支撑能力。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">本项目由中轻特种纤维材料有限公司牵头，联合中国制浆造纸研究院有限公司共同实施。项目聚焦高性能碱锰电池隔膜的国产化研发与产业化应用，主要内容包括：隔膜原材料筛选与性能评价；隔膜厚度、孔隙结构等关键指标的调控技术研究；隔膜对碱锰电池电化学性能的影响机理研究；隔膜在碱性锌锰体系中的劣化机制研究；中试试验及产业化应用。项目符合我省重点产业领域（新能源、新材料）战略发展方向，具有显著的前瞻性和带动性。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">国外高端隔膜已实现超细纤维、原纤化纤维的应用，具备优异性能。国内产品在孔径控制、杂质控制、耐碱性能等方面仍有差距，主要面向中低端市场。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">本项目以高性能隔膜的产业化及其在高容量、大电流碱锰电池中批量应用为总体目标。掌握隔膜厚度、孔隙结构、吸碱耐碱能力、制管性能等的调控手段，分析隔膜关键理化指标对碱锰电池电化学性能的影响机理，揭示隔膜在碱性锌锰体系下的劣化机制，提出隔膜稳定化策略和控制方法。在该理论的支撑及指导下，实现高性能隔膜的自产国产化生产，并在高容量、大电流碱锰电池中批量应用。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">政策风险：国际形势风起云涌，海外技术封锁、贸易冲突、地缘政治事件频发，高度依赖进口的行业皆感芒刺在背。为提升国家自主可控能力，减少对外产品依赖、降低断供风险，中央及各级政府出台多项政策，支持推进国产化替代。碱锰电池尤其是高端碱锰电池用隔膜仍然高度依赖进口，国产化进程亟需加速推进。因此，本项目政策层面无风险。</p><p class="docx-paragraph">技术风险：本项目经过前期充分论证和预研，具有扎实的基础及丰富经验，有足够面对风险的应变能力。本项目依托的中轻特种纤维材料有限公司和中国纸院拥有完备的实验设备和优秀的人才队伍，为本项目的推行打下了坚实的软硬件基础。因此，本项目的技术层面无风险。</p><p class="docx-paragraph">市场风险：国产替代需求强烈，市场空间大，市场风险较小。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">（1）纤维原料筛选与改性；</p><p class="docx-paragraph">（2）微孔结构调控技术；</p><p class="docx-paragraph">（3）电池性能评价与劣化机制分析；</p><p class="docx-paragraph">（4）中试工艺优化与产业化验证。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">已完成进口隔膜结构分析、纤维筛选、设备改造预研等工作，具备实施基础。</p><p class="docx-paragraph">3、项目的具体实施方案（包括合作各方在人才、技术、理论、资金、设备等方面的投入，任务分工，人员交流计划，合作机制）</p><p class="docx-paragraph">建立项目承担单位与参与单位共同参与，责、权、利明确的项目组织管理形式。成立由项目负责人任组长，参与单位负责人、技术骨干、各单位科研经费管理人员参与组成的项目管理小组。在项目管理小组统一领导下，各单位各司其职，根据项目总体目标、项目实施内容、具体要求开展项目的研究开发与中试生产工作，保证课题实施的配套资金与人员投入，接受上级管理部门及项目管理小组的管理和监督。定期向项目管理小组汇报任务进展情况，协助项目管理小组做好项目年终总结、中期评估、终期总结、汇报和相关规范文件起草。</p><p class="docx-paragraph">中轻特材：中试生产</p><p class="docx-paragraph">中国纸院：负责隔膜研发、检测方法开发与性能评价、工艺优化；</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">（1）第1-6月：原料筛选与初步配方确定；</p><p class="docx-paragraph">（2）第7-12月：实验室样品制备与性能测试；</p><p class="docx-paragraph">（3）第13-24月：中试工艺优化与小批量试制；</p><p class="docx-paragraph">（4）第25-36月：产业化验证与批量应用。</p><p class="docx-paragraph">5、项目知识产权状况（包括研究成果分享、专利申请、著作权归属、资源及其它合作权益的保护）</p><p class="docx-paragraph">研究成果由双方共享，专利申请、论文发表按贡献分配，确保知识产权清晰、权益明确。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">项目将培养一批具备跨学科背景的高层次人才，打造一支从隔膜材料研发到产品应用的复合型技术团队。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">项目产品性能对标国际先进水平，具备成本优势、供应链优势和技术服务优势，具备较强市场竞争力。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">2025年国内隔膜市场规模超4000万美元，85%依赖进口。国产替代空间巨大，项目产品具备规模化推广潜力。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">经济效益：本项目的成功开发可新增产值1000万元，带动产业链上下游发展。</p><p class="docx-paragraph">社会效益：碱锰电池隔膜达到世界先进水平，填补国内高端市场的空白，改变隔膜高度依赖进口的现状，加速推动碱锰电池隔膜的完全自主。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">中轻特种纤维材料有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责隔膜的中试生产和应用推广</p></td><td><p class="docx-paragraph">赵涛</p></td><td><p class="docx-paragraph">180.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">120.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">中国制浆造纸研究院有限公司</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">技术指导</p></td><td><p class="docx-paragraph">陈雪峰</p></td><td><p class="docx-paragraph">0.00</p></td><td><p class="docx-paragraph">0.00</p></td><td><p class="docx-paragraph">0.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">本项目以高性能隔膜的产业化及其在高容量、大电流碱锰电池中批量应用为总体目标。掌握隔膜厚度、孔隙结构、吸碱耐碱能力、制管性能等的调控手段，分析隔膜关键理化指标对碱锰电池电化学性能的影响机理，揭示隔膜在碱性锌锰体系下的劣化机制，提出隔膜稳定化策略和控制方法。在该理论的支撑及指导下，实现高性能隔膜的自产国产化生产，并在高容量、大电流碱锰电池中批量应用。</p></td><td><p class="docx-paragraph">原料筛选与初步配方确定；实验室样品制备与性能测试；</p></td><td><p class="docx-paragraph">中试工艺优化与小批量试制；</p></td><td><p class="docx-paragraph">产业化验证与批量应用。</p></td></tr><tr><td rowspan="8"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">申请实用新型专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">新增销售（万元）</p></td><td><p class="docx-paragraph">1000</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1000</p></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">赵涛学历、学位证书和职称证书</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">机构职务情况证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">赵涛职务任免通知</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">赋权协议-赵涛</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">河北省科技型中小企业创新英才</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">负责人知识产权证书</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队知识产权证书</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">团队承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">团队重要获奖证书</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业资质</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">工作合同和任命通知</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">合作协议</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

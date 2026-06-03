@@ -23,8 +23,8 @@ class TeamChecker(BaseChecker):
     dimension = EvaluationDimension.TEAM.value
     dimension_name = "团队能力"
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "负责人资质", "weight": 0.3, "description": "负责人资质和业绩"},
             {"name": "团队结构", "weight": 0.25, "description": "团队结构是否合理"},
@@ -35,7 +35,7 @@ class TeamChecker(BaseChecker):
     
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行团队能力检查"""
-        sections = self._extract_sections(content, self._required_sections)
+        sections = self._extract_sections(content, self.required_sections)
         
         if not sections:
             return CheckResult(

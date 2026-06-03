@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - bd40a6bf383a4e0b8fac89c70c189289.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：bd40a6bf383a4e0b8fac89c70c189289.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,068</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>bd40a6bf383a4e0b8fac89c70c189289.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>泊头市兴达汽车模具制造有限公司基于AI大模型的汽车覆盖件模具生成式智能设计技术开发与应用创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>泊头市兴达汽车模具制造有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>王宝雨</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>沧州市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-01</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-25</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>泊头市兴达汽车模具制造有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省沧州市泊头市交河镇八里庄</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>911309810670416163</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-沧州市-泊头市</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2013-04-25</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>20000.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>王长锁</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>13637059369</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0317-8337906</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>况亚</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>13339286173</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>泊头市兴达汽车模具制造有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>102144114713</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国工商银行股份有限公司泊头交河支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>0408318619300010322</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>835人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>235人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>45人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>R</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>泊头绿色铸造产业集群</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>155288.99</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>76568.7</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>33.1</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>5.02</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>□技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>R省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>企业具有职工 835 人，其中研发人员 235 人，拥有大型高速数控加工中心、大型坐标测量仪 、大台面研配压床等研发设备约90 台套，拥有 1 条大型精密智能模具研发中试生产线，1 个汽车车身模具精度数字检测实验室，企业以每年不低于销售收入 5%的比例加大研发投入，先后建设了省 A 级工业企业研发机构、省汽车冲压模具产业技术研究院、省级企业技术中心、省汽车冲压模具技术创新中心、汽车冲压模具工程研究中心 5 个省级研发平台。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>现有授权发明专利 7 件，实用新型专利 49 件，软件著作权 15 件。申请中已受理发明专利 9 件。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>近三年转化知识产权16件，形成新产品8个，新工艺、新技术7项，为我司实现销售收入3.6亿元。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>产学研方面，兴达模具先后同河北科技大学、北京机电研究所、北方工业大学、机械科学研究总院建立了产学研合作11项，2016年引进陈蕴博院士研发创新总顾问，2019年引进葛学元博士在我司建设了汽车轻量化覆盖件冲压模具创新创业团队，2022年引进河北科技大学马世博教授建设了省级创新团队。</p><p class="docx-paragraph">国际合作方面，兴达模具通过国际合作的形式，委托世界著名模具设计公司IPMA Projectmanagement Monitoring &amp; Assistance GmbH和EBZ Bm Form Tec GmbH公司开发新项目5项，通过项目的开展，获得授权发明专利1项，实用新型专利3项，开发出新产品1种。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">8</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">7人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">3人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">6人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">王宝雨</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1964-06</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">研究员</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">塑型加工工艺与设备</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2025-04-10</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">教育部零件近净轧制成形工程研究中心主任</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">项目负责人</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">100083</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">北京市海淀区学院路30号机械工程学院</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">010-82375671</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13511007379</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">bywang@ustb.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>国家重点研发项目负责人  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1987-09-01至1992-03-01</p></td><td colspan="9"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4"><p class="docx-paragraph">博士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1985-09-01至1987-07-01</p></td><td colspan="9"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1981-09-01至1985-07-01</p></td><td colspan="9"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4"><p class="docx-paragraph">学士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2004-07-01至今</p></td><td colspan="9"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4"><p class="docx-paragraph">研究员</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2004-09-01至2005-02-01</p></td><td colspan="9"><p class="docx-paragraph">英国伯明翰大学</p></td><td colspan="4"><p class="docx-paragraph">访问学者</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1995-07-01至2004-06-30</p></td><td colspan="9"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4"><p class="docx-paragraph">副研究员</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1992-02-01至1995-06-30</p></td><td colspan="9"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4"><p class="docx-paragraph">助理研究员</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">大型轴类楔横轧制机器人化生产线及其应用示范</p></td><td colspan="7"><p class="docx-paragraph">2019.01-2022.12</p></td><td colspan="4"><p class="docx-paragraph">国家科技部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">大型轴类零件柔性斜轧精确成形与控性制造关键技术研究</p></td><td colspan="7"><p class="docx-paragraph">2023.01-2026.12</p></td><td colspan="4"><p class="docx-paragraph">国家科技部</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金面上项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">基于芯棒控制的空心轴类零件楔横轧精确成形与控性制造技术基础研究</p></td><td colspan="7"><p class="docx-paragraph">2019.01-2022.12</p></td><td colspan="4"><p class="docx-paragraph">国家科技部</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金面上项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">阳极磷铜球室温精密斜轧工艺与设备研发</p></td><td colspan="4"><p class="docx-paragraph">科技进步奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2012-12-27</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">中国有色金属工业协会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">高安全性车身结构用钢制造及应用关键技术集成与创新</p></td><td colspan="4"><p class="docx-paragraph">科技进步奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2021-09-20</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">北京市人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">金属材料形性调控精确成形关键技术与应用</p></td><td colspan="4"><p class="docx-paragraph">科技进步奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-04-05</p></td><td colspan="4"><p class="docx-paragraph">4</p></td><td colspan="4"><p class="docx-paragraph">河北省人民政府</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Study on the microstructure evolution during radial-axial ring rolling of IN718 using a unified internal state variable material model</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">INTERNATIONAL JOURNAL OF MECHANICAL SCIENCES</p></td><td colspan="5"><p class="docx-paragraph">2017</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Theoretical study and prediction of the inner hole reduction and critical mandrel diameter in cross wedge rolling of hollow shaft</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Journal of Materials Processing Tech</p></td><td colspan="5"><p class="docx-paragraph">2021</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Manufacturing large shafts by a novel flexible skew rolling process</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">The International Journal of Advanced Manufacturing Technology</p></td><td colspan="5"><p class="docx-paragraph">2021</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">Skew rolling mill with dual-rota</p></td><td colspan="5"><p class="docx-paragraph">EP20180751.8</p></td><td colspan="3"><p class="docx-paragraph">欧洲发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2020-06-18</p></td><td colspan="3"><p class="docx-paragraph">欧洲专利局</p></td></tr><tr><td><p class="docx-paragraph">Device and method for forming sh</p></td><td colspan="5"><p class="docx-paragraph">16/862,937</p></td><td colspan="3"><p class="docx-paragraph">美国发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2020-04-30</p></td><td colspan="3"><p class="docx-paragraph">美国</p></td></tr><tr><td><p class="docx-paragraph">一种轴类零件两辊柔性斜轧成形装置及方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201910362201.9</p></td><td colspan="3"><p class="docx-paragraph">中国发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2020-07-31</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">教育部零件近净轧制成形工程研究中心</p></td><td colspan="9"><p class="docx-paragraph">主任</p></td><td colspan="6"><p class="docx-paragraph">长期</p></td></tr><tr><td colspan="5"></td><td colspan="9"></td><td colspan="6"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>长期从事零件轧制技术研究开发与科技成果转化工作。作为主要技术带头人与课题组历经二十多年研究，突破了斜轧模具复杂型腔空间曲面设计制造、成形零件组织性能控制与关键成套装备等技术难题，研发了球类零件绿色高效斜轧成形技术，研制了球磨钢球、室温磷铜球斜轧成套装备，实现了球类零件高效绿色自动化生产，形成了成套装备的规模化推广能力。开发完成包括球磨钢球、轴承球、磷铜球零件产品60多种，应用科技成果在国内外建成零件生产线100多条，出口俄罗斯、蒙古、土耳其、秘鲁等“一带一路”沿线国家生产线11条，累计生产球磨钢球、轴承球、磷铜球等200多万吨，产值300多亿元。项目成果技术生产的球磨钢球市场占有率约25%、磷铜球市场占有率50%。做为项目负责人先后承担完成国家重点研发计划项目1项，国家自然科学基金项目5项，国家科技支撑计划项目1项、国家火炬计划项目1项。</p><p class="docx-paragraph">在楔横轧凸轮轴技术上取得创新发展，将楔横轧内燃机凸轮轴精确成形技术实现产业化。与我国传统切削工艺及国外锻造工艺相比具有节材30%左右，与切削比生产效率提高20多倍，生产成本降低30%等优点。在全国各地建成各种楔横轧凸轮轴生产线30多条，我国钢质凸轮轴的80%以上已采用楔横轧技术制坯，材料利用率提高到60%以上，产品得到广泛应用，并出口美国福特等公司。项目累计生产凸轮轴毛坯5000多万支，产值36亿元，节材和降低后续机加工费用13亿元。该项目技术的实施为我国凸轮轴制造行业采用先进制造技术，节约材料，降低成本作出了突出贡献。</p><p class="docx-paragraph">申请人先后获省部一等奖2项、二等奖1项，获授权发明专利100余件，其中国际专利4件。发表论文100多篇，合作出版技术专著3部。培养（毕业）博士研究生50余名，硕士研究生50余名。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">王宝雨</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1964-06</p></td><td><p class="docx-paragraph">110108196406172371</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">研究员</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京科技大学机械工程学院教师</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人,其他:国家重点研发项目负责人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">马世博</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1980-12</p></td><td><p class="docx-paragraph">230504198012220812</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">河北科技大学机械工程学院院长</p></td><td><p class="docx-paragraph">其他:河北省“三三三人才工程”第三层次</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">穆振凯</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1990-12</p></td><td><p class="docx-paragraph">13048119901229289x</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副教授</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">河北科技大学材料科学与工程学院教师</p></td><td><p class="docx-paragraph">其他:河北省教育厅青年拔尖人才</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">郑振华</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1985-07</p></td><td><p class="docx-paragraph">350322198507033073</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">助理研究员</p></td><td><p class="docx-paragraph">交通工具轻量化用铝、镁、钛轻合金材料制品及深加工产</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京科技大学机械工程学院教师</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">赵博</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-01</p></td><td><p class="docx-paragraph">210726198301190512</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司，技术副总</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">姚伟民</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1982-08</p></td><td><p class="docx-paragraph">131124198208152277</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司，技术骨干</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">张悦</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1988-01</p></td><td><p class="docx-paragraph">130981198801246645</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">生产管理</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司，技术骨干</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">白雪松</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-03</p></td><td><p class="docx-paragraph">130981198603060313</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司，技术骨干</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">闫金磊</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1985-09</p></td><td><p class="docx-paragraph">130929198509013814</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司，技术骨干</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">尹培培</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1988-12</p></td><td><p class="docx-paragraph">130981198812266625</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">精密复杂模具设计服务</p></td><td><p class="docx-paragraph">塑性加工工艺与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司，技术骨干</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>泊头市兴达汽车模具制造有限公司基于AI大模型的汽车覆盖件模具生成式智能设计技术开发与应用创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-01</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>195.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>135.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>R人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>R高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>R新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>汽车覆盖件、模具智能设计、数字孪生、数值模拟、本构模型</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>项目执行期内，培养掌握基于AI大模型的模具设计技术人才3名以上，培养研究生2-3名，构建汽车覆盖件智能模具设计创新梯队。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>构建高精度材料本构模型，预测精度提升20%以上；首次冲压制件的表面质量缺陷发生率降低20%以上，成形件最大厚度减薄率控制在25%以内，产品综合合格率稳定达到90%以上；模具设计效率提升40%以上。</p><p class="docx-paragraph">解决产业关键共性技术难题1项，转化应用科技成果1项，形成新技术、新产品 2 项，新产品带动企业销售收入1300 万元；合作发表与项目相关的学术期刊论文2篇，申请发明专利2 件；促进签订技术合同金额 20 万元以上；培训企业技术人员 16名以上。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>申报本项目之前各自所获得的知识产权均归各自所有，不因共同申报本项目而改变。在本项目研究过程中，针对各自承担的研究任务所产生的研究成果归承担方所有，共同参与研发的科技成果归共同所有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">轻量化已成为提升新能源汽车续航及竞争力的关键。然而，高端汽车覆盖件模具技术滞后，成为制约产业升级的核心瓶颈。本项目依托河北省“十五五”汽车产业规划，旨在构建高精度材料本构模型，引入AI大模型技术，实现模具的智能化设计与制造。此举是破解传统试错模式局限、提升模具设计效率与可靠性的必然选择，对于抢占快节奏市场竞争高地、突破国外技术依赖具有极强的紧迫性。本项目将推动材料成形机理与人工智能的深度融合，形成模具设计的智能化范式。通过大幅缩短调试周期实现降本增效，带动河北省汽车产业链协同创新。有力支撑汽车轻量化进程，同时提升关键装备制造的自主可控能力。</p><p class="docx-paragraph">2、项目概述（包括研究内容、合作分工，与我省重点产业领域战略发展方向的相关性）</p><p class="docx-paragraph">本项目面向河北省高端模具制造领域，针对复杂型面汽车覆盖件在成形过程中塑性变形与缺陷预测难、模具设计依赖经验、全流程协同优化缺失等关键问题，围绕“高精度形性预测—智能模具设计—数字孪生反馈”开展系统研究。首先，开发覆盖宽应力域的各向异性本构模型，结合数值模拟揭示应变路径对成形质量的影响，实现尺寸精度与表面质量的协同提升。其次，构建融合仿真数据与典型案例的多源知识库，利用大模型挖掘设计规则，建立具备自进化能力的智能模具设计系统。最后，集成前述成果，搭建基于数字孪生的可视化反馈平台，通过现场数据实时修正工艺，形成“设计-制造-优化”自适应闭环。</p><p class="docx-paragraph">项目团队负责理论研究和技术开发，兴达模具公司承担智能设计系统集成、工艺验证及应用，确保成果落地转化。项目紧密契合河北省“十五五”先进装备制造、新能源汽车及新材料等重点产业战略发展方向，推动模具产业向智能化、绿色化升级，为河北省制造业高质量发展提供关键技术支撑。</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">通过项目实施，解决产业关键共性技术难题1项，实现科技成果转化1项，形成新技术、新产品2项，申请与项目相关的发明专利2项；签订技术合同金额20万元以上；培养掌握基于AI大模型的模具设计技术人才3名以上，培养研究生2-3名，培训企业技术人员16名以上；带动企业销售收入增长1300万元以上。达到以下技术性能指标：本构模型精度提升10%以上；首次制件面品缺陷率减少不低于20%，制件合格率控制在90%以上，模具设计效率提高40%以上。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司专注于汽车覆盖件冲压模具的研发、设计、生产制造，拥有大型高速数控加工中心102台，大型坐标测量仪5台，大台面研配压床55台的超大规模汽车冲压模具制造企业。企业2025年营业收入为76568.7万元，净利润5757.65万元，研发投入3843.22万元，研发投入占销售收入的5.02%。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">兴达模具现有河北省汽车冲压模具产业技术研究院、河北省汽车冲压模具技术创新中心等5个省级研发平台，并在美国建有1个研发中心，教授专家组成创新团队3个，先后获得了高新技术企业、河北省科技领军企业、省级技术创新示范企业、专精特新重点“小巨人”企业等荣誉。为全球领先的汽车冲压模具生产企业，拥有大型高速数控加工中心等研发设备约90台套。</p><p class="docx-paragraph">3、项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">王宝雨，博士，教授，博士生导师，长期从事零件轧制技术研究开发与科技成果转化工作；先后承担完成国家重点研发计划项目1项、国家自然科学基金项目5项、国家科技支撑计划项目1项、国家火炬计划项目1项；获省部一等奖4项、二等奖2项，授权发明专利100余件，其中国际专利4件；发表论文100余篇，合作出版技术专著3部。</p><p class="docx-paragraph">马世博，博士，教授，硕士生导师，入选河北省“三三三人才工程”第三层次，长期从事金属板材塑性成形技术研究；先后主持主研国家自然基金、河北省科技计划项目、河北省高层次人才项目等10余项；授权专利10余件，发表论文30余篇；获河北省科技进步二等奖1项。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">兴达模具主导产品属于“四基”中节能与新能源汽车领域，解决了铝合金材料覆盖件模具在其服役过程中的全球行业难题，模具使用寿命达到50万冲次；为奔驰汽车提供的模具获得中国模具工业协会颁发的精模奖；产品开发周期由13个月降低到8个月，具备同汽车厂完成每年60余款车型的协同开发能力。项目团队在金属材料塑性成形方面开展了深入研究，发表与本项目相关的高水平论文40余篇，授权发明专利12项，获省部级奖项4项。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">（1）基于高精度本构的薄壁构件成形过程数值模拟与质量控制</p><p class="docx-paragraph">开发可覆盖宽应力域的新型各向异性模型，并将其集成至数值模拟平台，开展复杂型面薄壁构件成形过程的仿真分析。建立“成形缺陷预测-应变路径控制-工艺参数优化”的内在映射关系，拓展成形窗口，实现成形过程稳定性、制件尺寸精度与表面质量的协同提升。</p><p class="docx-paragraph">（2）基于多源异构知识的模具智能设计系统开发</p><p class="docx-paragraph">构建包含仿真数据、工艺参数、设计规则及失效案例的多源异构知识库。开发基于大模型和深度学习的知识与设计方案映射技术，揭示智能驱动下模具方案的生成与决策机理。建立能够从制造实例中持续学习和优化的自进化机制，突破经验固化瓶颈，显著提升模具设计效率。</p><p class="docx-paragraph">（3）基于数字孪生的模具设计可视化与实时反馈</p><p class="docx-paragraph">将上述材料模型、成形模拟与智能设计系统进行集成，搭建基于数字孪生的反馈平台，实现模具设计过程的实时可视化。建立基于现场制造数据的模型在线修正与工艺动态调整机制，通过对物理设计制造过程的实时映射与反馈，实现模具设计策略的持续迭代优化。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">本项目团队可提供核心技术包括：塑性本构建模技术、金属构件精益成形仿真技术、模具智能设计技术、数字孪生平台开发技术。团队将通过联合技术攻关为企业提供从研发到生产的全流程技术支持，包括定制化仿真分析、智能设计系统开发、工艺优化指导、实验验证支持等技术服务，助力企业实现智能制造和降本增效。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">本项目面向河北省高端汽车模具制造需求，开展汽车覆盖件成形与模具智能设计技术瓶颈攻关。融合机器学习构建形性一体化精益成形技术体系，引入大模型知识决策驱动智能模具设计，搭建基于数字孪生的可视化反馈平台，打通“材料—工艺—模具—制造”全链条，形成从智能设计到制造反馈的自适应闭环体系。研究成果将为轻质高强合金薄壁构件的高质量精密成形提供系统的理论基础与技术支撑，推动模具设计向智能化、自适应化方向创新发展。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">当前，国内外在轻质合金成形领域已建立较为完善的本构理论，模具设计正向智能化、知识驱动方向转型，数字孪生技术开始应用于制造过程监控，但在本构模型预测精度和范围仍存在局限、模具智能设计决策以及成形全流程协同控制方面相对滞后，传统经验设计模式尚未根本突破。本项目特色在于构建覆盖“材料本构—工艺模拟—模具设计—孪生反馈”的全链条闭环体系，创新性地建立具有自进化能力的模具智能设计系统，并通过数字孪生实现设计策略的实时修正与优化，为解决高端汽车模具设计与制造面临的工艺响应预测困难、智能化决策能力不足等共性技术难题提供了成套解决方案。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">构建高精度各向异性材料本构模型，其预测精度相对于现有主流模型提升20%以上；首次冲压制件的表面质量缺陷发生率降低20%以上，成形件最大厚度减薄率控制在25%以内，产品综合合格率稳定达到90%以上；模具设计环节的效率提升40%以上。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">技术风险在于模具特征智能识别与提取环节，核心在于输出结果的最优结构与工艺参数验证。新兴智能设计系统可能面临市场接受度不足的挑战。项目团队在汽车冲压模具领域积累深厚，为项目实施提供扎实技术支撑。后续将持续研发迭代，强化技术优势，确保与竞争对手保持差异化。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">（1）高精度本构建模与数值模拟</p><p class="docx-paragraph">设计不同加载路径力学实验，系统研究铝合金和高强钢板在宽应力域下的塑性变形与缺陷演化规律，引入应力主轴方向构建Hill48修正模型。基于ABAQUS/VUMAT二次开发，开展复杂型面薄壁构件成形过程的数值模拟。结合响应面法与多目标优化算法，建立工艺参数与成形质量之间的映射关系。</p><p class="docx-paragraph">（2）覆盖件模具特征识别与智能设计</p><p class="docx-paragraph">采用三维点云分割算法自动提取模具特征，构建包含仿真结果、工艺参数、模具失效案例及设计经验的多源异构知识库。利用自然语言处理与深度神经网络，建立基于大模型的模具设计方案生成与决策框架。</p><p class="docx-paragraph">（3）数字孪生可视化与实时反馈</p><p class="docx-paragraph">将高精度本构模型、成形模拟系统与智能设计平台进行集成，构建面向模具全生命周期的数字孪生体。部署多源传感器网络，通过数据同化算法对孪生模型进行在线修正与校准，形成“设计-制造-反馈-优化”的自适应闭环体系。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">在前期研究中对各类金属板材的塑性成形特性进行了深入研究，为提高本构模型预测精度及冲压形性智能预测奠定了实验和理论基础，发表与本项目相关的高水平SCI论文20余篇。基于机器学习的汽车模具智能设计研究，获2024年河北省场景创新大赛三等奖。</p><p class="docx-paragraph">3、项目的具体实施方案（包括合作各方在人才、技术、理论、资金、设备等方面的投入，任务分工，人员交流计划，合作机制）</p><p class="docx-paragraph">项目组实行组长负责制，全面负责项目研发创新活动的开展。项目团队建立日报、周报、月报措施，监控项目进度及成果，及时关注及协调项目进度，确保研发按照计划节点完成各分项研发任务；负责基础实验、理论模型建立和技术开发等工作，并完成相关科研论文、专利申请、结题报告等。兴达模具负责组织安排本单位模具设计人员开展现场调试和生产验证及其它相关协调工作。</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">（1）2026.02-2026.12</p><p class="docx-paragraph">建立轻质高强合金板材塑性各向异性及硬化本构模型，开发汽车模具成形多场耦合数值模拟技术。申请专利1件。</p><p class="docx-paragraph">（2）2027.01-2027.12</p><p class="docx-paragraph">开发冲压模具型面特征的自动识别与提取技术，构建包含仿真数据、工艺参数、失效案例及设计规则的多源异构知识库，搭建汽车覆盖件模具智能设计系统；发表论文1篇，申请专利1件。</p><p class="docx-paragraph">（3）2028.01-2028.12</p><p class="docx-paragraph">开发可视化交互界面，实现模具设计过程的实时动态展示，搭建基于数字孪生的反馈平台，实现基于现场制造数据的模型在线修正与工艺动态调整。撰写结题报告；发表论文1篇。</p><p class="docx-paragraph">5、项目知识产权状况（包括研究成果分享、专利申请、著作权归属、资源及其它合作权益的保护）</p><p class="docx-paragraph">三方在申报本项目之前各自所获得的知识产权均归各自所有。三方在本项目研究过程中，针对各自承担的研究任务所产生的研究成果归承担方所有，三方共同参与研发的科技成果归三方共同所有。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">本项目依托多学科交叉的研究内容，旨在构建“基础研究-技术攻关-工程应用”全链条的人才培养体系，打造一支结构合理、创新能力强、具有国际视野的汽车覆盖件智能模具设计创新团队。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">本项目构建了涵盖材料本构、成形控制与智能设计的全链条技术体系，核心竞争力显著：高精度本构模型为成形质量时空协同精准控制提供基础，大模型驱动的自进化学习机制，突破传统知识获取瓶颈，综合技术壁垒高、闭环优势强。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">国内高端模具年市场规模超千亿，车企对缩短调试周期、延长寿命需求极为迫切。团队拥有成熟实验设备及大量案例数据，依托河北省汽车产业可直接开展产线验证。预计3年内规模化应用，降本15%-20%，有望占据区域高端模具技术服务市场30%以上份额。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">突破模具智能设计技术，提升设计效率40%以上，缩短新车开发周期，制件合格率超90%；延长模具寿命30%以上，综合年均降本15%-20%，带动区域模具产业新增产值超亿元。通过推动新能源汽车轻量化，突破国外技术垄断，提升关键装备自主可控能力，培养一批复合型工程技术人才，助推河北省汽车制造业向高端化、智能化、绿色化转型。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">泊头市兴达汽车模具制造有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">项目整体实施工作</p></td><td><p class="docx-paragraph">王宝雨</p></td><td><p class="docx-paragraph">195.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">135.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1.解决产业关键共性技术难题1项，转化应用科技成果1项，形成新技术、新产品 2 项，新产品带动企业销售收入1300 万元；</p><p class="docx-paragraph">2.申请与项目相关的发明专利2项；</p><p class="docx-paragraph">3.合作发表与项目相关的学术期刊论文2篇；</p><p class="docx-paragraph">4.团队成员中的企业人员主持企业科研项目2项。</p><p class="docx-paragraph">5.促进签订技术合同金额 20 万元以上；</p><p class="docx-paragraph">6.培养掌握基于AI大模型的模具设计技术人才3名以上，培养研究生2名，培训企业技术人员 16名以上。</p></td><td><p class="docx-paragraph">1.申请与项目相关的发明专利1项；</p><p class="docx-paragraph">2.团队成员中的企业人员主持企业科研项目1项。</p><p class="docx-paragraph">3.促进签订技术合同金额10万元以上；</p><p class="docx-paragraph">4.培训企业技术人员5名以上。</p></td><td><p class="docx-paragraph">1.解决产业关键共性技术难题1项；</p><p class="docx-paragraph">2.申请与项目相关的发明专利1项；</p><p class="docx-paragraph">3.合作发表与项目相关的学术期刊论文1篇；</p><p class="docx-paragraph">4.团队成员中的企业人员主持企业科研项目1项。</p><p class="docx-paragraph">5.促进签订技术合同金额10万元以上；</p><p class="docx-paragraph">6.培养掌握基于AI大模型的模具设计技术人才1名以上，培养研究生1名，培训企业技术人员5名以上。</p></td><td><p class="docx-paragraph">1.转化应用科技成果1项，形成新技术、新产品 2 项，新产品带动企业销售收入1300 万元；</p><p class="docx-paragraph">2.合作发表与项目相关的学术期刊论文1篇；</p><p class="docx-paragraph">3.培养掌握基于AI大模型的模具设计技术人才2名以上，培养研究生1名，培训企业技术人员6名以上。</p></td></tr><tr><td rowspan="13"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">SCI、EI收录的期刊论文（篇）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">团企签订技术合同金额（万元）</p></td><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">培养研究生（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培训企业技术人员（人）</p></td><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">6</p></td></tr><tr><td><p class="docx-paragraph">带动企业销售收入（万元）</p></td><td><p class="docx-paragraph">1300</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1300</p></td></tr><tr><td><p class="docx-paragraph">新技术（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新产品（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">解决关键共性技术难题</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">身份证</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">学位证</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">职称证</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">关于王宝雨年龄情况的说明</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">学术兼职</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">团队负责人工作协议</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">引进团队负责人及核心成员的证明材料</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">核心成员人才证明</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">核心成员人才证明</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">一种轴类零件两辊柔性斜轧成形装置及方法</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">Device and method for forming shaft part by two-roller flexible skew rolling</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">Skew rolling mill with dual-rotatable-shafts</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">基于芯棒控制的空心轴类零件楔横轧精确成形与控性制造 技术基础研究</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">大型轴类零件柔性斜轧精确成形与控性制造关键技术研 究</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">大型轴类楔横轧制机器人化生产线及其应用示范</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">高安全性车身结构用钢制造及应用关键技术集成与创新</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">金属材料形性调控精确成形关键技术与 应用</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">阳极磷铜球室温精密斜轧工艺与设备研发</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">营业执照和科技领军企业证明</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">高新技术企业、技术创新示范企业、专精特新重点小巨人企业证明</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业具有省级产业技术研究院、省级技术创新中心等省级研发平台证明</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">公司章程（1）</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">公司章程（2）</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

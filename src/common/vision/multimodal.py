@@ -1,6 +1,7 @@
 """多模态 LLM 封装"""
 from typing import Any
 
+from src.common.review_runtime import ReviewRuntime
 from langchain_core.messages import HumanMessage
 
 
@@ -38,13 +39,14 @@ class MultimodalLLM:
         # 压缩图片避免超过 LLM 10MB 限制
         try:
             img = Image.open(io.BytesIO(image_data))
-            max_dim = 2048
+            max_dim = max(768, int(ReviewRuntime.ATTACHMENT_LLM_MAX_DIM))
             if max(img.size) > max_dim:
                 ratio = max_dim / max(img.size)
                 new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
                 img = img.resize(new_size, Image.LANCZOS)
             buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=85, optimize=True)
+            quality = max(50, min(95, int(ReviewRuntime.ATTACHMENT_LLM_JPEG_QUALITY)))
+            img.save(buf, format='JPEG', quality=quality, optimize=True)
             image_data = buf.getvalue()
         except Exception:
             pass

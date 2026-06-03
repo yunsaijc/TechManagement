@@ -13,15 +13,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   const modules = MODULES;
   const selectedModuleId = ref('review');
 
-  /** 侧边栏暂不展示的政策沙盘等入口（保留路由与面板代码便于恢复） */
-  const NAV_HIDDEN_MODULE_IDS = new Set(['sandbox']);
-
   const currentTime = ref('--:--:--');
   const backendStatus = ref('检测中');
   const backendOk = ref(false);
 
   const navModules = computed(() => [
-    ...modules.filter((m) => !NAV_HIDDEN_MODULE_IDS.has(m.id)),
+    ...modules,
     HISTORY_MODULE,
   ]);
   const isHistoryModule = computed(() => selectedModuleId.value === HISTORY_MODULE.id);
@@ -77,4 +74,3 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     selectModule,
   };
 });
-

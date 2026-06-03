@@ -61,22 +61,22 @@ function configLabelZh(key, index = 0) {
 
 /** 下拉选项：仅展示项目名称 */
 function dropdownOptionLabel(row) {
-  const title = row.project_title && String(row.project_title).trim();
+  const title = row.subject_name && String(row.subject_name).trim();
   if (title) return title.length > 72 ? `${title.slice(0, 72)}…` : title;
-  return '（未命名项目）';
+  return '（未命名分组）';
 }
 
-function shortProjectId(pid) {
-  const s = String(pid || '');
+function shortGroupId(gid) {
+  const s = String(gid || '');
   if (s.length <= 16) return s;
   return `${s.slice(0, 8)}…${s.slice(-6)}`;
 }
 
 function rowMiniStats(row) {
-  const ex = row.top_experts || [];
+  const ex = row.group_experts || [];
   const k = ex.length;
-  const top1 = k ? ex[0].match_score : null;
-  const sum = ex.reduce((acc, e) => acc + Number(e?.match_score ?? 0), 0);
+  const top1 = k ? ex[0].avg_match_score : null;
+  const sum = ex.reduce((acc, e) => acc + Number(e?.avg_match_score ?? 0), 0);
   const avg = k ? Math.round((sum / k) * 100) / 100 : null;
   return { k, top1, avg };
 }
@@ -132,11 +132,11 @@ onMounted(load);
             </div>
             <div class="em-stat">
               <div class="em-stat-label">已匹配条目数</div>
-              <div class="em-stat-value">{{ formatStatCount(summary.matched_project_count) }}</div>
+              <div class="em-stat-value">{{ formatStatCount(summary.matched_group_count) }}</div>
             </div>
             <div class="em-stat">
               <div class="em-stat-label">未匹配条目数</div>
-              <div class="em-stat-value">{{ formatStatCount(summary.unmatched_project_count) }}</div>
+              <div class="em-stat-value">{{ formatStatCount(summary.unmatched_group_count) }}</div>
             </div>
             <div class="em-stat">
               <div class="em-stat-label">首名得分平均值</div>
@@ -168,7 +168,7 @@ onMounted(load);
                     >
                       <option
                         v-for="(row, idx) in results"
-                        :key="row.project_id || idx"
+                        :key="row.group_id || idx"
                         :value="idx"
                       >
                         {{ dropdownOptionLabel(row) }}
@@ -176,15 +176,15 @@ onMounted(load);
                     </select>
                   </label>
                   <div class="em-card-meta">
-                    <span class="em-meta-line" :title="activeRow.project_id">
-                      项目编号：<span class="em-mono">{{ shortProjectId(activeRow.project_id) }}</span>
+                    <span class="em-meta-line" :title="activeRow.group_id">
+                      分组编号：<span class="em-mono">{{ shortGroupId(activeRow.group_id) }}</span>
                     </span>
                     <span class="em-meta-line">学科：<strong>{{ activeRow.subject_name || '—' }}</strong></span>
                   </div>
                 </div>
                 <div class="em-pill">
                   候选专家
-                  <b>{{ activeRow.expert_count ?? (activeRow.top_experts || []).length }}</b>
+                  <b>{{ activeRow.expert_count ?? (activeRow.group_experts || []).length }}</b>
                   人
                 </div>
               </div>
@@ -207,7 +207,15 @@ onMounted(load);
                     <div class="em-mini-value">{{ rowMiniStats(activeRow).avg ?? '—' }}</div>
                   </div>
                 </div>
-                <div v-if="activeRow.top_experts?.length" class="em-table-wrap">
+
+                <div v-if="activeRow.projects?.length" class="em-query">
+                  <span class="em-query-label">本组包含项目 ({{ activeRow.projects.length }})</span>
+                  <ul class="em-project-list">
+                    <li v-for="(proj, pi) in activeRow.projects" :key="pi">{{ proj }}</li>
+                  </ul>
+                </div>
+
+                <div v-if="activeRow.group_experts?.length" class="em-table-wrap">
                   <table class="em-table">
                     <thead>
                       <tr>
@@ -217,13 +225,13 @@ onMounted(load);
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="(ex, ri) in activeRow.top_experts" :key="String(ex.expert_id) + '-' + ri">
+                      <tr v-for="(ex, ri) in activeRow.group_experts" :key="String(ex.expert_id) + '-' + ri">
                         <td class="col-idx">{{ ri + 1 }}</td>
                         <td>
                           <div class="em-expert-name">{{ ex.expert_name }}</div>
                           <div class="em-expert-id">编号　{{ ex.expert_id }}</div>
                         </td>
-                        <td class="col-score">{{ ex.match_score }}</td>
+                        <td class="col-score">{{ ex.avg_match_score }}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -593,10 +601,24 @@ onMounted(load);
 }
 
 .em-query-body {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #0f2744;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.em-project-list {
+  margin: 6px 0 0 0;
+  padding: 0 0 0 16px;
   font-size: 13px;
   color: #334155;
-  line-height: 1.55;
-  word-break: break-word;
+  line-height: 1.6;
+}
+
+.em-project-list li {
+  margin-bottom: 4px;
 }
 
 .em-mini-grid {

@@ -1,0 +1,1216 @@
+{
+  "status": "success",
+  "data": {
+    "dir_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项",
+    "selected_projects": 60,
+    "resolved_projects": 60,
+    "available_docs": 60,
+    "missing_docs": [],
+    "failed_projects": [],
+    "debug_report_path": "/home/tdkx/ljh/Tech/results/高水平人才团队建设专项/plagiarism_batch_report.html",
+    "results": [
+      {
+        "project": {
+          "id": "3d56426ee0874de3b6388e5b718ac8e5",
+          "xmmc": "3d56426ee0874de3b6388e5b718ac8e5",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/3d56426ee0874de3b6388e5b718ac8e5.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868900510",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6748,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.3
+        }
+      },
+      {
+        "project": {
+          "id": "9baf803367af4475b7b81291be361949",
+          "xmmc": "9baf803367af4475b7b81291be361949",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/9baf803367af4475b7b81291be361949.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868901907",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7195,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.25
+        }
+      },
+      {
+        "project": {
+          "id": "404a8b27f5ee4ff6ab64478ddcfd5533",
+          "xmmc": "404a8b27f5ee4ff6ab64478ddcfd5533",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/404a8b27f5ee4ff6ab64478ddcfd5533.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868902784",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7703,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "f1692eed14514ab89b6302abe8671205",
+          "xmmc": "f1692eed14514ab89b6302abe8671205",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/f1692eed14514ab89b6302abe8671205.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868903727",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6721,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.24
+        }
+      },
+      {
+        "project": {
+          "id": "a86b6ec9447144cfa21568064d172801",
+          "xmmc": "a86b6ec9447144cfa21568064d172801",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/a86b6ec9447144cfa21568064d172801.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868904546",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5496,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.19
+        }
+      },
+      {
+        "project": {
+          "id": "cc5f428e6a95422a9d911aabc69b8927",
+          "xmmc": "cc5f428e6a95422a9d911aabc69b8927",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/cc5f428e6a95422a9d911aabc69b8927.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868905431",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5928,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.23
+        }
+      },
+      {
+        "project": {
+          "id": "590163ed0bb44859974fb5ee8c3d55e7",
+          "xmmc": "590163ed0bb44859974fb5ee8c3d55e7",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/590163ed0bb44859974fb5ee8c3d55e7.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868906345",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 8583,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.24
+        }
+      },
+      {
+        "project": {
+          "id": "d6ebf00732a6454cbce4da2816404281",
+          "xmmc": "d6ebf00732a6454cbce4da2816404281",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/d6ebf00732a6454cbce4da2816404281.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868907263",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6954,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.2
+        }
+      },
+      {
+        "project": {
+          "id": "13ad90b438cb49dc83e0b88cc58e8601",
+          "xmmc": "13ad90b438cb49dc83e0b88cc58e8601",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/13ad90b438cb49dc83e0b88cc58e8601.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868908166",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5895,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.41
+        }
+      },
+      {
+        "project": {
+          "id": "7fb17f38cc4f49d6b162c2af7187687e",
+          "xmmc": "7fb17f38cc4f49d6b162c2af7187687e",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/7fb17f38cc4f49d6b162c2af7187687e.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868909062",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6810,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "17d6767f0bd34c0b95d560172c6ac9c8",
+          "xmmc": "17d6767f0bd34c0b95d560172c6ac9c8",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/17d6767f0bd34c0b95d560172c6ac9c8.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868909706",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6632,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "b0193ce6ded44e6396b3bc4875ff6b85",
+          "xmmc": "b0193ce6ded44e6396b3bc4875ff6b85",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/b0193ce6ded44e6396b3bc4875ff6b85.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868910518",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6624,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.2
+        }
+      },
+      {
+        "project": {
+          "id": "1fe66db94c044864b588e58d778211c3",
+          "xmmc": "1fe66db94c044864b588e58d778211c3",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/1fe66db94c044864b588e58d778211c3.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868911613",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7674,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "3ba1c2224aed493481517b0dbf23d26b",
+          "xmmc": "3ba1c2224aed493481517b0dbf23d26b",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/3ba1c2224aed493481517b0dbf23d26b.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868912357",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7266,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "66e5b75501f9412ab32e13b76184aac3",
+          "xmmc": "66e5b75501f9412ab32e13b76184aac3",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/66e5b75501f9412ab32e13b76184aac3.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868913277",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6960,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "c6f5e8cec9794e88b4fa2c37822212ee",
+          "xmmc": "c6f5e8cec9794e88b4fa2c37822212ee",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/c6f5e8cec9794e88b4fa2c37822212ee.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868914127",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6708,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.2
+        }
+      },
+      {
+        "project": {
+          "id": "a461c95ffabd473abd5577a16231306b",
+          "xmmc": "a461c95ffabd473abd5577a16231306b",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/a461c95ffabd473abd5577a16231306b.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868915748",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6350,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "7a9de855928c4f6c96758555c2440b5c",
+          "xmmc": "7a9de855928c4f6c96758555c2440b5c",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/7a9de855928c4f6c96758555c2440b5c.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868916380",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6346,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.19
+        }
+      },
+      {
+        "project": {
+          "id": "1e86d872a0c3404587658705cda8e359",
+          "xmmc": "1e86d872a0c3404587658705cda8e359",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/1e86d872a0c3404587658705cda8e359.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868917194",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6490,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.2
+        }
+      },
+      {
+        "project": {
+          "id": "dad1fc1555d149759316bc1c2ed04d10",
+          "xmmc": "dad1fc1555d149759316bc1c2ed04d10",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/dad1fc1555d149759316bc1c2ed04d10.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868919310",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6191,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "ac43d121b45f4e6d8a26b316e088bc35",
+          "xmmc": "ac43d121b45f4e6d8a26b316e088bc35",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/ac43d121b45f4e6d8a26b316e088bc35.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868920098",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7579,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "09ec65a0090c46ecabd6afd094404f97",
+          "xmmc": "09ec65a0090c46ecabd6afd094404f97",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/09ec65a0090c46ecabd6afd094404f97.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868920910",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6350,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.18
+        }
+      },
+      {
+        "project": {
+          "id": "7adcadbcb3014ed6800df2ddd3949853",
+          "xmmc": "7adcadbcb3014ed6800df2ddd3949853",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/7adcadbcb3014ed6800df2ddd3949853.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868921851",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6980,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.28
+        }
+      },
+      {
+        "project": {
+          "id": "67bfa365f32242b7a41ce12dc542a728",
+          "xmmc": "67bfa365f32242b7a41ce12dc542a728",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/67bfa365f32242b7a41ce12dc542a728.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868922793",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6652,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.26
+        }
+      },
+      {
+        "project": {
+          "id": "9eb97ffad1aa4033b2b1b46dc52e2d7d",
+          "xmmc": "9eb97ffad1aa4033b2b1b46dc52e2d7d",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/9eb97ffad1aa4033b2b1b46dc52e2d7d.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868923672",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6051,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "c2ad4c87d521435fa4068485450da0e4",
+          "xmmc": "c2ad4c87d521435fa4068485450da0e4",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/c2ad4c87d521435fa4068485450da0e4.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868924633",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5215,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "62735abf36394090a06e7134aa4c7a31",
+          "xmmc": "62735abf36394090a06e7134aa4c7a31",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/62735abf36394090a06e7134aa4c7a31.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868925505",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6945,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.4
+        }
+      },
+      {
+        "project": {
+          "id": "58efa48491234814b52cf3c99c09ac7f",
+          "xmmc": "58efa48491234814b52cf3c99c09ac7f",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/58efa48491234814b52cf3c99c09ac7f.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868926441",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6880,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.25
+        }
+      },
+      {
+        "project": {
+          "id": "32342f5218c74ad19e855b8b9f561877",
+          "xmmc": "32342f5218c74ad19e855b8b9f561877",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/32342f5218c74ad19e855b8b9f561877.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868927609",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7424,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.23
+        }
+      },
+      {
+        "project": {
+          "id": "b01bc7a3c00c4befa87d3efbd113bc9f",
+          "xmmc": "b01bc7a3c00c4befa87d3efbd113bc9f",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/b01bc7a3c00c4befa87d3efbd113bc9f.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868928506",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6965,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.24
+        }
+      },
+      {
+        "project": {
+          "id": "12283a8e245b4e749efc2ce2d79f3c98",
+          "xmmc": "12283a8e245b4e749efc2ce2d79f3c98",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/12283a8e245b4e749efc2ce2d79f3c98.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868929769",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 4560,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.5
+        }
+      },
+      {
+        "project": {
+          "id": "4f6bd38e7fae46adb7c9e4a5ebe5da6b",
+          "xmmc": "4f6bd38e7fae46adb7c9e4a5ebe5da6b",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/4f6bd38e7fae46adb7c9e4a5ebe5da6b.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868930727",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5863,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.29
+        }
+      },
+      {
+        "project": {
+          "id": "4fc9bc413b0040288d1482fc78ee0b71",
+          "xmmc": "4fc9bc413b0040288d1482fc78ee0b71",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/4fc9bc413b0040288d1482fc78ee0b71.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868932122",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7086,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.24
+        }
+      },
+      {
+        "project": {
+          "id": "23a783b2c2b644778b6c159d17da9726",
+          "xmmc": "23a783b2c2b644778b6c159d17da9726",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/23a783b2c2b644778b6c159d17da9726.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868932910",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7575,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.25
+        }
+      },
+      {
+        "project": {
+          "id": "263521135cc3421e98f919a9a90a1cf4",
+          "xmmc": "263521135cc3421e98f919a9a90a1cf4",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/263521135cc3421e98f919a9a90a1cf4.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868933792",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6985,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.23
+        }
+      },
+      {
+        "project": {
+          "id": "aa0f22d06aa7456fac39d4ea757dd97c",
+          "xmmc": "aa0f22d06aa7456fac39d4ea757dd97c",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/aa0f22d06aa7456fac39d4ea757dd97c.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868934665",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7033,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "b6a1e5c812d74e568de5e8f59edc87ea",
+          "xmmc": "b6a1e5c812d74e568de5e8f59edc87ea",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/b6a1e5c812d74e568de5e8f59edc87ea.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868935527",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5990,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "85bba71f41304e52b1676e4da64bb266",
+          "xmmc": "85bba71f41304e52b1676e4da64bb266",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/85bba71f41304e52b1676e4da64bb266.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868936445",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7068,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "548f7f5e2de7422c8f15af66f031be59",
+          "xmmc": "548f7f5e2de7422c8f15af66f031be59",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/548f7f5e2de7422c8f15af66f031be59.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868937339",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5118,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.19
+        }
+      },
+      {
+        "project": {
+          "id": "15fb7220ffea4ba5b910bf90dae280d6",
+          "xmmc": "15fb7220ffea4ba5b910bf90dae280d6",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/15fb7220ffea4ba5b910bf90dae280d6.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868937972",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7002,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "5d9768f0b2b2418d8899f85601529dc4",
+          "xmmc": "5d9768f0b2b2418d8899f85601529dc4",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/5d9768f0b2b2418d8899f85601529dc4.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868938787",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7033,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "d327a77be8574a2ba9e686108ec5d8b5",
+          "xmmc": "d327a77be8574a2ba9e686108ec5d8b5",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/d327a77be8574a2ba9e686108ec5d8b5.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868939642",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5740,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.17
+        }
+      },
+      {
+        "project": {
+          "id": "989e6a78644d493bacf2a4155b957a70",
+          "xmmc": "989e6a78644d493bacf2a4155b957a70",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/989e6a78644d493bacf2a4155b957a70.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868940305",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7320,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "21bce789d0f745b5a8a4de8b767bcae5",
+          "xmmc": "21bce789d0f745b5a8a4de8b767bcae5",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/21bce789d0f745b5a8a4de8b767bcae5.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868941159",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5248,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "837b54c0ddde40888f1338b6d9377316",
+          "xmmc": "837b54c0ddde40888f1338b6d9377316",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/837b54c0ddde40888f1338b6d9377316.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868942136",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6479,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.18
+        }
+      },
+      {
+        "project": {
+          "id": "4cd7ff20cefe47828832243922a358cd",
+          "xmmc": "4cd7ff20cefe47828832243922a358cd",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/4cd7ff20cefe47828832243922a358cd.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868942917",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6889,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "6280a54c64914cc490bd9ff93cec2851",
+          "xmmc": "6280a54c64914cc490bd9ff93cec2851",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/6280a54c64914cc490bd9ff93cec2851.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868943759",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7169,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.23
+        }
+      },
+      {
+        "project": {
+          "id": "6e6987060f7b426b9f8261b2e560434a",
+          "xmmc": "6e6987060f7b426b9f8261b2e560434a",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/6e6987060f7b426b9f8261b2e560434a.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868944645",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6933,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.23
+        }
+      },
+      {
+        "project": {
+          "id": "3ce580262ad549baa5f882ed3c1d9730",
+          "xmmc": "3ce580262ad549baa5f882ed3c1d9730",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/3ce580262ad549baa5f882ed3c1d9730.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868945581",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6800,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "dc93a5f28a0a43d8bbe6d6dedd04f872",
+          "xmmc": "dc93a5f28a0a43d8bbe6d6dedd04f872",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/dc93a5f28a0a43d8bbe6d6dedd04f872.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868946531",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6752,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.4
+        }
+      },
+      {
+        "project": {
+          "id": "e68fa73b6fd94344ac5d58af87b3c815",
+          "xmmc": "e68fa73b6fd94344ac5d58af87b3c815",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/e68fa73b6fd94344ac5d58af87b3c815.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868947879",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7324,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.24
+        }
+      },
+      {
+        "project": {
+          "id": "7c668aadef224e82885d12c3c8275529",
+          "xmmc": "7c668aadef224e82885d12c3c8275529",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/7c668aadef224e82885d12c3c8275529.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868948743",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6294,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.22
+        }
+      },
+      {
+        "project": {
+          "id": "e3b19cd027d5442e80dd9b6c8bd95ca1",
+          "xmmc": "e3b19cd027d5442e80dd9b6c8bd95ca1",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/e3b19cd027d5442e80dd9b6c8bd95ca1.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868949662",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7075,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.41
+        }
+      },
+      {
+        "project": {
+          "id": "bd40a6bf383a4e0b8fac89c70c189289",
+          "xmmc": "bd40a6bf383a4e0b8fac89c70c189289",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/bd40a6bf383a4e0b8fac89c70c189289.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868950499",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7068,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.37
+        }
+      },
+      {
+        "project": {
+          "id": "18508eb20d004e7199ee219451979344",
+          "xmmc": "18508eb20d004e7199ee219451979344",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/18508eb20d004e7199ee219451979344.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868951450",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6713,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "81447f32b7334c03a8c4ecd4b91babdf",
+          "xmmc": "81447f32b7334c03a8c4ecd4b91babdf",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/81447f32b7334c03a8c4ecd4b91babdf.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868952304",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6305,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "ab8e53cd964042d8b5235165f1eb8ad9",
+          "xmmc": "ab8e53cd964042d8b5235165f1eb8ad9",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/ab8e53cd964042d8b5235165f1eb8ad9.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868953321",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 7352,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.28
+        }
+      },
+      {
+        "project": {
+          "id": "b122aad2ea9546b285207d1d7a74b814",
+          "xmmc": "b122aad2ea9546b285207d1d7a74b814",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/b122aad2ea9546b285207d1d7a74b814.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868954219",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6799,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.24
+        }
+      },
+      {
+        "project": {
+          "id": "402e3459185741ab9b5cab2498eb1f5a",
+          "xmmc": "402e3459185741ab9b5cab2498eb1f5a",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/402e3459185741ab9b5cab2498eb1f5a.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868955055",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 5331,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.21
+        }
+      },
+      {
+        "project": {
+          "id": "a98fd3c321504e21a8d298dece7ac201",
+          "xmmc": "a98fd3c321504e21a8d298dece7ac201",
+          "year": "N/A",
+          "zndm": "N/A",
+          "guide_name": "N/A",
+          "file_path": "/home/tdkx/ljh/Tech/data/高水平人才团队建设专项/a98fd3c321504e21a8d298dece7ac201.docx"
+        },
+        "result": {
+          "id": "plagiarism_1776868956526",
+          "total_pairs": 0,
+          "effective_duplicate_rate": 0.0,
+          "effective_duplicate_chars": 0,
+          "primary_scope_chars": 6956,
+          "source_rankings": [],
+          "match_groups": [],
+          "processing_time": 0.42
+        }
+      }
+    ]
+  },
+  "message": "",
+  "code": 200
+}

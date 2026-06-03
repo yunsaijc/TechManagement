@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 17d6767f0bd34c0b95d560172c6ac9c8.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：17d6767f0bd34c0b95d560172c6ac9c8.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,632</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>17d6767f0bd34c0b95d560172c6ac9c8.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>河北天元地理信息科技工程有限公司排水管道缺陷智能识别样本集构建技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北天元地理信息科技工程有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>魏占营</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>燕郊高新技术产业开发区</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-02</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-25</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>河北天元地理信息科技工程有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省廊坊市三河市燕郊开发区燕高路西侧、冶金路南侧</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91131082774412682K</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-廊坊市-三河市</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2005-04-30</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>2800.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>张彦涛</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>13733263028</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>010-63880788</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>tygs_2014@163.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>王子启</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>18605317235</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北天元地理信息科技工程有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>104146100051</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国银行股份有限公司燕郊分行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>100148603296</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>104人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>58人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>40人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>电子信息产业</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>26260.1</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>3000.06</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>114.59</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>7.38</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司坐落于燕郊国家级高新技术开发区，拥有逾5000平方米的独立办公园区。公司资质体系健全，是全国首批甲级测绘资质、地球物理勘查甲级资质持有单位，并具备计算机系统集成及市政公用工程总承包等多项资质，被认定为河北省高新技术企业。公司作为原《城市测量规范》的编制单位之一，修订完善并发布了13项科技类管理制度及办法。公司现为中国测绘学会、河北测绘学会等多个权威行业组织的核心成员（常务理事/副主任单位），深度参与行业标准建设，研发方向始终引领前沿。</p><p class="docx-paragraph">公司人才梯队合理，装备实力雄厚，现有职工104人，其中技术人员58人，中高级职称人员40人，同时配合800余台套各类先进仪器与车辆设备，形成了强大的技术落地能力。凭借扎实的研发基础，公司多次荣获国家级、省部级优秀测绘奖及科技进步奖，档案管理亦达到国家一级标准，管理体系通过ISO三体系认证和信息安全认证，确保科研成果的规范化与高质量产出。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司拥有知识产权64项，其中发明专利2项，实用新型4项，软件著作权58项。公司共参与起草了12份标准文件，其中国家标准1项，地方标准3项，团体标准8项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>公司年均投入200余万元专项经费，构建高效的创新转化体系，顺利取得了《燃气管道安全监控平台》的省级成果，并荣获河北省优秀科研成果评价，更在2024年6月成功验收了“中央引导地方科技发展资金”省级项目，有效实现前沿技术成果转化落地，此外公司凭借扎实的技术功底，累计完成各类工程数千项，合格率始终保持100%，以卓越的服务质量赢得广泛赞誉，实现了科研与生产的双赢。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司始终坚持产学研深度融合的发展道路，积极搭建校企合作平台。公司近年来分别与辽宁科技大学和华北科技学院进行产学研合作，共同发展，努力实现校企合作、产学共赢；公司与中国工程院刘先林院士合作，刘先林院士为我司长远发展提供科学指导，制定发展战略及方针；有幸得到河北省科技特派员张瑞齐、赵亚红专家的指导，为我司技术创新注入强劲动力。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">9</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">4人</p></td><td colspan="5"><p class="docx-paragraph">4人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">8人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">魏占营</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1974-06</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">研究员</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">移动激光测量技术</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2025-01-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">中国测绘科学研究院</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市海淀区莲花池西路28号</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">职工</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">柔性引进专家</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">065201</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省廊坊市三河市燕郊开发区汇福路84号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">0991-3674558</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13651117565</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">shs1975@126.com</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1993-09-01至1997-06-30</p></td><td colspan="9"><p class="docx-paragraph">焦作矿业学院</p></td><td colspan="4"><p class="docx-paragraph">本科</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1997-09-01至2000-06-28</p></td><td colspan="9"><p class="docx-paragraph">焦作工学院</p></td><td colspan="4"><p class="docx-paragraph">硕士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2000-07-01至2026-03-30</p></td><td colspan="9"><p class="docx-paragraph">中国测绘科学研究院</p></td><td colspan="4"><p class="docx-paragraph">职工</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2017-09-01至2022-06-30</p></td><td colspan="9"><p class="docx-paragraph">首都师范大学</p></td><td colspan="4"><p class="docx-paragraph">博士</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">基于人工智能的高精度、全景空间城市信息模型快速构建技术与方法体系</p></td><td colspan="7"><p class="docx-paragraph">2020.10-2023.09</p></td><td colspan="4"><p class="docx-paragraph">中华人民共和国科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">城市数字孪生三维场景建模关键技术研究及应用示范</p></td><td colspan="7"><p class="docx-paragraph">2024.01-2026.12</p></td><td colspan="4"><p class="docx-paragraph">深圳市科技创新委员会</p></td><td colspan="4"><p class="docx-paragraph">深圳市重大科技专项（2023 年度）</p></td><td><p class="docx-paragraph">技术负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">地下管网探测技术与健康、安全和更新评价研究</p></td><td colspan="7"><p class="docx-paragraph">2025.04-2028.03</p></td><td colspan="4"><p class="docx-paragraph">中华人民共和国科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">参与人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">室内外实景建模国产装备</p></td><td colspan="4"><p class="docx-paragraph">自然资源科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-11-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">自然资源部</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">公路隧道智慧运维数字孪生关键技术装备及应用</p></td><td colspan="4"><p class="docx-paragraph">中国仪器仪表学会科技进步奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2024-07-01</p></td><td colspan="4"><p class="docx-paragraph">7</p></td><td colspan="4"><p class="docx-paragraph">中国仪器仪表学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">移动测量型激光扫描系统-R-Angle系列</p></td><td colspan="4"><p class="docx-paragraph">测绘科技进步奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2015-10-22</p></td><td colspan="4"><p class="docx-paragraph">3</p></td><td colspan="4"><p class="docx-paragraph">中国测绘地理信息学会</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Customized Mobile LiDAR System for Manhole Cover Detection and Identification</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Sensors</p></td><td colspan="5"><p class="docx-paragraph">2019</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">“SLICE-ITERATION”, A METHOD FOR AUTOMATIC EXTRACTION OF VEHICLE LASER POINT CLOUD</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">International Society for Photogrammetry and Remote Sensing（ISPRS）</p></td><td colspan="5"><p class="docx-paragraph">2017</p></td><td colspan="2"><p class="docx-paragraph">EI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Textureless-Splatter: SfM supervised Monocular Depth Assisted 3D Gaussian Splatting for Textureless Scenes</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Big Earth Data</p></td><td colspan="5"><p class="docx-paragraph">2026（已收录待发表）</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种基于大模型的SLAM激光点云与全景影像自动配准方法</p></td><td colspan="5"><p class="docx-paragraph">CN117994309B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2024-08-20</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种多激光空间标定方法</p></td><td colspan="5"><p class="docx-paragraph">CN116299367B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2024-01-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种交通要素可测量实景影像自动生成方法</p></td><td colspan="5"><p class="docx-paragraph">CN120431272B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2025-09-16</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"></td><td colspan="9"></td><td colspan="6"></td></tr><tr><td colspan="5"></td><td colspan="9"></td><td colspan="6"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>一、专业技术工作经历</p><p class="docx-paragraph">1.2000.07-2011.12从事三维GIS研究和软件开发工作；</p><p class="docx-paragraph">2.2012.01-2020.09主持SWDY点云工作站软件研发；</p><p class="docx-paragraph">3.2019.10至今主持新一代轻量级移动扫描系统（轻扫系统）的研发。</p><p class="docx-paragraph">二、科技成果及转化</p><p class="docx-paragraph">1.主持研发的SWDY点云工作站（V2.0），完成50万行代码开发，实现点云处理全流程功能；</p><p class="docx-paragraph">2.主持研发的新一代轻量级移动扫描系统（轻扫系统），本项成果服务了多家著名企事业单位，包括：华为、阿里、中移动、清华大学、软通智慧、军科院、建科院、西安天润公司、国网北京公司、中兴公司等。</p><p class="docx-paragraph">三、知识产权成果</p><p class="docx-paragraph">1.累计获授权国家发明专利15项，其中10项排名第一，主要涉及SLAM算法、多传感器标定及点云智能处理等方面；</p><p class="docx-paragraph">2.撰写技术专著1部：《车载测量数据智能处理技术》（武汉大学出版社，2018.11，独著/排名1）；</p><p class="docx-paragraph">3.发表论文10余篇，其中SCI论文2篇、EI论文5篇。</p><p class="docx-paragraph">四、科技奖励与荣誉</p><p class="docx-paragraph">1.2019年，青年测绘地理信息创新人才奖；</p><p class="docx-paragraph">2.2024年，地理信息科技进步奖二等奖（地面移动测量技术香港应用）；</p><p class="docx-paragraph">3.2025年，河南省科技进步三等奖（天空地水工一体化黄河水利安全监测技术）。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">魏占营</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1974-06</p></td><td><p class="docx-paragraph">410411197406162034</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">研究员</p></td><td><p class="docx-paragraph">测绘技术</p></td><td><p class="docx-paragraph">光电子学与激光技术</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">中国测绘科学研究院职工</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">张彦涛</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1977-05</p></td><td><p class="docx-paragraph">132332197705253818</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">地理信息系统</p></td><td><p class="docx-paragraph">土木建筑工程测量</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司技术负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">王子启</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1977-11</p></td><td><p class="docx-paragraph">370727197711017719</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">系统软件</p></td><td><p class="docx-paragraph">资源开发利用技术经济学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司执行负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">吕贵奇</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-04</p></td><td><p class="docx-paragraph">232303198304292054</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">其他中级</p></td><td><p class="docx-paragraph">测绘技术</p></td><td><p class="docx-paragraph">测绘仪器</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司技术员</p></td><td><p class="docx-paragraph">其他:河北省燕赵黄金台聚才计划拔尖人才</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">张景坤</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-05</p></td><td><p class="docx-paragraph">130182198305100914</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">城镇化与城市发展相关技术</p></td><td><p class="docx-paragraph">测绘仪器</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司总工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">姚远</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-04</p></td><td><p class="docx-paragraph">130182198604280011</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">地理信息系统</p></td><td><p class="docx-paragraph">计算机可靠性理论</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司开发人员</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">李岳</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-08</p></td><td><p class="docx-paragraph">130822198608130012</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">地理信息系统</p></td><td><p class="docx-paragraph">土木建筑工程测量</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司技术员</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">张凤吉</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1985-07</p></td><td><p class="docx-paragraph">220702198507039739</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">城镇化与城市发展相关技术</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司生产负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">张丹</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1979-07</p></td><td><p class="docx-paragraph">220104197907072672</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">城镇化与城市发展相关技术</p></td><td><p class="docx-paragraph">地球物理探测工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司技术员</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">张深林</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1992-02</p></td><td><p class="docx-paragraph">150826199202081218</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">城镇化与城市发展相关技术</p></td><td><p class="docx-paragraph">采矿环境工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司技术员</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>河北天元地理信息科技工程有限公司排水管道缺陷智能识别样本集构建技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-02</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>180.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>120.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>R人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>R大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>人工智能判读   大数据应用   排水管道缺陷智能识别</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>1.团队成员中的企业人员主持科研项目3项；</p><p class="docx-paragraph">2.引进专业技术人员2名；</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>1.转化科技成果1项；</p><p class="docx-paragraph">2.新增销售收入500万元；</p><p class="docx-paragraph">3.申请实用新型3项，授权实用新型1项；</p><p class="docx-paragraph">4.发表项目相关的学术期刊论文1篇；</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>本项目预期申请实用新型3项，授权实用新型1项，发表项目相关的学术期刊论文1篇。知识产权归河北天元地理信息科技工程有限公司所有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">（一）项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">城市排水管网是城市“生命线”，随着城镇排水管网老化病害进入高发期。目前主流检测手段（CCTV/QV）产生海量数据，存在仍依赖人工判读的缺陷，工作效率低、主观性强、标准不统一等痛点，严重制约行业规模化发展。地下管网建设期，检测工程量激增，但算法因缺乏符合标准化样本库而难以投入工程应用，误报率高。因此，构建覆盖全面、标注精准的缺陷样本集迫在眉睫。该项目将实现机器判读替代人工，可有效缩短工期；通过降低检测成本、盘活数据资产创造经济效益，并能有效防范安全事故，为智慧城市与城市生命线安全工程提供坚实的技术底座。</p><p class="docx-paragraph">（二）项目概述</p><p class="docx-paragraph">本项目旨在构建一个规模化、高质量、多场景的排水管道缺陷智能识别样本集。筛选涵盖不同地域、管材、管径、埋深、检测设备的原始图像，剔除模糊、重复、无效数据。依据《城镇排水管道检测与评估技术规程》（CJJ181-2012），对缺陷进行精确标注，包括缺陷类型、等级、位置信息，并建立多级标签体系。通过图像增强、生成对抗网络等技术扩充样本，模拟不同光照、角度、遮挡条件，提升样本集的鲁棒性，建立多人交叉验证与专家抽检机制，形成一套可复用的缺陷标注规范，为行业标准制定提供参考。</p><p class="docx-paragraph">（三）项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">本项目将投入180万元用于研究，预期带来新增销售收入500万元以上。项目目标建成包含13万张以上标注图像的排水管道缺陷样本集，样本来源至少2种设备，覆盖至少15类常见缺陷，通过技术手段将样本多样性提升，确保模型训练的有效性。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">（一）申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">河北天元地理信息科技工程有限公司，前身为中国冶金地质总局一局测绘大队，现在中央企业（正元地信股票代码：688509）的子公司。公司拥有独立办公面积5000余平方米。公司设备先进，在管网病害治理修复方面拥有各类车辆仪器设备达800台套，总价值逾3000万元。公司存储原始检测数据超过10万小时，为样本集构建提供了独一无二的数据基础。此外公司还建有内部数据管理中心，配备Oracle数据库、高性能服务器集群（含NVIDIATeslaT4GPU），具备海量数据处理与模型训练能力。公司现有职工104人，其中技术人员58人，中高级职称人员40人。公司连续多年盈利，2025年营业收入3000多万元，年均研发投入200多万元，财务状况稳健，有能力自筹本项目所需资金。</p><p class="docx-paragraph">（二）申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">公司作为原《城市测量规范》编制单位之一，现为中国测绘学会、北京测绘学会、河北测绘学会理事或常务理事单位，并担任中国城市规划协会地下管线专业委员会副主任单位，深度参与行业标准建设。公司荣获河北省技术创新中心、河北省高新技术企业、省级院士工作站、河北省科技小巨人、河北省测绘行业先进集体等，档案管理达国家一级，并通过ISO三体系认证和信息安全认证。</p><p class="docx-paragraph">公司拥有知识产权64项，其中发明专利2项、实用新型4项、软件著作权58项，参与国家标准1项，地方标准3项，团体标准7项。公司获得河北省科学技术成果4项；2024年顺利验收中央引导地方科技发展资金项目1项；公司累计完成工程数千项，合格率保持100%。</p><p class="docx-paragraph">公司坚持产学研融合，与辽宁科技大学、华北科技学院开展科研与人才培养合作；与中国工程院刘先林院士合作，为我司长远发展提供科学指导；并获得省级科技特派员张瑞齐、赵亚红等专家的技术指导；同时与德国IBAK、日本TOA等国际知名厂商保持技术交流，持续跟踪前沿动态。</p><p class="docx-paragraph">（三）项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">负责人魏占营，博士、中国测绘科学研究院研究员，长期从事移动测量与管网智能检测研究。主持参与过国家重点研发计划、深圳市科技计划等国家级与省部级项目多项。成功研发SWDY点云工作站；研发的轻量级移动扫描系统服务华为、阿里、清华大学等众多知名单位。拥有授权发明专利15项，独著技术专著1部，发表论文10余篇。曾获测绘科技进步一等奖、中国仪器仪表学会科技进步一等奖、自然资源部科技进步二等奖、河南省科技进步三等奖等多项科技奖励，2019年获青年测绘地理信息创新人才奖。</p><p class="docx-paragraph">团队成员专业背景涵盖测绘、地理信息、土木工程、计算机、物探、给排水等，技术力量较为全面，其中张彦涛、王子启等具备数千项工程实战经验。吕贵奇，党员，本科学历，入职仅一年便荣获公司“2006-2007年度先进工作者”称号，凭借其扎实的专业素养与持续的行业贡献，于2025年成功入选河北省“燕赵黄金台聚才计划”拔尖人才。</p><p class="docx-paragraph">（四）与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">公司十余年积累的管道检测资料，涵盖各类缺陷实例。在部分工程中尝试了半自动化标注，开发了简易标注工具，积累了初步的标注规范。已标注缺陷图像5.7万多张，初步整理有效图像约8万张，覆盖15类常见缺陷。基于少量样本训练的初步模型，在特定数据集上缺陷分类准确率达85%，验证了技术路径的可行性。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">（一）项目拟解决的关键技术和问题</p><p class="docx-paragraph">1.解决样本多样性覆盖问题，管道缺陷形态多样、背景复杂，现有数据集难以涵盖所有场景。如何从海量历史数据中筛选出代表性样本，并通过增强技术扩充多样性，是首要难题。</p><p class="docx-paragraph">2.标注规范的一致性，不同标注人员对缺陷类别、等级的判断可能存在差异，需建立严格的标注规范和质量控制机制，确保标注结果的一致性。</p><p class="docx-paragraph">3.细粒度缺陷识别难度大，部分缺陷特征不明显，需通过精细化标注与针对性增强手段提高识别精度。</p><p class="docx-paragraph">（二）人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">本项目团队汇聚了来自科研院所与产业一线的技术人才。项目负责人魏占营是移动激光测量与SLAM算法专家，主持过国家重点研发计划。核心骨干张彦涛、王子启、张景坤等深耕地下管线检测领域多年，具备数千项工程实战经验，负责将实际检测业务需求精准转化为标注规范，确保样本集高度贴合工程场景。此外，拔尖人才吕贵奇将主导样本精细化管理与质量控制。通过“团队前沿算法+央企海量数据+资深工程专家”的有机结合，本项目具备从底层算法创新到顶层工程应用的全链条技术支撑能力。</p><p class="docx-paragraph">（三）项目的基本情况介绍</p><p class="docx-paragraph">本项目聚焦排水管道缺陷智能识别样本集构建。项目总投资180万元，目标是建成包含13万张以上标注图像的样本集，解决当前排水管道检测依赖人工判读效率低、标准不一等问题。预期实现新增销售收入500万元。</p><p class="docx-paragraph">（四）国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">目前国内外尚缺乏面向工程应用且符合CJJ181-2012规范的排水管道缺陷样本库。国外商业软件的数据集未公开，学术界的样本则规模小且缺乏等级标注，而国内的数据集更为零散，标准也不统一。本项目将依托公司数千项工程积累的海量数据，有效破解这一困境。我们的样本覆盖多地域、多工况，确保了样本的真实性与多样性。同时，作为行业标准参与单位，我们的标注工作权威性强。</p><p class="docx-paragraph">（五）项目预期达到的技术性能指标</p><p class="docx-paragraph">项目预期建立一套可复用的缺陷标注规范，构建标注图像的排水管道缺陷样本集，覆盖至少15类常见缺陷类型，样本涵盖至少5种管道材质，样本来源覆盖至少2种检测设备。在实际工程项目中部署试用，目标为缩短缺陷判读时间，提高判读效率。</p><p class="docx-paragraph">（六）项目技术风险分析与对策</p><p class="docx-paragraph">1.历史检测可能存在分辨率低、光照不均、镜头抖动、遮挡严重等问题。</p><p class="docx-paragraph">对策：建立多级数据清洗机制，结合人工筛选与自动质量评估模型，剔除无效数据。对可用数据进行增强处理，提升样本可用性。</p><p class="docx-paragraph">2.样本集虽覆盖广泛，仍可能存在地域性、设备性偏差。</p><p class="docx-paragraph">对策：采用迁移学习、领域自适应等技术，结合少量目标域数据进行微调；持续收集新工程数据，建立样本动态更新机制。</p><p class="docx-paragraph">3.缺陷标注标准理解存在差异，易出现标注不一致、精度不达标等问题。</p><p class="docx-paragraph">对策：开展标注人员岗前培训与考核上岗；采用双人交叉标注、专家终审管控机制，定期抽检并修正标注偏差。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">（一）项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">本项目采用“数据驱动+知识引导”的技术路线。首先从公司数千项工程积累的原始检测素材中提取关键帧，通过质量评估筛选有效图像，其次依据《城镇排水管道检测与评估技术规程》（CJJ181-2012），采用“预标注+人工修正+专家复核”三级流程，对缺陷类型、等级、位置进行精确标注，并开发半自动标注工具提升效率，然后运用图像增强与生成对抗网络技术扩充样本多样性，模拟不同光照、角度、水质等工况，最后建立多人交叉验证与专家抽检机制，确保标注准确率不低于95%以上。</p><p class="docx-paragraph">（二）项目的前期准备情况</p><p class="docx-paragraph">公司已累计完成管道检测工程数千项，存储原始检测素材超10万小时，涵盖多种管材、检测设备及地域工况，初步整理典型缺陷图像约8万张。已完成项目可行性预研，开发了简易标注工具，并基于少量样本验证了技术路径的可行性。公司软件工程部拥有专职研发团队，配备高性能服务器与GPU集群，具备项目实施所需的数据、技术与硬件基础。</p><p class="docx-paragraph">（三）项目的具体实施方案</p><p class="docx-paragraph">项目总预算180万元，自筹120万元，魏占营作为项目总负责人，总体把控技术方向与顶层设计；张彦涛、王子启负责技术攻关与系统架构；张景坤、张凤吉统筹多地域数据采集；姚远负责AI算法与标注工具开发；李岳、张丹等技术人员进行缺陷解译与交叉验证；吕贵奇牵头建立样本质控机制。</p><p class="docx-paragraph">（四）项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">2026.2-2026.7完成项目组建与数据清洗，构建覆盖多工况的原始图像库。</p><p class="docx-paragraph">2026.8-2027.1开发半自动标注工具，完成8万张图像试标注并优化标注流程。</p><p class="docx-paragraph">2027.2-2028.1开展大规模标注与三级质控，累计完成10万张图像标注，准确率稳定在95%以上。</p><p class="docx-paragraph">2028.2-2028.7运用增强技术与半监督学习，将样本总量扩充至13万张以上。</p><p class="docx-paragraph">2028.8-2028.11探索多模态融合样本，完善标注规范并形成团体标准草案。</p><p class="docx-paragraph">2028.12-2029.2完成项目验收，申请相关实用新型2项、授权实用新型1项，谋划产业化</p><p class="docx-paragraph">路径。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">（一）人才培养、团队建设目标</p><p class="docx-paragraph">通过本项目引进2名专业技术人员，进一步充实团队核心力量，优化人才结构。团队中核心人员计划新增主持科研项目3项，以此带动团队整体科研水平与工程实践能力的提升。</p><p class="docx-paragraph">（二）项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">本项目面向城市排水管网智能化检测需求，针对行业缺乏规模、标准化缺陷样本库的痛点，依托公司数千项工程积累与行业标准参与单位优势，采用“数据驱动+知识引导”技术路线，由具备央企背景、雄厚技术实力与丰富实战经验的团队实施，并形成核心数据资产，推动“AI+市政”深度融合，助力智慧城市建设。</p><p class="docx-paragraph">（三）项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">随着排水管网智能化检测需求持续释放。当前行业普遍依赖人工判读，存在效率低、成本高、标准统一难等核心痛点，高质量的标准化缺陷样本库已成为制约算法落地的关键瓶颈，市场需求极为迫切。公司依托海量工程数据、成熟业务渠道及行业标准制定优势，已具备从数据采集、技术研发到工程应用的完整产业链能力，形成了“数据驱动—算法迭代—产业落地”的良性闭环。本项目构建的样本库不仅将直接服务于排水检测领域，更有望成为行业标准。未来可横向拓展至供水、燃气等地下管线智能化检测场景，纵向衍生出模型训练、咨询服务等增值业务，具备显著的先发优势与广阔的规模化前景。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">  基于市场需求与产业化基础，本项目紧扣行业智能化转型痛点，具备明确的商业逻辑与社会价值。项目的落地实施，预计将显著提升管道检测效率，缩短判读工期，节约人工成本。项目周期内，通过对外提供样本集授权及配套技术服务，预计可实现新增销售收入500万元以上。同时，该样本集作为核心数据资产，将在未来持续创造增值价值。同时，将有力推动排水管道缺陷标注的规范化进程，促进检测行业的智能化转型升级，为全国智慧城市建设提供坚实的数据基础与技术支撑，实现市政基础设施的提质增效。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">河北天元地理信息科技工程有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">项目整体统筹</p></td><td><p class="docx-paragraph">魏占营</p></td><td><p class="docx-paragraph">180.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">120.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1.转化科技成果1项；</p><p class="docx-paragraph">2.新增销售收入500万元；</p><p class="docx-paragraph">3.申请实用新型3项，授权实用新型1项；</p><p class="docx-paragraph">4.发表项目相关的学术期刊论文1篇；</p><p class="docx-paragraph">5.团队成员中的企业人员主持科研项目3项，；</p><p class="docx-paragraph">6.引进专业技术人员2名；</p></td><td><p class="docx-paragraph">1.申请实用新型1项；</p><p class="docx-paragraph">2.团队成员中的企业人员主持企业科研项目1项；</p></td><td><p class="docx-paragraph">1.转化科技成果1项；</p><p class="docx-paragraph">2.新增销售收入300万</p><p class="docx-paragraph">3.申请实用新型1项；</p><p class="docx-paragraph">4.发表项目相关的学术期刊论文1篇；</p><p class="docx-paragraph">5.团队成员中的企业人员主持或参科研项目1项；</p><p class="docx-paragraph">6.引进专业技术人员1名；</p></td><td><p class="docx-paragraph">1.新增销售收入200万；</p><p class="docx-paragraph">2.申请实用新型1项，授权1项；</p><p class="docx-paragraph">2.团队成员中的企业人员主持企业科研项目1项；</p><p class="docx-paragraph">3.引进专业技术人员1名；</p></td></tr><tr><td rowspan="8"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">新增销售（万元）</p></td><td><p class="docx-paragraph">500</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">300</p></td><td><p class="docx-paragraph">200</p></td></tr><tr><td><p class="docx-paragraph">申请实用新型专利（件）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">授权实用新型专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">引进专业技术人员（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人身份、学历、学位、职称等证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">负责人论文</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">负责人合作协议</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">负责人专利</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">企业专利</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">负责人承担项目</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">负责人参与项目</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">负责人参与项目</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">负责人奖励证书</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">企业获奖证书</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业资质证明</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员王子启</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员张彦涛</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员吕贵奇</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员张景坤</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员姚远</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员李岳</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员张凤吉</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员张丹</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队成员张深林</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">营业执照、章程</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">企业承担项目佐证</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">企业参与标准佐证</p></td></tr><tr><td><p class="docx-paragraph">24</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">河北省燕赵黄金台聚才计划拔尖人才佐证-吕贵奇</p></td></tr><tr><td><p class="docx-paragraph">25</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研合作情况</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

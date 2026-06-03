@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from src.common.llm import get_default_llm_client
 from src.common.models import CheckResult, CheckStatus, ReviewResult
-from src.common.vision import MultimodalLLM
+from src.common.vision.multimodal import MultimodalLLM
 from src.services.review.extractor import DocumentExtractor
 from src.services.review.rules import ReviewContext, RuleRegistry
 from src.services.review.rules.config import DOCUMENT_CONFIG, load_rules
@@ -206,7 +206,7 @@ class ReviewAgent:
         Returns:
             (document_type, extracted_content)
         """
-        from src.common.vision import MultimodalLLM
+        from src.common.vision.multimodal import MultimodalLLM
         from src.services.review.rules.config import get_type_labels_for_llm
         
         multi_llm = MultimodalLLM(self.llm)

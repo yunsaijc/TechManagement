@@ -1,21 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 
-const reportSrc = computed(() => {
-  const path = '/debug-plagiarism/by_guide_codes/plagiarism_batch_report.html';
-  const { protocol, hostname, port } = window.location;
-  const p = String(port || '').trim();
-
-  if (!p || p === '8000' || p === '8005') {
-    return path;
-  }
-
-  if (p === '8006' || p === '5173' || p === '5174' || p === '4173' || p === '3000') {
-    return `${protocol}//${hostname}:8000${path}`;
-  }
-
-  return path;
-});
+const reportSrc = computed(() => '/debug-plagiarism/by_guide_codes/plagiarism_batch_report.html');
 </script>
 
 <template>

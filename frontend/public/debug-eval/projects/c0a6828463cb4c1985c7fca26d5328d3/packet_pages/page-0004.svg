@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="595" height="842" viewBox="0 0 595 842">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <g fill="#182230" font-family="Source Han Sans SC, PingFang SC, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif" font-size="10">
+    <text x='44' y='80'>国外在低空巡检领域起步较早，凭借先进的航空技术、电子技术以及雄厚的科研实力，总体研究</text>
+    <text x='44' y='96'>水平处于世界前列。以美国、欧洲、日本等为代表的国家和地区，在无人机平台研发、传感器技</text>
+    <text x='44' y='112'>术、智能算法以及数据处理等方面取得了众多成果。</text>
+    <text x='44' y='144'>在无人机平台方面，不断追求更长的续航时间、更大的载荷能力以及更高的飞行稳定性，如美国</text>
+    <text x='44' y='160'>AeroVironment公司研发的RQ-11“大乌鸦”无人机，续航时间可达2-3小</text>
+    <text x='44' y='176'>时，能在复杂环境下稳定飞行，广泛应用于军事侦察和部分民用巡检领域 。欧洲的一些企业则</text>
+    <text x='44' y='192'>专注于开发大型固定翼无人机，其载荷能力可达到数十公斤，续航里程超过上千公里，适合大面</text>
+    <text x='44' y='208'>积区域的长时间巡检任务；在传感器技术方面，作为低空巡检获取数据的关键，国外也有显著进</text>
+    <text x='44' y='224'>展。高分辨率光学相机、高精度红外热成像仪、激光雷达等传感器不断升级。如FLIR Sy</text>
+    <text x='44' y='240'>stems公司生产的红外热成像仪，其温度分辨率可达0.03℃，能够精准检测到目标物体</text>
+    <text x='44' y='256'>极细微的温度变化，在电力设施巡检、工业设备故障检测中发挥重要作用。激光雷达技术也得到</text>
+    <text x='44' y='272'>长足发展，可快速获取高精度的三维地形和目标物体信息，为基础设施巡检、地形测绘等提供了</text>
+    <text x='44' y='288'>强大的数据支持；在智能算法与数据处理方面，机器学习和深度学习算法被广泛应用于对巡检数</text>
+    <text x='44' y='304'>据的分析和解读。通过大量的样本数据训练，算法能够自动识别图像和视频中的异常情况，如电</text>
+    <text x='44' y='320'>力线路的破损、管道的泄漏、建筑物的裂缝等，如谷歌旗下的DeepMind团队正在研究将</text>
+    <text x='44' y='336'>人工智能技术应用于无人机低空巡检，利用深度学习算法对海量巡检数据进行分析，极大提高了</text>
+    <text x='44' y='352'>缺陷识别的准确性和效率。</text>
+    <text x='44' y='384'>在低空灾害监测方面，京都大学防灾研究所利用其在日本境内设立的18个观测中心，通过现场</text>
+    <text x='44' y='400'>观测、实验室模拟、数值计算等多种方法，结合低空观测平台获取的数据，开展相关研究，为日</text>
+    <text x='44' y='416'>本的灾害防治提供技术支持和决策依据；斯坦福大学研究团队利用无人机安装各种传感器和相机</text>
+    <text x='44' y='432'>进行低空飞行，收集地质灾害、森林火灾等方面的数据，了解地质体变化、识别潜在危险因素，</text>
+    <text x='44' y='448'>以及在森林火灾监测中迅速发现火源位置、火势扩展方向等，为灾害预警和救援提供支持； 近</text>
+    <text x='44' y='464'>太空实验室部署带有人工智能摄像头的高空气球，在平流层飞行获取高分辨率图像，为保险公司</text>
+    <text x='44' y='480'>提供对自然灾害地区的频繁细致观察，帮助他们更好地评估财产损失并做出更精确的风险评估，</text>
+    <text x='44' y='496'>加快理赔速度。</text>
+    <text x='44' y='528'>在未来，国外低空灾害监测技术将继续保持快速发展态势。在技术创新方面，随着5G、人工智</text>
+    <text x='44' y='544'>能等前沿技术的不断发展，将进一步赋能低空灾害监测。5G技术将实现无人机与地面控制站之</text>
+    <text x='44' y='560'>间更高速、稳定的数据传输，支持无人机进行更复杂的实时任务；人工智能技术将使无人机具备</text>
+    <text x='44' y='576'>更强的自主决策能力，能够在复杂环境下自主规划最优巡检路径、更精准地识别目标异常。</text>
+    <text x='44' y='608'>项目研发国外相关的主要文献、专利、标准：</text>
+    <text x='44' y='640'>[1] Yanjun L , Xiaogang B , Bo Z ,et al.Ne</text>
+    <text x='44' y='656'>w Compression Algorithm and Trajectory Pla</text>
+    <text x='44' y='672'>nning in Automatic Ground Collision Avoida</text>
+    <text x='44' y='688'>nce Systems for Unmanned Aerial Vehicles[J</text>
+    <text x='44' y='704'>].IEEE[2025-05-14].DOI:10.1109/IMCCC.2012.</text>
+    <text x='44' y='720'>385.</text>
+    <text x='44' y='752'>[2] Liang H , Lee S C , Seo S .UAV-Based L</text>
+    <text x='44' y='768'>ow Altitude Remote Sensing for Concrete Br</text>
+    <text x='44' y='784'>idge Multi-Category Damage Automatic Detec</text>
+  </g>
+</svg>

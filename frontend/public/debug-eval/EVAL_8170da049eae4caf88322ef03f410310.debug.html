@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>正文评审报告 - 智能与数字化技术在骨科领域的应用及临床研究</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --panel: #ffffff;
+      --panel-soft: #f7f9fb;
+      --panel-deep: #eef3f8;
+      --ink: #1b2430;
+      --muted: #66758a;
+      --line: #d7dfe8;
+      --brand: #1d3c61;
+      --brand-soft: #e8eff6;
+      --ok: #1f7a4d;
+      --warn: #a56a1f;
+      --risk: #b42318;
+      --shadow: 0 8px 24px rgba(18, 31, 53, 0.05);
+    }
+    * {
+      box-sizing: border-box;
+      min-width: 0;
+    }
+    html {
+      scroll-behavior: smooth;
+      height: 100%;
+    }
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    a {
+      color: inherit;
+    }
+    .page {
+      max-width: 1760px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-stack {
+      display: grid;
+      gap: 20px;
+      height: 100%;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 14px 18px;
+      background: linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: nowrap;
+    }
+    .report-title {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.3;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .report-subtitle {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .score-card {
+      min-width: 132px;
+      padding: 8px 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      flex-shrink: 0;
+    }
+    .score-good {
+      border-color: rgba(31, 122, 77, 0.28);
+    }
+    .score-mid {
+      border-color: rgba(165, 106, 31, 0.28);
+    }
+    .score-bad {
+      border-color: rgba(180, 35, 24, 0.28);
+    }
+    .score-label {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .score-main {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .score-value {
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 800;
+    }
+    .score-grade {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--brand);
+    }
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .nav-link:hover {
+      border-color: #bfd0e3;
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+    .content-grid {
+      display: grid;
+      gap: 20px;
+      align-items: stretch;
+      min-height: 0;
+      height: 100%;
+    }
+    .workspace-layout {
+      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
+      overflow: hidden;
+    }
+    .debug-layout {
+      grid-template-columns: minmax(0, 1fr) 360px;
+      overflow: hidden;
+    }
+    .project-stack,
+    .nav-stack,
+    .main-stack,
+    .side-stack {
+      display: grid;
+      gap: 18px;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      padding-right: 6px;
+      max-height: 100%;
+    }
+    .side-stack {
+      padding-right: 2px;
+    }
+    .project-stack {
+      padding-right: 0;
+    }
+    .nav-stack {
+      padding-right: 0;
+    }
+    .project-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .project-panel-inner {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+    }
+    .project-panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .project-list {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .project-link {
+      display: grid;
+      gap: 6px;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+    }
+    .project-link:hover,
+    .project-link.is-active {
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }
+    .project-link-title {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .project-link-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+    .project-link-score {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .rail-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .rail-inner {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+    }
+    .rail-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .rail-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .rail-group {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .rail-group-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .rail-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .rail-links {
+      display: grid;
+      gap: 8px;
+    }
+    .rail-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .rail-link:hover,
+    .rail-link.is-active {
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }
+    .rail-link-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rail-link-meta {
+      color: var(--muted);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .doc-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .doc-panel-inner {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .doc-viewer {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .packet-frame {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border: 0;
+      border-radius: 14px;
+      background: #dfe5ec;
+    }
+    .doc-toast {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translate(-50%, -10px);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(24, 34, 48, 0.88);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 3;
+      white-space: nowrap;
+      max-width: calc(100% - 32px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doc-toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .doc-page {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      scroll-margin-top: 18px;
+    }
+    .doc-page.is-active {
+      border-color: #88a4c3;
+      box-shadow: 0 0 0 3px rgba(29, 60, 97, 0.12);
+    }
+    .doc-page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .doc-page-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .doc-page-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .doc-chunk-list {
+      display: grid;
+      gap: 10px;
+    }
+    .doc-chunk {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #e3e9f0;
+      background: #fdfefe;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.85;
+      font-size: 14px;
+    }
+    .doc-chunk.is-match {
+      border-color: #e2b562;
+      background: #fff8e7;
+      box-shadow: inset 0 0 0 1px rgba(229, 164, 43, 0.28);
+    }
+    .jump-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d6e5;
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .jump-link:hover {
+      background: #eaf1f7;
+      border-color: #9eb6cf;
+    }
+    .jump-link-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .panel-inner {
+      padding: 22px;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.4;
+    }
+    .panel-note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .workspace-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .summary {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.9;
+    }
+    .summary-block {
+      padding: 14px 16px;
+      border: 1px solid #d9e4ef;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fb 100%);
+    }
+    .highlight-grid {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .highlight-card {
+      padding: 14px 0 0;
+      border-top: 1px solid var(--line);
+    }
+    .highlight-grid .highlight-card:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .highlight-label {
+      margin-bottom: 10px;
+      color: var(--brand);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .highlight-list {
+      display: grid;
+      gap: 10px;
+    }
+    .highlight-item {
+      display: grid;
+      gap: 8px;
+      padding: 12px 14px;
+      border: 1px solid #dfe8f1;
+      border-radius: 14px;
+      background: #fbfcfe;
+    }
+    .highlight-item-text {
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }
+    .highlight-item-evidence {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+      word-break: break-word;
+      padding-top: 6px;
+      border-top: 1px dashed #d7e0ea;
+    }
+    .list {
+      margin: 0;
+      padding-left: 20px;
+      line-height: 1.9;
+    }
+    .list li + li {
+      margin-top: 8px;
+    }
+    .score-list {
+      display: grid;
+      gap: 16px;
+    }
+    .dimension-dashboard {
+      display: grid;
+      gap: 16px;
+    }
+    .dimension-radar-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+    }
+    .dimension-radar-wrap {
+      display: grid;
+      gap: 14px;
+    }
+    .dimension-radar-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .dimension-radar-sector {
+      opacity: 0.96;
+    }
+    .dimension-radar-ring {
+      fill: none;
+      stroke: #aebfd2;
+      stroke-width: 1.2;
+    }
+    .dimension-radar-axis {
+      stroke: #b4c4d5;
+      stroke-width: 1.2;
+    }
+    .dimension-radar-area {
+      fill: rgba(29, 60, 97, 0.14);
+      stroke: #1d3c61;
+      stroke-width: 2;
+    }
+    .dimension-radar-point {
+      stroke: #fff;
+      stroke-width: 2;
+      cursor: pointer;
+      transition: transform 0.16s ease;
+    }
+    .dimension-radar-point.is-active {
+      stroke: #111827;
+      stroke-width: 3;
+    }
+    .dimension-radar-label {
+      fill: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .dimension-radar-label.is-active {
+      font-weight: 700;
+      fill: var(--brand);
+    }
+    .dimension-sector-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dimension-sector-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--sector-accent) 12%, #ffffff);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .dimension-sector-chip::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--sector-accent);
+      flex-shrink: 0;
+    }
+    .dimension-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+      min-height: 0;
+    }
+    .dimension-detail-stage {
+      min-height: 0;
+      margin-top: 16px;
+    }
+    .dimension-detail-item {
+      display: none;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      padding: 18px;
+    }
+    .dimension-detail-item.is-active {
+      display: grid;
+      border-color: var(--sector-accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--sector-accent) 16%, transparent);
+    }
+    .dimension-detail-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+    .dimension-detail-meter {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0 14px;
+    }
+    .dimension-detail-meter-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e8eef5;
+      overflow: hidden;
+    }
+    .dimension-detail-meter-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--sector-accent) 46%, #ffffff) 0%, var(--sector-accent) 100%);
+    }
+    .dimension-detail-meter-value {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .dimension-empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .dimension-detail-blocks {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .dimension-detail-block {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .dimension-detail-block:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .dimension-detail-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .dimension-detail-summary {
+      font-size: 15px;
+      line-height: 1.8;
+      color: var(--ink);
+    }
+    .dimension-detail-list {
+      display: grid;
+      gap: 6px;
+    }
+    .dimension-detail-list-item {
+      font-size: 14px;
+      line-height: 1.8;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .dimension-detail-list-item::before {
+      content: "• ";
+      color: var(--sector-accent);
+    }
+    .score-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .score-card-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .score-card-meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .tag-row {
+      display: grid;
+      gap: 6px;
+    }
+    .tag {
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--ink);
+    }
+    .tag-strong {
+      color: var(--brand);
+      font-weight: 700;
+    }
+    .subtle {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .qa-list,
+    .support-list,
+    .report-block,
+    .section-preview,
+    .citation-list {
+      display: grid;
+      gap: 12px;
+    }
+    .qa-card,
+    .support-item,
+    .support-box {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
+    }
+    .qa-question {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+    .qa-answer {
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }
+    .support-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .citation {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f5f8fb;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .flat-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .flat-section {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .flat-stack .flat-section:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .flat-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .flat-value {
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }
+    .flat-list {
+      display: grid;
+      gap: 6px;
+    }
+    .flat-item {
+      font-size: 14px;
+      line-height: 1.8;
+      word-break: break-word;
+    }
+    .flat-item::before {
+      content: "• ";
+      color: var(--brand);
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 14px 16px;
+      list-style: none;
+      background: var(--panel-soft);
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    .fold-body {
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 10px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #374151;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .facts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .mini-card {
+      padding: 14px;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    .mini-card .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .mini-card .value {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .chat-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .chat-progress {
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+    .chat-progress-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .chat-progress-title {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .chat-progress-status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .chat-progress-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .chat-progress-step {
+      position: relative;
+      display: grid;
+      gap: 4px;
+      padding: 8px 8px 8px 12px;
+      border-radius: 10px;
+      background: #f8fbfe;
+      color: var(--muted);
+      transition: all 160ms ease;
+    }
+    .chat-progress-step::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 12px 0 0 12px;
+      background: transparent;
+    }
+    .chat-progress-step.is-active {
+      color: var(--ink);
+      box-shadow: inset 0 0 0 1px #c8d7e6;
+    }
+    .chat-progress-step.is-active::before {
+      background: var(--brand);
+    }
+    .chat-progress-step.is-done {
+      color: var(--ink);
+      background: #fbfcfe;
+    }
+    .chat-progress-step.is-done::before {
+      background: #4c7f58;
+    }
+    .chat-progress-step-label {
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .chat-progress-step-detail {
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .chat-toolbar {
+      display: grid;
+      gap: 8px;
+    }
+    .chat-toolbar label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .chat-input,
+    .chat-textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      color: var(--ink);
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-thread {
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .chat-empty {
+      padding: 14px 0;
+      border-top: 1px dashed var(--line);
+      border-bottom: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    .chat-msg {
+      padding: 0;
+      background: transparent;
+    }
+    .chat-msg + .chat-msg {
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .chat-msg-user {
+      padding: 14px;
+      border: 1px solid #c9d9ea;
+      border-radius: 14px;
+      background: var(--brand-soft);
+    }
+    .chat-role {
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .chat-body {
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-answer {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-answer-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }
+    .chat-answer-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e8eff7;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .chat-answer-summary {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-answer-block {
+      padding-left: 12px;
+      border-left: 2px solid #d7e1eb;
+    }
+    .chat-answer-block-primary {
+      border-left-color: #9eb6cf;
+    }
+    .chat-answer-head {
+      margin-bottom: 6px;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .chat-answer-text {
+      font-size: 14px;
+      line-height: 1.85;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-answer-block-primary .chat-answer-text {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.9;
+    }
+    .chat-answer-list {
+      margin: 0;
+      padding: 12px 16px 12px 30px;
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+      line-height: 1.85;
+    }
+    .chat-followups {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .chat-citations {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chat-citation {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f8fbfe;
+      border: 1px solid #dde7f0;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .chat-citation-head {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .chat-citation-page {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e8eef5;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .chat-citation-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .chat-citation-actions {
+      display: inline-flex;
+      align-items: center;
+    }
+    .chat-form {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+    .chat-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .chat-suggestions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chat-suggestion,
+    .chat-followup,
+    .chat-submit {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 9px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chat-submit {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+      font-weight: 700;
+    }
+    .chat-submit[disabled],
+    .chat-suggestion[disabled],
+    .chat-followup[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .chat-status {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .chat-live {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-live-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .chat-live-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--brand);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chat-live-phase {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-live-text {
+      min-height: 48px;
+      font-size: 14px;
+      line-height: 1.85;
+      color: var(--ink);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-live-skeleton {
+      display: grid;
+      gap: 8px;
+    }
+    .chat-live-line {
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #edf3f9 0%, #dfe9f3 45%, #edf3f9 100%);
+      background-size: 200% 100%;
+      animation: chat-shimmer 1.4s linear infinite;
+    }
+    .chat-live-line.is-short {
+      width: 56%;
+    }
+    .chat-live-line.is-mid {
+      width: 78%;
+    }
+    @keyframes chat-shimmer {
+      0% {
+        background-position: 200% 0;
+      }
+      100% {
+        background-position: -200% 0;
+      }
+    }
+    .result-shell {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 18px 18px 16px;
+      gap: 14px;
+    }
+    .result-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .result-tab {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .result-tab.is-active {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }
+    .result-panels {
+      min-height: 0;
+      height: 100%;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .result-panel {
+      display: none;
+      padding-right: 2px;
+    }
+    .result-panel.is-active {
+      display: grid;
+      gap: 16px;
+    }
+    @media (max-width: 1320px) {
+      body {
+        overflow: auto;
+      }
+      .content-grid {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      .page {
+        height: auto;
+        min-height: 100vh;
+      }
+      .page-stack {
+        height: auto;
+        grid-template-rows: auto auto;
+      }
+      .project-stack,
+      .nav-stack,
+      .main-stack,
+      .side-stack {
+        overflow: visible;
+        padding-right: 0;
+      }
+    }
+    @media (max-width: 1120px) {
+      .facts-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 760px) {
+      .page {
+        padding: 12px;
+        height: auto;
+      }
+      .hero,
+      .panel-inner {
+        padding: 18px;
+      }
+      .hero-top {
+        flex-wrap: wrap;
+      }
+      .result-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 4px;
+      }
+      .facts-grid {
+        grid-template-columns: 1fr;
+      }
+      .chat-progress-steps {
+        grid-template-columns: 1fr 1fr;
+      }
+      .report-title {
+        font-size: 18px;
+      }
+      .score-trigger,
+      .score-card-head {
+        display: grid;
+      }
+      .dimension-radar-card,
+      .dimension-detail-item {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-stack">
+      <header class="panel hero">
+        <div class="hero-top">
+          <h1 class="report-title">智能与数字化技术在骨科领域的应用及临床研究</h1>
+          <div class="score-card score-mid">
+            <div class="score-label">综合评分 / 等级</div>
+            <div class="score-main">
+              <div class="score-value">6.74</div>
+              <div class="score-grade">C</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-grid debug-layout">
+        
+        <main class="main-stack">
+          
+          
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>解析章节预览</h2>
+            <div class="section-preview">
+              <details><summary>概述</summary><pre>河北省中央引导地方科技发展资金
+项目申报书
+（科技成果转移转化项目）
+专项名称：中央引导地方科技发展资金项目指南代码：4010301-科技成果转移转化项目
+支持方向：重点产业成果转化
+项目名称：智能与数字化技术在骨科领域的应用及临床研究
+申报单位：华北医疗健康集团峰峰总医院
+合作单位：无
+项目负责人：闫桦
+归口管理部门：邯郸市科技局
+科技厅分管处室：科技资源统筹处
+申报预算年度：2025 年
+起止年月：2025-03 至 2027-02
+填报日期：2025-04-12
+河北省科学技术厅制</pre></details><details><summary>项目所属行业领域发展现状及趋势</summary><pre>发达国家在智能和数字化骨科领域处于全球引领地位。美国、欧洲凭借技术先发优势，已经实现了骨科手术机器人、AI 辅助诊疗及3D 打印技术的规模化应用。例如，美敦力MazorX 脊柱手术机器人全球装机量超千台，手术精度达98%；AI 诊断方面，Zebra Medical Vision 开发的骨折AI 系统获FDA 认证，敏感度超95%。3D 打印技术已覆盖从术前模型到定制化植入物的全流程，如EOS Imaging 的个性化骨骼模型。未来，国外企业将继续推动智能与数字化技术在骨科疾病的诊断、治疗和康复中的广泛应用，使骨科医疗向精准化、智能化方向发展。 我国智能骨科技术起步较晚但发展迅猛，已进入快速追赶阶段。众多医院和科研团队积极开展相关研究和临床应用，推动了技术的快速发展。例如：天智航骨科机器人定位精度达0.8 毫米，完成手术超万例；腾讯觅影AI 骨折识别系统准确率超90%；3D 打印假体技术在复杂骨科重建中普及。另外，“十四五”医疗装备发展规划明确将智能骨科列为重点，表明国家对智能骨科领域的高度重视和政策支持，旨在促进医疗装备智能化与数字化发展。国内高端传感器、算法与国际领先水平相比仍有差距，但临床数据资源与政策红利提供了弯道超车契机，需加强医工协同创新与国产化替代。</pre></details><details><summary>项目实施对产业的引领促进作用</summary><pre>本项目以智能与数字化技术为核心，通过技术攻关、数据驱动、人才引育及成果转化四维协同，构建“医-研-用-产”一体化创新体系，推动骨科诊疗模式革新与产业链
+升级，具体实施路径如下：
+核心技术突破与升级：聚焦骨科精准诊疗设备、AI 辅助决策系统及手术机器人等关键技术研发，突破高精度影像识别、机械臂多自由度控制等瓶颈，实现国产化替代，引领骨科智能装备产业技术标准制定。拟申报1-2 项省级科研项目，5-10 篇高水平科研论文。 数据平台赋能临床与产业协同：搭建智能分析平台，通过深度挖掘大量临床数据， 开发疾病发展规律与疗效预测模型，为诊疗方案优化、新型植入物研发提供数据支撑。 平台将面向药械企业建立部分共享的数据断口，助力靶向药物的开发和智能设备迭代创新，推动产业链上下游协同创新。 人才培养与团队建设：注重引进和培养具有国际影响力的高端科研人才，组建一支在骨科理论和智能数字技术方面具有深厚经验的科研团队。通过团队的努力，推动科研成果的转化，驱动医研用产一体化建设。 科研转化与应用：确保科研成果能够快速转化为临床实践，提升患者的满意度，持续投入科研建设，推动骨科领域的发展，提升国产高端医疗装备全球竞争力。</pre></details><details><summary>项目实施内容、技术路线及创新点</summary><pre>方向一：生物力学及有限元分析应用研究
+该方向主要研究内容涉及骨科疾病的力学机制和相关技术的优化。利用高精度的三维扫描和建模技术，构建详细的生物力学模型，以模拟人体骨骼和关节的力学行为。通过有限元分析方法，对骨科材料和医疗器械的生物力学性能进行全面评估，包括材料的强度、刚度及其在实际应用中的表现。此外，本研究团队致力于将研究成果应用于实际临床，如优化脊柱和关节手术的规划和设计，提升手术的精确度和安全性。通过模拟和分析不同治疗方案对骨骼系统的影响，为手术方案提供科学依据，提高手术的成功率。 开展骨科损伤机制的研究，对骨折、关节损伤等病症的力学行为进行深入分析，为临床诊断和治疗提供理论支持。优化新型骨科材料和医疗器械，通过跨学科合作，将先进的材料和工程技术应用于骨科领域，推动技术的转化和应用。通过精确力学分析和模型建立，支持骨科领域智能化和数字化技术的发展，为患者提供更为安全和有效的治疗方案。
+方向二：数字骨科诊疗临床应用研究
+该研究方向主要聚焦于骨科疾病的影像学研究与精准诊断技术的发展。利用先进的医学影像设备，如磁共振成像（MRI）、计算机断层扫描（CT）和超声影像等，结合计算机视觉与深度学习技术，致力于提高骨科疾病的早期诊断率和准确性。通过对影像数据的分析，识别骨折、肿瘤、关节疾病等病变，研究其发病机制与病理变化。团队研究开发出智能化影像处理算法，能够对医学影像进行自动化分割、定量分析和三维重建， 从而提供更加全面的病理信息，辅助临床医生进行诊断和治疗决策。本研究强调多模态影像融合技术的应用，通过整合不同影像模式的信息，提升对复杂骨科疾病的理解和诊断能力。运用高精度的三维成像技术，如CT 和MRI 数据，建立患者的详细骨骼和关节模型，并结合虚拟现实和增强现实技术，提供逼真的手术模拟环境。通过开发智能化手术规划系统，应用算法分析患者的影像数据，自动生成个性化的手术方案和操作指南。
+方向三：3D 打印及导板制作研发应用研究
+该研究方向致力于利用先进的3D 打印技术和定制化导板设计来提升骨科手术的精准性和个性化水平。通过获取患者的三维医学影像数据，运用计算机辅助设计（CAD） 技术创建精确的骨骼模型。这些模型可以用于制作定制化的手术导板和植入物，确保手术过程的精准匹配和个体化治疗。本团队探索了多种3D 打印材料的应用，包括生物相容性材料和高强度合成材料，以满足不同骨科手术的需求。通过打印患者特定的骨骼结构或器械，能够在手术前进行模拟，评估植入物的适配性和手术效果，从而优化手术方案和减少术后并发症。此外，本研究团队进一步深入研究导板的设计与优化，开发多功能和高精度的手术导板，以提高手术的效率和准确性。通过技术创新，推进了骨科手术的技术进步，为患者提供更加精细和个性化的医疗服务，提高了治疗效果和患者的生活质量。
+方向四：康复及术中导航机器人临床应用研究
+该研究方向围绕开...</pre></details><details><summary>项目实施的预期经济社会效益目标</summary><pre>本项目的总体目标是通过创新驱动，通过智能和数字化技术研究与应用，提升骨科领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地，
+为提升骨科诊疗水平和服务质量做出贡献。在建设期内实现以下核心目标：
+技术应用突破研究：实验室将专注于智能和数字化技术的研发与优化，包括精确检测设备、智能诊断系统以及机器人辅助手术技术。通过这些技术的应用，提升骨科诊疗的精确性、效率和安全性，实现技术在临床中的广泛应用。拟申报1-2 项省级科研项目， 5-10 篇高水平科研论文。 数据驱动决策：建立全面的数据库，通过深度分析大量临床数据，帮助医生准确识别疾病发展趋势和预测患者康复情况。利用数据驱动的科学研究，提高诊疗的精准度和有效性，为骨科治疗提供强有力的数据支持。拟建立数据库建设达到50,000 例。 人才培养与团队建设：注重引进和培养具有国际影响力的高端科研人才，组建一支在骨科理论和智能数字技术方面具有深厚经验的科研团队。通过团队的努力，推动科研成果的转化，包括新的诊疗方法和药物研发。拟引进高级科研人才1-2 名，培养3-5 名研究生。 科研转化与应用：确保科研成果能够快速转化为临床实践，提升患者的满意度。持续投入科研和人才培养，形成强大的科研创新和转化能力，推动骨科领域的发展，力争在国内外产生重要影响。拟申请3-5 项技术专利。</pre></details><details><summary>项目实施的预期绩效目标</summary><pre>目标 | 实施期目标 | 第一年度目标 | 第二年度目标 | 第三年度目标 | 第四年度目标究与应用，提升骨科领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地，为提升骨科诊疗水平和服务质量做出贡献。 | 完善基础建设与科研设备提升；优化科研团队；启动科研项目。 | 建立骨科智能诊断系统，加强科研团队建设，引进高级科研人才1-2 名。 | 完成智能机器人手术系统研发；建立数据库建设达到50,0 00 例。 | 完成1-2 项科研项
+目的
+临床试验与转
+化应用；培养3-5 名专业人才。
+指标 | 一级
+指标 | 二级
+指标 | 三级指标 | 指标值
+指标 | 数量
+指标 | 发表中文核心期刊论文
+（篇） | 10 | 5 | 1 | 1 | 3 （篇） | 5 | 3 | 1 | 1 | 0 元） | 1000 | 500 | 250 | 250
+效益
+实施期目标
+第一年度目标
+第二年度目标
+第三年度目标
+第四年度目标
+总体
+目标
+总体目标是通过创新驱动，通过智能和数字化技术研究与应用，提升骨科领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地，为提升骨科诊疗水平和服务质量做出贡献。
+完善基础建设与
+科研设备提升；优化科研团队；启动科研项目。
+建立骨科智能诊断
+系统，加强科研团队建设，引进高级科研人才1-2 名。
+完成智能机器人手
+术系统研发；建立数据库建设达到50,0 00 例。
+完成1-2 项科研项
+目的
+临床试验与转
+化应用；培养3-5 名专业人才。
+一级
+指标
+二级
+指标
+三级指标
+指标值
+发表中文核心期刊论文
+（篇）
+培养研究生（人）
+授权发明专利（件）
+SCI、EI 收录的期刊论文
+（篇）
+数量
+指标
+绩效
+指标
+效益
+指标
+促进技术合同交易额（万
+元）
+促进科技投融资金（万元）
+授权实用新型专利（件）
+转化科技成果数量
+经济
+效益
+度指 | 服务对象满意度：优&gt;=95%
+满意
+度指
+标
+服务对象满意度：优&gt;=95%</pre></details><details><summary>申报单位在该领域取得的相关成果</summary><pre>目前取得的代表性科研创新成果及其评价
+（1）锁骨远端微孔钢板治疗锁骨远端骨折的临床效果分析，这项研究的成果为锁骨远端骨折的治疗提供了新的思路和方法，并因此获得河北省医学会二等奖，体现了该方法在临床应用中的高效性和创新性。 （2）骨小梁3D 打印人工髋关节的应用，该成果探讨了骨小梁3D 打印人工髋关节的应用，获得河北省医学会二等奖，体现了其在临床上的重要价值。 （3）骨水泥定向注射技术在椎体成形术中的应用，该成果探讨了骨水泥定向注射技术在椎体成形术中的应用，获得河北省医学会三等奖。 （4）第5 跖骨基底部骨折手术方式的选择及其对比研究，该成果对第5 跖骨基底部骨折的手术方式进行了深入对比分析，获得河北省医学会二等奖。 （5）腰椎退行性疾病的阶梯性治疗，该成果针对腰椎退行性疾病的阶梯性治疗方法进行了系统评估，荣获河北省医学会三等奖。 （6）3D 打印个性化定位穿刺策略在LDH 椎间孔镜微创术中的应用及对腰椎功能相关评价分析，该成果探索了3D 打印个性化定位穿刺策略在腰椎间盘突出症（LDH）椎间孔镜微创术中的应用，荣获河北省医学会二等奖。 （7）肩关节镜在肩关节疾病中的应用研究，该成果获得河北省医学会一等奖，聚焦肩关节镜在肩关节疾病中的应用。研究系统评估了肩关节镜技术在诊断和治疗肩关节各种疾病中的效果，包括肩关节周围炎、肩袖撕裂和肩关节脱位等。 （8）斜外侧腰椎椎间融合术对退行性椎管狭窄患者炎性因子影响研究，该成果获得河北省医学会二等奖，探讨了斜外侧腰椎椎间融合术对退行性椎管狭窄患者炎性因子的影响。 我们还获得了《关节镜下后交叉韧带重建胫骨隧道引线牵引装置》《一种可调节高度的肘关节镜手术用前臂支撑架》《一种可调节高度的手术器械台》《矫形鞋底及矫形鞋》《一种肩关节镜术中用的牵开装置》等实用新型专利，这些实用新型专利在关节镜手术和矫形鞋领域的应用，显著提升了手术精度、操作便捷性和患者舒适度，优化了临床治疗效果。</pre></details><details><summary>负责人及项目主要骨干人员的科研水平及主要成果</summary><pre>闫桦，毕业于沈阳药科大学，本科学历，主任药师，抗感染专业临床药师，临床药师师资，CMTM 药师，华北医疗峰峰总医院临床药学部主任、临床试验机构办公室主任。 现任邯郸市药学质控中心副主任委员中国中医药协会中西医结合药物研究与发展委员会委员，河北省药学会临床药师专委会常委，河北省药品监督管理学会医疗机构药品监管专业委员会常委 ，河北省药物与卫生技术综合评估学会慢病管理专业委员会常委，河北省药学会抗感染专业委员会委员，河北省药学会药物警戒专业委员会委员，河北省药学会医院药学专业委员会委员。参与编写专业书籍数部，发表核心论文十余篇，主持完成4 项科研成果，获得河北省科技进步二等奖一项，冀中能源科技进步奖三项。 韩守江，华北医疗健康集团峰峰总医院副院长，主任医师，河北北方学院、河北工程大学和华北理工大学硕士研究生导师。任邯郸市医学会副会长、中国老年医学会骨关节分会常务委员、邯郸市骨科专业联盟理事长。擅长人工关节置换、保膝保髋和关节镜微创手术。现已积累了6000 余例的关节置换和关节镜手术经验。在国家级专业杂志发表学术论文40 余篇，获省市级科技成果奖30 余项。 连霄飞，硕士，骨科副主任医师，中华医学会手外科分会华北区第十届、十一届青年委员河北省预防医学会骨科病防治专业委员会，近年来多篇学术论文分别发表于科技核心期刊。其中科研项目的“顺行腓骨短肌肌瓣修复胫骨中段骨外露骨髓炎的临床应用” 获邯郸市科技进步一等奖，同时获中国煤炭行业协会科技进步三等奖。“改良方法逆行髄内钉治疗复杂股骨远端骨折” 获冀中能源科技进步三等奖。 喻单根，教授，硕士研究生导师，骨科主任医师，擅长于成人四肢严重创伤的保肢治疗、关节周围骨折及四肢骨干部骨折的微创治疗，在骨折不愈合等方面的治疗经验丰富；开展了胫骨近端截骨及膝关节单髁置换等保膝治疗及膝关节置换及膝关节翻修等手术，开展了髋关节置换及髋关节翻修的手术。擅长于脊柱减压植骨融合内固定手术及脊柱结核手术治疗。擅长于儿童的创伤及骨病的诊断及治疗，对于骨肿瘤、先天性发育畸形截骨外固定架矫形及延迟等疾病的治疗积累了丰富的经验。目前为《实用骨科杂志》、 《中华创伤杂志》审稿专家,《中国民族卫生协会》卫生健康技术推广专家,，获得了“邯郸英才服务卡B 卡”。 栗凯华，博士研究生，副主任医师，医院智能骨科重点实验室负责人，工作期间以第一作者身份发表英文SCI 三篇（IF 5.6），并独立及协助发表多篇中文核心文章。以第二完成人身份完成河北省卫计委科研立项一项，并最终评定为河北省科学技术成果三等奖。同时以第一完成人身份在研河北省卫计委科研立项一项。同时不忘积极学习，以
+7.0 分的成绩完成雅思考试。</pre></details><details><summary>申报单位科研及开展技术推广的基础条件</summary><pre>我院作为邯郸骨科联盟牵头单位，现拥有邯郸市骨科与运动康复临床医学研究中心、 邯郸市智能与数字化骨科应用研究重点实验室两项市级研发平台。在硬件配置方面，配备有256 层CT、3.0T 磁共振、DSA、彩超、DR 等高端设备，其中价值100 万元以上设备近90 台、10 万元以上设备近700 台、万元以上设备超2000 台，技术能力与设备配置均达到省级卫生标准。学科建设方面，骨科作为核心重点学科，在三个院区共设354 张床位，下设14 个科室覆盖创伤、关节、脊柱、运动医学、手足显微、老年骨科、小儿骨科及脊柱微创8 大亚专业。2024 年度数据显示，骨科专业门急诊量达68,301 人次，住院量11,439 人次，充分体现临床服务能力和充足病源基础，全方位满足患者诊疗需求。</pre></details><details><summary>进度安排</summary><pre>本项目将组织开展骨科领域智能与数字化技术的基础研究、应用基础研究、前沿技术研究和共性关键技术研究工作，聚焦和培养优秀科研人才，开展学术交流，引领技术
+创新，致力于以下建设发展目标：
+第一年（2025 年）
+完善实验室基础建设与科研设备提升；优化科研团队；启动科研项目申报。
+第二年（2026 年）
+建立骨科智能诊断系统，申报1-2 项省级重点科研项目； 加强科研团队建设，引进高级科研人才1-2 名。
+第三年（2027 年）
+完成智能机器人手术系统研发；建立数据库建设达到50,000 例。 完成1-2 项科研项目的临床试验与转化应用；培养3-5 名研究生。
+第四年（2028 年）
+发表5-10 篇高水平科研论文；申请3-5 项技术专利。
+各年度主要工作任务：
+第一年（2025 年）
+统筹资金，加强基础实验室基础建设，采购科研设备；收集和整理临床数据，初步建立数据库；开发优化一系列智能诊断与治疗系统，包括基于人工智能的影像分析软件、 机器人辅助手术系统等。
+第二年（2026 年）
+优化智能诊断系统，开始在临床上进行初步测试；建设骨科疾病数据库，涵盖至少 100,000 例临床数据和影像资料，深入分析研究，为准确预测骨科疾病发生发展预后及康复情况提供理论依据；组织申报科研项目，初步形成科研成果。
+第三年（2027 年）
+研发智能机器人手术系统；建设相关数据库达到50,000 例病例，开展深入数据分析； 与国内外科研机构建立稳定的合作关系，引进1-2 名国内外骨科及智能技术专家， 培养2 名骨科领域高级研究人员，带动实验室整体科研素质提高。 开展科研项目的临床应用试验，评估技术效果；推广应用至少一项创新技术；培养和提升科研团队的专业能力。
+第四年（2028 年）
+组织实验室人员撰写科研论文，申报技术专利；参加国内外学术会议，研究成果在国际会议上得到展示；推动创新技术的商业化成果转化，进一步提升实验室的国际影响力和竞争力。</pre></details><details><summary>项目组织实施机制</summary><pre>医院科教管理部负责项目的实施监督、协调，定期评估
+1.定期会议：课题研究成员每半年召开一次例会，讨论和审议课题的学术研究进展、
+重要项目申请和科研成果。会议由项目负责人主持，成员协助组织，记录员负责记录会议内容和决策。
+2.议题提交与审议：研究人员或项目负责人提交研究提案或问题，课题成员对提案
+进行审议。审议过程包括讨论研究的科学性、创新性和实际应用价值。
+3.决策程序：对于重大学术决策，如科研方向调整、重点项目立项等，课题成员进
+行充分讨论，并根据需要进行投票。多数票原则通常适用，重要决策需由科教管理部最终审批。
+4.评审制度：对于科研成果和项目申请，科教管理部将组织专家进行同行评审，确
+保成果和申请的科学性和创新性。评审结果将作为决策的重要依据。
+5.工作报告：研究成员需定期向科教管理部报告学术工作进展、研究成果和问题。
+工作报告包括学术活动总结、项目进展和未来计划。
+6.学术交流：组织学术研讨会、讲座和交流活动，促进研究成员内部和外部的学术
+交流与合作。成员还负责邀请和安排外部专家讲座和学术交流。
+7.质量监督：科教管理部负责监督项目的学术活动质量，确保研究工作符合科研伦
+理和标准。科教管理部对课题的科研工作进行定期评估，提出改进建议。 通过明确的人员组成和工作制度，研究团队和管理部门将有效推动项目的学术研究和创新工作，提升研究质量和成果转化能力。</pre></details><details><summary>政策支撑条件</summary><pre>国家政策支持：国家《“十四五”数字经济发展规划》《新一代人工智能发展规划》 等政策明确支持AI 在医疗领域的融合应用。国家卫健委《关于促进“互联网+医疗健康” 发展的意见》鼓励智能诊疗技术研发与落地。地方政策配套：各省市对智慧医疗、数字健康产业提供专项资金、税收优惠等扶持政策。部分地区试点“AI+医疗”创新监管沙盒，加速技术审批与临床应用。 数据合规保障：《数据安全法》《个人信息保护法》提供数据治理框架，确保研究合规。</pre></details><details><summary>组织支撑条件</summary><pre>多机构协同机制：联合三甲医院、高校、AI 企业建立产学研联盟，明确分工（医院提供临床数据、高校负责算法优化、企业推动产品化）。成立课题管理委员会，定期召开进度会议，协调跨部门资源。专家顾问团队：聘请骨科临床专家、人工智能学者、政策法规顾问提供技术指导与合规建议。伦理审查保障：依托医院伦理委员会，确保研究符合《涉及人的生物医学研究伦理审查办法》。</pre></details><details><summary>资源支撑条件</summary><pre>数据资源：合作医院提供结构化骨科病例库（如X 光、MRI、手术记录等），确保数据多样性和代表性。接入区域医疗大数据平台（如省级健康云），补充样本量。 技术资源：高校/企业开放开放AI 训练平台，引入成熟技术模块。</pre></details><details><summary>技术风险</summary><pre>数据质量与标准化不足：医疗数据来源多样，可能存在格式不统一、标注缺失等问题，影响AI 模型训练效果。算法泛化能力有限：不同医院设备、操作流程差异可能导致技术落地时性能下降。隐私与安全性：患者数据涉及敏感信息，存在泄露风险。 对策：建立多中心数据协作平台，统一采集与标注标准；采用联邦学习等技术提升模型泛化性；部署区块链加密及匿名化处理，确保数据合规。</pre></details><details><summary>市场风险</summary><pre>临床接受度低：医生对AI 辅助诊断的信任需长期培养，传统工作习惯可能阻碍推广。成本投入高：智能硬件（如手术机器人）采购和维护费用高昂，医院可能预算不足。 对策：开展医生培训及试点示范，验证技术临床价值；探索分期付款或联合企业共建的轻资产合作模式。</pre></details>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>调试元信息</h2>
+            <table class="kv-table">
+              <tr><th>项目ID</th><td>8170da049eae4caf88322ef03f410310</td></tr>
+              <tr><th>评审ID</th><td>EVAL_8170da049eae4caf88322ef03f410310_20260424104247893149</td></tr>
+              <tr><th>源文件</th><td>8170da049eae4caf88322ef03f410310.pdf</td></tr>
+              <tr><th>生成时间</th><td>2026-04-24T10:44:19.383222</td></tr>
+            </table>
+          </div>
+        </section>
+            
+        </main>
+
+        <aside class="side-stack">
+          <section class="panel result-shell" id="result-shell">
+            <div class="workspace-head">
+              <h2>项目评审调试报告</h2>
+              
+            </div>
+            <div class="result-panels">
+              <section class="result-panel is-active" id="report-overview">
+                <div class="summary-block">
+                  <p class="summary">本项目综合评分6.74分，等级评定为C级（中等）。在技术可行性、创新性、团队能力、预期成果、社会效益、经济效益、风险控制、进度合理性、合规性等方面表现一般，有改进空间。</p>
+                </div>
+                <div class="highlight-grid">
+                  <div class="highlight-card">
+                    <div class="highlight-label">研究目标</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">通过创新驱动，通过智能和数字化技术研究与应用，提升骨科领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地， 为提升骨科诊疗水平和服务质量做出贡献</div>
+                  <div class="highlight-item-evidence">证据：...通过创新驱动，通过智能和数字化技术研究与应用，提升骨科领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地，为提升骨科诊疗水平和服务质量做出贡献。在建设期内实现以下核心目标：技术应用突破研究：实验室将专注于智能和数字化技术的研发与优化，包括精确检测设备、智能诊断系统...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-7" data-doc-jump="true" data-page="7" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="通过创新驱动通过智能和数字化技术研究与应用提升骨科领域诊疗水平和患者满意度成为智能与数字化骨科领域的重要科研和人才培养基地为提升骨科诊疗水平和服务质量做出贡献在建设期内实现以下核心目标技术应用突破研究实验室将专注于智能和数字化技术的研发与优化包括精确检测设备智能诊断系统" data-highlight-text="...通过创新驱动，通过智能和数字化技术研究与应用，提升骨科领域诊疗水平和患者满意度，成为智能与数字化骨科领域的重要科研和人才培养基地，为提升骨科诊疗水平和服务质量做出贡献。在建设期内实现以下核心目标：技术应用突破研究：实验室将专注于智能和数字化技术的研发与优化，包括精确检测设备、智能诊断系统..." data-packet-page="7" data-highlight-rects='[{&quot;x&quot;: 0.374736, &quot;y&quot;: 0.55524, &quot;w&quot;: 0.517687, &quot;h&quot;: 0.030253}]'>查看原文 · 第 7 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">完善基础建设与科研设备提升</div>
+                  <div class="highlight-item-evidence">证据：...数字化骨科领域的重要科研和人才培养基地，为提升骨科诊疗水平和服务质量做出贡献。|完善基础建设与科研设备提升；优化科研团队；启动科研项目。|建立骨科智能诊断系统，加强科研团队建设，引进高级科研人才1-2名。|完成智能机器人手术系统研发；建立数据库建设达到50,000例...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-9" data-doc-jump="true" data-page="9" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="数字化骨科领域的重要科研和人才培养基地为提升骨科诊疗水平和服务质量做出贡献|完善基础建设与科研设备提升优化科研团队启动科研项目|建立骨科智能诊断系统加强科研团队建设引进高级科研人才12名|完成智能机器人手术系统研发建立数据库建设达到50000例" data-highlight-text="...数字化骨科领域的重要科研和人才培养基地，为提升骨科诊疗水平和服务质量做出贡献。|完善基础建设与科研设备提升；优化科研团队；启动科研项目。|建立骨科智能诊断系统，加强科研团队建设，引进高级科研人才1-2名。|完成智能机器人手术系统研发；建立数据库建设达到50,000例..." data-packet-page="9" data-highlight-rects='[{&quot;x&quot;: 0.120171, &quot;y&quot;: 0.267478, &quot;w&quot;: 0.280563, &quot;h&quot;: 0.036158}]'>查看原文 · 第 9 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">建立骨科智能诊断系统，加强科研团队建设，引进高级科研人才1-2 名</div>
+                  <div class="highlight-item-evidence">证据：...设备提升；优化科研团队；启动科研项目。|建立骨科智能诊断系统，加强科研团队建设，引进高级科研人才1-2名。|完成智能机器人手术系统研发；建立数据库建设达到50,000例。|完成1-2项科研项目的临床试验与转化应用；培养3-5名专业人才。[表格行3]绩效指标|一级指...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-9" data-doc-jump="true" data-page="9" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="设备提升优化科研团队启动科研项目|建立骨科智能诊断系统加强科研团队建设引进高级科研人才12名|完成智能机器人手术系统研发建立数据库建设达到50000例|完成12项科研项目的临床试验与转化应用培养35名专业人才[表格行3]绩效指标|一级指" data-highlight-text="...设备提升；优化科研团队；启动科研项目。|建立骨科智能诊断系统，加强科研团队建设，引进高级科研人才1-2名。|完成智能机器人手术系统研发；建立数据库建设达到50,000例。|完成1-2项科研项目的临床试验与转化应用；培养3-5名专业人才。[表格行3]绩效指标|一级指..." data-packet-page="13" data-highlight-rects='[{&quot;x&quot;: 0.38931, &quot;y&quot;: 0.563555, &quot;w&quot;: 0.386842, &quot;h&quot;: 0.030253}]'>查看原文 · 第 9 页</a></div>
+                </div>
+                </div>
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">创新点</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">智能化康复机器人系统</div>
+                  <div class="highlight-item-evidence">证据：...，帮助患者进行精确的康复训练和功能恢复，采用最新的机器人技术和人工智能算法，开发智能化的康复机器人系统，能够根据患者的具体需求和康复进度自动调整训练方案，设计提供个性化的康复治疗。此外，本研究方向开展比较研究机器人在不同骨科疾病中的应用效果，如骨折后功能恢复、关...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-7" data-doc-jump="true" data-page="7" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="帮助患者进行精确的康复训练和功能恢复采用最新的机器人技术和人工智能算法开发智能化的康复机器人系统能够根据患者的具体需求和康复进度自动调整训练方案设计提供个性化的康复治疗此外本研究方向开展比较研究机器人在不同骨科疾病中的应用效果如骨折后功能恢复关" data-highlight-text="...，帮助患者进行精确的康复训练和功能恢复，采用最新的机器人技术和人工智能算法，开发智能化的康复机器人系统，能够根据患者的具体需求和康复进度自动调整训练方案，设计提供个性化的康复治疗。此外，本研究方向开展比较研究机器人在不同骨科疾病中的应用效果，如骨折后功能恢复、关..." data-packet-page="7" data-highlight-rects='[{&quot;x&quot;: 0.165477, &quot;y&quot;: 0.372321, &quot;w&quot;: 0.568263, &quot;h&quot;: 0.030253}]'>查看原文 · 第 7 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">智能化影像处理算法</div>
+                  <div class="highlight-item-evidence">证据：...的分析，识别骨折、肿瘤、关节疾病等病变，研究其发病机制与病理变化。团队研究开发出智能化影像处理算法，能够对医学影像进行自动化分割、定量分析和三维重建，从而提供更加全面的病理信息，辅助临床医生进行诊断和治疗决策。本研究强调多模态影像融合技术的应用，通过整合不同...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="的分析识别骨折肿瘤关节疾病等病变研究其发病机制与病理变化团队研究开发出智能化影像处理算法能够对医学影像进行自动化分割定量分析和三维重建从而提供更加全面的病理信息辅助临床医生进行诊断和治疗决策本研究强调多模态影像融合技术的应用通过整合不同" data-highlight-text="...的分析，识别骨折、肿瘤、关节疾病等病变，研究其发病机制与病理变化。团队研究开发出智能化影像处理算法，能够对医学影像进行自动化分割、定量分析和三维重建，从而提供更加全面的病理信息，辅助临床医生进行诊断和治疗决策。本研究强调多模态影像融合技术的应用，通过整合不同..." data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.374736, &quot;y&quot;: 0.607503, &quot;w&quot;: 0.517687, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">多模态影像融合技术</div>
+                  <div class="highlight-item-evidence">证据：...三维重建，从而提供更加全面的病理信息，辅助临床医生进行诊断和治疗决策。本研究强调多模态影像融合技术的应用，通过整合不同影像模式的信息，提升对复杂骨科疾病的理解和诊断能力。运用高精度的三维成像技术，如CT和MRI数据，建立患者的详细骨骼和关节模型，并结合虚拟现...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="三维重建从而提供更加全面的病理信息辅助临床医生进行诊断和治疗决策本研究强调多模态影像融合技术的应用通过整合不同影像模式的信息提升对复杂骨科疾病的理解和诊断能力运用高精度的三维成像技术如CT和MRI数据建立患者的详细骨骼和关节模型并结合虚拟现" data-highlight-text="...三维重建，从而提供更加全面的病理信息，辅助临床医生进行诊断和治疗决策。本研究强调多模态影像融合技术的应用，通过整合不同影像模式的信息，提升对复杂骨科疾病的理解和诊断能力。运用高精度的三维成像技术，如CT和MRI数据，建立患者的详细骨骼和关节模型，并结合虚拟现..." data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.387214, &quot;y&quot;: 0.633634, &quot;w&quot;: 0.326369, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                </div>
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">技术路线</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">利用高精度的三维扫描和建模技术，构建详细的生物力学模型，以模拟人体骨骼和关节的力学行为</div>
+                  <div class="highlight-item-evidence">证据：...学及有限元分析应用研究该方向主要研究内容涉及骨科疾病的力学机制和相关技术的优化。利用高精度的三维扫描和建模技术，构建详细的生物力学模型，以模拟人体骨骼和关节的力学行为。通过有限元分析方法，对骨科材料和医疗器械的生物力学性能进行全面评估，包括材料的强度、刚度及其在实际应用...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="学及有限元分析应用研究该方向主要研究内容涉及骨科疾病的力学机制和相关技术的优化利用高精度的三维扫描和建模技术构建详细的生物力学模型以模拟人体骨骼和关节的力学行为通过有限元分析方法对骨科材料和医疗器械的生物力学性能进行全面评估包括材料的强度刚度及其在实际应用" data-highlight-text="...学及有限元分析应用研究该方向主要研究内容涉及骨科疾病的力学机制和相关技术的优化。利用高精度的三维扫描和建模技术，构建详细的生物力学模型，以模拟人体骨骼和关节的力学行为。通过有限元分析方法，对骨科材料和医疗器械的生物力学性能进行全面评估，包括材料的强度、刚度及其在实际应用..." data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.286424, &quot;y&quot;: 0.267795, &quot;w&quot;: 0.487632, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">利用先进的医学影像设备，如磁共振成像（MRI）、计算机断层扫描（CT）和超声影像等，结合计算机视觉与深度学习技术，致力于提高骨科疾病的早期诊断率和准确性</div>
+                  <div class="highlight-item-evidence">证据：...方向主要聚焦于骨科疾病的影像学研究与精准诊断技术的发展。利用先进的医学影像设备，如磁共振成像（MRI）、计算机断层扫描（CT）和超声影像等，结合计算机视觉与深度学习技术，致力于提高骨科疾病的早期诊断率和准确性。通过对影像数据的分析，识别骨折、肿瘤、关节疾病等病变，研究其发病机制与病理变化。团队研究...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="方向主要聚焦于骨科疾病的影像学研究与精准诊断技术的发展利用先进的医学影像设备如磁共振成像MRI计算机断层扫描CT和超声影像等结合计算机视觉与深度学习技术致力于提高骨科疾病的早期诊断率和准确性通过对影像数据的分析识别骨折肿瘤关节疾病等病变研究其发病机制与病理变化团队研究" data-highlight-text="...方向主要聚焦于骨科疾病的影像学研究与精准诊断技术的发展。利用先进的医学影像设备，如磁共振成像（MRI）、计算机断层扫描（CT）和超声影像等，结合计算机视觉与深度学习技术，致力于提高骨科疾病的早期诊断率和准确性。通过对影像数据的分析，识别骨折、肿瘤、关节疾病等病变，研究其发病机制与病理变化。团队研究..." data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.346898, &quot;y&quot;: 0.55524, &quot;w&quot;: 0.407, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">利用先进的3D 打印技术和定制化导板设计来提升骨科手术的精准性和个性化水平</div>
+                  <div class="highlight-item-evidence">证据：...性化的手术方案和操作指南。方向三：3D打印及导板制作研发应用研究该研究方向致力于利用先进的3D打印技术和定制化导板设计来提升骨科手术的精准性和个性化水平。通过获取患者的三维医学影像数据，运用计算机辅助设计（CAD）技术创建精确的骨骼模型。这些模型可以用于制作定制化的手术导板和植入物，确保手术过程的精准匹配和个体...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="性化的手术方案和操作指南方向三3D打印及导板制作研发应用研究该研究方向致力于利用先进的3D打印技术和定制化导板设计来提升骨科手术的精准性和个性化水平通过获取患者的三维医学影像数据运用计算机辅助设计CAD技术创建精确的骨骼模型这些模型可以用于制作定制化的手术导板和植入物确保手术过程的精准匹配和个体" data-highlight-text="...性化的手术方案和操作指南。方向三：3D打印及导板制作研发应用研究该研究方向致力于利用先进的3D打印技术和定制化导板设计来提升骨科手术的精准性和个性化水平。通过获取患者的三维医学影像数据，运用计算机辅助设计（CAD）技术创建精确的骨骼模型。这些模型可以用于制作定制化的手术导板和植入物，确保手术过程的精准匹配和个体..." data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.346898, &quot;y&quot;: 0.842685, &quot;w&quot;: 0.467474, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">开发应用先进的康复机器人技术，促进骨科患者的康复效果的提升</div>
+                  <div class="highlight-item-evidence">证据：...治疗效果和患者的生活质量。方向四：康复及术中导航机器人临床应用研究该研究方向围绕开发应用先进的康复机器人技术，促进骨科患者的康复效果的提升。项目专注于设计研发针对骨科疾病和损伤的机器人设备，帮助患者进行精确的康复训练和功能恢复，采用最新的机器人技术和人工智能算法，开发...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-7" data-doc-jump="true" data-page="7" data-file="8170da049eae4caf88322ef03f410310.pdf" data-snippet="治疗效果和患者的生活质量方向四康复及术中导航机器人临床应用研究该研究方向围绕开发应用先进的康复机器人技术促进骨科患者的康复效果的提升项目专注于设计研发针对骨科疾病和损伤的机器人设备帮助患者进行精确的康复训练和功能恢复采用最新的机器人技术和人工智能算法开发" data-highlight-text="...治疗效果和患者的生活质量。方向四：康复及术中导航机器人临床应用研究该研究方向围绕开发应用先进的康复机器人技术，促进骨科患者的康复效果的提升。项目专注于设计研发针对骨科疾病和损伤的机器人设备，帮助患者进行精确的康复训练和功能恢复，采用最新的机器人技术和人工智能算法，开发..." data-packet-page="7" data-highlight-rects='[{&quot;x&quot;: 0.1071, &quot;y&quot;: 0.293927, &quot;w&quot;: 0.50779, &quot;h&quot;: 0.030253}]'>查看原文 · 第 7 页</a></div>
+                </div>
+                </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="result-panel" id="report-dimensions">
+                <div class="score-list">
+                  <div class="dimension-dashboard" id="dimension-accordion" data-default-index="3"><section class="dimension-radar-card"><div class="dimension-radar-wrap"><svg class="dimension-radar-svg" id="dimension-radar-svg" viewBox="0 0 480 380" role="img" aria-label="维度评分雷达图"><path class="dimension-radar-sector" d="M 240.0 190.0 L 199.6 79.1 A 118.0 118.0 0 0 1 315.8 280.4 Z" fill="#c8defd"></path><path class="dimension-radar-sector" d="M 240.0 190.0 L 315.8 280.4 A 118.0 118.0 0 0 1 123.8 210.5 Z" fill="#cfe8d9"></path><path class="dimension-radar-sector" d="M 240.0 190.0 L 123.8 210.5 A 118.0 118.0 0 0 1 199.6 79.1 Z" fill="#ffd8bb"></path><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="23.6"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="47.2"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="70.8"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="94.4"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="118.0"></circle><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="240.0" y2="72.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="315.8" y2="99.6"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="356.2" y2="169.5"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="342.2" y2="249.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="280.4" y2="300.9"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="199.6" y2="300.9"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="137.8" y2="249.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="123.8" y2="169.5"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="164.2" y2="99.6"></line><polygon class="dimension-radar-area" points="240.0,107.4 285.5,135.8 322.5,175.5 301.3,225.4 268.7,268.7 215.8,256.5 169.5,230.7 159.4,175.8 183.5,122.7"></polygon><circle class="dimension-radar-point" data-dimension-index="0" cx="240.0" cy="107.4" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="1" cx="285.5" cy="135.8" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="2" cx="322.5" cy="175.5" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point is-active" data-dimension-index="3" cx="301.3" cy="225.4" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="4" cx="268.7" cy="268.7" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="5" cx="215.8" cy="256.5" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="6" cx="169.5" cy="230.7" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="7" cx="159.4" cy="175.8" r="5.8" fill="#b8631b"></circle><circle class="dimension-radar-point" data-dimension-index="8" cx="183.5" cy="122.7" r="5.8" fill="#b8631b"></circle><text class="dimension-radar-label" data-dimension-index="0" x="240.0" y="32.0" text-anchor="middle" dominant-baseline="middle">创新性</text><text class="dimension-radar-label" data-dimension-index="1" x="341.6" y="69.0" text-anchor="start" dominant-baseline="middle">预期成果</text><text class="dimension-radar-label" data-dimension-index="2" x="395.6" y="162.6" text-anchor="start" dominant-baseline="middle">社会效益</text><text class="dimension-radar-label is-active" data-dimension-index="3" x="376.8" y="269.0" text-anchor="start" dominant-baseline="middle">经济效益</text><text class="dimension-radar-label" data-dimension-index="4" x="294.0" y="338.5" text-anchor="start" dominant-baseline="middle">技术可行性</text><text class="dimension-radar-label" data-dimension-index="5" x="186.0" y="338.5" text-anchor="end" dominant-baseline="middle">团队能力</text><text class="dimension-radar-label" data-dimension-index="6" x="103.2" y="269.0" text-anchor="end" dominant-baseline="middle">进度合理性</text><text class="dimension-radar-label" data-dimension-index="7" x="84.4" y="162.6" text-anchor="end" dominant-baseline="middle">风险控制</text><text class="dimension-radar-label" data-dimension-index="8" x="138.4" y="69.0" text-anchor="end" dominant-baseline="middle">合规性</text></svg><div class="dimension-sector-row"><div class="dimension-sector-chip" style="--sector-accent:#2563a6">项目价值</div><div class="dimension-sector-chip" style="--sector-accent:#2d7a4f">实施基础</div><div class="dimension-sector-chip" style="--sector-accent:#b8631b">风险规范</div></div></div></section><div class="dimension-body"><section class="dimension-detail-stage">
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="0"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">创新性</div>
+                    <div class="score-card-meta">得分 7.0 / 权重 0.15</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:70.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目聚焦骨科诊疗全流程创新，在技术整合与临床应用场景化方面表现突出，但理论原创性不足。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-summary">建议加强基础理论研究与核心技术自主化开发。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">多模态影像-AI算法-机器人技术的闭环创新体系</div><div class="dimension-detail-list-item">患者特异性手术方案的数字化实现路径</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">缺乏对疾病发生发展机制的基础理论突破</div><div class="dimension-detail-list-item">部分技术方案依赖外部成熟产品（如3D打印设备）</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充对疾病发生发展机制的基础理论突破</div><div class="dimension-detail-list-item">明确部分技术方案依赖外部成熟产品（如3D打印设备）</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="1"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">预期成果</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.12</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">已定位到 4 个相关章节，当前基于现有章节证据完成基础评审判断。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖预期成果、考核指标等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="2"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">社会效益</div>
+                    <div class="score-card-meta">得分 7.1 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:71.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.1 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目整体方向符合国家医疗科技创新战略，聚焦智能与数字化骨科领域，旨在解决临床诊疗痛点，具有较高的应用前景和社会意义。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-summary">然而，申报书中存在明显的格式与内容缺陷（预期效益与社会效益内容重复），且部分关键指标（如人才培养规模、经济效益测算）不够充分，建议在正式申报时完善内容结构并细化量化目标。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">聚焦智能与数字化骨科，高度契合医疗数字化转型的行业趋势</div><div class="dimension-detail-list-item">设定了明确的量化科研目标（5 万例数据库、3-5 项专利、5-10 篇高水平论文）</div><div class="dimension-detail-list-item">强调医工交叉融合与临床成果转化，注重实际临床应用价值</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">预期效益与社会效益章节内容完全重复，缺乏针对社会影响的独立深入描述</div><div class="dimension-detail-list-item">人才培养规模（1-2 名高端、3-5 名研究生）对于打造‘重要基地’的定位而言偏小</div><div class="dimension-detail-list-item">缺乏具体的社会经济效益量化指标，如预计服务患者数量、医疗费用节约比例或康复效率提升数据</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充预期效益与社会效益章节内容完全重复，缺乏针对社会影响的独立深入描述</div><div class="dimension-detail-list-item">明确人才培养规模（1-2 名高端、3-5 名研究生）对于打造‘重要基地’的定位而言偏小</div><div class="dimension-detail-list-item">补充具体的社会经济效益量化指标，如预计服务患者数量、医疗费用节约比例或康复效率提升数据</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item is-active"
+                  data-dimension-index="3"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">经济效益</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目在战略方向上契合国家高端医疗装备国产化趋势，具备较好的长期发展潜力和间接经济价值。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">然而，作为项目评审，其经济效益论证部分存在明显短板：一是核心章节内容高度重复，未能有效区分学术目标与经济目标；</div><div class="dimension-detail-list-item">二是缺乏具体的经济指标测算和清晰的商业变现模式。</div><div class="dimension-detail-list-item">建议补充详细的财务预测及风险评估，强化产学研转化的具体落地计划。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">构建了‘医 - 研 - 用 - 产’一体化创新体系，产业链整合思路清晰</div><div class="dimension-detail-list-item">重视数据资产积累（5 万例数据库），为后续药械研发提供独特壁垒</div><div class="dimension-detail-list-item">聚焦高端装备国产替代，符合国家产业政策导向</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">预期效益与经济效益章节内容高度雷同，缺乏针对性经济分析</div><div class="dimension-detail-list-item">缺少具体的直接经济收益量化指标（如预计营收、利润、税收等）</div><div class="dimension-detail-list-item">未明确技术成果转化为产品的具体商业模式及时间表</div><div class="dimension-detail-list-item">缺乏针对医疗器械行业特有的审批风险及市场准入风险分析</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充预期效益与经济效益章节内容高度雷同，缺乏针对性经济分析</div><div class="dimension-detail-list-item">补充具体的直接经济收益量化指标（如预计营收、利润、税收等）</div><div class="dimension-detail-list-item">明确未明确技术成果转化为产品的具体商业模式及时间表</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="4"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">技术可行性</div>
+                    <div class="score-card-meta">得分 7.1 / 权重 0.15</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:71.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.1 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目技术路线设计合理，符合当前骨科数字化与智能化的发展趋势，具有较高的应用前景。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-summary">但在资源整合、技术集成落地及临床合规性方面需进一步完善论证，建议补充具体的资源配置计划和风险控制措施。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">实现了骨科诊疗全周期的技术覆盖（诊 - 治 - 康）</div><div class="dimension-detail-list-item">强调个性化定制与人工智能辅助决策的结合</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">缺乏具体的资金预算与设备清单描述</div><div class="dimension-detail-list-item">跨学科技术集成的具体难点与解决方案未详述</div><div class="dimension-detail-list-item">医疗器械注册与临床准入路径不够清晰</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充具体的资金预算与设备清单描述</div><div class="dimension-detail-list-item">明确跨学科技术集成的具体难点与解决方案未详述</div><div class="dimension-detail-list-item">完善医疗器械注册与临床准入路径不够清晰</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="5"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">团队能力</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">已定位到 2 个相关章节，当前基于现有章节证据完成基础评审判断。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖项目团队、成员简介等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="6"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">进度合理性</div>
+                    <div class="score-card-meta">得分 6.9 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:69.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.9 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目进度安排整体结构完整，涵盖了从实验室建设到成果转化全过程，具有较强的指导意义。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">主要扣分点在于项目书内部信息存在逻辑冲突（如数据库数量指标前后不一），且对医疗硬科技研发中的法规注册与临床验证周期预判不足。</div><div class="dimension-detail-list-item">建议修正数据矛盾，并细化临床注册路径的时间节点。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">考核指标量化具体：明确了论文、专利、人才培养数量等可考核的硬性指标。</div><div class="dimension-detail-list-item">全链条规划完善：涵盖了基础研究、系统开发、临床应用及商业化转化的完整闭环。</div><div class="dimension-detail-list-item">产学研融合导向：强调数据库建设与临床合作，有助于提升成果的实际转化价值。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">核心指标冲突：建设目标第三年提及数据库 5 万例，而第四年任务描述中第二年已达 10 万例，数据口径不一致。</div><div class="dimension-detail-list-item">人才引进时间错位：建设目标中第二年引进人才，任务描述中第三年引进，需明确具体执行年份。</div><div class="dimension-detail-list-item">器械注册周期风险：智能手术机器人属于高风险三类医疗器械，仅用 2-3 年完成研发至商业化可能无法覆盖 NMPA 审评审批周期。</div><div class="dimension-detail-list-item">临床数据采集量过大：短期内建立 10 万例高质量标注数据集难度极大，可能影响后续模型训练质量。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确核心指标冲突：建设目标第三年提及数据库 5 万例，而第四年任务描述中第二年已达 10 万例，数据口径不一致</div><div class="dimension-detail-list-item">明确人才引进时间错位：建设目标中第二年引进人才，任务描述中第三年引进，需明确具体执行年份</div><div class="dimension-detail-list-item">明确器械注册周期风险：智能手术机器人属于高风险三类医疗器械，仅用 2-3 年完成研发至商业化可能无法覆盖 NMPA 审评审批周期</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="7"
+                  style="--sector-accent:#b8631b;"
+                >
+                  <div class="dimension-detail-kicker">风险规范</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">风险控制</div>
+                    <div class="score-card-meta">得分 6.94 / 权重 0.08</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:69.4%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.94 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目已识别部分主要风险并给出基础应对思路，但在分析深度或预案完整性上仍可加强。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖技术风险、市场风险、政策风险等主要风险类型，风险识别较为完整。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="8"
+                  style="--sector-accent:#b8631b;"
+                >
+                  <div class="dimension-detail-kicker">风险规范</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">合规性</div>
+                    <div class="score-card-meta">得分 7.45 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:74.5%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.45 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目合规性基础基本具备，但仍有部分内容需要补充或细化。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-empty">暂无明显优势</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                </section></div></div>
+        <script>
+          (() => {
+            const root = document.getElementById("dimension-accordion");
+            if (!root) return;
+            const points = Array.from(root.querySelectorAll("[data-dimension-index]"));
+            const detailItems = Array.from(root.querySelectorAll(".dimension-detail-item"));
+            const activate = (index) => {
+              points.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+              });
+              detailItems.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+                if (node.dataset.dimensionIndex === index) {
+                  node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+              });
+            };
+            points.forEach((node) => {
+              node.addEventListener("click", () => {
+                activate(node.dataset.dimensionIndex);
+              });
+            });
+            activate(root.dataset.defaultIndex || "0");
+          })();
+        </script>
+        
+                </div>
+              </section>
+
+              
+
+              
+              <section class="result-panel" id="report-benchmark">
+                <div class="flat-stack"><section class="flat-section"><div class="flat-label">新颖性</div><div class="flat-value">unknown</div></section><section class="flat-section"><div class="flat-label">文献定位</div><div class="flat-value">未获取到可用文献结果</div></section><section class="flat-section"><div class="flat-label">专利重叠</div><div class="flat-value">未获取到可用专利结果</div></section><section class="flat-section"><div class="flat-label">综合结论</div><div class="flat-value">当前无法形成可靠对比结论，请补充外部检索结果后复核</div></section><section class="flat-section"><div class="flat-label">参考文献</div><div class="empty">暂无参考条目</div></section></div>
+              </section>
+
+
+              
+        <section class="panel" id="report-debug">
+          <div class="panel-inner">
+            <h2>错误与调试信息</h2>
+            <table class="kv-table"><tr><th>错误列表</th><td><div class="empty">无错误</div></td></tr><tr><th>文件名</th><td>8170da049eae4caf88322ef03f410310.pdf</td></tr><tr><th>页数</th><td>25</td></tr><tr><th>解析版本</th><td>v2</td></tr><tr><th>近似分页</th><td>否</td></tr></table>
+          </div>
+        </section>
+            
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </div>
+  
+</body>
+</html>

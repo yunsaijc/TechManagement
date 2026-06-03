@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 4f6bd38e7fae46adb7c9e4a5ebe5da6b.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：4f6bd38e7fae46adb7c9e4a5ebe5da6b.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">5,863</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>4f6bd38e7fae46adb7c9e4a5ebe5da6b.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>唐山开滦化工科技有限公司煤焦油基集成电路用高纯化学品创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>唐山开滦化工科技有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李群生</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>唐山市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-01</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-26</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>唐山开滦化工科技有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>唐山海港经济开发区文化大街以南、中浩大路以东</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91130293MA07LHKJ7N</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-唐山市-河北唐山海港经济开发区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2015-12-04</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>35803.28万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>李建华</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18903156600</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0315-3037800</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>klecrd_ljh@163.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>唐少军</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>15831508516</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0315-3037808</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>hgkjtangshaojun@163.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>唐山开滦化工科技有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>301124001065</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>交通银行股份有限公司唐山北新道支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>132300000012015005773</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>30人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>21人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>10人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>R</p><p class="docx-paragraph">其他（<a id="qylx"></a>河北省首批科技骨干企业（高速成长型））<a id="qylxqt"></a>R</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>科技推广和应用服务业</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>45069.50</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>1782.12</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>20.21</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>16.39</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>□技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>R其他（请注明）：  <a id="ptqkqtsm"></a>河北省化工新材料科技成果转化中试示范平台       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司主要聚焦化工新材料领域原创性、前沿性、引领性、卡脖子科技难题，及新技术、新产品、新工艺的共性技术开展中试验证。公司总占地面积512亩，其中中试服务区占地约142亩，产业化示范区占地约370亩，目前拥有办公用房3000平方米，研发楼、标准化中试厂房、甲类库房、危废库、产业化示范厂房等试验用房9500平方米。配备材料拉伸测试仪、蠕变测试仪、粉体特性测试仪等多台套科研设备。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司坚持以研发创新为企业发展驱动力，已取得发明专利30项，实用新型专利7项、外观设计专利1项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>目前已入驻的中试及产业化项目共14个，涵盖高端聚酯、高性能纤维、特种橡胶等多个方向，建成了全球首套50吨/年聚甲醛高强丝产业化装置，填补行业空白；在建年产75吨聚磷腈特种材料产业化示范装置，攻克“卡脖子”技术。项目全部建成达产后，平台将成为全国产品最丰富、产业链最长、技术最密集的高端煤化工新材料产业基地。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>近年来，与北京大学、澳门科技大学、北京化工大学、苏州大学、河北工业大学等高等院校建立了产学研合作交流关系。目前与北京化工大学联合成立了通用工程塑料高性能化创新创业团队；与天津大学、西安科技大学合作开展煤沥青基碳材料项目，与苏州大学、河北工业大学、河北科技大学合作攻关高端聚酯PEN技术，与澳门科技大学成立成果转化基地，合作开展河北省国际科技合作/港澳台科技合作专项《铅卤钙钛矿量子点-高分子复合材料在X射线防护服中的应用》项目，共同推动聚甲醛、聚萘二甲酸乙二醇酯、萘二甲酸、特种新材料等化工新材料的关键技术突破及中试产业化示范。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">8</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">3人</p></td><td colspan="4"><p class="docx-paragraph">3人</p></td><td colspan="5"><p class="docx-paragraph">2人</p></td><td colspan="3"><p class="docx-paragraph">2人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">4人</p></td><td colspan="4"><p class="docx-paragraph">6人</p></td><td colspan="5"><p class="docx-paragraph">0人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">李群生</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1963-10</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">化学工程</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2026-02-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京化工大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市朝阳区</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">教授</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">特聘专家</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">100080</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">北京市海淀区西三旗育新花园29楼403号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">13901385035</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13901385035</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">liqs@buct.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>R国家科技奖主要完成人   <a id="rcjh_tsjt"></a>R享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1979-09-01至1983-07-01</p></td><td colspan="9"><p class="docx-paragraph">河北工业大学</p></td><td colspan="4"><p class="docx-paragraph">学士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1984-09-01至1987-07-01</p></td><td colspan="9"><p class="docx-paragraph">天津大学</p></td><td colspan="4"><p class="docx-paragraph">硕士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2000-09-01至2003-06-01</p></td><td colspan="9"><p class="docx-paragraph">北京化工大学</p></td><td colspan="4"><p class="docx-paragraph">博士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1987-07-01至1993-06-01</p></td><td colspan="9"><p class="docx-paragraph">北京化工大学化学工程学院</p></td><td colspan="4"><p class="docx-paragraph">助教</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1993-06-01至1999-07-01</p></td><td colspan="9"><p class="docx-paragraph">北京化工大学化学工程学院</p></td><td colspan="4"><p class="docx-paragraph">讲师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1997-07-01至2003-12-01</p></td><td colspan="9"><p class="docx-paragraph">北京化工大学化学工程学院</p></td><td colspan="4"><p class="docx-paragraph">副教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2003-12-01至2026-02-26</p></td><td colspan="9"><p class="docx-paragraph">北京化工大学化学工程学院</p></td><td colspan="4"><p class="docx-paragraph">教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2004-10-01至2026-02-26</p></td><td colspan="9"><p class="docx-paragraph">北京化工大学化学工程学院</p></td><td colspan="4"><p class="docx-paragraph">博导/教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2007-12-01至2008-06-01</p></td><td colspan="9"><p class="docx-paragraph">华盛顿州立大学</p></td><td colspan="4"><p class="docx-paragraph">访问学者</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2008-09-01至2008-12-01</p></td><td colspan="9"><p class="docx-paragraph">华盛顿州立大学</p></td><td colspan="4"><p class="docx-paragraph">客座教授</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">万吨级燃料醇精馏过程能量耦合工艺</p></td><td colspan="7"><p class="docx-paragraph">2019.01-2022.12</p></td><td colspan="4"><p class="docx-paragraph">国家科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">主持</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">六氟化铀精馏纯化基础与过程仿真模拟研究</p></td><td colspan="7"><p class="docx-paragraph">2023.01-2026.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家自然联合基金重点项目</p></td><td><p class="docx-paragraph">主持</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">生物醇类燃料全组分负碳炼制关键技术研究</p></td><td colspan="7"><p class="docx-paragraph">2023.05-2026.04</p></td><td colspan="4"><p class="docx-paragraph">国家科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">主持</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">高纯/超高纯化学品精馏关键技术与工业应用</p></td><td colspan="4"><p class="docx-paragraph">国家科学技术进步奖</p></td><td colspan="3"><p class="docx-paragraph">国家级二等奖</p></td><td colspan="2"><p class="docx-paragraph">2021-09-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">中华人民共和国国务院</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">高粘度、易自聚等特殊物系精馏新技术的研究开发与应用</p></td><td colspan="4"><p class="docx-paragraph">国家科学技术进步奖</p></td><td colspan="3"><p class="docx-paragraph">国家级二等奖</p></td><td colspan="2"><p class="docx-paragraph">2005-01-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">中华人民共和国国务院</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">一种高效传质分离散装填料结构</p></td><td colspan="4"><p class="docx-paragraph">中国专利奖</p></td><td colspan="3"><p class="docx-paragraph">国家级金奖</p></td><td colspan="2"><p class="docx-paragraph">2023-04-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Hydrodynamics of novel  structured packings: An experimental and multi-scale CFD study</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Chemical Engineering Science</p></td><td colspan="5"><p class="docx-paragraph">2016  年</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Energy-saving              heat              integrated extractionazeotropic distillation for separating isobutanol-ethanol-water</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Separation and Purification Technology</p></td><td colspan="5"><p class="docx-paragraph">2021  年</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Flow-guided  sieve-valve  tray  (FGS-VT)-  A novel   tray    with   improved   effciency   and hydrodynamics</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Chemical Engineering Research and Design</p></td><td colspan="5"><p class="docx-paragraph">2013  年</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种高效传质分离散装填料结构 （获中国专利金奖）</p></td><td colspan="5"><p class="docx-paragraph">CN111545159B</p></td><td colspan="3"><p class="docx-paragraph">发明专利权</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2026-02-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">高效导向筛板塔（获中国专利优秀奖）</p></td><td colspan="5"><p class="docx-paragraph">CN1168517C</p></td><td colspan="3"><p class="docx-paragraph">发明专利权</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2026-02-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">丝网波纹填料（获中国专利优秀奖）</p></td><td colspan="5"><p class="docx-paragraph">CN1320956C</p></td><td colspan="3"><p class="docx-paragraph">发明专利权</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2026-02-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">集成电路高纯化学品制备技术教育部工程研究中心</p></td><td colspan="9"><p class="docx-paragraph">主任</p></td><td colspan="6"><p class="docx-paragraph">2021.04-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国化工学会高纯化学品工艺与装备专委会</p></td><td colspan="9"><p class="docx-paragraph">主任委员</p></td><td colspan="6"><p class="docx-paragraph">2022.12-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国能源学会专家委员会</p></td><td colspan="9"><p class="docx-paragraph">副主任委员</p></td><td colspan="6"><p class="docx-paragraph">2022.10-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国化学试剂工业协会技术委员会</p></td><td colspan="9"><p class="docx-paragraph">副主任委员</p></td><td colspan="6"><p class="docx-paragraph">2023.04-至今</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>李群生教授以国家重大需求为导向，在高纯/超高纯化学品精馏、高粘度复杂物系精馏、节能减排促进碳中和等领域勤奋进取，获国家科技进步奖二等奖2项（排名1）、中国专利奖金奖1项（排名1）、省部级科学技术奖一等奖12项（排名1）、二等奖6项（排名1）；获授权国内国际发明专利22项、软著10项，著作2部，发表论文356篇；担任第八、九届国际化工分离技术大会主席，获光华工程奖、何梁何利奖、全国创新争先奖、杰出工程师奖、侯德榜化工成就奖，当选国际欧亚科学院院士、英国皇家化学学会会士、中国化工学会会士。2023年、2025年中国工程院院士增选有效候选人并且进入第二轮评审候选人名单。取得了多项具有完全自主知识产权的核心技术成果并成功实现了大规模工程化应用，具体如下：</p><p class="docx-paragraph">一、 研发了高纯/超高纯化学品精馏关键技术并进行了大规模工业应用， 生产出纯度达99.99999999%（10N级）、芯片与集成电路急需的高纯硅，解决了该类技术难题。</p><p class="docx-paragraph">高纯/超高纯化学品是电子信息、航空航天、高端医疗等领域急需的关键性高端基础化工材料，其生产中需精馏分离沸点相近的微量杂质，纯度每提升一个等级，理论板数和能耗急剧增加，提纯难度极大，如高纯硅是芯片与集成电路急需的原材料，是国际巨头限制我国高科技发展的“卡脖子”产品，李群生教授通过长期攻关，建成了大规模工业化装置。</p><p class="docx-paragraph">二、发明了高粘度、易自聚等复杂物系精馏关键技术，并进行了大规模工业应用，解决了从石油裂解原料中回收碳五馏分异戊二烯等精馏分离堵塔、低效等难题。</p><p class="docx-paragraph">李群生教授为此建立了塔板上流体流动的“活塞流”模型，发明了高效导向筛板精馏关键技术，塔板上导向孔与筛孔最优配置，从导向孔喷出的气体水平前进，推动物料在塔板上均匀稳定“活塞流”流动，实现了高效、长周期稳定运行。</p><p class="docx-paragraph">三、研发了四层面响应曲面优化节能技术并进行了大规模应用，实现了节能减排促进碳中和。</p><p class="docx-paragraph">化学工业是国民经济中能耗大户，其中分离提纯的能耗约占化工总能耗的60%左右，尤其是高纯/超高纯化学品精馏，回流比大、能耗高，实现化工生产节能减排，本技术2010年成功应用于河南尚宇三氯氢硅精馏装置，与德国西门子法相比，节能42.3%，杂质含量降低76.9%，年度费用节省29.8%。2009年在中石化北京有机化工厂精醋酸乙烯装置中应用，节能1.6万吨水蒸气/年。还将本技术推广应用于新疆天业、沈阳化工等装置中，仅近三年取得了减少碳排放77.7万吨。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李群生</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1963-10</p></td><td><p class="docx-paragraph">110105196310035517</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">蒸馏</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京化工大学/教授</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人,国家科技奖主要完成人,享受国务院政府特殊津贴人员</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">李建华</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1982-02</p></td><td><p class="docx-paragraph">430421198202103834</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">新型高分子功能材料</p></td><td><p class="docx-paragraph">高性能高分子材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司/董事</p></td><td><p class="docx-paragraph">其他:河北省拔尖人才（专技）</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">唐少军</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1988-02</p></td><td><p class="docx-paragraph">230183198802070816</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">面向行业的工业生产过程综合自动化控制系统</p></td><td><p class="docx-paragraph">自动控制理论(包括线性、非线性、随机控制，最优控制、自适应控制系统、分布式控制系统、柔性控制</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司/生产安全技术部副部长</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">蔡新国</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1968-12</p></td><td><p class="docx-paragraph">13010219681207035x</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">有机化学工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司/经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">李金朋</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1980-11</p></td><td><p class="docx-paragraph">132324198011040812</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">煤化学工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司/副经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">金旺</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-09</p></td><td><p class="docx-paragraph">342422198709013332</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">新型高分子功能材料</p></td><td><p class="docx-paragraph">高性能高分子材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司/主任工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">费莉婷</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1999-12</p></td><td><p class="docx-paragraph">130281199912035126</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">蒸馏</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司/技术员</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">薛嘉星</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1995-03</p></td><td><p class="docx-paragraph">130622199503014852</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">讲师</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">蒸馏</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京化工大学/讲师</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">冯雪峰</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1995-07</p></td><td><p class="docx-paragraph">150402199507260011</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">讲师</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">蒸馏</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京化工大学/讲师</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">张伊</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">2002-07</p></td><td><p class="docx-paragraph">410724200207302025</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">电子化学品</p></td><td><p class="docx-paragraph">蒸馏</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京化工大学/研究生</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>唐山开滦化工科技有限公司煤焦油基集成电路用高纯化学品创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-01</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>180.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>120.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>R集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>R新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>集成电路、分离提纯、高纯化学品</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>本项目利用引进的高水平专家人才为企业培养一批掌握化工分离提纯技术的复合型研发创新创效技术人才，培养专业技术人才不少于5名。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>组建唐山开滦化工科技有限公司煤焦油基集成电路用高纯化学品创新创业团队，开展混合甲基萘分离提纯研究工作，形成工艺包，建成中试装置，完成中试装置性能测试，申请发明专利1项，发表论文2篇，主持企业科研项目1项，解决技术难题1项。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>申请发明专利1项，项目实施形成的知识产权归唐山开滦化工科技有限公司及关联企业所有，北化团队享有署名权。双方采取保密措施，未经开滦化科书面同意，北化团队不得向第三方披露或转让项目技术成果。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、依据、必要性及意义</p><p class="docx-paragraph">半导体领域是国家重点发展的领域，高纯度甲基萘是电子化学品与半导体产业关键基础材料，β-甲基萘是光刻胶核心原料PEN单体，α-甲基萘用于生产光电导体PVCA等，国内高端产品完全依赖进口。当前国内甲基萘市场呈“低端过剩、高端短缺”格局，现有技术仅能生产90～93%工业级产品，高纯产品供应链与成本面临风险。本项目立足煤焦油资源高值化利用与集成电路关键电子化学品国产化战略需求，针对高端高纯甲基萘等关键中间体依赖进口的现状，依托煤焦油中混合甲基萘资源优势，建设混合甲基萘分离提纯装置，组建煤焦油基集成电路用高纯化学品创业创业团队，既符合国家新材料、集成电路、煤化工绿色高端转型的产业政策，也是突破国外技术壁垒、补齐电子化学品短板、实现煤化工与半导体产业协同发展的必然选择，当前国内光刻胶及封装材料产业快速扩张，电子级甲基萘市场需求激增、供给缺口持续扩大，项目建设具有极强紧迫性，项目实施对推动煤化工副产物向高端电子化学品跨越，显著提升产品附加值与经济效益，同时保障集成电路产业链自主可控，促进传统煤化工绿色低碳转型，带动区域产业升级与高质量发展，具有重要的科技、经济与社会意义。</p><p class="docx-paragraph">2、项目概述</p><p class="docx-paragraph">2.1研究内容</p><p class="docx-paragraph">以混合甲基萘为原料，采用双塔串联连续精馏工艺，经五个阶段分离提纯，产出纯度≥99%的α、β-甲基萘，副产中质与重质洗油。</p><p class="docx-paragraph">2.2合作分工</p><p class="docx-paragraph">开滦化科为主体，负责资金、场地、建设运营等；北京化工大学教授团队负责研发交付工艺包，提供技术参数与操作指导。</p><p class="docx-paragraph">2.3产业相关性</p><p class="docx-paragraph">聚焦集成电路和新型功能材料，契合河北省战略性新兴产业发展方向，助力提升省内高纯电子化学品技术与产业竞争力，推动区域化工产业高端化发展。</p><p class="docx-paragraph">2.4项目预期指标：</p><p class="docx-paragraph">（1）完成混合甲基萘分离提纯技术研究、建成混合甲基萘分离提纯中试装置、形成工艺包。</p><p class="docx-paragraph">（2）α-甲基萘纯度达到99%、β-甲基萘纯度达到99%。</p><p class="docx-paragraph">（3）申请1篇发明专利、发表2篇科技论文、培养专业技术人员5名。</p><p class="docx-paragraph">二、申报单位、人才（团队）情况</p><p class="docx-paragraph">1、申报单位基础情况</p><p class="docx-paragraph">唐山开滦化工科技有限公司成立于2015年12月，注册资本35803.28万元，占地面积512亩，拥有办公用房3000平方米，研发楼、标准化中试厂房等试验用房9500平方米，化工、材料、自动化、会计等相关专业员工30余人(其中硕博士和高级职称以上人员25人)，能够保障项目研究工作的顺利实施。</p><p class="docx-paragraph">2、申报单位行业地位与研发能力</p><p class="docx-paragraph">公司坚持以科技创新为企业发展驱动力，2025年获评河北省科学技术进步二等奖，目前已取得发明专利30项，实用新型专利7项、外观设计专利1项，建有省级化工新材料中试及产业化示范平台，已入驻中试及产业化项目14个，涵盖高端聚酯、高性能纤维、特种橡胶等多个方向。公司获评国家高新技术企业、河北省科技骨干企业（高速成长型）、河北省中试联盟副理事长单位、河北工业大学卓越工程师学院理事单位，设有河北省博士创新站、澳门科技大学成果转化基地。近年来，与北京大学、澳门科技大学、北京化工大学、苏州大学、河北工业大学等高等院校建立了产学研合作交流关系，联合攻关省级科技项目5个。</p><p class="docx-paragraph">3、项目负责人及团队核心成员</p><p class="docx-paragraph">项目负责人：李群生，北京化工大学教授、博导，化工分离提纯领域专家，拥有博士学位，曾赴美国高校做访问学者。获国家科技进步二等奖2项等多项奖励，当选国际欧亚科学院院士，享国务院特殊津贴；获22项授权专利及软著，发表356篇论文，著有专著2部，国际学术影响力显著。</p><p class="docx-paragraph">核心成员：李建华，博士，正高级工程师，开滦化科董事，获河北省拔尖人才称号，拥有30余项发明专利，获多项省市级科技奖励；蔡新国、李金朋、唐少军、金旺等核心成员均为硕研学历、高级/正高级工程师，任职于开滦化科核心管理及技术岗位，专业能力与实践经验丰富。</p><p class="docx-paragraph">4、项目相关工作积累</p><p class="docx-paragraph">李群生教授研发的FGVT塔板、BH型填料精馏技术已实现工业应用，为项目提供技术支撑。开滦化科拥有省级中试平台，研发与中试条件完善，煤化工新材料成果转化经验丰富。目前项目已完成市场调研与可行性分析，组建团队，与设计院、设备厂商建立合作，自筹经费落实，具备开展项目的全部基础条件。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、拟解决的关键技术问题</p><p class="docx-paragraph">α、β-甲基萘沸点差仅3.5℃、相对挥发度约1.08，属难分离物系。本项目将采用李群生教授发明的BH高效填料，利用其高理论塔板数等优势，实现二者高效分离，突破现有技术分离效率低、能耗高的瓶颈。</p><p class="docx-paragraph">2、人才团队技术支撑</p><p class="docx-paragraph">项目团队可提供从模型建立到装置测试的全链条技术支撑，核心优势为Aspen模型建立、工艺包开发及性能测试。北京化工大学团队提供核心技术与理论支撑，开滦化科提供产业化场景与实践验证，双方通过平台建设等途径协同推进技术优化与成果转化。</p><p class="docx-paragraph">3、项目基本情况</p><p class="docx-paragraph">项目拟采用双塔串联连续精馏工艺，经脱轻、粗分、β-甲基萘精制、α-甲基萘脱轻、α-甲基萘精制五个阶段分离产品，全程各阶段完成后进行系统置换吹扫，物料密闭输送。</p><p class="docx-paragraph">4、国内外技术对比及发展趋势</p><p class="docx-paragraph">技术对比：国际先进水平β-甲基萘纯度99.5-99.8%、能耗2800-3200kWh/t，核心专利被欧美日垄断；国内主流水平β-甲基萘纯度95-98%、能耗3800-4500kWh/t，核心专利占比仅18%，在纯度、能耗、专利方面差距显著。</p><p class="docx-paragraph">发展趋势：工业级甲基萘分离以减压多塔精馏为主，高纯级呈现“精馏+结晶”复合工艺趋势。本项目自主研发的高效精馏技术，产品纯度达高纯级，能耗接近国际先进水平，符合技术趋势，且具备成本和自主知识产权优势。</p><p class="docx-paragraph">5、预期技术性能指标</p><p class="docx-paragraph">产品上，α-甲基萘纯度≥99%、β-甲基萘纯度≥99%，副产洗油指标符合标准。工艺上，实现双塔串联连续精馏稳定运行，分离效率达国际先进，能耗较国内主流技术降低30%以上。</p><p class="docx-paragraph">6、技术风险分析与对策</p><p class="docx-paragraph">技术风险：α/β-甲基萘精馏分离难度大、真空敏感、控制精度要求高，易导致产品纯度不达标或生产不稳定。</p><p class="docx-paragraph">应对对策：采用高理论板规整填料塔+高真空+适宜回流比+全自动控制组合方案；选用BH高效填料，优化真空系统，控制系统实现精准控制，监控关键工艺参数，设置三级控制和安全保护装置，降低风险。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、技术、工艺路线及研究手段</p><p class="docx-paragraph">技术路线：以混合甲基萘为原料，经双塔串联连续精馏工艺的五个阶段，分离提纯出高纯α、β-甲基萘，副产中质、重质洗油。</p><p class="docx-paragraph">工艺路线：混合甲基萘→脱轻塔→粗分塔→β-甲基萘精制塔→α-甲基萘脱轻塔→α-甲基萘精制塔，各环节分别产出对应产品及副产品。</p><p class="docx-paragraph">研究手段：实验研究与模拟计算结合，用Aspen Plus建立精馏模型优化参数；搭建中试装置验证工艺；用气相色谱检测产品纯度；通过控制系统实现生产自动控制与数据采集分析。</p><p class="docx-paragraph">2、项目前期准备情况</p><p class="docx-paragraph">项目负责人完成市场前景与可行性调研，组建校企联合项目团队；与设计院、设备厂商建立合作，完成工艺包初步设计；企业自筹经费落实，项目选址于开滦化科现有厂区，依托现有公用工程设施，项目开展基础条件完备。</p><p class="docx-paragraph">3、具体实施方案</p><p class="docx-paragraph">核心投入：开滦化科投入自筹资金120万元，提供场地、公用工程、建设运营等；北化团队投入核心技术与理论支撑，派遣专家参与技术研发优化。</p><p class="docx-paragraph">任务分工：开滦化科负责项目工程建设、运营管理、原料预期销售等，配合工艺优化；北化团队负责工艺包开发交付、模型建立、技术指导，参与装置测试与参数调整。</p><p class="docx-paragraph">人员交流：北化专家每月现场指导不少于1次；开滦化科选派2-3名技术骨干赴北化培训1-2个月；双方定期视频会议沟通进展。</p><p class="docx-paragraph">合作机制：成立校企联合领导小组，建立每月进度会议、每季度绩效评估的沟通机制，明确知识产权归属与成果分享机制。</p><p class="docx-paragraph">4、实施进度及阶段目标</p><p class="docx-paragraph">2026年2月-2026年4月： 完成前期准备；</p><p class="docx-paragraph">2026年5月-2026年12月：完成基础与详细设计工作；</p><p class="docx-paragraph">2027年1月-2027年12 月：完成设备仪表安装；</p><p class="docx-paragraph">2028年1月-2028年2月： 工程竣工；</p><p class="docx-paragraph">2028年3月-2028年6 月：试运行；</p><p class="docx-paragraph">2028年7月-2029年1月： 完成项目验收。</p><p class="docx-paragraph">5、项目知识产权状况</p><p class="docx-paragraph">项目实施形成的知识产权归唐山开滦化工科技有限公司及关联企业所有，北化团队享有署名权。双方采取保密措施，未经开滦化科书面同意，北化团队不得向第三方披露或转让项目技术成果。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">人才培养：建立常态化培训机制，培养不少于5名化工分离提纯核心复合型技术人才。</p><p class="docx-paragraph">团队建设：打造混合甲基萘分离提纯示范型操作团队，积累实操与管理经验，形成专业化、高效协作团队，为工业化放大提供可复制的管理与培养模式。</p><p class="docx-paragraph">2、技术（产品）综合竞争力</p><p class="docx-paragraph">技术先进：BH高效填料分离效率超国际知名填料50%以上，产品纯度≥99%达国际先进水平；</p><p class="docx-paragraph">成本优势：依托开滦集团原料优势，工艺能耗低，且依托现有公用工程，建设运营成本可控；</p><p class="docx-paragraph">绿色环保：物理蒸馏工艺无化学反应、无有毒物质产生，环保措施完善；</p><p class="docx-paragraph">自主可控：核心技术拥有完全自主知识产权，规避进口依赖风险，保障供应链安全。</p><p class="docx-paragraph">3、市场需求与产业化前景</p><p class="docx-paragraph">市场需求：高纯甲基萘在电子化学品、半导体领域不可替代，国内高端产品完全依赖进口，市场缺口大。随着半导体产业向国内转移、光刻胶国产替代加速，其市场需求将持续快速增长。</p><p class="docx-paragraph">产业化条件：开滦化科拥有省级中试平台，原料供应稳定，公用工程设施完备；项目团队技术与产业化经验丰富，与上下游企业合作良好。</p><p class="docx-paragraph">前景预测：可填补国内高端市场空白。后续将扩大产能、降低成本，提升市场占有率，保障半导体供应链安全，推动开滦煤化工产业链向高附加值领域延伸，市场前景广阔。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">本项目通过开展煤焦油基集成电路用高纯化学品研究，推动产业升级，填补国内高端甲基萘空白，助力半导体产业国产替代与化工产业高附加值转型，提升河北省战略性新兴产业竞争力；打破国际垄断，减少进口依赖，保障半导体、电子化学品产业供应链安全；培养行业专业技术人才，提升国内化工分离提纯领域整体技术水平；采用绿色分离工艺，能耗低于行业平均，符合“双碳”战略，具备良好生态环境效益。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">组建煤焦油基集成电路用高纯化学品研究团队，开展混合甲基萘分离提纯技术研究。</p></td><td><p class="docx-paragraph">李群生</p></td><td><p class="docx-paragraph">180.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">120.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">组建企业煤焦油基集成电路用高纯化学品创新创业团队；申请发明专利1件；发表科技论文2篇；培养专业技术人员5人；解决煤焦油基集成电路用高纯化学品开发技术难题，增加新产品2项；主持企业科研项目1项。</p></td><td><p class="docx-paragraph">组建企业创新创业团队，培养技术人员2名，主持企业科研项目1项。</p></td><td><p class="docx-paragraph">主持企业科研项目1项、形成新产品1项、培养技术人员2名。</p></td><td><p class="docx-paragraph">申请专利1项、发表论文2篇、形成新产品1项、培养技术人员1名。</p></td></tr><tr><td rowspan="5"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">新产品（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人身份、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人担任国内外学术组织、重要学术期刊、学术科研机构职务情况证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">李群生教授在职在岗证明</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">引进李群生教授的说明</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">李群生教授聘用协议</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">团队负责人入选的国家或省部级人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">河北省三三三人才工程第二层次人选-李建华</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">河北省三三三人才工程第三层次人选-金旺</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">河北省拔尖人才（专技）-李建华</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">企业部分知识产权证书</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人的专利证明</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人论文证明</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">项目负责人重要获奖证书</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">企业科技奖励证书</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">唐山开滦化工科技有限公司-高新技术企业、河北省创新型中小企业、河北省中试服务联盟副理事长单位</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业营业执照</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">研发创新平台证明材料-河北省化工新材料科技成果转化中试示范平台</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">河北省首批科技骨干企业（高速成长型）</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业章程</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">李建华、蔡新国、李金朋任免通知</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">李建华-劳动合同</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">唐少军-劳动合同</p></td></tr><tr><td><p class="docx-paragraph">24</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">蔡新国-劳动合同</p></td></tr><tr><td><p class="docx-paragraph">25</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">李金朋-劳动合同</p></td></tr><tr><td><p class="docx-paragraph">26</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">金旺-劳动合同</p></td></tr><tr><td><p class="docx-paragraph">27</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">费莉婷-劳动合同</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

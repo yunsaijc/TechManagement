@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 18508eb20d004e7199ee219451979344.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：18508eb20d004e7199ee219451979344.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,713</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>18508eb20d004e7199ee219451979344.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>河北瑞龙生物科技有限公司高值微藻技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北瑞龙生物科技有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>何勇锦</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>石家庄市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-04 至 2029-03</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-10</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>河北瑞龙生物科技有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>石家庄高新区秦岭大街东、冲江路南、国亿城北</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>911301006892757088</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-石家庄市-石家庄高新技术产业开发区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2009-05-26</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>1100.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>郑静美</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18903211291</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0311-83652915</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>755488721@qq.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>何勇锦</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>18649709663</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0311-83652915</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>yongjinhe@fjnu.edu.cn</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北瑞龙生物科技有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>102121000535</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国工商银行石家庄泰华支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>0402302409245006583</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>96人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>60人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>32人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>河北省科技骨干企业）<a id="qylxqt"></a>R</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>现代食品</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>28236.13</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>14273.41</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>7.3</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>13.65</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>河北瑞龙生物科技有限公司具备雄厚的科研硬件基础，公司投资7.1亿元在高新区国际生物医药产业园投资建设了占地107亩我国长江以北最大的天然产物、食品添加剂及天然香精香料研发生产基地，目前，公司拥有1.4万平方米的研发与中试场地，600余平方米符合GMP标准的生产车间，各类研发及实验设备80余台套，天然产物提取中试生产线2条，纯水生产线1条，发酵系统2套。同时，公司是高新技术企业、河北省科技骨干企业、河北省专精特新示范企业，建有河北省企业技术中心、河北省植物精油产业技术研究院、河北省芳香类天然产物提取技术创新中心等6个省级研发平台和3个市级研发平台，为技术创新提供了坚实支撑。公司现有研发人员60余人，引进外国院士及专家6人、省内外高层次专家20余人，形成了一支年富力强、专业多样、技能互补的科研团队，为天然产物提取技术研发、产品开发、产品检测及中试服务等提供了强有力的技术保障。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司拥有“瑞龙”注册商标，并已通过马德里国际商标注册体系，成功在新西兰、法国取得商标注册，实现了品牌的国际保护。公司近年来累计申请国内外发明专利近百件。公司拥有有效专利59件，其中发明专利占比超过60%。公司积极推进国际专利布局，已通过PCT途径在包括美国、卢森堡、南非、澳大利亚等多个国家获得专利授权。截至目前，累计取得国际专利授权8件。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>公司形成了从研发、中试到生产的创新体系，实现了从技术研发到产业化应用的有效转化，具备完整的天然产物提取产业链。公司目前有食品添加剂、天然药物、药用辅料、烟用香精香料等系列产品100多种，广泛应用于生物医药、大健康、食品、化妆品等领域。公司在高新区生物医药园建设的占地107亩的长江以北最大研发生产基地，为成果转化提供规模化产能支撑。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司积极拓展产学研合作，与河北科技大学、河北师范大学、福建师范大学、河北中医药大学、河北省农科院等多所高校和科研机构保持长期稳定合作，并牵头组建了河北省植物提取物产业技术创新联盟，建有多个省市级研发平台。在国际合作方面，公司与非洲科学院、埃塞俄比亚亚的斯亚贝巴大学深入开展交流，引进外国院士及专家6名，并设立了外国院士工作站。2025年，公司与法国国际芳香科学院、京津冀国家技术创新中心河北中心共同签订了中法植物芳香类天然产物科技创新合作协议，不断加强高层次国际人才与科技资源的集聚。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">8</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">5</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">3人</p></td><td colspan="5"><p class="docx-paragraph">3人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">3人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">4人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">何勇锦</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1984-09</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">研究员</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">应用微生物</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2024-06-16</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">福建福州</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">研究员</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">技术总监</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">350117</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">福建省福州市闽侯县上街镇学府南路福建师范大学理工楼13号楼北305室</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">059122868196</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">18649709663</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">yongjinhe@fjnu.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>□国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>福建省科学技术进步奖  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2003-09-01至2007-07-01</p></td><td colspan="9"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4"><p class="docx-paragraph">本科生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2007-09-01至2010-07-01</p></td><td colspan="9"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4"><p class="docx-paragraph">硕士生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2010-08-01至2013-07-01</p></td><td colspan="9"><p class="docx-paragraph">闽南科技学院</p></td><td colspan="4"><p class="docx-paragraph">助教</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2013-09-01至2016-12-31</p></td><td colspan="9"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4"><p class="docx-paragraph">博士生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2017-04-01至2019-03-01</p></td><td colspan="9"><p class="docx-paragraph">北京大学</p></td><td colspan="4"><p class="docx-paragraph">博士后</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2019-06-01至2019-12-31</p></td><td colspan="9"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4"><p class="docx-paragraph">助理研究员</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2020-01-01至2022-12-31</p></td><td colspan="9"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4"><p class="docx-paragraph">副研究员</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2023-01-01至2026-02-26</p></td><td colspan="9"><p class="docx-paragraph">福建师范大学</p></td><td colspan="4"><p class="docx-paragraph">研究员</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">分离自稀土废水的凯氏拟小球藻FM2耐高氨氮耐酸分子机制的研究</p></td><td colspan="7"><p class="docx-paragraph">2026.01-2029.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委</p></td><td colspan="4"><p class="docx-paragraph">面上项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">异养条件下阶段氮调控提高小球藻合成蛋白质机制的研究</p></td><td colspan="7"><p class="docx-paragraph">2022.01-2025.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委</p></td><td colspan="4"><p class="docx-paragraph">面上项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">酶法制备新型EPA糖脂及其降脂功能的研究</p></td><td colspan="7"><p class="docx-paragraph">2025.05-2028.04</p></td><td colspan="4"><p class="docx-paragraph">福建省科技厅</p></td><td colspan="4"><p class="docx-paragraph">引导性项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">微藻固碳多联产高附加值产品关键技术的研究与应用</p></td><td colspan="4"><p class="docx-paragraph">福建省科学技术进步奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2018-10-26</p></td><td colspan="4"><p class="docx-paragraph">第三</p></td><td colspan="4"><p class="docx-paragraph">福建省人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">微生物光合净化富营养化污水关键技术与应用</p></td><td colspan="4"><p class="docx-paragraph">福建省科学技术进步奖</p></td><td colspan="3"><p class="docx-paragraph">三等奖</p></td><td colspan="2"><p class="docx-paragraph">2022-12-13</p></td><td colspan="4"><p class="docx-paragraph">第四</p></td><td colspan="4"><p class="docx-paragraph">福建省人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">酶促乙醇解裂殖壶菌生物质：DHA 富集与生物柴油的联产工艺</p></td><td colspan="4"><p class="docx-paragraph">中国藻类学研究优秀论文奖</p></td><td colspan="3"><p class="docx-paragraph">三等奖</p></td><td colspan="2"><p class="docx-paragraph">2019-11-23</p></td><td colspan="4"><p class="docx-paragraph">第1</p></td><td colspan="4"><p class="docx-paragraph">中国海洋湖沼学会</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Chlorella vulgaris cultivation in pilot-scale to treat real swine wastewater and mitigate carbon dioxide for sustainable biodiesel production by direct enzymatic transesterfication</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Bioresource Technology</p></td><td colspan="5"><p class="docx-paragraph">2022年2月22日</p></td><td colspan="2"><p class="docx-paragraph">SCI一区top</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">A novel two-stage heterotrophic cultivation for starch-to protein switch to efficiently enhance protein content of Chlorella sp. MBFJNU-17</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Bioresource Technology</p></td><td colspan="5"><p class="docx-paragraph">2021年10月25日</p></td><td colspan="2"><p class="docx-paragraph">SCI一区top</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Porphyridium purpureum cultivation in outdoor pilot-scale: Economic assessment and life cycle assessment of photobioreactor-based cultivation systems</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">ACS Sustainable Chemistry &amp; Engineering</p></td><td colspan="5"><p class="docx-paragraph">2025年7月24日</p></td><td colspan="2"><p class="docx-paragraph">SCI一区top</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">采用两步酶法生产高EPA乙酯和高DHA甘油酯的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202211331122.X</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第1</p></td><td colspan="5"><p class="docx-paragraph">2025-02-14</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">采用脂肪酶选择性催化微藻藻粉联产二十二碳六烯酸和生物柴油的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201910010246.X</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第2</p></td><td colspan="5"><p class="docx-paragraph">2022-08-02</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种富碳酸钙物质介导藻类去除污水中铵根和硫酸根的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202110997213.6</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第3</p></td><td colspan="5"><p class="docx-paragraph">2023-05-05</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">福建省生物工程学会</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">第四届</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">福建省生物医学工程学会</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">第六届</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>项目负责人聚焦微藻应用基础研究领域，紧扣国家“双碳”目标、环境污染、生物制造等战略需求，立足微藻研究前沿与产业痛点，以微藻种质资源创新、代谢调控机制、高附加值产物高效合成及规模化转化为核心研究方向，系统开展应用基础研究工作，在理论创新、技术突破、成果转化等方面取得系列标志性成果，研究成果具有鲜明的创新性、较强的潜在产业价值和实际贡献，为我国微藻生物制造战略新兴产业高质量发展提供了重要的理论支撑和技术保障。</p><p class="docx-paragraph">（1）微藻优质种质资源创新与培育，突破种质匮乏瓶颈</p><p class="docx-paragraph">针对国内外优质高产微藻种质资源匮乏、自然藻株性能不佳的问题，本人带领研究团队创新种质培育技术，构建了“筛选-诱变-定向驯化-分子鉴定”一体化的微藻种质创新体系，取得了突破性成果。建立了极端环境微藻种质资源筛选技术，从盐碱地、稀土废水、原始猪沼液等极端环境中筛选出耐盐、高蛋白的高产微藻藻株5株，其中小球藻、螺旋藻、紫球藻、等鞭金藻等4株藻株具有极高的产业化潜力，填补了我国极端环境优质微藻种质资源的空白。创新微藻选育育种技术，采用物理化学、基因组改组结合基因编辑技术，对筛选出的优良藻株进行定向改良，培育出高产蛋白小球藻突变株3株、藻红蛋白高的紫球藻藻株1株。相关研究成果发表于国内外期刊论文15篇（如代表作1-3），申请发明专利9项，培育的优质微藻种质已提供给福清市新大泽螺旋藻有限公司等多家企业和福建省技术师范学院等科研院所使用，获得广泛认可。</p><p class="docx-paragraph">（2）耐高氨氮耐酸微藻处理稀土采矿尾水</p><p class="docx-paragraph">现行铵盐浸出技术开采稀土，产生了大量的酸性氨氮废水，制约着稀土开采的可持续发展。本课题组从高氨氮酸性稀土废水中分离得到了一株耐高氨氮耐酸的自絮凝凯氏拟小球藻FM2，并利用该藻建立了无需补糖和调pH即可处理高氨氮酸性稀土废水的微藻净化工艺系统。该研究成果有效解决了现有微藻处理稀土废水成本高（需调pH、补糖和采收微藻）的技术难题，其成本仅为常规微藻处理成本的20%。研究成果发表在国际高水平环境期刊11篇论文（如A novel and efficient strategy mediated with calcium carbonate-rich sources to remove ammonium sulfate from rare earth wastewater by heterotrophic Chlorella species. Bioresource Technology），授权发明专利2项（一种绿藻菌株及其在稀土氨氮废水处理中的应用和一种富碳酸钙物质介导藻类去除污水中铵根和硫酸根的方法），为耐高氨氮耐酸的凯氏拟小球藻净化稀土废水的应用提供实践依据。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">何勇锦</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1984-09</p></td><td><p class="docx-paragraph">350322198409234330</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">研究员</p></td><td><p class="docx-paragraph">微生物发酵新技术和新产品</p></td><td><p class="docx-paragraph">发酵工程(亦称微生物工程)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">福建师范大学</p></td><td><p class="docx-paragraph">其他:</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">李维佳</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1965-03</p></td><td><p class="docx-paragraph">130105196503090954</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">天然产物有效成份的分离提取及加工技术</p></td><td><p class="docx-paragraph">生物化学工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北瑞龙生物科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">池承灯</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-12</p></td><td><p class="docx-paragraph">350425199112092916</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">微生物发酵新技术和新产品</p></td><td><p class="docx-paragraph">食品加工的副产品加工与利用</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">福建师范大学</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">郑静美</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1987-06</p></td><td><p class="docx-paragraph">130105198706030926</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">天然产物有效成份的分离提取及加工技术</p></td><td><p class="docx-paragraph">医药工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北瑞龙生物科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">郑明敏</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1991-06</p></td><td><p class="docx-paragraph">350429199106210029</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副教授</p></td><td><p class="docx-paragraph">微生物发酵新技术和新产品</p></td><td><p class="docx-paragraph">酶工程</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">福建师范大学</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">闫婧怡</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1992-03</p></td><td><p class="docx-paragraph">130102199203050322</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">天然产物有效成份的分离提取及加工技术</p></td><td><p class="docx-paragraph">应用微生物学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北瑞龙生物科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">杨明玉</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1993-02</p></td><td><p class="docx-paragraph">131124199302230029</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">微生物发酵新技术和新产品</p></td><td><p class="docx-paragraph">化学生物学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北瑞龙生物科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">王军华</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1975-03</p></td><td><p class="docx-paragraph">130107197503270020</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">微生物发酵新技术和新产品</p></td><td><p class="docx-paragraph">发酵工程(亦称微生物工程)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北瑞龙生物科技有限公司</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>河北瑞龙生物科技有限公司高值微藻技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-04 至 2029-03</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>180.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>120.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>R生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>R生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>微藻；高值产物；固碳；发酵</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>联合高校培养硕士 / 博士研究生 2 名，打造一支 “产学研用” 结合的复合型研发团队，提升申报单位在行业内的技术引领力。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>解决产业关键共性技术难题1项；申请与项目相关的发明专利2项；合作发表与项目相关的学术期刊论文2篇；培育研究生2名；团队成员中的企业人员主持市级以上科研项目1项。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>团队预期申请与项目相关的发明专利2项，知识产权归属为负责人和河北瑞龙生物科技有限公司共同所有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">我国优质蛋白原料对外依存度长期偏高，每年需进口约1亿吨大豆等蛋白资源，食品领域优质蛋白供给缺口巨大。河北省作为食品工业大省，食品领域优质蛋白缺口超1000万吨，供给不足与结构矛盾尤为突出。微藻蛋白作为新型优质蛋白资源，适配食品领域需求，契合国家粮食安全等战略，符合“十五五”生物制造布局及河北省健康食品产业发展方向。为破解食品领域蛋白短缺，亟需布局微藻蛋白产业化关键技术。项目实施可突破核心技术瓶颈，培育食品领域生物制造新质生产力，保障区域食品领域蛋白供给安全，助力食品产业绿色转型，丰富食品蛋白品类，具有显著的科技、经济与社会价值。</p><p class="docx-paragraph">2、项目概述（包括研究内容、合作分工，与我省重点产业领域战略发展方向的相关性）</p><p class="docx-paragraph">小球藻（Chlorella）是优质潜力蛋白源，其培养分为自养与异养两种方式。自养培养存在周期长、生物量低、易染杂藻等弊端；异养培养可通过规模化高密度发酵缩短周期、提升生物量，但蛋白含量偏低（&lt;40%），限制了商业化开发。针对这一技术瓶颈，本项目拟采用多组学联用技术，分析蛋白合成代谢关键调控网络，明确关键基因对蛋白合成的影响，为高蛋白异养小球藻选育提供理论支撑；运用基因编辑、合成生物学技术培育高蛋白工程藻株，解决优良藻株稀缺问题，提供优质规模化藻种；研究高密度发酵技术，攻克异养小球藻蛋白含量低的难题，推进技术落地。实施本项目过程中，合作分工如下：负责人负责藻株筛选、工艺研发及技术支撑，企业承担中试、产业化转化及市场化推广。本项目研究内容与河北省重点产业高度契合，可开发功能及高值食品赋能食品产业升级，解决河北省蛋白短缺的难题，助力区域食品产业绿色转型、保障食品领域蛋白安全，具有重要科技价值与产业效益。</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">通过本项目的实施，项目预期达到如下指标：1）获得高蛋白异养小球藻藻株1-2株；2）优化获得高蛋白小球藻的发酵工艺参数，异养小球藻蛋白含量达60%以上；3）申请与项目相关的发明专利1项；4）发表学术期刊论文2篇；5）企业人员主持市级以上科研项目1项。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">申报单位拥有一支60余人、结构合理的专业研发团队，并引进了包括6名外国院士在内的20多位高层次专家；建有6个省级与3个市级研发平台及技术创新联盟；研发与中试场地达1.4万平方米，配备80余台（套）设备，天然产物提取中试生产线2条，发酵设备2套并拥有600平方米GMP车间。近年来，公司营业收入保持稳定增长态势，2025年实现营业收入达1.4亿元，其中研发投入约1200万元。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">公司拥有“瑞龙”注册商标，并已通过马德里国际商标注册体系，成功在新西兰、法国取得商标注册。公司目前拥有有效专利59件，其中发明专利达33件。公司积极开展国际专利布局，已通过PCT途径在美国、卢森堡、南非、澳大利亚等多个国家获得专利授权。截至目前，已累计取得国际专利授权8件。公司与河北科技大学、河北师范大学、福建师范大学、河北中医药大学等科研院所有产学研合作，并牵头组建了河北省植物提取物产业技术创新联盟，建有多个省市级研发平台。在国际合作方面，公司与非洲科学院、埃塞俄比亚亚的斯亚贝巴大学深入开展交流，引进外国院士及专家6名，并设立了外国院士工作站。2025年，公司与法国国际芳香科学院、河北省科学院共同签订了中法植物芳香类天然产物科技创新合作协议，不断加强高层次国际人才与科技资源的集聚。</p><p class="docx-paragraph">3、项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">何勇锦，项目负责人现为福建师范大学生命科学学院研究员，博士生导师，福建省高层次引进人才（国内C类），北京大学工学院博士后，获福建省优秀博士论文（2018年），福建省科学技术进步奖二等奖（排名第三，2018年），中国藻类学研究优秀论文奖三等奖，福建省科学技术进步奖三等奖（排名第四，2022年）。主要从事微藻生物工程、油脂改性、生物质能源、功能活性物质。主持国家自然科学基金面上项目2项，福建省引导性项目2项（省级重点项目）和星火项目1项，福建省生态环境厅项目1项，中国博士后科学基金，参与国家海洋局“十三五”海洋经济创新发展示范项目子课题、福建省揭榜挂帅项目项目（排名第2）、福建省发改委项目等。在国内外刊物发表论文100余篇，其中第一署名(含共同第一)或通讯作者的SCI论文31篇，授权国内发明专利4件。</p><p class="docx-paragraph">闫婧怡，创新中心主任、工程师，主持省市引智项目各1项，参与多项科技项目；以第一发明人获发明专利6件，参与制定标准10项，拥有国际先进成果2项，发表论文7篇。</p><p class="docx-paragraph">郑静美，总经理、高级工程师，主持省市重大专项及引智项目，为省人才团队核心成员；发表论文3篇，拥有国际先进、国内领先成果各1项，申报专利20余项，获授权多项。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">项目负责人团队创新性研发了阶段氮调控提高异养小球藻合成蛋白质的工艺技术，采用组学、生物化学等手段，揭示异养小球藻发酵提高蛋白质的调控机制（图1，见附件）。研究成果发表在Bioresource Technology等期刊11篇高水平论文（见附件其他），研究成果有望可应用在其他异养微藻中，为推动微藻蛋白质在食品领域的应用做出贡献。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">本项目聚焦异养小球藻蛋白，采用组学联用技术解析蛋白合成代谢调控网络，明确调控异养小球藻合成蛋白的关键基因及其作用，为高蛋白藻株选育提供理论支撑；运用基因编辑、合成生物学技术培育高蛋白工程藻株，解决优良藻株短缺问题；研发高密度异养发酵技术，攻克异养小球藻蛋白含量低的技术瓶颈，推动该技术规模化应用。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">河北瑞龙生物科技有限公司高值微藻技术创新创业团队在异养小球藻研究领域已有13年了，获得了2株生长速度快的异养小球藻藻株（MBFJNU-17和CP-FJ9），研发了可提高异养小球藻蛋白含量的阶段氮调控和奢侈培养两种技术，构建了可高密度发酵异养小球藻工艺。这些前期的小球藻育种和发酵调控技术，可提供解析异养小球藻蛋白合成调控、基因编辑、高密度发酵等核心技术支撑，保障项目各环节技术规范实施，助力项目高效推进。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">与动植物蛋白资源相比，微藻具有培养周期短、养殖场所不占用耕地、蛋白质含量高、必需氨基酸比例高等优点。小球藻（Chlorella）是最有望开发成优质蛋白源之一。目前，小球藻的培养方式有自养和异养两种。自养培养小球藻具有培养周期长、养殖占用面积大、生物量低（低于2g/L）、需要光、易染杂藻等缺点。与自养培养小球藻方式相比，异养培养小球藻可采用成熟的微生物发酵技术进行规模化高密度培养，缩短培养周期，显著提高其生物量（高于80g/L）。然而，与光自养培养的小球藻蛋白质含量（50-70%）相比，异养小球藻所合成蛋白质的含量普遍都较低（&lt;40%），这对小球藻蛋白质的品质有较大的影响，也使得异养小球藻在食品领域的商业化开发受限。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">葡萄牙里斯本大学Mafalda Trovao等人选择普通小球藻进行异养培养，其最高生物量和蛋白质含量分别为76 g/L和39%。中国科学院水生生物研究所胡强和金虎老师分别对小球藻GT‐1和小球藻CMBB276进行异养补料发酵（7.5 L发酵罐）中，两株小球藻生物量均可达200 g/L以上，但是它们的最终蛋白质含量仅为31%和38%。本项目将利用可发酵的优良异养小球藻藻株，研发高密度发酵且提高蛋白质含量的发酵技术，最终实现异养小球藻蛋白含量超过60%，突破异养小球藻发酵过程中蛋白质含量低的瓶颈，为开发小球藻蛋白质新资源提供理论依据，为解决我国蛋白质资源短缺提供一条可行可用的新路径。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">通过本项目的实施，剖析获得影响异养小球藻蛋白合成的关键基因，并通过育种获得高蛋白异养小球藻藻株1-2株；优化获得高蛋白小球藻的发酵工艺参数，异养小球藻蛋白含量达60%以上。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">本项目主要技术风险及应对措施如下：一是高蛋白工程藻株稳定性不足，可能影响规模化应用，对策为优化基因编辑技术，加强小球藻藻株传代培养筛选，建立稳定性检测体系；二是高密度发酵过程中小球藻蛋白含量提升不及预期，对策为结合组学技术优化发酵参数，依托团队技术支撑开展工艺迭代，可有效规避技术瓶颈，保障项目顺利推进。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">本项目以可异养且生长速度快的小球藻藻株为研究对象，采用组学、基因编辑、发酵工程等技术，解析蛋白合成代谢调控网络，明确调控异养小球藻合成蛋白的关键基因及其作用，选育高蛋白工程的优良小球藻藻株，研发高密度异养发酵提高小球藻蛋白含量的技术，解决优良藻株短缺和异养小球藻蛋白含量低的技术瓶颈，推动该技术规模化应用。</p><p class="docx-paragraph">技术路线见附件。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">以异养小球藻MBFJNU-17为出发藻株，采用补料流加方式调控培养，结果见图2（见附件）。发酵90h后藻株进入平稳期，最高生物量达96.4g/L；0-96h发酵期间，其蛋白质含量从40.25%降至20.59%，其中60h后进入缺氮阶段，蛋白含量急剧下降。96h后进入氮诱导阶段，维持发酵体系氮浓度2-4g/L，小球藻蛋白含量逐步升至60.6%。实验表明，阶段氮调控可显著促进该藻株蛋白质合成。</p><p class="docx-paragraph">小球藻蛋白质的合成代谢在很大程度上受到了机体中心碳代谢、能量供应、氮代谢、辅因子供应等多个代谢模板的调控。团队前期研究发现，异养小球藻在蛋白质合成中需要中心碳代谢（如糖酵解等）为其提供碳骨架和能量（图3，见附件）。</p><p class="docx-paragraph">3、项目的具体实施方案</p><p class="docx-paragraph">本项目采用“产学研用”深度协同模式，聚焦异养小球藻高蛋白生产核心目标，明确各方投入与分工。申报单位投入人才、技术、资金，开展藻株选育、代谢调控及中试放大等研究；项目负责人负责菌株选育、代谢调控及发酵技术，企业承担发酵工艺中试优化。项目负责人每年在申报单位工作不少于180天，指导企业推进项目。团队实行成果共享、知识产权共持，建立阶段考核与资金拨付联动机制，保障项目高效推进。</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">第一年度：构建基因-蛋白质-代谢物的网络调控，确定淀粉代谢中关键酶影响异养小球藻蛋白质合成的内在关系，发表1篇论文；第二年度：选育高蛋白异养小球藻藻株，研发高密度培养的发酵工艺，申请发明专利1项，承担项目1项；第三年度：中试放大与产品开发，申请发明专利1项，发表论文1 篇。</p><p class="docx-paragraph">5、项目知识产权状况</p><p class="docx-paragraph">本项目所获得的知识产权归双方共同所有。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">本团队将联合高校培养食品领域研究生2-3名，构建“产学研”深度融合研发团队，储备食品领域核心人才，助力团队建成省内领先、国内先进的微藻食品生物制造研发力量。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">本项目聚焦异养高蛋白小球藻开发，构建食品领域技术与产品全链条核心竞争力。技术上，突破异养适配性高蛋白藻株选育、高密度发酵精准控制核心技术，小球藻生物量&gt;80g/L、蛋白含量&gt;60%，指标达国内外先进水平，拥有自主知识产权。产品覆盖食品多领域，相较传统光合小球藻，生产成本低、蛋白含量可控，契合食品领域健康低碳趋势，综合竞争力强，市场替代与拓展潜力大。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">当前食品领域天然高蛋白原料需求激增，我国每年进口超1亿吨大豆填补食品蛋白供给缺口，食品领域蛋白资源短缺问题显著。异养小球藻蛋白高营养、绿色可持续，是食品领域优质蛋白替代优选。项目已具备完善产业化条件，建成发酵中试平台、组建成熟产学研团队，完成上下游配套，可助力解决食品领域蛋白短缺，产品快速切入食品多领域，构建完整食品产业链，市场前景广阔。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">本项目紧扣国家“十五五”多元化食物供给与农业生物制造战略，契合河北省生物制造与绿色低碳转型导向，聚焦食品领域效益显著。经济效益上，突破异养高蛋白小球藻产业化瓶颈，精准切入食品蛋白市场，依托地方集群构建食品领域全产业链，培育经济增长点，提升区域食品产业竞争力。社会效益上，以天然高蛋白产品完善国民食品营养供给，培育食品领域专业人才，助力微藻食品产业国产化，保障食品原料安全。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">河北瑞龙生物科技有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责项目的全面实施</p></td><td><p class="docx-paragraph">何勇锦</p></td><td><p class="docx-paragraph">180.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">120.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">通过育种获得高蛋白异养小球藻藻株1-2株，优化发酵工艺参数，实现蛋白含量达60%以上，解决异养条件下小球藻蛋白含量低的产业共性技术难题。项目实施期间，申请发明专利2项，发表学术论文2篇，联合培养研究生2名；团队中企业人员主持市级以上科研项目1项。</p></td><td><p class="docx-paragraph">发表论文1篇；</p></td><td><p class="docx-paragraph">获得高蛋白异养小球藻藻株1-2株，申请发明专利1项，团队成员中的企业人员主持企业或市级或省级科研项目1项。</p></td><td><p class="docx-paragraph">优化发酵工艺参数，实现蛋白含量达60%以上，解决异养条件下小球藻蛋白含量低的产业共性技术难题。申请发明专利1项，发表论文1 篇，培养研究生2名。</p></td></tr><tr><td rowspan="6"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养研究生（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">解决关键共性技术难题</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">负责市级以上科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人身份、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">学术科研机构职务情况证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">人才引进协议</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">省部级人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人获授权的发明专利证书</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队授权的发明专利证书</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">团队承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">团队重要获奖证书</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">高新技术企业、科技骨干企业等企业资质证明材料</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队企业人员参保及劳动合同</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">技术路线图</p></td><td><p class="docx-paragraph">可行性报告技术路线图</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">企业营业执照和公司章程</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">企业建有的省级平台</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">可行性报告中图1-3</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">代表性论文</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

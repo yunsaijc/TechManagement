@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>c0a6828463cb4c1985c7fca26d5328d3 评审材料</title>
+  <style>
+    :root {
+      --bg: #dfe5ec;
+      --panel: #f3f6fa;
+      --page-bg: #ffffff;
+      --line: #c8d2de;
+      --text: #182230;
+      --muted: #5f6b7a;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    body { overflow-y: auto; }
+    .viewer-root { min-height: 100%; padding: 18px 0 28px; }
+    .viewer-head { display: flex; justify-content: center; padding: 0 12px 12px; }
+    .head-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-width: min(900px, calc(100vw - 48px));
+    }
+    .page-pill {
+      min-width: 110px;
+      text-align: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(15, 118, 110, 0.18);
+      background: rgba(255, 255, 255, 0.92);
+      color: #115e59;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    }
+    .focus-card {
+      display: none;
+      width: min(900px, calc(100vw - 48px));
+      padding: 10px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(15, 118, 110, 0.2);
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--text);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    }
+    .focus-card.show { display: block; }
+    .focus-label {
+      font-size: 12px;
+      font-weight: 800;
+      color: #0f766e;
+      margin-bottom: 4px;
+    }
+    .focus-text {
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+      word-break: break-word;
+    }
+    .pages {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding: 0 10px;
+    }
+    .packet-page {
+      position: relative;
+      width: min(1380px, calc(100vw - 24px));
+      background: var(--page-bg);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+    }
+    .packet-page.active {
+      border-color: rgba(15, 118, 110, 0.36);
+      box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12), 0 18px 48px rgba(15, 23, 42, 0.12);
+    }
+    .page-index {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .packet-page img {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #fff;
+    }
+    .highlight-layer {
+      position: absolute;
+      inset: 33px 0 0 0;
+      pointer-events: none;
+    }
+    .highlight-rect {
+      position: absolute;
+      border-radius: 10px;
+      background: rgba(251, 191, 36, 0.22);
+      border: 3px solid rgba(245, 158, 11, 0.92);
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75), 0 10px 24px rgba(245, 158, 11, 0.22);
+    }
+    .empty {
+      padding: 32px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="viewer-root">
+    <div class="viewer-head">
+      <div class="head-stack">
+        <div class="page-pill" id="pagePill">第 1 页</div>
+        <div class="focus-card" id="focusCard">
+          <div class="focus-label" id="focusLabel">命中定位</div>
+          <div class="focus-text" id="focusText"></div>
+        </div>
+      </div>
+    </div>
+    <div class="pages" id="pages"><section class='packet-page' id='packet-page-1' data-page='1'><div class='page-index'>第 1 页</div><img loading='lazy' src='packet_pages/page-0001.png' alt='packet page 1'></section><section class='packet-page' id='packet-page-2' data-page='2'><div class='page-index'>第 2 页</div><img loading='lazy' src='packet_pages/page-0002.png' alt='packet page 2'></section><section class='packet-page' id='packet-page-3' data-page='3'><div class='page-index'>第 3 页</div><img loading='lazy' src='packet_pages/page-0003.png' alt='packet page 3'></section><section class='packet-page' id='packet-page-4' data-page='4'><div class='page-index'>第 4 页</div><img loading='lazy' src='packet_pages/page-0004.png' alt='packet page 4'></section><section class='packet-page' id='packet-page-5' data-page='5'><div class='page-index'>第 5 页</div><img loading='lazy' src='packet_pages/page-0005.png' alt='packet page 5'></section><section class='packet-page' id='packet-page-6' data-page='6'><div class='page-index'>第 6 页</div><img loading='lazy' src='packet_pages/page-0006.png' alt='packet page 6'></section><section class='packet-page' id='packet-page-7' data-page='7'><div class='page-index'>第 7 页</div><img loading='lazy' src='packet_pages/page-0007.png' alt='packet page 7'></section><section class='packet-page' id='packet-page-8' data-page='8'><div class='page-index'>第 8 页</div><img loading='lazy' src='packet_pages/page-0008.png' alt='packet page 8'></section><section class='packet-page' id='packet-page-9' data-page='9'><div class='page-index'>第 9 页</div><img loading='lazy' src='packet_pages/page-0009.png' alt='packet page 9'></section><section class='packet-page' id='packet-page-10' data-page='10'><div class='page-index'>第 10 页</div><img loading='lazy' src='packet_pages/page-0010.png' alt='packet page 10'></section><section class='packet-page' id='packet-page-11' data-page='11'><div class='page-index'>第 11 页</div><img loading='lazy' src='packet_pages/page-0011.png' alt='packet page 11'></section><section class='packet-page' id='packet-page-12' data-page='12'><div class='page-index'>第 12 页</div><img loading='lazy' src='packet_pages/page-0012.png' alt='packet page 12'></section><section class='packet-page' id='packet-page-13' data-page='13'><div class='page-index'>第 13 页</div><img loading='lazy' src='packet_pages/page-0013.png' alt='packet page 13'></section><section class='packet-page' id='packet-page-14' data-page='14'><div class='page-index'>第 14 页</div><img loading='lazy' src='packet_pages/page-0014.png' alt='packet page 14'></section><section class='packet-page' id='packet-page-15' data-page='15'><div class='page-index'>第 15 页</div><img loading='lazy' src='packet_pages/page-0015.png' alt='packet page 15'></section><section class='packet-page' id='packet-page-16' data-page='16'><div class='page-index'>第 16 页</div><img loading='lazy' src='packet_pages/page-0016.png' alt='packet page 16'></section><section class='packet-page' id='packet-page-17' data-page='17'><div class='page-index'>第 17 页</div><img loading='lazy' src='packet_pages/page-0017.png' alt='packet page 17'></section><section class='packet-page' id='packet-page-18' data-page='18'><div class='page-index'>第 18 页</div><img loading='lazy' src='packet_pages/page-0018.png' alt='packet page 18'></section><section class='packet-page' id='packet-page-19' data-page='19'><div class='page-index'>第 19 页</div><img loading='lazy' src='packet_pages/page-0019.png' alt='packet page 19'></section><section class='packet-page' id='packet-page-20' data-page='20'><div class='page-index'>第 20 页</div><img loading='lazy' src='packet_pages/page-0020.png' alt='packet page 20'></section><section class='packet-page' id='packet-page-21' data-page='21'><div class='page-index'>第 21 页</div><img loading='lazy' src='packet_pages/page-0021.png' alt='packet page 21'></section><section class='packet-page' id='packet-page-22' data-page='22'><div class='page-index'>第 22 页</div><img loading='lazy' src='packet_pages/page-0022.png' alt='packet page 22'></section><section class='packet-page' id='packet-page-23' data-page='23'><div class='page-index'>第 23 页</div><img loading='lazy' src='packet_pages/page-0023.png' alt='packet page 23'></section><section class='packet-page' id='packet-page-24' data-page='24'><div class='page-index'>第 24 页</div><img loading='lazy' src='packet_pages/page-0024.png' alt='packet page 24'></section><section class='packet-page' id='packet-page-25' data-page='25'><div class='page-index'>第 25 页</div><img loading='lazy' src='packet_pages/page-0025.png' alt='packet page 25'></section><section class='packet-page' id='packet-page-26' data-page='26'><div class='page-index'>第 26 页</div><img loading='lazy' src='packet_pages/page-0026.png' alt='packet page 26'></section><section class='packet-page' id='packet-page-27' data-page='27'><div class='page-index'>第 27 页</div><img loading='lazy' src='packet_pages/page-0027.png' alt='packet page 27'></section><section class='packet-page' id='packet-page-28' data-page='28'><div class='page-index'>第 28 页</div><img loading='lazy' src='packet_pages/page-0028.png' alt='packet page 28'></section><section class='packet-page' id='packet-page-29' data-page='29'><div class='page-index'>第 29 页</div><img loading='lazy' src='packet_pages/page-0029.png' alt='packet page 29'></section><section class='packet-page' id='packet-page-30' data-page='30'><div class='page-index'>第 30 页</div><img loading='lazy' src='packet_pages/page-0030.png' alt='packet page 30'></section><section class='packet-page' id='packet-page-31' data-page='31'><div class='page-index'>第 31 页</div><img loading='lazy' src='packet_pages/page-0031.png' alt='packet page 31'></section><section class='packet-page' id='packet-page-32' data-page='32'><div class='page-index'>第 32 页</div><img loading='lazy' src='packet_pages/page-0032.png' alt='packet page 32'></section></div>
+  </div>
+  <script>
+    const pagePill = document.getElementById("pagePill");
+    const focusCard = document.getElementById("focusCard");
+    const focusLabel = document.getElementById("focusLabel");
+    const focusText = document.getElementById("focusText");
+    let activePage = 1;
+
+    function setActivePage(page) {
+      const pageNumber = Number(page || 1);
+      activePage = pageNumber;
+      document.querySelectorAll(".packet-page.active").forEach((node) => node.classList.remove("active"));
+      const target = document.getElementById(`packet-page-${pageNumber}`);
+      if (target) target.classList.add("active");
+      if (pagePill) pagePill.textContent = `第 ${pageNumber} 页`;
+    }
+
+    function gotoPage(page, smooth) {
+      const pageNumber = Number(page || 1);
+      const target = document.getElementById(`packet-page-${pageNumber}`);
+      if (!target) return;
+      setActivePage(pageNumber);
+      target.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+    }
+
+    function clearHighlights() {
+      document.querySelectorAll(".highlight-layer").forEach((node) => node.remove());
+    }
+
+    function applyHighlights(page, rects) {
+      clearHighlights();
+      const pageNumber = Number(page || 0);
+      const target = document.getElementById(`packet-page-${pageNumber}`);
+      if (!target || !Array.isArray(rects) || !rects.length) return;
+      const layer = document.createElement("div");
+      layer.className = "highlight-layer";
+      rects.forEach((item) => {
+        if (!item) return;
+        const x = Number(item.x || 0);
+        const y = Number(item.y || 0);
+        const w = Number(item.w || 0);
+        const h = Number(item.h || 0);
+        if (!(w > 0) || !(h > 0)) return;
+        const rect = document.createElement("div");
+        rect.className = "highlight-rect";
+        rect.style.left = `${x * 100}%`;
+        rect.style.top = `${y * 100}%`;
+        rect.style.width = `${w * 100}%`;
+        rect.style.height = `${h * 100}%`;
+        layer.appendChild(rect);
+      });
+      if (layer.childElementCount) target.appendChild(layer);
+    }
+
+    function updateFocusCard(payload) {
+      const label = String(payload.location_label || payload.label || "命中定位");
+      const text = String(payload.highlight_text || payload.text || "").trim();
+      if (!text) {
+        focusCard?.classList.remove("show");
+        if (focusText) focusText.textContent = "";
+        return;
+      }
+      if (focusLabel) focusLabel.textContent = label;
+      if (focusText) focusText.textContent = text;
+      focusCard?.classList.add("show");
+    }
+
+    window.addEventListener("message", (event) => {
+      const payload = event.data || {};
+      if (payload.type !== "gotoPacketTarget") return;
+      gotoPage(payload.page, true);
+      applyHighlights(payload.page, payload.highlight_rects || []);
+      updateFocusCard(payload);
+    });
+
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      const page = Number(visible.target.dataset.page || activePage || 1);
+      setActivePage(page);
+    }, {
+      root: null,
+      threshold: [0.35, 0.6, 0.85],
+    });
+
+    document.querySelectorAll(".packet-page").forEach((node) => observer.observe(node));
+    gotoPage(1, false);
+  </script>
+</body>
+</html>

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 1fe66db94c044864b588e58d778211c3.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：1fe66db94c044864b588e58d778211c3.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,674</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>1fe66db94c044864b588e58d778211c3.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>高比能无人机锂离子电池的制备及应用开发</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北斐然科技有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李文</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>石家庄高新技术产业开发区</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-03 至 2028-03</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-28</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>河北斐然科技有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>石家庄市高新区中山东路856号1号楼715</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91130102758934376A</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-石家庄市-石家庄高新技术产业开发区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2004-03-04</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>2500.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>梁小宏</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>15831165555</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0311-66561777</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>frkjcn@163.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>朱晓宁</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>19933036063</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0311-66561777</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>57800891@qq.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北斐然科技有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>104121005509</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国银行石家庄市中山支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>101719599932</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>32人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>20人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>17人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>航空航天、电子信息、新能源</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>2045.36</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>738.17</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>72.73</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>33.87</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>R重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>□技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>河北斐然科技有限公司建有河北省飞行体智能探测与控制重点实验室、河北省产业技术研究院智能感知与控制研究所、博士后科研工作站（分站）、河北科技大学研究生工作站等平台，由2名院士、6名领军人才领衔科技创新团队，研发团队具有相应的专业基础和工程经验，研发试验设施设备齐全，建有飞行控制系统和测发控系统等中试生产基地，组合导航系统高动态环境实验平台、效能仿真评估平台等，可满足系列主营产品的研究试验和规模化生产。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司共授权发明专利7项、实用新型专利9项，获得软件著作权10项，申请国防发明专利1项；获军队科技进步一等奖1项、河北省科学技术进步二等奖1项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>专注于智能探测与控制技术领域研究探索，促成5项技术成果转化，为河北省高新技术产业集群发展注入活力；相关技术成果不仅填补了省内相关领域空白，更助力国家国防科技自主创新能力提升。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>长期致力于军民协同科技创新领域，与清华大学、北京航空航天大学、北京理工大学、燕山大学、河北科技大学、陆军工程大学、航天科工集团、中国融通集团等科研院所战略合作，着力构建“产学研用”融合、创新链条健全、管理运行高效的工作机制。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">7</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">5人</p></td><td colspan="5"><p class="docx-paragraph">3人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">5人</p></td><td colspan="4"><p class="docx-paragraph">2人</p></td><td colspan="5"><p class="docx-paragraph">3人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">李文</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1986-11</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">副研究员</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">新能源材料与器件</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2025-09-17</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">潍坊科技学院</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">山东省寿光市金光街1299号</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">无</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">项目总监</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">050000</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">石家庄市科技中心1号楼7楼，河北斐然科技有限公司</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">0311-66561777</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">19577769988</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">liwen_cc@yeah.net</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>□国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>山东省泰山产业领军人才、 河北省“三三三人才工程”第二层次人选 、 河北省“三三三人才工程”第三层次人选。  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2005-09-01至2009-06-30</p></td><td colspan="9"><p class="docx-paragraph">山东理工大学</p></td><td colspan="4"><p class="docx-paragraph">本科</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2009-09-01至2011-06-30</p></td><td colspan="9"><p class="docx-paragraph">山东理工大学</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2012-06-01至2015-06-30</p></td><td colspan="9"><p class="docx-paragraph">中国科学院大学</p></td><td colspan="4"><p class="docx-paragraph">博士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2015-07-01至2019-05-31</p></td><td colspan="9"><p class="docx-paragraph">河北省科学院能源研究所</p></td><td colspan="4"><p class="docx-paragraph">项目组组长、学科带头人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2019-06-01至2021-11-30</p></td><td colspan="9"><p class="docx-paragraph">河北科技大学</p></td><td colspan="4"><p class="docx-paragraph">教师、骨干人才</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2021-12-01至2025-06-30</p></td><td colspan="9"><p class="docx-paragraph">潍坊学院</p></td><td colspan="4"><p class="docx-paragraph">教师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2025-08-15至2026-03-01</p></td><td colspan="9"><p class="docx-paragraph">潍坊科技学院</p></td><td colspan="4"><p class="docx-paragraph">教师、学科带头人</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">聚阴离子型钾离子电池正极材料的结构设计及充放电机理研究</p></td><td colspan="7"><p class="docx-paragraph">2024.01-2026.12</p></td><td colspan="4"><p class="docx-paragraph">山东省科技厅</p></td><td colspan="4"><p class="docx-paragraph">山东省青年自然基金</p></td><td><p class="docx-paragraph">主持人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">高能量密度锂离子电池正极材料镍钴铝酸锂的制备及改性研究</p></td><td colspan="7"><p class="docx-paragraph">2017.01-2019.12</p></td><td colspan="4"><p class="docx-paragraph">河北省基础研究计划重点基础研究项目</p></td><td colspan="4"><p class="docx-paragraph">河北省科技计划项目</p></td><td><p class="docx-paragraph">主持人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">自支撑多级结构 CoxPy/C 复合电极的构建及储钾机</p></td><td colspan="7"><p class="docx-paragraph">2020.01-2022.12</p></td><td colspan="4"><p class="docx-paragraph">河北省教育厅</p></td><td colspan="4"><p class="docx-paragraph">河北省高等学校科学技术研究青年拔尖人才项目</p></td><td><p class="docx-paragraph">主持人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"></td><td colspan="4"></td><td colspan="3"></td><td colspan="2"></td><td colspan="4"></td><td colspan="4"></td></tr><tr><td colspan="3"></td><td colspan="4"></td><td colspan="3"></td><td colspan="2"></td><td colspan="4"></td><td colspan="4"></td></tr><tr><td colspan="3"></td><td colspan="4"></td><td colspan="3"></td><td colspan="2"></td><td colspan="4"></td><td colspan="4"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Ti doping and Fe-vacancy synergistically enhance rate capacity of lithium manganese iron phosphate</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Journal ofEnergy Storage</p></td><td colspan="5"><p class="docx-paragraph">2025</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Edge-nitrogen synergize with micropores to realize fast and durable potassium storage for carbon anode</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Carbon</p></td><td colspan="5"><p class="docx-paragraph">2023</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Advanced cathodes for potassium-ion batteries with layered transition metal oxides</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Journal of Materials Chemistry A</p></td><td colspan="5"><p class="docx-paragraph">2021</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种四相混合钠离子电池层状氧化物正极材料及 其制备方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202211408598.9</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第一</p></td><td colspan="5"><p class="docx-paragraph">2023-03-24</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种球状氧化合金电极材料及其制备方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201911385050.5</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第一</p></td><td colspan="5"><p class="docx-paragraph">2021-02-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种高倍率球状氧化合金复合电极材料及其制备方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201911384149.3</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第一</p></td><td colspan="5"><p class="docx-paragraph">2021-10-19</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"></td><td colspan="9"></td><td colspan="6"></td></tr><tr><td colspan="5"></td><td colspan="9"></td><td colspan="6"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>项目负责人自硕博学研到参加工作以来一直致力于新能源材料与器件相关研究工作，积累大量理论及实践经验。主持河北省基础研究计划重点基础研究项目1项、河北省科学院高层次人才资助项目1项、河北省科学院院地合作项目2项、河北省教育厅青年拔尖人才项目1项、河北省高层次人才资助项目1项、河北省智能电网配用电技术创新中心开放课题1项、军内科研外协项目2项、山东省自然科学基金1项及企业横向课题多项，以第一/通讯作者在新能源领域权威期刊发表SCI论文20余篇，授权专利16件，获山东省泰山产业领军人才、河北省“三三三人才工程”二层次人选、河北省“三三三人才工程”三层次人选省部级称号。以股东身份创立山东昭文新能源科技有限公司，作为技术创始人，依托企业完成了高安全宽温域氧化合金材料及电池技术的产业化落地。公司已申请国家专利23件，其中授权发明专利16件、实用新型专利2件，氧化合金系列电池通过GJB4477-2002(军用检测标准)、GB31241-2022、GB43854-2024检测、3C认证、欧盟认证、质量管理体系ISO9001认证、车规级16949认证等。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李文</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1986-11</p></td><td><p class="docx-paragraph">370784198611010589</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副研究员</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">应用化学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">潍坊科技学院</p></td><td><p class="docx-paragraph">其他:山东省泰山产业领军人才、河北省三三三人才工程第二层次人选</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">魏爱佳</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1990-09</p></td><td><p class="docx-paragraph">13043419900928312x</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副研究员</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">电化学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">河北省科学院能源研究所</p></td><td><p class="docx-paragraph">其他:河北省三三三人才工程第三层次人选</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">梁小乐</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1974-10</p></td><td><p class="docx-paragraph">13010519741024455x</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">飞行器控制、导航技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北斐然科技有限公司/总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">李亚昭</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1977-06</p></td><td><p class="docx-paragraph">130105197706060012</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">算法理论</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">山东昭文新能源科技有限公司/董事长兼总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">唐永福</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-11</p></td><td><p class="docx-paragraph">43292319831121819x</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">材料化学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">燕山大学</p></td><td><p class="docx-paragraph">国家重点人才工程计划入选人才</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">朱晓宁</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1981-02</p></td><td><p class="docx-paragraph">130528198102250019</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">空间信息获取及综合应用集成系统</p></td><td><p class="docx-paragraph">航空器飞行试验</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北斐然科技有限公司/科研计划部部长</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">耿立杰</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1977-12</p></td><td><p class="docx-paragraph">120222197712077515</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">飞行器控制、导航技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北斐然科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">满晓飞</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-05</p></td><td><p class="docx-paragraph">130181198605206116</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">讲师</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">飞行器控制、导航技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北斐然科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">王玲瑜</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1983-03</p></td><td><p class="docx-paragraph">142730198303260746</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北斐然科技有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">付邵鹏</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-01</p></td><td><p class="docx-paragraph">130102198601061217</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">铸造工艺与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北斐然科技有限公司工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>高比能无人机锂离子电池的制备及应用开发</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-03 至 2028-03</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>180.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>120.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>R新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>R<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">山东昭文新能源科技有限公司</p></td></tr><tr><td><p class="docx-paragraph">河北省科学院能源研究所</p></td></tr><tr><td><p class="docx-paragraph">燕山大学</p></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>低空经济、无人机、高比能锂离子电池、高镍正极/硅碳负极电池、宽温域电解液</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>培养能贯通“机理-材料-电芯-系统-应用”的复合型技术带头人2名，为三方单位培养核心骨干研发人员10名以上形成一支稳定、高效、具备持续创新能力的跨单位联合研发团队，探索出成熟的产学研合作新模式。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>绩效指标：攻克高比能无人机锂离子电池共性关键技术1项；申请发明专利1件；发表学术论文1篇；项目团队成员主持企业或市级以上科研项目，或参与获得省级以上科技奖励1项。</p><p class="docx-paragraph">技术指标：单体电芯能量密度≥350 Wh/kg；电池系统能量密度≥260 Wh/kg；循环性能（25℃）：500次循环后容量保持率≥80%；倍率性能：支持3C持续放电、5C脉冲放电；工作温度范围：-40℃~60℃。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>在项目执行过程中，各方应对项目执行过程中产生的科技成果及时进行专利申请，知识产权归科技成果完成方所有，其他方享有该成果的优先使用权，但没有转让权。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1.项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">随着“低空经济”成为国家战略性新兴产业，无人机行业迎来爆发，但续航与载重瓶颈制约其发展。目前商用无人机电池能量密度普遍为180~220 Wh/kg，导致工业级无人机续航不足1小时，难以满足物流、救援、巡检等长航时、重载荷场景需求。因此，研制能量密度≥350 Wh/kg的高比能锂离子电池并实现无人机集成应用，具有极强的必要性与紧迫性。本项目旨在突破国外高端电池技术封锁，提升我国无人机产业链自主可控能力，契合国家战略需求。同时，项目响应河北省及全国新能源产业升级和低空经济装备高端化、智能化的发展方向，科技与经济意义重大。</p><p class="docx-paragraph">项目将重点攻克高镍正极与硅碳负极材料匹配、宽温域电解液开发、极端环境热管理与系统集成等关键技术，推动锂离子电池向准固态体系演进。经济上，项目将打通“特种材料-电池-BMS-无人机整机”产业链；社会效益上，将支撑公共安全、防灾减灾等领域，助力河北省打造高端装备制造产业新高地。</p><p class="docx-paragraph">2.项目概述（包括研究内容、合作分工，与我省重点产业领域战略发展方向的相关性）</p><p class="docx-paragraph">本项目旨在研发适用于无人机平台的高比能锂离子电池系统。研究内容包括：高镍正极/硅碳负极材料匹配优化、宽温域电解液开发、电芯设计与制备工艺、系统集成与热管理，以及无人机挂载试飞验证。目标为实现单体电芯能量密度≥350 Wh/kg，系统能量密度≥260 Wh/kg，并满足宽温域（-40℃~60℃）及高倍率等严苛工况要求。</p><p class="docx-paragraph">项目采用产学研用深度融合模式，分工明确：河北斐然科技（牵头单位）负责提出无人机性能指标与工况需求，主导BMS开发与系统集成，提供测试平台并负责应用验证与产业化；山东昭文新能源负责材料、电芯及PACK的工艺优化与中试试制；河北省科学院能源所负责电解液研发、材料与电芯性能表征；燕山大学负责材料基础研究、机理与失效分析，提供理论指导。</p><p class="docx-paragraph">本项目直接支撑河北省“新能源”与“低空经济”两大战略性新兴产业发展。一方面推动锂电池技术向高比能、高安全升级，延伸绿色化工与新材料产业链；另一方面为工业无人机及未来eVTOL提供核心动力，助力河北省抢占低空经济新赛道，符合我省前瞻布局高端装备制造与未来产业的战略方向。</p><p class="docx-paragraph">3.预期经济、技术性能指标</p><p class="docx-paragraph">绩效指标：攻克高比能无人机锂离子电池共性关键技术1项；申请发明专利1件；发表学术论文1篇；项目团队成员主持企业或市级以上科研项目，或参与获得省级以上科技奖励1项。</p><p class="docx-paragraph">技术指标：单体电芯能量密度≥350 Wh/kg；电池系统能量密度≥260 Wh/kg；循环性能（25℃）：500次循环后容量保持率≥80%；倍率性能：支持3C持续放电、5C脉冲放电；工作温度范围：-40℃~60℃。</p><p class="docx-paragraph">二、申报单位、人才（团队）情况</p><p class="docx-paragraph">1. 申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">申报单位在无人机导航制导控制领域基础扎实，拥有省级重点实验室、研究所、博士后及研究生工作站等研发平台。公司已建成中试制造、总装及测试线，整合了导航、电路集成、精密机械及测试等全链条创新要素，汇聚资金、人才与服务资源，构建了面向未来的导航制导控制产业生态体系。</p><p class="docx-paragraph">2. 申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">申报单位技术实力突出，曾获得军队科技进步一等奖1项、河北省科技进步二等奖1项。累计授权发明专利7项、实用新型专利9项，登记软件著作权10项，申请国防发明专利1项，并成功促成5项智能探测与控制技术成果转化，积极推动军民协同创新，与清华大学等顶尖科研院所建立了紧密的“产学研用”合作机制。</p><p class="docx-paragraph">3. 项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">项目负责人李文博士毕业于中科院成都有机化学研究所，现为河北斐然科技有限公司/燕山大学博士后，专注于新能源材料与器件研究。主持各类科研项目10余项，以第一/通讯作者发表SCI论文20余篇，授权专利16件，获山东省泰山产业领军人才、河北省“三三三人才工程”二层次人选等荣誉，并依托山东昭文新能源实现了高安全宽温域电池技术的产业化落地，兼具深厚理论功底与丰富工程实践经验。</p><p class="docx-paragraph">核心成员魏爱佳博士现任河北省科学院能源研究所副研究员，致力于锂离子电池电极材料及电解液研发。主持/参与完成多项厅级及省级人才项目，累计发表论文20余篇，其中以第一/通讯作者发表SCI论文15篇，授权发明专利9件，获河北省“三三三人才工程”三层次人选称号。</p><p class="docx-paragraph">核心成员唐永福博士毕业于中科院金属研究所，现任燕山大学教授、博导，国家“万人计划”青年拔尖人才，主要从事全固态锂电池等前沿研究，以第一/通讯作者发表SCI论文100余篇，他引超5600次，H因子40，授权发明专利8件。</p><p class="docx-paragraph">核心成员梁小乐现任河北斐然科技有限公司总经理、飞行体智能探测与控制重点实验室主任，主导完成6项省市重点科研项目，获二等功1次、三等功2次，授权专利5件，具备丰富的项目管理与工程化经验。</p><p class="docx-paragraph">核心成员李亚昭现任山东昭文新能源科技有限公司创始人兼总经理，拥有超过10年电芯及PACK产品研发经验，主导了企业多项核心技术的产品化落地，授权相关专利10余件。</p><p class="docx-paragraph">4. 与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">项目团队具备“机理-材料-电芯-PACK-应用”全链条研发能力。前期技术对标明确了350 Wh/kg能量密度技术路线可行。基于高镍正极与硅碳负极小试积累，已成功制备出实验室软包电芯样品，实测能量密度达320 Wh/kg，循环500次后容量保持率80%，初步验证了材料体系可行性，并完成电性能与热稳定性分析，为后续优化提供了关键数据支撑。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1.项目拟解决的关键技术和问题</p><p class="docx-paragraph">项目旨在系统解决三大核心难题：一是高比能材料（高镍正极/硅碳负极）体系的匹配性与长期循环中的界面稳定性问题；二是电池在高倍率放电工况下的热失控安全防控问题；三是电池在-40℃至60℃极宽温度范围内的环境适应性与性能保持问题。</p><p class="docx-paragraph">2.人才（团队）可提供的相关技术支撑及其途径</p><p class="docx-paragraph">团队构建了“应用需求牵引-工程技术攻关-基础理论支撑”三角协同体系。河北斐然提供应用场景与标准，实现系统快速迭代；山东昭文提供材料与电芯中试能力，弥合实验室到产业鸿沟；河北省科学院能源所与燕山大学提供材料研发、机理分析与评测平台支撑，确保产学研深度融合。</p><p class="docx-paragraph">3.项目的基本情况介绍</p><p class="docx-paragraph">同“一、2. 项目概述”部分。</p><p class="docx-paragraph">4.国内外同类技术发展现状及与本项目技术的比较、国内外技术发展趋势</p><p class="docx-paragraph">国际上，美国在固态和锂金属电池领域领先，日本在锂空气电池等下一代技术上突破，欧洲企业（如Saft）产品面向高端军工，能量密度达250~300 Wh/kg，但成本高昂。国内快速追赶，鹏辉能源、合源锂创、赣锋锂业等企业已推出400 Wh/kg级产品或完成特种无人机固态电池交付，天津大学、中科院等科研团队也取得显著进展。发展趋势表明，无人机电池正朝着超高能量密度、固态化、新材料体系创新、多技术路线并存及系统集成优化（如CTP、CTC技术）等方向演进。本项目技术定位清晰，差异化优势在于：不仅聚焦提升“质量能量密度”这一核心指标，更强调对无人机实际严苛工况的深度适配性。团队构建的“基础理论-工程试制-终端应用”全链条协同创新模式，确保了技术路线的可行性和成果的产业化潜力，是具有比较优势的战略选择。</p><p class="docx-paragraph">5.项目预期达到的技术性能指标</p><p class="docx-paragraph">同“一、3. 预期经济、技术性能指标”中的技术指标部分。</p><p class="docx-paragraph">6.项目技术风险分析与对策</p><p class="docx-paragraph">风险1：硅碳负极循环寿命不足。对策：材料端采用“纳米硅/碳骨架/聚合物”多级缓冲结构；电芯端为负极预留膨胀空间。 </p><p class="docx-paragraph">风险2：高能量密度电芯热失控。对策：材料端选用单晶高镍正极，添加高温成膜剂与阻燃剂；电芯端采用陶瓷涂覆隔膜；系统端设计物理隔离、复合热管理方案并植入预警算法，实现主动防护。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1.项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">项目遵循“材料体系创新-电芯工艺优化-系统集成设计-整机应用验证”四位一体的技术路线，结合理论模拟与实验验证，系统突破高能量密度、高倍率与宽温域适应性之间的矛盾。</p><p class="docx-paragraph">（1）关键材料技术：正极采用高镍单晶NCM（Ni≥90%），通过“体相梯度掺杂+表面快离子导体包覆”协同改性，提升结构稳定性与循环寿命。负极选用预锂化硅氧/石墨复合材料，经碳包覆与纳米化处理缓冲体积膨胀。电解液采用“局部高浓度锂盐+功能添加剂”方案，以氟代溶剂为共溶剂，并引入阻燃型磷腈化合物提升安全性。隔膜采用“陶瓷涂层+热关断聚合物层”复合结构，兼具耐热性与主动防护功能。综合运用理论计算、COMSOL仿真、原位XRD、EIS等先进表征方法，探究材料构效关系与电池失效机理。</p><p class="docx-paragraph">（2）关键电芯制备工艺：通过电-热耦合仿真优化极耳设计，降低高倍率发热。采用阶梯式高温化成工艺，促进形成致密、稳定的SEI膜。</p><p class="docx-paragraph">（3）系统集成与热管理方案：采用“电芯-模组-电池包”三级成组与碳纤维/铝合金混合轻量化框架。热管理采用“相变材料+导热翅片”复合散热结构。开发具备高精度状态估算、主动均衡、低温自加热及故障诊断功能的智能BMS。</p><p class="docx-paragraph">（4）整机应用验证方法：建立“数字仿真-地面台架-飞行测试”三级验证体系。先在Matlab/Simulink中进行整机-电池联合仿真；然后在环境模拟舱内进行-40℃~60℃全温区测试；最后依托无人机平台进行系留悬停、爬升、航线飞行等实际科目验证。</p><p class="docx-paragraph">2.项目的前期准备情况</p><p class="docx-paragraph">同“二、4. 与项目相关的工作积累、研发基础和已取得的阶段性成果”部分。</p><p class="docx-paragraph">3.项目的具体实施方案（包括合作各方在人才、技术、理论、资金、设备等方面的投入，任务分工，人员交流计划，合作机制）</p><p class="docx-paragraph">项目总投资180万元，其中申请省级人才项目资助60万元，申报单位和合作单位自筹120万元。河北斐然科技投入11人，提供无人机测试平台与实验室，负责需求定义、BMS开发、系统集成与应用验证。山东昭文新能源投入6人，提供材料中试线与电芯/PACK试制线，负责材料中试、电芯与PACK试制。河北省科学院能源所投入3人，提供表征与评测设备，负责电解液研发、材料与电池性能评测。燕山大学投入2人，提供理论分析设备，负责基础研究、机理与失效分析。成立联合项目组，定期召开技术研讨会，并建立数据共享云平台确保信息同步。</p><p class="docx-paragraph">4.项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">第一年：完成材料与电解液优化，电芯能量密度≥330 Wh/kg，循环300次容量保持率≥85%，发表论文1篇。 </p><p class="docx-paragraph">第二年：完成电芯工艺固化与系统集成，电芯能量密度≥350 Wh/kg，循环500次容量保持率≥80%，系统能量密度≥260 Wh/kg，支持3C/5C放电，申报专利1件。 </p><p class="docx-paragraph">第三年：完成系统验证与无人机示范，电池性能全面达标，实现小批量试制，形成高比能电池制备技术1项，团队获市级以上项目或省级以上奖励1项。</p><p class="docx-paragraph">5.项目知识产权状况（包括研究成果分享、专利申请、著作权归属、资源及其它合作权益的保护）</p><p class="docx-paragraph">在项目执行过程中，各方应对项目执行过程中产生的科技成果及时进行专利申请，知识产权归完成方所有，其他方享有该成果的优先使用权，但没有转让权。论文发表与奖项申报的署名规则根据实际情况协商确定，并建立机制保护各方的技术秘密与商业信息。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1.人才培养、团队建设目标</p><p class="docx-paragraph">项目旨在培养能贯通“材料-电芯-系统-应用”链条的复合型技术带头人2名，为各参与单位培养核心骨干研发人员10名以上，形成一支稳定、高效、具备持续创新能力的跨单位联合研发团队，并探索出一套可复制的、成熟的产学研合作新模式。</p><p class="docx-paragraph">2. 项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">本项目核心竞争力在于：性能指标领先，直击行业痛点；满足军用/工业级严苛标准，构建可靠性与环境适应性壁垒；团队覆盖全产业链，具备快速迭代与高效产业化优势。</p><p class="docx-paragraph">3. 项目的市场需求分析、产业化条件及前景预测</p><p class="docx-paragraph">军用无人机、工业巡检及物流等领域对高性能电池需求迫切，预计未来五年中国工业级无人机电池市场年增长率超25%，规模达百亿元。本项目产业化条件成熟：合作方具备材料与电芯中试量产能力及终端导入渠道与军工资质，地方政策与产业环境提供有力支撑。项目示范线即产业化雏形，成功后可为合作方无人机升级提供核心动力，形成市场优势，并进一步向整机厂提供电池解决方案或授权核心材料技术，市场前景广阔。预计示范应用后3年内实现规模化产销。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">项目将推动企业高端电池与无人机业务增长，带动河北新材料、制造等产业链发展，创造新增长点。同时，提升我国低空经济自主可控能力，搭载长航时电池的无人机在防火、巡逻、救灾等场景应用。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">河北斐然科技有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责整体项目的运行和实施，负责提出军用/工业级无人机的具体性能指标与工况需求，主导BMS开发、电池包系统集成设计，提供无人机测试平台，并负责最终的应用</p></td><td><p class="docx-paragraph">李文</p></td><td><p class="docx-paragraph">102.00</p></td><td><p class="docx-paragraph">30.00</p></td><td><p class="docx-paragraph">72.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">山东昭文新能源科技有限公司</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">负责高比能电极材料（正极、负极）的中试制备，以及基于新材料体系的高比能电芯试制与工艺优化及小批量试制和PACK产品试</p></td><td><p class="docx-paragraph">李亚昭</p></td><td><p class="docx-paragraph">66.00</p></td><td><p class="docx-paragraph">18.00</p></td><td><p class="docx-paragraph">48.00</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">河北省科学院能源研究所</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">负责适配电解液的研发及评测、材料性能表征、电芯和电池样品性能评测。</p></td><td><p class="docx-paragraph">魏爱佳</p></td><td><p class="docx-paragraph">9.00</p></td><td><p class="docx-paragraph">9.00</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">燕山大学</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">材料基础研究、机理与失效分析，提供理论指导。</p></td><td><p class="docx-paragraph">唐永福</p></td><td><p class="docx-paragraph">3.00</p></td><td><p class="docx-paragraph">3.00</p></td><td><p class="docx-paragraph">0.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">绩效目标：攻克高比能无人机锂离子电池共性关键技术1项，技术达到国内领先水平；申请发明专利1件；发表学术论文1篇；项目团队成员主持企业或市级以上科研项目，或参与获得省级以上科技奖励1项。</p><p class="docx-paragraph">技术指标：单体电芯能量密度≥350 Wh/kg；电池系统能量密度≥260 Wh/kg；循环性能（25℃）：500次循环后容量保持率≥80%；倍率性能：支持3C持续放电、5C脉冲放电；工作温度范围：-40℃~60℃。</p></td><td><p class="docx-paragraph">完成材料与电解液优化，电芯能量密度≥330 Wh/kg，循环300次容量保持率≥85%，发表论文1篇。</p></td><td><p class="docx-paragraph">完成电芯工艺固化与系统集成，电芯能量密度≥350 Wh/kg，循环500次容量保持率≥80%，系统能量密度≥260 Wh/kg，支持3C/5C放电，申报专利1件。</p></td><td><p class="docx-paragraph">完成系统验证与无人机示范，电池性能全面达标，实现小批量试制，形成高比能电池制备技术1项，团队获市级以上项目1项或省级奖励1项。</p></td></tr><tr><td rowspan="5"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">获得市厅级领导批示（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新产品（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">身份证</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">博士毕业证</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">博士学位证</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">副研究员职称证书</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">李文-人才引进协议</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">博后备案证明</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">专利-1</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">专利-2</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">专利-3</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">知识产权证书</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">山东省自然基金</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">河北省重点基础研究项目</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">河北省高等学校科学技术研究项目</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">技术人员合同</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">申报单位提供资料</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">项目合作协议</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">科技奖励证书</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

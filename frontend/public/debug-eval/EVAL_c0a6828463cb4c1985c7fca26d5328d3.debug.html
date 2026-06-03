@@ -1,0 +1,1756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>正文评审报告 - 低空多源感知一体化病害检测和灾害监测装备研发与应用示范</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --panel: #ffffff;
+      --panel-soft: #f7f9fb;
+      --panel-deep: #eef3f8;
+      --ink: #1b2430;
+      --muted: #66758a;
+      --line: #d7dfe8;
+      --brand: #1d3c61;
+      --brand-soft: #e8eff6;
+      --ok: #1f7a4d;
+      --warn: #a56a1f;
+      --risk: #b42318;
+      --shadow: 0 8px 24px rgba(18, 31, 53, 0.05);
+    }
+    * {
+      box-sizing: border-box;
+      min-width: 0;
+    }
+    html {
+      scroll-behavior: smooth;
+      height: 100%;
+    }
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    a {
+      color: inherit;
+    }
+    .page {
+      max-width: 1760px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-stack {
+      display: grid;
+      gap: 20px;
+      height: 100%;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 14px 18px;
+      background: linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: nowrap;
+    }
+    .report-title {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.3;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .report-subtitle {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .score-card {
+      min-width: 132px;
+      padding: 8px 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      flex-shrink: 0;
+    }
+    .score-good {
+      border-color: rgba(31, 122, 77, 0.28);
+    }
+    .score-mid {
+      border-color: rgba(165, 106, 31, 0.28);
+    }
+    .score-bad {
+      border-color: rgba(180, 35, 24, 0.28);
+    }
+    .score-label {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .score-main {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .score-value {
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 800;
+    }
+    .score-grade {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--brand);
+    }
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .nav-link:hover {
+      border-color: #bfd0e3;
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+    .content-grid {
+      display: grid;
+      gap: 20px;
+      align-items: stretch;
+      min-height: 0;
+      height: 100%;
+    }
+    .workspace-layout {
+      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
+      overflow: hidden;
+    }
+    .debug-layout {
+      grid-template-columns: minmax(0, 1fr) 360px;
+      overflow: hidden;
+    }
+    .project-stack,
+    .nav-stack,
+    .main-stack,
+    .side-stack {
+      display: grid;
+      gap: 18px;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      padding-right: 6px;
+      max-height: 100%;
+    }
+    .side-stack {
+      padding-right: 2px;
+    }
+    .project-stack {
+      padding-right: 0;
+    }
+    .nav-stack {
+      padding-right: 0;
+    }
+    .project-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .project-panel-inner {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+    }
+    .project-panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .project-list {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .project-link {
+      display: grid;
+      gap: 6px;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+    }
+    .project-link:hover,
+    .project-link.is-active {
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }
+    .project-link-title {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .project-link-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+    .project-link-score {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .rail-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .rail-inner {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+    }
+    .rail-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .rail-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .rail-group {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .rail-group-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .rail-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .rail-links {
+      display: grid;
+      gap: 8px;
+    }
+    .rail-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .rail-link:hover,
+    .rail-link.is-active {
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }
+    .rail-link-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rail-link-meta {
+      color: var(--muted);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .doc-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .doc-panel-inner {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .doc-viewer {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .packet-frame {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border: 0;
+      border-radius: 14px;
+      background: #dfe5ec;
+    }
+    .doc-toast {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translate(-50%, -10px);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(24, 34, 48, 0.88);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 3;
+      white-space: nowrap;
+      max-width: calc(100% - 32px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doc-toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .doc-page {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      scroll-margin-top: 18px;
+    }
+    .doc-page.is-active {
+      border-color: #88a4c3;
+      box-shadow: 0 0 0 3px rgba(29, 60, 97, 0.12);
+    }
+    .doc-page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .doc-page-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .doc-page-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .doc-chunk-list {
+      display: grid;
+      gap: 10px;
+    }
+    .doc-chunk {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #e3e9f0;
+      background: #fdfefe;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.85;
+      font-size: 14px;
+    }
+    .doc-chunk.is-match {
+      border-color: #e2b562;
+      background: #fff8e7;
+      box-shadow: inset 0 0 0 1px rgba(229, 164, 43, 0.28);
+    }
+    .jump-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d6e5;
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .jump-link:hover {
+      background: #eaf1f7;
+      border-color: #9eb6cf;
+    }
+    .jump-link-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .panel-inner {
+      padding: 22px;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.4;
+    }
+    .panel-note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .workspace-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .summary {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.9;
+    }
+    .summary-block {
+      padding: 14px 16px;
+      border: 1px solid #d9e4ef;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fb 100%);
+    }
+    .highlight-grid {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .highlight-card {
+      padding: 14px 0 0;
+      border-top: 1px solid var(--line);
+    }
+    .highlight-grid .highlight-card:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .highlight-label {
+      margin-bottom: 10px;
+      color: var(--brand);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .highlight-list {
+      display: grid;
+      gap: 10px;
+    }
+    .highlight-item {
+      display: grid;
+      gap: 8px;
+      padding: 12px 14px;
+      border: 1px solid #dfe8f1;
+      border-radius: 14px;
+      background: #fbfcfe;
+    }
+    .highlight-item-text {
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }
+    .highlight-item-evidence {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+      word-break: break-word;
+      padding-top: 6px;
+      border-top: 1px dashed #d7e0ea;
+    }
+    .list {
+      margin: 0;
+      padding-left: 20px;
+      line-height: 1.9;
+    }
+    .list li + li {
+      margin-top: 8px;
+    }
+    .score-list {
+      display: grid;
+      gap: 16px;
+    }
+    .dimension-dashboard {
+      display: grid;
+      gap: 16px;
+    }
+    .dimension-radar-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+    }
+    .dimension-radar-wrap {
+      display: grid;
+      gap: 14px;
+    }
+    .dimension-radar-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .dimension-radar-sector {
+      opacity: 0.96;
+    }
+    .dimension-radar-ring {
+      fill: none;
+      stroke: #aebfd2;
+      stroke-width: 1.2;
+    }
+    .dimension-radar-axis {
+      stroke: #b4c4d5;
+      stroke-width: 1.2;
+    }
+    .dimension-radar-area {
+      fill: rgba(29, 60, 97, 0.14);
+      stroke: #1d3c61;
+      stroke-width: 2;
+    }
+    .dimension-radar-point {
+      stroke: #fff;
+      stroke-width: 2;
+      cursor: pointer;
+      transition: transform 0.16s ease;
+    }
+    .dimension-radar-point.is-active {
+      stroke: #111827;
+      stroke-width: 3;
+    }
+    .dimension-radar-label {
+      fill: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .dimension-radar-label.is-active {
+      font-weight: 700;
+      fill: var(--brand);
+    }
+    .dimension-sector-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dimension-sector-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--sector-accent) 12%, #ffffff);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .dimension-sector-chip::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--sector-accent);
+      flex-shrink: 0;
+    }
+    .dimension-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+      min-height: 0;
+    }
+    .dimension-detail-stage {
+      min-height: 0;
+      margin-top: 16px;
+    }
+    .dimension-detail-item {
+      display: none;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      padding: 18px;
+    }
+    .dimension-detail-item.is-active {
+      display: grid;
+      border-color: var(--sector-accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--sector-accent) 16%, transparent);
+    }
+    .dimension-detail-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+    .dimension-detail-meter {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0 14px;
+    }
+    .dimension-detail-meter-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e8eef5;
+      overflow: hidden;
+    }
+    .dimension-detail-meter-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--sector-accent) 46%, #ffffff) 0%, var(--sector-accent) 100%);
+    }
+    .dimension-detail-meter-value {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .dimension-empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .dimension-detail-blocks {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .dimension-detail-block {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .dimension-detail-block:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .dimension-detail-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .dimension-detail-summary {
+      font-size: 15px;
+      line-height: 1.8;
+      color: var(--ink);
+    }
+    .dimension-detail-list {
+      display: grid;
+      gap: 6px;
+    }
+    .dimension-detail-list-item {
+      font-size: 14px;
+      line-height: 1.8;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .dimension-detail-list-item::before {
+      content: "• ";
+      color: var(--sector-accent);
+    }
+    .score-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .score-card-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .score-card-meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .tag-row {
+      display: grid;
+      gap: 6px;
+    }
+    .tag {
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--ink);
+    }
+    .tag-strong {
+      color: var(--brand);
+      font-weight: 700;
+    }
+    .subtle {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .qa-list,
+    .support-list,
+    .report-block,
+    .section-preview,
+    .citation-list {
+      display: grid;
+      gap: 12px;
+    }
+    .qa-card,
+    .support-item,
+    .support-box {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
+    }
+    .qa-question {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+    .qa-answer {
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }
+    .support-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .citation {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f5f8fb;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .flat-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .flat-section {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .flat-stack .flat-section:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .flat-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .flat-value {
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }
+    .flat-list {
+      display: grid;
+      gap: 6px;
+    }
+    .flat-item {
+      font-size: 14px;
+      line-height: 1.8;
+      word-break: break-word;
+    }
+    .flat-item::before {
+      content: "• ";
+      color: var(--brand);
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 14px 16px;
+      list-style: none;
+      background: var(--panel-soft);
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    .fold-body {
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 10px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #374151;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .facts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .mini-card {
+      padding: 14px;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    .mini-card .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .mini-card .value {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .chat-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .chat-progress {
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+    .chat-progress-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .chat-progress-title {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .chat-progress-status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .chat-progress-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .chat-progress-step {
+      position: relative;
+      display: grid;
+      gap: 4px;
+      padding: 8px 8px 8px 12px;
+      border-radius: 10px;
+      background: #f8fbfe;
+      color: var(--muted);
+      transition: all 160ms ease;
+    }
+    .chat-progress-step::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 12px 0 0 12px;
+      background: transparent;
+    }
+    .chat-progress-step.is-active {
+      color: var(--ink);
+      box-shadow: inset 0 0 0 1px #c8d7e6;
+    }
+    .chat-progress-step.is-active::before {
+      background: var(--brand);
+    }
+    .chat-progress-step.is-done {
+      color: var(--ink);
+      background: #fbfcfe;
+    }
+    .chat-progress-step.is-done::before {
+      background: #4c7f58;
+    }
+    .chat-progress-step-label {
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .chat-progress-step-detail {
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .chat-toolbar {
+      display: grid;
+      gap: 8px;
+    }
+    .chat-toolbar label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .chat-input,
+    .chat-textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      color: var(--ink);
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-thread {
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .chat-empty {
+      padding: 14px 0;
+      border-top: 1px dashed var(--line);
+      border-bottom: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    .chat-msg {
+      padding: 0;
+      background: transparent;
+    }
+    .chat-msg + .chat-msg {
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .chat-msg-user {
+      padding: 14px;
+      border: 1px solid #c9d9ea;
+      border-radius: 14px;
+      background: var(--brand-soft);
+    }
+    .chat-role {
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .chat-body {
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-answer {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-answer-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }
+    .chat-answer-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e8eff7;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .chat-answer-summary {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-answer-block {
+      padding-left: 12px;
+      border-left: 2px solid #d7e1eb;
+    }
+    .chat-answer-block-primary {
+      border-left-color: #9eb6cf;
+    }
+    .chat-answer-head {
+      margin-bottom: 6px;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .chat-answer-text {
+      font-size: 14px;
+      line-height: 1.85;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-answer-block-primary .chat-answer-text {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.9;
+    }
+    .chat-answer-list {
+      margin: 0;
+      padding: 12px 16px 12px 30px;
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+      line-height: 1.85;
+    }
+    .chat-followups {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .chat-citations {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chat-citation {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f8fbfe;
+      border: 1px solid #dde7f0;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .chat-citation-head {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .chat-citation-page {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e8eef5;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .chat-citation-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .chat-citation-actions {
+      display: inline-flex;
+      align-items: center;
+    }
+    .chat-form {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+    .chat-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .chat-suggestions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chat-suggestion,
+    .chat-followup,
+    .chat-submit {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 9px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chat-submit {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+      font-weight: 700;
+    }
+    .chat-submit[disabled],
+    .chat-suggestion[disabled],
+    .chat-followup[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .chat-status {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .chat-live {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-live-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .chat-live-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--brand);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chat-live-phase {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-live-text {
+      min-height: 48px;
+      font-size: 14px;
+      line-height: 1.85;
+      color: var(--ink);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-live-skeleton {
+      display: grid;
+      gap: 8px;
+    }
+    .chat-live-line {
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #edf3f9 0%, #dfe9f3 45%, #edf3f9 100%);
+      background-size: 200% 100%;
+      animation: chat-shimmer 1.4s linear infinite;
+    }
+    .chat-live-line.is-short {
+      width: 56%;
+    }
+    .chat-live-line.is-mid {
+      width: 78%;
+    }
+    @keyframes chat-shimmer {
+      0% {
+        background-position: 200% 0;
+      }
+      100% {
+        background-position: -200% 0;
+      }
+    }
+    .result-shell {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 18px 18px 16px;
+      gap: 14px;
+    }
+    .result-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .result-tab {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .result-tab.is-active {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }
+    .result-panels {
+      min-height: 0;
+      height: 100%;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .result-panel {
+      display: none;
+      padding-right: 2px;
+    }
+    .result-panel.is-active {
+      display: grid;
+      gap: 16px;
+    }
+    @media (max-width: 1320px) {
+      body {
+        overflow: auto;
+      }
+      .content-grid {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      .page {
+        height: auto;
+        min-height: 100vh;
+      }
+      .page-stack {
+        height: auto;
+        grid-template-rows: auto auto;
+      }
+      .project-stack,
+      .nav-stack,
+      .main-stack,
+      .side-stack {
+        overflow: visible;
+        padding-right: 0;
+      }
+    }
+    @media (max-width: 1120px) {
+      .facts-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 760px) {
+      .page {
+        padding: 12px;
+        height: auto;
+      }
+      .hero,
+      .panel-inner {
+        padding: 18px;
+      }
+      .hero-top {
+        flex-wrap: wrap;
+      }
+      .result-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 4px;
+      }
+      .facts-grid {
+        grid-template-columns: 1fr;
+      }
+      .chat-progress-steps {
+        grid-template-columns: 1fr 1fr;
+      }
+      .report-title {
+        font-size: 18px;
+      }
+      .score-trigger,
+      .score-card-head {
+        display: grid;
+      }
+      .dimension-radar-card,
+      .dimension-detail-item {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-stack">
+      <header class="panel hero">
+        <div class="hero-top">
+          <h1 class="report-title">低空多源感知一体化病害检测和灾害监测装备研发与应用示范</h1>
+          <div class="score-card score-mid">
+            <div class="score-label">综合评分 / 等级</div>
+            <div class="score-main">
+              <div class="score-value">7.01</div>
+              <div class="score-grade">C</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-grid debug-layout">
+        
+        <main class="main-stack">
+          
+          
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>解析章节预览</h2>
+            <div class="section-preview">
+              <details><summary>概述</summary><pre>河北省创新能力提升计划项目申报书
+专项名称 ：科技研发平台专项
+指南代码 ：3010601-燕赵实验室项目项目名称 ：低空多源感知一体化病害检测和灾害监测装备研发与应用示范
+申报单位 ：河北交通投资集团有限公司
+合作单位 ：河北省交通规划设计研究院有限公司,河北交规院瑞志交通技术咨询有限公司
+项目负责人 ：王艳丽
+归口管理部门：石家庄市科技局
+主责单位：省科技厅
+分管部门 ：省科技厅基础研究与科技平台建设处
+申报预算年度 ：2025年
+起止年月 ：2025-05 至 2026-06
+填报日期 ：2025-05-14
+河北省科学技术厅制</pre></details><details><summary>国外研究现状及趋势</summary><pre>国外在低空巡检领域起步较早，凭借先进的航空技术、电子技术以及雄厚的科研实力，总体研究水平处于世界前列。以美国、欧洲、日本等为代表的国家和地区，在无人机平台研发、传感器技术、智能算法以及数据处理等方面取得了众多成果。 在无人机平台方面，不断追求更长的续航时间、更大的载荷能力以及更高的飞行稳定性，如美国AeroVironment公司研发的RQ-11“大乌鸦”无人机，续航时间可达2-3小时，能在复杂环境下稳定飞行，广泛应用于军事侦察和部分民用巡检领域 。欧洲的一些企业则专注于开发大型固定翼无人机，其载荷能力可达到数十公斤，续航里程超过上千公里，适合大面积区域的长时间巡检任务；在传感器技术方面，作为低空巡检获取数据的关键，国外也有显著进展。高分辨率光学相机、高精度红外热成像仪、激光雷达等传感器不断升级。如FLIR Systems公司生产的红外热成像仪，其温度分辨率可达0.03℃，能够精准检测到目标物体极细微的温度变化，在电力设施巡检、工业设备故障检测中发挥重要作用。激光雷达技术也得到长足发展，可快速获取高精度的三维地形和目标物体信息，为基础设施巡检、地形测绘等提供了强大的数据支持；在智能算法与数据处理方面，机器学习和深度学习算法被广泛应用于对巡检数据的分析和解读。通过大量的样本数据训练，算法能够自动识别图像和视频中的异常情况，如电力线路的破损、管道的泄漏、建筑物的裂缝等，如谷歌旗下的DeepMind团队正在研究将人工智能技术应用于无人机低空巡检，利用深度学习算法对海量巡检数据进行分析，极大提高了缺陷识别的准确性和效率。 在低空灾害监测方面，京都大学防灾研究所利用其在日本境内设立的18个观测中心，通过现场观测、实验室模拟、数值计算等多种方法，结合低空观测平台获取的数据，开展相关研究，为日本的灾害防治提供技术支持和决策依据；斯坦福大学研究团队利用无人机安装各种传感器和相机进行低空飞行，收集地质灾害、森林火灾等方面的数据，了解地质体变化、识别潜在危险因素，以及在森林火灾监测中迅速发现火源位置、火势扩展方向等，为灾害预警和救援提供支持； 近太空实验室部署带有人工智能摄像头的高空气球，在平流层飞行获取高分辨率图像，为保险公司提供对自然灾害地区的频繁细致观察，帮助他们更好地评估财产损失并做出更精确的风险评估，加快理赔速度。 在未来，国外低空灾害监测技术将继续保持快速发展态势。在技术创新方面，随着5G、人工智能等前沿技术的不断发展，将进一步赋能低空灾害监测。5G技术将实现无人机与地面控制站之间更高速、稳定的数据传输，支持无人机进行更复杂的实时任务；人工智能技术将使无人机具备更强的自主决策能力，能够在复杂环境下自主规划最优巡检路径、更精准地识别目标异常。
+项目研发国外相关的主要文献、专利、标准：
+[1] Yanjun L , Xiaogang B , Bo Z ,et al.New...</pre></details><details><summary>国内研究现状及趋势</summary><pre>低空灾害监测技术是指利用低空飞行器，如无人机、轻型直升机等，在离地面几十米到几百米相对较低的高度对特定区域或目标进行灾害监测的一种技术手段。与传统灾害监测技术相比，低空巡检具有巡检效率高、安全性强、数据采集精度高、巡检机动灵活与巡检成本低等多种优势。近两年,中国低空巡检市场迎来了前所未有的快速增长浪潮，成为推动低空经济快速发展的不可或缺的关键力量。 在低空巡检领域，国家电网在低空巡检技术研究上处于行业领先水平，国网浙江电科院“红外大脑”借助专业算法，利用AI算法提升缺陷识别精度，1小时可完成以往3名技术人员20天的1.2万张红外图像分析，发热缺陷检出率超81%，国网湖北依托 PMS3.0搭建省级机巡平台，通过构建平台实现业务流程自动化，打造“标准网格 + 智能接单”模式，通过自主研发车载式移动机场，使巡检效率飙升3-6倍。2023 年国家电网 90% 输电线路的监测由无人机监测，AI 算法精准度高达 99.7%；中国科学院地理资源所联合福建省高速公路集团等开展 “高速公路无人机组网遥感智能巡检关键技术研究” 项目，攻克无人机组网管控与航路规划等技术，研发智能巡检系统平台；陕西交控科技发展集团高速检测公司旗下飞行技术有限公司自主研发 “空地一体化智慧巡检系统”，这些项目通过多技术融合与系统平台构建，实现了对高速公路的高效巡检，部分成果经检测处于行业类领先水平。 在研究方法上，国外低空灾害监测研究注重多平台协同，如利用太空观测站、卫星、航天飞机、中大型无人机、地面遥感车、海洋观测船等构建多传感器遥感平台，在数据处理中，人工智能、机器学习等技术应用成熟，能快速准确地分析处理海量数据。 国内在无人机低空遥感技术应用广泛，同时也在积极开展多源数据融合、组网观测等研究。例如，中国气象局利用风廓线雷达组网进行大气动力参数反演，但在多平台协同的系统性和数据处理技术的成熟度上，与国外存在一定差距。在研究进展上，国外构建了较为完善的低空灾害监测体系，能够实现对全球范围内各类灾害的全方位实时动态监测，在无人机技术创新应用、高空气球监测系统发展等方面较为领先，如斯坦福大学利用无人机监测地质灾害和森林火灾，近太空实验室部署高空气球网络获取高分辨率图像，国内在低空灾害监测领域发展迅速，初步建立了应对重大自然灾害的遥感监测和预警系统，如在矿山地质灾害监测方面，无人机低空遥感技术已广泛应用，并且在强对流天气监测预警方面取得了创新性成果。不过在整体监测体系的完善程度和部分前沿技术的应用上，与国外先进水平仍有一定距离。 国内在低空灾害监测技术领域取得显著成效，这为低空灾害监测技术的深度应用奠定了丰厚的基础，随着技术持续演进，将在低空灾害监测的全流程智能化、多源信息感知与信息传输等方面加快突破，推动构建智能化低空灾害监测技术体系，为河北省乃至全国交通基础设施的数字化、智能化转型提供技术支撑。
+项...</pre></details><details><summary>低空多源感知一体化检监测智能装备研发</summary><pre>基于无人机搭载多种检测设备的低空智能监测系统，通过整合不同传感器的协作能力与数据互补优势，打造高效、稳定的综合解决方案。在设备协同方面，根据无人机的承载能力优化布局，确保设备运行稳定，并通过统一的时间校准和触发机制实现多设备精准同步采集；根据不同任务需求灵活切换传感器组合模式，例如道路病害识别时结合高清相机与激光雷达扫描，边坡灾害监测时联合激光雷达与高光谱相机。数据处理层面，将三维空间数据与图像信息进行空间匹配和时间校准，利用智能算法关联几何结构与光谱特征，结合多视角图像生成更精细的三维模型；在目标识别环节，综合图像分析与空间数据检测结果，通过多重验证提高复杂场景下的准确度。系统支持实时数据处理与多设备协作学习，减少对数据传输的依赖。通过动态调整数据处理方式、优化计算效率及增强环境适应性，解决多类型数据整合、实时响应及数据实时传输等问题，为低空智能检监测提供高效、可靠的技术支持。</pre></details><details><summary>基于多要素空间数据底座的超低空高精度数字航图</summary><pre>本研究聚焦 &quot;基于多要素空间数据底座的超低空高精度数字航图&quot;，核心内容包括在特定示范研究区域内，系统集成交通设施净空限界、周边建筑净空限界、电力线路净空限界以及巡检测目标要素等多维空间数据，通过精细化的数据采集与融合处理，形成适用于无人机自主巡检一体化的超低空空间数据底座。数据底座精准刻画区域内各类设施的空间限界特征，深度整合巡检目标要素，为无人机超低空作业构建高精度的三维空间基准。在此基础上，研究团队围绕高精度数字航图展开技术攻关，研发无人机巡检航线自动规划功能，通过融入空间限界约束条件与巡检任务需求，实现航线的智能化生成与优化，助力无人机在复杂超低空环境中开展自主巡检作业，为低空多源感知的检监测提供高效精准的技术支撑。 融合激光点云建模与多源遥感数据，基于图优化技术实时更新航图空间拓扑关系；开发基于注意力机制的多尺度特征匹配模型实现毫米级病害区域坐标映射；通过时空联合索引技术建立超低空航图动态更新机制；结合边缘计算节点实现航线路径规划，支撑无人机在复杂环境下的航线规划决策。</pre></details><details><summary>基于多模态数据融合与深度学习的低空病害检监测平台算法研究</summary><pre>本研究聚焦于无人机低空多源感知一体化病害检监测平台算法开发，旨在构建融合多模态传感数据与智能分析的综合决策系统。通过搭载高清相机、激光雷达和高光谱相机，实现对道路、边坡等基础设施的毫米级表观病害识别、三维形变检测及地质稳定性动态监测。研究重点突破多源异构数据时空对齐算法，建立无人机动态感知数据与地基传感器静态监测数据的协同融合机制，利用深度学习构建病害特征迁移学习模型，解决地基数据覆盖盲区与无人机时序监测断点问题。同时研发基于多尺度特征融合的边坡滑移预警算法，结合InSAR时序形变分析与地质力学模型，实现多维感知数据耦合分析，形成&quot;感知-诊断-决策&quot;闭环，为基础设施全生命周期管理提供智能化技术支撑。</pre></details><details><summary>6G通信技术研究及示范应用</summary><pre>针对低空交通灾害监测场景，搭建基于6G技术的通信链路，实现对高速移动无人机的精准链路跟踪和稳定连接，确保在复杂空域环境中指令与数据实时传输，指令下达与飞行状态回传可实现毫秒级响应；示范应用6G通信技术，实现无人机高光谱视频、激光点云等数据实时传输，并与5G实测通信指标进行效果对比。 基于深度学习的波束赋形算法与时空特征提取的信道预测模型，实现对高速无人机三维运动轨迹的精准跟踪；设计轻量化神经网络驱动的微秒级资源调度机制，构建时敏型数据传输通道；设计感知-通信-计算融合架构，运用联邦学习算法实现边缘节点的分布式协同，支持多源环境数据的实时融合处理与决策共享。</pre></details><details><summary>低空检监测智能装备研发</summary><pre>集成激光雷达点云生成、高光谱特征提取及高清相机三维重构等核心算法，构建空天地一体化的智能检测装备；采用多模态数据时空配准技术提高数据融合效率，实现毫米级路面病害检测，构建厘米级边坡三维地质模型；运用6G通信的低时延特性实现边缘计算与云端协同，结合迁移学习机制提升不同地质环境下的灾害识别准确率。</pre></details><details><summary>道路病害及边坡灾害智能识别算法</summary><pre>本项目识别分析算法采用多模态数据融合与深度学习协同创新的研究方法，首先构建跨场景数据采集体系，针对道路病害检测，通过形态学算法与点云配准技术提取病害的二维形态-三维几何融合特征，建立时空关联的多模态数据集；面向边坡灾害识别，融合无人机激光点云与影像数据，设计特征对齐框架实现跨模态时空校准。在此基础上，改进YOLOv8模型架构，结合多分支空洞卷积模块提升多尺度特征提取能力，并创新设计时空记忆单元实现道路异常事件的时序关联分析。</pre></details><details><summary>项目研究方法（技术路线）的可行性、先进性分析</summary><pre>低空多源感知一体化监测系统通过协同集成高清相机、激光雷达与高光谱相机等多源传感器，突破传统单设备监测能力局限，构建了道路病害与边坡灾害的高效检监测体系。该装备可同步获取三维影像、激光点云及光谱数据，实现裂缝、坑槽等道路病害的精准识别与边坡变形的高效监测，显著提升无人机单次飞行的综合巡检效率。构建厘米级精度的三维数字底座，融合交通设施、电力线路等静态空间数据与动态任务需求，通过智能航线规划算法实现无人机“感知-决策-执行”闭环控制，确保复杂空域下的安全巡检。针对多源数据的智能解析，建立多模态数据协同分析模型，有效提升道路裂缝分类精度与边坡失稳预警能力，推动检测技术向高精度、低时延方向发展。同时搭建高速移动无人机通信链路，为空地协同监测提供稳定可靠的数据传输保障。整套技术体系通过“多源感知-数字底座-平台算法-实时通信”的全链条创新，解决了公路领域无人机应用中多维数据获取、自主作业规划、病害精准识别及远程交互控制等核心问题，充分体现了多源感知一体化装备的先进性与工程可行性。</pre></details><details><summary>项目预期的主要创新点</summary><pre>（围绕基础前沿、共性关键技术或应用试验等层面，简述项目预期的主要创新点。具体内容应包括该项创新的基本形态及其前沿性、时效性等，并说明是否具备方法、理论和知识产权特征。每项创新点的描述限300字以内） 创新点1 开发自主可控无人机载快照式衍射编码高光谱相机基于快照式衍射编码高光谱成像技术，在可见光范围内实现视频31个光谱波段连续成像，并降低光谱成像成本95%，对于在移动环境下道路异常状态、材质老化和灾害征兆的自动识别与监测提供了可能，切实推动了光谱技术在交通行业的落地应用。 创新点2 公路行业超低空高精度巡检测一体化数字航图构建了厘米级空地一体障碍物数字航图，融合交通净空限界、建筑净空限界、电力净空限界以及巡检测目标要素，实现在10~15m超低空高精度自主稳定飞巡，为路域范围开展低空应用提供可能。通过激光雷达扫描和高清相机同步拍摄，采用多源数据融合和机器学习分类标注，障碍物标注准确率达到95%以上，预计可提升超低空巡检飞行效率20%以上，有效填补了国内120米以下超低空路域范围内无人机自主巡检查数据航图的空白。 创新点3 构建一检全识的低空巡检测一体化技术体系基于高光谱、高清相机、激光雷达等技术，可实现抛洒物等日常巡检要素全覆盖，可实现道路裂缝、坑槽、沉陷等周期性检测覆盖率90%，同时可实现污染物泄露、路域植被等一般检监测难以覆盖的内容，实现边坡水毁等路域范围内设施灾害的高频次动态监测。为提高交通设施本质安全水平和交通运营安全水平提供基础技术支撑。 创新点4 构建了低空检监测一体化养护和预警新范式装备采用“高飞宏观+抵近微观”的工作模式，道路病害正常巡检高度为50~80米，检测精度达到厘米级。当发现实时传输结果接近警戒阈值时，无人机启动抵近观测模式，病害识别精度可达到毫米级，实现道路全域病害“一检全识”，灾前公路灾害风险要素核查识别准确率不低于90%，公路两侧及周边堆积物土方量计算偏差不超过10%，地表形变监测精度达到厘米级。 创新点5 采用多源融合技术赋能应用场景创新升级采用多传感器模块化技术，统一物理接口和通讯协议，同时挂载高清相机、激光雷达、高光谱相机等载荷，完成多任务同时作业。并采用轻量化目标识别模型与时序信息融合技术，应用新一代智能化云控数据中台，实现数据时空融合和数据供需间“秒”传，助力多载荷在无人机高速巡航状态下高效、精准地识别目标。</pre></details><details><summary>申报项目与所属指南或申报通知方向的关联关系</summary><pre>本项目《低空多源感知病害检测和灾害监测装备研发与应用示范》紧密契合关键任务，在技术方向、研究内容和目标成果上与指南一致。 项目围绕交通道路灾病害检监测方向的关键共性技术问题，开展集成化低空检监测智能装备、数字航图建设、平台算法研究、通信技术等任务研发并进行示范应用。在低空检监测智能装备研发方面，智能化集成无人机与激光雷达、高光谱相机、高清相机等多源感知装备，融合AI算法与通信技术，提供从数据采集到智能分析的完整解决方案；重点研发无人机机载高光谱相机，解决因无人机姿态变化引起的图像偏移和模糊问题，提高图像质量和数据准确性。建设服务无人机自主巡检的超低空高精度数字航图及厘米级精细化路基边坡的数据底座，形成低空广域多介质跨尺度公路智能监测体系，解决地质灾害传统监测手段成本高、区域受限、灵活性低、时效性差、危险区域监测困难等问题。基于5G通信技术的稳定传输，研究试点应用6G通信技术，构建高可靠、低时延、广覆盖的公路低空通信链路，支持“边飞行—边传输—边处理”、实时成图、动态监测等功能，为低空巡检通信提供技术支撑。</pre></details><details><summary>申报单位在该研究方向的前期任务承担情况、相关研究成果</summary><pre>（应说明前期任务取得的主要成果、指标及效果，限800字以内） 河北交通投资集团有限公司参与科技部雄安专项“空天信息技术的交通基础设施精准监管技术”项目1项，国家重点研发计划“道路网交通安全主动防控与应急保障技术示范及应用”项目1项，主持河北省重点研发计划“河北省智慧交通大数据关键技术研究与应用示范”、“基于深度学习的高速公路边坡病害快速巡检技术研究”项目2项，承担河北省自然科学基金重大项目“极端环境下高速公路路基——边坡坍塌灾害孕灾机理和预警技术”1项，主持河北省科技计划揭榜挂帅 “城市道路——管网隐蔽病害快速检测与智能诊断关键技术与装备”和“交通专用高频段超距毫米波雷达关键技术”项目2项。 建成覆盖全省的北斗地基增强系统、国家北斗数据中心石家庄中心和沧州中心以及省级公路基础设施监测预警平台。承担了5项交通强国建设试点任务，依托荣乌高速新线建成11公里车路协同自动驾驶原位测试基地。其中，“智慧高速公路建设运营”交通强国建设试点任务，于2024年3月顺利通过交通运输部验收，评定等级为优秀，是河北省首个通过验收的交通强国建设试点任务。“低空主动式边坡安全监测预警技术”和“雄安新区无人机公路巡检数据安全防护体系”项目入选交通运输部低空无人机应用公路巡查检查先行项目。河北低空飞行服务保障体系标准化试点项目入选全国唯一一个低空方向试点项目。组织开展了河北省高速公路 8264.4公里、149条段设计回溯高速公路设计回溯工货；形成覆盖病害点位、自然灾害数据库风险点及汛期排查主要风险点等基础性支撑数据。 荣获国家级科技奖励2项，省部级科技奖励20余项，其中，“高速公路交通状态智能感知与主动管控关键技术及应用”等成果荣获国家科学技术进步奖二等奖。</pre></details><details><summary>负责人及项目主要骨干人员的科研水平及主要成果</summary><pre>王艳丽，河北交通投资集团有限公司副总工程师，博士研究生，正高级工程师，具有交通部专业监理工程师资格，交通运输部评标专家，主要从事高速公路建设管理和技术管理工作，参与完成了总投资1788亿元的高速公路建设管理，包括太行山高速和雄安新区对外骨干路网等重点项目，推进集团“永久路面、智能建造、智慧高速”等创新成果在荣乌新线和京德高速落地实施，开展智能建造关键技术研究及示范应用，组织编制27项雄安新区对外骨干路网系列标准，获评交投十年“最美奋进者”称号。积极参与科技项目研发工作，获得河北省科技进步二等奖1项、教育部科技进步一等奖1项，华夏建设科学技术一等奖1项，参与编制标准4部。 雷伟，正高级工程师，中国公路学会百名优秀工程师、中国公路学会2023高速公路信息化年度领军人才，河北省交通规划设计研究院有限公司总工程师，主要研究领域为基础设施群智能监测与预警、智能交通等。近五年作为子课题负责人参与国家级课题1项；主持河北省重点研发计划1项，已顺利通过验收；作为骨干参与省级重点研发计划项目6项。获中国公路学会科学技术一等奖、二等奖、中国公路学会隧道与地下空间工程创新特等奖、中国公路建设行业协会科技进步三等奖等多项省部级奖项。参编国家标准1项、行业标准1项，地方标准6项；获得国家发明专利14项，出版专著2部。 范小勇，博士研究生，河北省交投集团太行创新研究院总工程师，正高级工程师、国家注册城市规划师、博士主要从事城市规划、城市交通、智慧城市规划等工作，近年来主持《全国流通节点城市布局规划》、《天津市城市总体规划》、《天津市物流业布局规划》、《天津市快递物流规划》、《天津市医疗卫生规划》、《滨海新区综合交通规划》、《滨海新区空间发展战略》等全国和天津市重大规划30余项，参与《京津冀城乡空间规划》等京津冀协同发展重要规划项目、国家自然科学基金项目2项、省部级科技项目5项。在国家级核心期刊上发表论文20余篇，撰写专著2部获得发明专利、软著等知识产权10余项。获得全国优秀规划设计奖3项，省部级优秀规划设计10余项。获省级五一劳动奖章。 郭晓华，女，硕士研究生，正高级工程师，河北工业大学交通土建专业毕业，主要从事公路沥青路面性能、公路安全检测评估、公路基础设施监控等方面研究，作为主研人员完成科研课题5项，获得中国公路协会科学技术奖三等奖1项，交通运输厅科技进步一等奖3项，二等奖1项；发明专利7项，在核心期刊发表学术论文5篇，合著专业著作4部。作为项目负责人负责完成高速公路养护工程项目施工图设计十余项。</pre></details><details><summary>申报单位相关科研条件状况</summary><pre>河北交通投资集团有限公司是河北省政府管理的国有独资企业（全民所有制），主要负责河北省网高速公路的筹资、建设、养护等运营管理业务，以及科技研发、勘察设计、工程施工、监理咨询、智能交通等高速公路相关业务。拥有交通运输部公路建设与养护技术、材料及装备交通运输行业研发中心、交通运输部自动驾驶技术交通运输行业研发中心、河北省车路云网工程研究中心、河北省交通基础设施智慧运维工程研究中心、河北省道路工程智能监测与运维技术创新中心、河北省道路交通智能控制与管理技术创新中心等10个省部级以上创新中心，交通运输部公路设施使用状态监测与养护保障核心技术协同创新平台1个，博士后工作站2个，院士工作站1个，拥有河北省公路安全感知与监测重点实验室、燕赵现代交通实验室2个省级实验室，形成了具备强大创新能力的科研平台研发集群。承担国家/省级科技项目19项，授权专利510项（发明专利172项）。荣获国家级科学技术进步奖、国家优质工程奖、省部创新奖、工程奖等200余项。拥有高新技术企业11家，专精特新中小企业6家，创新型中小企业12家，科技型中小企业18家。</pre></details><details><summary>任务分工</summary><pre>河北交通投资集团有限公司：申报单位，负责项目总体规划与统筹，组织开展项目研发工作，协调各合作单位按照要求完成研究任务，严格按照河北省省级科技计划专项经费管理办法等规定使用资金；统筹各单位按照考核指标及项目要求完成课题阶段性评估和验收工作。 河北省交通规划设计研究院有限公司：合作单位，负责无人机载高光谱相机研发，构建适用于无人机自主巡检一体化的超低空精细化空间数据底座，按照项目实施和验收要求完成项目研发工作。 河北交规院瑞志交通技术咨询有限公司：合作单位，负责无人机搭载高清相机的轻量化改进，多源感知设备的融合，建立一套基于多源数据融合算法的数据平台。</pre></details>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>调试元信息</h2>
+            <table class="kv-table">
+              <tr><th>项目ID</th><td>c0a6828463cb4c1985c7fca26d5328d3</td></tr>
+              <tr><th>评审ID</th><td>EVAL_c0a6828463cb4c1985c7fca26d5328d3_20260422182910671452</td></tr>
+              <tr><th>源文件</th><td>c0a6828463cb4c1985c7fca26d5328d3.docx</td></tr>
+              <tr><th>生成时间</th><td>2026-04-22T18:30:09.548955</td></tr>
+            </table>
+          </div>
+        </section>
+            
+        </main>
+
+        <aside class="side-stack">
+          <section class="panel result-shell" id="result-shell">
+            <div class="workspace-head">
+              <h2>项目评审调试报告</h2>
+              
+            </div>
+            <div class="result-panels">
+              <section class="result-panel is-active" id="report-overview">
+                <div class="summary-block">
+                  <p class="summary">本项目综合评分7.01分，等级评定为C级（中等）。项目在团队能力等方面表现突出。在技术可行性、创新性、预期成果、社会效益、经济效益、风险控制、进度合理性、合规性等方面表现一般，有改进空间。</p>
+                </div>
+                <div class="highlight-grid">
+                  <div class="highlight-card">
+                    <div class="highlight-label">研究目标</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">形成《低空多源感知病害检测和灾害监测装备研发与应用示范研究报告》；研发一套高集成智能化检监测装备，建设基于多要素空间数据底座的超低空高精度数字航图；开发适用于道路灾病害监测及路面异常状态识别等应用场景智能算法；完成5G、6G通信技术在低空监测场景的示范应用</div>
+                  <div class="highlight-item-evidence">证据：...度目标（当前年度）|第三年度目标（当前年度）[表格行30]总体目标;实施期目标:形成《低空多源感知病害检测和灾害监测装备研发与应用示范研究报告》；研发一套高集成智能化检监测装备，建设基于多要素空间数据底座的超低空高精度数字航图；开发适用于道路灾病害监测及路面异常状态识别等应用场景智能算法；完成5G、6G...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-10" data-doc-jump="true" data-page="10" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="度目标当前年度|第三年度目标当前年度[表格行30]总体目标;实施期目标:形成低空多源感知病害检测和灾害监测装备研发与应用示范研究报告研发一套高集成智能化检监测装备建设基于多要素空间数据底座的超低空高精度数字航图开发适用于道路灾病害监测及路面异常状态识别等应用场景智能算法完成5G6G" data-highlight-text="...度目标（当前年度）|第三年度目标（当前年度）[表格行30]总体目标;实施期目标:形成《低空多源感知病害检测和灾害监测装备研发与应用示范研究报告》；研发一套高集成智能化检监测装备，建设基于多要素空间数据底座的超低空高精度数字航图；开发适用于道路灾病害监测及路面异常状态识别等应用场景智能算法；完成5G、6G..." data-packet-page="11" data-highlight-rects='[{&quot;x&quot;: 0.284825, &quot;y&quot;: 0.835796, &quot;w&quot;: 0.265895, &quot;h&quot;: 0.030253}]'>查看原文 · 第 10 页</a></div>
+                </div>
+                </div>
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">创新点</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">自主可控无人机载快照式衍射编码高光谱相机</div>
+                  <div class="highlight-item-evidence">证据：...明是否具备方法、理论和知识产权特征。每项创新点的描述限300字以内）创新点1开发自主可控无人机载快照式衍射编码高光谱相机基于快照式衍射编码高光谱成像技术，在可见光范围内实现视频31个光谱波段连续成像，并降低光谱成像成本95%，对于在移动环境下道路异常状态、材质老化和灾害征兆的自动...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="明是否具备方法理论和知识产权特征每项创新点的描述限300字以内创新点1开发自主可控无人机载快照式衍射编码高光谱相机基于快照式衍射编码高光谱成像技术在可见光范围内实现视频31个光谱波段连续成像并降低光谱成像成本95%对于在移动环境下道路异常状态材质老化和灾害征兆的自动" data-highlight-text="...明是否具备方法、理论和知识产权特征。每项创新点的描述限300字以内）创新点1开发自主可控无人机载快照式衍射编码高光谱相机基于快照式衍射编码高光谱成像技术，在可见光范围内实现视频31个光谱波段连续成像，并降低光谱成像成本95%，对于在移动环境下道路异常状态、材质老化和灾害征兆的自动..." data-packet-page="10" data-highlight-rects='[{&quot;x&quot;: 0.464331, &quot;y&quot;: 0.872618, &quot;w&quot;: 0.461971, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">公路行业超低空高精度巡检测一体化数字航图</div>
+                  <div class="highlight-item-evidence">证据：...征兆的自动识别与监测提供了可能，切实推动了光谱技术在交通行业的落地应用。创新点2公路行业超低空高精度巡检测一体化数字航图构建了厘米级空地一体障碍物数字航图，融合交通净空限界、建筑净空限界、电力净空限界以及巡检测目标要素，实现在10~15m超低空高精度自主稳定飞巡，为路域范围开展低...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="征兆的自动识别与监测提供了可能切实推动了光谱技术在交通行业的落地应用创新点2公路行业超低空高精度巡检测一体化数字航图构建了厘米级空地一体障碍物数字航图融合交通净空限界建筑净空限界电力净空限界以及巡检测目标要素实现在10~15m超低空高精度自主稳定飞巡为路域范围开展低" data-highlight-text="...征兆的自动识别与监测提供了可能，切实推动了光谱技术在交通行业的落地应用。创新点2公路行业超低空高精度巡检测一体化数字航图构建了厘米级空地一体障碍物数字航图，融合交通净空限界、建筑净空限界、电力净空限界以及巡检测目标要素，实现在10~15m超低空高精度自主稳定飞巡，为路域范围开展低..." data-packet-page="11" data-highlight-rects='[{&quot;x&quot;: 0.284825, &quot;y&quot;: 0.068009, &quot;w&quot;: 0.407, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">低空巡检测一体化技术体系</div>
+                  <div class="highlight-item-evidence">证据：...20米以下超低空路域范围内无人机自主巡检查数据航图的空白。创新点3构建一检全识的低空巡检测一体化技术体系基于高光谱、高清相机、激光雷达等技术，可实现抛洒物等日常巡检要素全覆盖，可实现道路裂缝、坑槽、沉陷等周期性检测覆盖率90%，同时可实现污染物泄露、路域植被等一般...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="20米以下超低空路域范围内无人机自主巡检查数据航图的空白创新点3构建一检全识的低空巡检测一体化技术体系基于高光谱高清相机激光雷达等技术可实现抛洒物等日常巡检要素全覆盖可实现道路裂缝坑槽沉陷等周期性检测覆盖率90%同时可实现污染物泄露路域植被等一般" data-highlight-text="...20米以下超低空路域范围内无人机自主巡检查数据航图的空白。创新点3构建一检全识的低空巡检测一体化技术体系基于高光谱、高清相机、激光雷达等技术，可实现抛洒物等日常巡检要素全覆盖，可实现道路裂缝、坑槽、沉陷等周期性检测覆盖率90%，同时可实现污染物泄露、路域植被等一般..." data-packet-page="11" data-highlight-rects='[{&quot;x&quot;: 0.508195, &quot;y&quot;: 0.27706, &quot;w&quot;: 0.347796, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                </div>
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">技术路线</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">构建厘米级精度的三维数字底座，融合交通设施、电力线路等静态空间数据与动态任务需求，通过智能航线规划算法实现无人机“感知-决策-执行”闭环控制，确保复杂空域下的安全巡检</div>
+                  <div class="highlight-item-evidence">证据：...建厘米级精度的三维数字底座，融合交通设施、电力线路等静态空间数据与动态任务需求，通过智能航线规划算法实现无人机“感知-决策-执行”闭环控制，确保复杂空域下的安全巡检。针对多源数据的智能解析，建立多模态数据协同分析模型，有效提升道路裂缝分类精度与边坡失稳预警能力，推动检测技术向高精度、低时延方向发展...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-6" data-doc-jump="true" data-page="6" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="建厘米级精度的三维数字底座融合交通设施电力线路等静态空间数据与动态任务需求通过智能航线规划算法实现无人机感知决策执行闭环控制确保复杂空域下的安全巡检针对多源数据的智能解析建立多模态数据协同分析模型有效提升道路裂缝分类精度与边坡失稳预警能力推动检测技术向高精度低时延方向发展" data-highlight-text="...建厘米级精度的三维数字底座，融合交通设施、电力线路等静态空间数据与动态任务需求，通过智能航线规划算法实现无人机“感知-决策-执行”闭环控制，确保复杂空域下的安全巡检。针对多源数据的智能解析，建立多模态数据协同分析模型，有效提升道路裂缝分类精度与边坡失稳预警能力，推动检测技术向高精度、低时延方向发展..." data-packet-page="10" data-highlight-rects='[{&quot;x&quot;: 0.143962, &quot;y&quot;: 0.496801, &quot;w&quot;: 0.529883, &quot;h&quot;: 0.030253}]'>查看原文 · 第 6 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">构建多要素空间数据底座，形成超低空精细化空间数据库</div>
+                  <div class="highlight-item-evidence">证据：...设计与无人机适配方案，完成装备样机试制与初步集成；（2）构建多要素空间数据底座，形成超低空精细化空间数据库；（3）完成路基边坡区域厘米级精细化三维建模；（4）优化高光谱相机结构设计，开发多层次光谱分类与异常识别算法；（5）搭建5G、6G通信原型系统，设计低时延资源调...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-8" data-doc-jump="true" data-page="8" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="设计与无人机适配方案完成装备样机试制与初步集成2构建多要素空间数据底座形成超低空精细化空间数据库3完成路基边坡区域厘米级精细化三维建模4优化高光谱相机结构设计开发多层次光谱分类与异常识别算法5搭建5G6G通信原型系统设计低时延资源调" data-highlight-text="...设计与无人机适配方案，完成装备样机试制与初步集成；（2）构建多要素空间数据底座，形成超低空精细化空间数据库；（3）完成路基边坡区域厘米级精细化三维建模；（4）优化高光谱相机结构设计，开发多层次光谱分类与异常识别算法；（5）搭建5G、6G通信原型系统，设计低时延资源调..." data-packet-page="15" data-highlight-rects='[{&quot;x&quot;: 0.173957, &quot;y&quot;: 0.814653, &quot;w&quot;: 0.386842, &quot;h&quot;: 0.030253}]'>查看原文 · 第 8 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">优化高光谱相机结构设计，开发多层次光谱分类与异常识别算法</div>
+                  <div class="highlight-item-evidence">证据：...据库；（3）完成路基边坡区域厘米级精细化三维建模；（4）优化高光谱相机结构设计，开发多层次光谱分类与异常识别算法；（5）搭建5G、6G通信原型系统，设计低时延资源调度机制，实现无人机巡检数据实时传输；</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-8" data-doc-jump="true" data-page="8" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="据库3完成路基边坡区域厘米级精细化三维建模4优化高光谱相机结构设计开发多层次光谱分类与异常识别算法5搭建5G6G通信原型系统设计低时延资源调度机制实现无人机巡检数据实时传输" data-highlight-text="...据库；（3）完成路基边坡区域厘米级精细化三维建模；（4）优化高光谱相机结构设计，开发多层次光谱分类与异常识别算法；（5）搭建5G、6G通信原型系统，设计低时延资源调度机制，实现无人机巡检数据实时传输；" data-packet-page="15" data-highlight-rects='[{&quot;x&quot;: 0.173957, &quot;y&quot;: 0.814653, &quot;w&quot;: 0.386842, &quot;h&quot;: 0.030253}]'>查看原文 · 第 8 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">构建超低空高精度数字航图，形成超低空精细化空间数据库</div>
+                  <div class="highlight-item-evidence">证据：...确率及6G通信链路稳定性测试，完成装备集成优化；（2）构建超低空高精度数字航图，形成超低空精细化空间数据库；（3）选取典型路段，开展无人机路域巡检与边坡灾害检监测流程验证；（4）编制《低空多源感知病害检测和灾害监测装备研发与应用示范研究报告》，申请发明专利2件，发表...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-9" data-doc-jump="true" data-page="9" data-file="c0a6828463cb4c1985c7fca26d5328d3.docx" data-snippet="确率及6G通信链路稳定性测试完成装备集成优化2构建超低空高精度数字航图形成超低空精细化空间数据库3选取典型路段开展无人机路域巡检与边坡灾害检监测流程验证4编制低空多源感知病害检测和灾害监测装备研发与应用示范研究报告申请发明专利2件发表" data-highlight-text="...确率及6G通信链路稳定性测试，完成装备集成优化；（2）构建超低空高精度数字航图，形成超低空精细化空间数据库；（3）选取典型路段，开展无人机路域巡检与边坡灾害检监测流程验证；（4）编制《低空多源感知病害检测和灾害监测装备研发与应用示范研究报告》，申请发明专利2件，发表..." data-packet-page="16" data-highlight-rects='[{&quot;x&quot;: 0.173352, &quot;y&quot;: 0.172535, &quot;w&quot;: 0.668428, &quot;h&quot;: 0.030253}]'>查看原文 · 第 9 页</a></div>
+                </div>
+                </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="result-panel" id="report-dimensions">
+                <div class="score-list">
+                  <div class="dimension-dashboard" id="dimension-accordion" data-default-index="2"><section class="dimension-radar-card"><div class="dimension-radar-wrap"><svg class="dimension-radar-svg" id="dimension-radar-svg" viewBox="0 0 480 380" role="img" aria-label="维度评分雷达图"><path class="dimension-radar-sector" d="M 240.0 190.0 L 199.6 79.1 A 118.0 118.0 0 0 1 315.8 280.4 Z" fill="#c8defd"></path><path class="dimension-radar-sector" d="M 240.0 190.0 L 315.8 280.4 A 118.0 118.0 0 0 1 123.8 210.5 Z" fill="#cfe8d9"></path><path class="dimension-radar-sector" d="M 240.0 190.0 L 123.8 210.5 A 118.0 118.0 0 0 1 199.6 79.1 Z" fill="#ffd8bb"></path><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="23.6"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="47.2"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="70.8"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="94.4"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="118.0"></circle><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="240.0" y2="72.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="315.8" y2="99.6"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="356.2" y2="169.5"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="342.2" y2="249.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="280.4" y2="300.9"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="199.6" y2="300.9"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="137.8" y2="249.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="123.8" y2="169.5"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="164.2" y2="99.6"></line><polygon class="dimension-radar-area" points="240.0,107.4 291.2,129.0 309.7,177.7 301.3,225.4 270.7,274.3 207.5,279.3 163.4,234.2 156.1,175.2 188.3,128.4"></polygon><circle class="dimension-radar-point" data-dimension-index="0" cx="240.0" cy="107.4" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="1" cx="291.2" cy="129.0" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point is-active" data-dimension-index="2" cx="309.7" cy="177.7" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="3" cx="301.3" cy="225.4" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="4" cx="270.7" cy="274.3" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="5" cx="207.5" cy="279.3" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="6" cx="163.4" cy="234.2" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="7" cx="156.1" cy="175.2" r="5.8" fill="#b8631b"></circle><circle class="dimension-radar-point" data-dimension-index="8" cx="188.3" cy="128.4" r="5.8" fill="#b8631b"></circle><text class="dimension-radar-label" data-dimension-index="0" x="240.0" y="32.0" text-anchor="middle" dominant-baseline="middle">创新性</text><text class="dimension-radar-label" data-dimension-index="1" x="341.6" y="69.0" text-anchor="start" dominant-baseline="middle">预期成果</text><text class="dimension-radar-label is-active" data-dimension-index="2" x="395.6" y="162.6" text-anchor="start" dominant-baseline="middle">社会效益</text><text class="dimension-radar-label" data-dimension-index="3" x="376.8" y="269.0" text-anchor="start" dominant-baseline="middle">经济效益</text><text class="dimension-radar-label" data-dimension-index="4" x="294.0" y="338.5" text-anchor="start" dominant-baseline="middle">技术可行性</text><text class="dimension-radar-label" data-dimension-index="5" x="186.0" y="338.5" text-anchor="end" dominant-baseline="middle">团队能力</text><text class="dimension-radar-label" data-dimension-index="6" x="103.2" y="269.0" text-anchor="end" dominant-baseline="middle">进度合理性</text><text class="dimension-radar-label" data-dimension-index="7" x="84.4" y="162.6" text-anchor="end" dominant-baseline="middle">风险控制</text><text class="dimension-radar-label" data-dimension-index="8" x="138.4" y="69.0" text-anchor="end" dominant-baseline="middle">合规性</text></svg><div class="dimension-sector-row"><div class="dimension-sector-chip" style="--sector-accent:#2563a6">项目价值</div><div class="dimension-sector-chip" style="--sector-accent:#2d7a4f">实施基础</div><div class="dimension-sector-chip" style="--sector-accent:#b8631b">风险规范</div></div></div></section><div class="dimension-body"><section class="dimension-detail-stage">
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="0"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">创新性</div>
+                    <div class="score-card-meta">得分 7.0 / 权重 0.15</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:70.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目紧扣交通行业养护痛点，技术创新性强，系统集成度高。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">特别是在低成本高光谱成像与超低空数字航图构建方面具有明确的行业突破意义。</div><div class="dimension-detail-list-item">虽然基础理论贡献有限，但作为应用研发项目，其工程落地价值显著，建议重点关注指标验证与安全合规性论证。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">填补了国内 120 米以下超低空路域范围内无人机自主巡检查数据航图的空白</div><div class="dimension-detail-list-item">构建了低成本、高分辨率的自主可控高光谱成像装备，推动技术降本增效</div><div class="dimension-detail-list-item">实现了从日常巡检到灾害预警的全场景覆盖，提升了路域设施本质安全水平</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">部分量化指标（如成本降低 95%）缺乏第三方权威测试报告佐证</div><div class="dimension-detail-list-item">超低空（10-15m）飞行的空域审批政策与安全风险应对方案需细化</div><div class="dimension-detail-list-item">极端天气条件下的多源传感器融合稳定性有待补充说明</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充部分量化指标（如成本降低 95%）缺乏第三方权威测试报告佐证</div><div class="dimension-detail-list-item">明确超低空（10-15m）飞行的空域审批政策与安全风险应对方案需细化</div><div class="dimension-detail-list-item">明确极端天气条件下的多源传感器融合稳定性有待补充说明</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="1"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">预期成果</div>
+                    <div class="score-card-meta">得分 6.75 / 权重 0.12</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:67.5%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.75 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目聚焦低空监测领域前沿需求，技术路线具有创新性，但需补充分年度技术里程碑和关键性能指标的量化标准。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-summary">建议强化技术可行性论证，完善成果转化路径设计。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">构建多要素空间数据底座的创新架构</div><div class="dimension-detail-list-item">智能算法与新型通信技术融合应用场景</div><div class="dimension-detail-list-item">明确的成果转化落地导向</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">未按年度拆解核心研发任务的量化指标</div><div class="dimension-detail-list-item">缺少装备性能参数的验收标准</div><div class="dimension-detail-list-item">5G/6G通信示范的技术成熟度分析不足</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确未按年度拆解核心研发任务的量化指标</div><div class="dimension-detail-list-item">补充装备性能参数的验收标准</div><div class="dimension-detail-list-item">补充5G/6G通信示范的技术成熟度分析不足</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item is-active"
+                  data-dimension-index="2"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">社会效益</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">未设置独立社会效益章节，但项目简介、指南支撑关系和应用示范内容已体现社会价值，可进行基础判断。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖申报项目与所属指南或申报通知方向的关联关系、项目绩效评价考核目标及指标、申报单位在该研究方向的前期任务承担情况、相关研究成果等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="3"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">经济效益</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">未设置独立经济效益章节，但项目简介、成果转化目标和应用示范内容已体现产业化与转化预期，可进行基础判断。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖申报项目与所属指南或申报通知方向的关联关系、项目绩效评价考核目标及指标、申报单位在该研究方向的前期任务承担情况、相关研究成果等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="4"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">技术可行性</div>
+                    <div class="score-card-meta">得分 7.6 / 权重 0.15</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:76.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.6 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目构建了系统化的低空监测技术体系，在数据融合与自主作业方面具有创新性，但需强化关键技术验证环节与资源配置论证。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">首创多源传感器时空同步采集架构</div><div class="dimension-detail-list-item">建立厘米级精度数字底座与动态任务联动机制</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">高光谱数据分析模型缺乏实测数据支撑</div><div class="dimension-detail-list-item">通信链路抗干扰能力未提供测试标准</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充高光谱数据分析模型缺乏实测数据支撑</div><div class="dimension-detail-list-item">明确通信链路抗干扰能力未提供测试标准</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="5"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">团队能力</div>
+                    <div class="score-card-meta">得分 8.05 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:80.5%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">8.05 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">团队综合实力强，负责人学术地位突出，成员专业背景覆盖项目全链条需求。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-summary">建议在后续实施中强化跨单位协作流程设计，补充团队协作历史证明以增强可信度。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">负责人主持/参与千亿级重大工程管理经验</div><div class="dimension-detail-list-item">核心团队拥有4项省部级以上科技奖励及28项专利/标准</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">未提供近五年省级以上项目主持情况的具体数量</div><div class="dimension-detail-list-item">团队协作历史与机制缺乏书面证据支持</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确未提供近五年省级以上项目主持情况的具体数量</div><div class="dimension-detail-list-item">补充团队协作历史与机制缺乏书面证据支持</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="6"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">进度合理性</div>
+                    <div class="score-card-meta">得分 7.5 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:75.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.5 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目进度框架完整，重点突出多源感知与通信技术融合创新。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-summary">需加强技术难点预判管理，细化验收标准以支撑过程管控。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">灾害监测流程验证设计具有工程应用导向</div><div class="dimension-detail-list-item">知识产权产出计划与研发任务同步规划</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">6G通信系统技术成熟度与研发周期匹配度存疑</div><div class="dimension-detail-list-item">部分技术指标缺乏量化验收标准</div><div class="dimension-detail-list-item">未体现跨阶段资源调配机制</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确6G通信系统技术成熟度与研发周期匹配度存疑</div><div class="dimension-detail-list-item">补充部分技术指标缺乏量化验收标准</div><div class="dimension-detail-list-item">明确未体现跨阶段资源调配机制</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="7"
+                  style="--sector-accent:#b8631b;"
+                >
+                  <div class="dimension-detail-kicker">风险规范</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">风险控制</div>
+                    <div class="score-card-meta">得分 7.22 / 权重 0.08</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:72.2%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">7.22 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目已识别部分主要风险并给出基础应对思路，但在分析深度或预案完整性上仍可加强。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">已覆盖技术风险、市场风险、政策风险等主要风险类型，风险识别较为完整。</div><div class="dimension-detail-list-item">已提出具体控制措施，并体现了一定的预案或替代安排。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="8"
+                  style="--sector-accent:#b8631b;"
+                >
+                  <div class="dimension-detail-kicker">风险规范</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">合规性</div>
+                    <div class="score-card-meta">得分 6.82 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:68.2%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.82 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目合规性基础基本具备，但仍有部分内容需要补充或细化。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-empty">暂无明显优势</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-summary">文中未见独立伦理审查、知情同意或数据隐私说明。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-summary">明确文中未见独立伦理审查、知情同意或数据隐私说明</div></section>
+                  </div>
+                </section>
+                </section></div></div>
+        <script>
+          (() => {
+            const root = document.getElementById("dimension-accordion");
+            if (!root) return;
+            const points = Array.from(root.querySelectorAll("[data-dimension-index]"));
+            const detailItems = Array.from(root.querySelectorAll(".dimension-detail-item"));
+            const activate = (index) => {
+              points.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+              });
+              detailItems.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+                if (node.dataset.dimensionIndex === index) {
+                  node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+              });
+            };
+            points.forEach((node) => {
+              node.addEventListener("click", () => {
+                activate(node.dataset.dimensionIndex);
+              });
+            });
+            activate(root.dataset.defaultIndex || "0");
+          })();
+        </script>
+        
+                </div>
+              </section>
+
+              
+
+              
+              <section class="result-panel" id="report-benchmark">
+                <div class="empty">未执行技术摸底</div>
+              </section>
+
+
+              
+        <section class="panel" id="report-debug">
+          <div class="panel-inner">
+            <h2>错误与调试信息</h2>
+            <table class="kv-table"><tr><th>错误列表</th><td><div class="empty">无错误</div></td></tr><tr><th>文件名</th><td>c0a6828463cb4c1985c7fca26d5328d3.docx</td></tr><tr><th>页数</th><td>14</td></tr><tr><th>解析版本</th><td>v2</td></tr><tr><th>近似分页</th><td>是</td></tr></table>
+          </div>
+        </section>
+            
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </div>
+  
+</body>
+</html>

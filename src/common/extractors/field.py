@@ -13,7 +13,7 @@ from PIL import Image
 import numpy as np
 
 from src.common.llm import get_default_llm_client
-from src.common.vision import MultimodalLLM
+from src.common.vision.multimodal import MultimodalLLM
 
 logger = logging.getLogger(__name__)
 

@@ -22,9 +22,22 @@ class FeasibilityChecker(BaseChecker):
     
     dimension = EvaluationDimension.FEASIBILITY.value
     dimension_name = "技术可行性"
+    ALTERNATIVE_SECTION_KEYS = [
+        "实施内容",
+        "建设目标",
+        "主要内容及实施地点",
+        "活动策划",
+        "资源开发",
+        "协同推广",
+        "基层能力辐射工程",
+        "数字化资源库建设",
+        "科普基础设施建设",
+        "科普内容产出",
+        "科普活动开展",
+    ]
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "技术路线清晰度", "weight": 0.3, "description": "技术路线是否清晰、具体"},
             {"name": "关键技术成熟度", "weight": 0.3, "description": "关键技术是否成熟可靠"},
@@ -43,10 +56,31 @@ class FeasibilityChecker(BaseChecker):
             CheckResult: 检查结果
         """
         # 提取相关章节
-        sections = self._extract_sections(content, self._required_sections)
-        
+        sections = self._extract_sections(content, self.required_sections)
+
         # 如果没有相关内容，返回默认结果
         if not sections:
+            if self.profile_matches(
+                content,
+                self.PROJECT_PROFILE_PLATFORM,
+                self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+            ):
+                alternative_sections = self._extract_sections(
+                    content,
+                    self.get_alternative_sections(self.ALTERNATIVE_SECTION_KEYS),
+                )
+                if alternative_sections:
+                    matched_names = list(alternative_sections.keys())
+                    return CheckResult(
+                        dimension=self.dimension,
+                        dimension_name=self.dimension_name,
+                        score=6.0,
+                        confidence=0.5,
+                        opinion="该项目更偏平台建设或科普实施类，已基于实施内容与建设方案进行基础可行性判断，不再强制要求独立技术路线章节。",
+                        issues=["未设置独立技术路线章节，已按实施方案类内容替代评估"],
+                        highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
+                        items=[],
+                    )
             return CheckResult(
                 dimension=self.dimension,
                 dimension_name=self.dimension_name,
@@ -68,6 +102,7 @@ class FeasibilityChecker(BaseChecker):
         result = self._parse_result(response.content if hasattr(response, 'content') else str(response))
         
         return result
+
     
     def _build_prompt(self, content: Dict[str, Any]) -> str:
         """构建提示词"""

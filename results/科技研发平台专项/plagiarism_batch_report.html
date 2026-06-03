@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>批量查重报告</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f5f7fb; color: #1f2937; }
+    .page { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; gap: 12px; padding: 12px; }
+    .sidebar { position: sticky; top: 12px; align-self: start; max-height: calc(100vh - 24px); overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+    .main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+    .hero { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }
+    .hero h1 { margin: 0 0 8px; font-size: 22px; }
+    .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .pill { background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+    .nav-item { display: block; width: 100%; text-align: left; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff; cursor: pointer; }
+    .nav-item:hover { border-color: #93c5fd; background: #f8fbff; }
+    .nav-item.active { border-color: #3b82f6; background: #eff6ff; }
+    .nav-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .nav-meta { font-size: 11px; color: #64748b; line-height: 1.5; }
+    .viewer-wrap { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px; min-height: 70vh; }
+    .viewer { width: 100%; height: calc(100vh - 220px); border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
+    .empty { color: #94a3b8; font-size: 12px; }
+    .failed { background: #fff; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; }
+    .failed h2 { margin-top: 0; color: #991b1b; }
+    .failed li { margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside class="sidebar">
+      <h3>Primary 文档</h3>
+      <button class="nav-item" data-report="fe5aeed396f540ed816e4771dcf30226/plagiarism_report_mammoth.html"><div class="nav-title">fe5aeed396f540ed816e4771dcf30226</div><div class="nav-meta">fe5aeed396f540ed816e4771dcf30226 · 0 段</div></button><button class="nav-item" data-report="dbda059ba2e748f0a7aea74acac67137/plagiarism_report_mammoth.html"><div class="nav-title">dbda059ba2e748f0a7aea74acac67137</div><div class="nav-meta">dbda059ba2e748f0a7aea74acac67137 · 0 段</div></button><button class="nav-item" data-report="6f20c16e43924362af697563d068543e/plagiarism_report_mammoth.html"><div class="nav-title">6f20c16e43924362af697563d068543e</div><div class="nav-meta">6f20c16e43924362af697563d068543e · 0 段</div></button><button class="nav-item" data-report="598198319f85407bb6ffc00b9ee7c4c9/plagiarism_report_mammoth.html"><div class="nav-title">598198319f85407bb6ffc00b9ee7c4c9</div><div class="nav-meta">598198319f85407bb6ffc00b9ee7c4c9 · 0 段</div></button><button class="nav-item" data-report="69293f0da8a446299dd99e4576b0d558/plagiarism_report_mammoth.html"><div class="nav-title">69293f0da8a446299dd99e4576b0d558</div><div class="nav-meta">69293f0da8a446299dd99e4576b0d558 · 0 段</div></button><button class="nav-item" data-report="24b7340e6b67420f95b5165166b12a04/plagiarism_report_mammoth.html"><div class="nav-title">24b7340e6b67420f95b5165166b12a04</div><div class="nav-meta">24b7340e6b67420f95b5165166b12a04 · 0 段</div></button><button class="nav-item" data-report="cd1a5439cfee49b0aaac93f87aa39e06/plagiarism_report_mammoth.html"><div class="nav-title">cd1a5439cfee49b0aaac93f87aa39e06</div><div class="nav-meta">cd1a5439cfee49b0aaac93f87aa39e06 · 0 段</div></button><button class="nav-item" data-report="41813be7ea0c40618ac9155b6cb6727a/plagiarism_report_mammoth.html"><div class="nav-title">41813be7ea0c40618ac9155b6cb6727a</div><div class="nav-meta">41813be7ea0c40618ac9155b6cb6727a · 0 段</div></button><button class="nav-item" data-report="b5713031cfea4b3ca7283dad173720bc/plagiarism_report_mammoth.html"><div class="nav-title">b5713031cfea4b3ca7283dad173720bc</div><div class="nav-meta">b5713031cfea4b3ca7283dad173720bc · 0 段</div></button><button class="nav-item" data-report="c439c81df47e4731825830a9667825c7/plagiarism_report_mammoth.html"><div class="nav-title">c439c81df47e4731825830a9667825c7</div><div class="nav-meta">c439c81df47e4731825830a9667825c7 · 0 段</div></button><button class="nav-item" data-report="568fd814b46641129248a5a4e6dfd686/plagiarism_report_mammoth.html"><div class="nav-title">568fd814b46641129248a5a4e6dfd686</div><div class="nav-meta">568fd814b46641129248a5a4e6dfd686 · 0 段</div></button><button class="nav-item" data-report="107ce056a5f24af09f29fee6848140fe/plagiarism_report_mammoth.html"><div class="nav-title">107ce056a5f24af09f29fee6848140fe</div><div class="nav-meta">107ce056a5f24af09f29fee6848140fe · 0 段</div></button><button class="nav-item" data-report="31fd10230f824ce2959c68ce38b0cd30/plagiarism_report_mammoth.html"><div class="nav-title">31fd10230f824ce2959c68ce38b0cd30</div><div class="nav-meta">31fd10230f824ce2959c68ce38b0cd30 · 0 段</div></button><button class="nav-item" data-report="5cbc9aa3628042cea33ce504da8af1fd/plagiarism_report_mammoth.html"><div class="nav-title">5cbc9aa3628042cea33ce504da8af1fd</div><div class="nav-meta">5cbc9aa3628042cea33ce504da8af1fd · 0 段</div></button><button class="nav-item" data-report="7dab1d3dc70c4ed79fea92e37f7362df/plagiarism_report_mammoth.html"><div class="nav-title">7dab1d3dc70c4ed79fea92e37f7362df</div><div class="nav-meta">7dab1d3dc70c4ed79fea92e37f7362df · 0 段</div></button><button class="nav-item" data-report="1c7bcb52c1aa4c3799bcd8e33c14e3be/plagiarism_report_mammoth.html"><div class="nav-title">1c7bcb52c1aa4c3799bcd8e33c14e3be</div><div class="nav-meta">1c7bcb52c1aa4c3799bcd8e33c14e3be · 0 段</div></button><button class="nav-item" data-report="f2ad7c97114f4b148f05deee5ba9e9cc/plagiarism_report_mammoth.html"><div class="nav-title">f2ad7c97114f4b148f05deee5ba9e9cc</div><div class="nav-meta">f2ad7c97114f4b148f05deee5ba9e9cc · 0 段</div></button><button class="nav-item" data-report="da7f468fdf8640e885f72d6def7b9fdc/plagiarism_report_mammoth.html"><div class="nav-title">da7f468fdf8640e885f72d6def7b9fdc</div><div class="nav-meta">da7f468fdf8640e885f72d6def7b9fdc · 0 段</div></button><button class="nav-item" data-report="c48a349f668744e699aa60109f9d58b4/plagiarism_report_mammoth.html"><div class="nav-title">c48a349f668744e699aa60109f9d58b4</div><div class="nav-meta">c48a349f668744e699aa60109f9d58b4 · 0 段</div></button><button class="nav-item" data-report="41f1d328eae94ba8a5291b8345d20875/plagiarism_report_mammoth.html"><div class="nav-title">41f1d328eae94ba8a5291b8345d20875</div><div class="nav-meta">41f1d328eae94ba8a5291b8345d20875 · 0 段</div></button><button class="nav-item" data-report="80ef11cff8d445b08ed6f39abda4e394/plagiarism_report_mammoth.html"><div class="nav-title">80ef11cff8d445b08ed6f39abda4e394</div><div class="nav-meta">80ef11cff8d445b08ed6f39abda4e394 · 0 段</div></button><button class="nav-item" data-report="7fa96a0f36ff43d1ad760e18573a7138/plagiarism_report_mammoth.html"><div class="nav-title">7fa96a0f36ff43d1ad760e18573a7138</div><div class="nav-meta">7fa96a0f36ff43d1ad760e18573a7138 · 0 段</div></button><button class="nav-item" data-report="84f10975a6cd4d2cbc4bbe6950c583fa/plagiarism_report_mammoth.html"><div class="nav-title">84f10975a6cd4d2cbc4bbe6950c583fa</div><div class="nav-meta">84f10975a6cd4d2cbc4bbe6950c583fa · 0 段</div></button><button class="nav-item" data-report="4e92a2ae29c6481395f82c32d2a0279f/plagiarism_report_mammoth.html"><div class="nav-title">4e92a2ae29c6481395f82c32d2a0279f</div><div class="nav-meta">4e92a2ae29c6481395f82c32d2a0279f · 0 段</div></button><button class="nav-item" data-report="9c9a856a13394492b3c1272036cac66e/plagiarism_report_mammoth.html"><div class="nav-title">9c9a856a13394492b3c1272036cac66e</div><div class="nav-meta">9c9a856a13394492b3c1272036cac66e · 1 段</div></button><button class="nav-item" data-report="b855d116295d426685a178598b208f72/plagiarism_report_mammoth.html"><div class="nav-title">b855d116295d426685a178598b208f72</div><div class="nav-meta">b855d116295d426685a178598b208f72 · 0 段</div></button><button class="nav-item" data-report="4636fe2005e34c43b199456c81c96aac/plagiarism_report_mammoth.html"><div class="nav-title">4636fe2005e34c43b199456c81c96aac</div><div class="nav-meta">4636fe2005e34c43b199456c81c96aac · 0 段</div></button><button class="nav-item" data-report="045022c920b146eba5e59ce902979772/plagiarism_report_mammoth.html"><div class="nav-title">045022c920b146eba5e59ce902979772</div><div class="nav-meta">045022c920b146eba5e59ce902979772 · 0 段</div></button><button class="nav-item" data-report="aeced4fd50cd4161b88642ac4ed94361/plagiarism_report_mammoth.html"><div class="nav-title">aeced4fd50cd4161b88642ac4ed94361</div><div class="nav-meta">aeced4fd50cd4161b88642ac4ed94361 · 3 段</div></button><button class="nav-item" data-report="e9e03280444647c2b6133efb42b5c969/plagiarism_report_mammoth.html"><div class="nav-title">e9e03280444647c2b6133efb42b5c969</div><div class="nav-meta">e9e03280444647c2b6133efb42b5c969 · 0 段</div></button><button class="nav-item" data-report="fc6d523c8d1e465d9f5138552f84d552/plagiarism_report_mammoth.html"><div class="nav-title">fc6d523c8d1e465d9f5138552f84d552</div><div class="nav-meta">fc6d523c8d1e465d9f5138552f84d552 · 0 段</div></button><button class="nav-item" data-report="64d3ab711f334344883988a7304b1bb3/plagiarism_report_mammoth.html"><div class="nav-title">64d3ab711f334344883988a7304b1bb3</div><div class="nav-meta">64d3ab711f334344883988a7304b1bb3 · 0 段</div></button><button class="nav-item" data-report="3d661500d9ac4a2ab952ed5974c479a5/plagiarism_report_mammoth.html"><div class="nav-title">3d661500d9ac4a2ab952ed5974c479a5</div><div class="nav-meta">3d661500d9ac4a2ab952ed5974c479a5 · 3 段</div></button><button class="nav-item" data-report="8345ab523d1c4d47ab655531eef314a4/plagiarism_report_mammoth.html"><div class="nav-title">8345ab523d1c4d47ab655531eef314a4</div><div class="nav-meta">8345ab523d1c4d47ab655531eef314a4 · 0 段</div></button><button class="nav-item" data-report="890f9bc597644023be2f1f6dfe01b229/plagiarism_report_mammoth.html"><div class="nav-title">890f9bc597644023be2f1f6dfe01b229</div><div class="nav-meta">890f9bc597644023be2f1f6dfe01b229 · 0 段</div></button><button class="nav-item" data-report="daf59499644a437fa3a3f31a8249ab04/plagiarism_report_mammoth.html"><div class="nav-title">daf59499644a437fa3a3f31a8249ab04</div><div class="nav-meta">daf59499644a437fa3a3f31a8249ab04 · 0 段</div></button><button class="nav-item" data-report="8ce65d7810af4a06be4604f7152c92e0/plagiarism_report_mammoth.html"><div class="nav-title">8ce65d7810af4a06be4604f7152c92e0</div><div class="nav-meta">8ce65d7810af4a06be4604f7152c92e0 · 0 段</div></button><button class="nav-item" data-report="e2792db9d1644876bcddab2ef6b67bcf/plagiarism_report_mammoth.html"><div class="nav-title">e2792db9d1644876bcddab2ef6b67bcf</div><div class="nav-meta">e2792db9d1644876bcddab2ef6b67bcf · 6 段</div></button><button class="nav-item" data-report="780bf803c85643faa54b9590524866b9/plagiarism_report_mammoth.html"><div class="nav-title">780bf803c85643faa54b9590524866b9</div><div class="nav-meta">780bf803c85643faa54b9590524866b9 · 0 段</div></button><button class="nav-item" data-report="016169f6a30c4eea8b21226e0f3929be/plagiarism_report_mammoth.html"><div class="nav-title">016169f6a30c4eea8b21226e0f3929be</div><div class="nav-meta">016169f6a30c4eea8b21226e0f3929be · 0 段</div></button><button class="nav-item" data-report="e2320b332cb643b997388d177baebdeb/plagiarism_report_mammoth.html"><div class="nav-title">e2320b332cb643b997388d177baebdeb</div><div class="nav-meta">e2320b332cb643b997388d177baebdeb · 0 段</div></button><button class="nav-item" data-report="bb7d8d5e6429483ea847069bdc559d82/plagiarism_report_mammoth.html"><div class="nav-title">bb7d8d5e6429483ea847069bdc559d82</div><div class="nav-meta">bb7d8d5e6429483ea847069bdc559d82 · 1 段</div></button>
+    </aside>
+    <main class="main">
+      <section class="hero">
+        <h1>批量查重报告</h1>
+        <div>右侧直接复用原来的单项目报告页面（高亮和跳转逻辑保持原样）。</div>
+        <div class="stats">
+          <span class="pill">成功项目 42</span>
+          <span class="pill">失败项目 0</span>
+          <span class="pill">重复段 14</span>
+          <span class="pill">有效重复字符 2024</span>
+        </div>
+      </section>
+      <section class="viewer-wrap">
+        <iframe id="report-frame" class="viewer" src="fe5aeed396f540ed816e4771dcf30226/plagiarism_report_mammoth.html"></iframe>
+      </section>
+      
+    </main>
+  </div>
+  <script>
+    (function() {
+      const buttons = Array.from(document.querySelectorAll('.nav-item[data-report]'));
+      const frame = document.getElementById('report-frame');
+      if (!buttons.length || !frame) return;
+      function activate(btn) {
+        buttons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const path = btn.getAttribute('data-report') || '';
+        frame.setAttribute('src', path);
+      }
+      buttons.forEach(btn => btn.addEventListener('click', () => activate(btn)));
+      activate(buttons[0]);
+    })();
+  </script>
+</body>
+</html>

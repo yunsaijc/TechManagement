@@ -23,8 +23,8 @@ class InnovationChecker(BaseChecker):
     dimension = EvaluationDimension.INNOVATION.value
     dimension_name = "创新性"
     
-    def __init__(self, llm=None):
-        super().__init__(llm)
+    def __init__(self, llm=None, project_profile=None, dimension_overrides=None):
+        super().__init__(llm, project_profile=project_profile, dimension_overrides=dimension_overrides)
         self._check_items = [
             {"name": "理论创新", "weight": 0.3, "description": "是否有理论创新"},
             {"name": "技术创新", "weight": 0.3, "description": "是否有技术创新"},
@@ -35,7 +35,7 @@ class InnovationChecker(BaseChecker):
     
     async def check(self, content: Dict[str, Any]) -> CheckResult:
         """执行创新性检查"""
-        sections = self._extract_sections(content, self._required_sections)
+        sections = self._extract_sections(content, self.required_sections)
         
         if not sections:
             return CheckResult(

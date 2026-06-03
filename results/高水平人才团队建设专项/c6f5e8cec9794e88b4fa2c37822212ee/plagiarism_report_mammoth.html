@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - c6f5e8cec9794e88b4fa2c37822212ee.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：c6f5e8cec9794e88b4fa2c37822212ee.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,708</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>c6f5e8cec9794e88b4fa2c37822212ee.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010201-“科技人才飞地”项目</p><p class="docx-paragraph">项 目 名 称：<a id="xmmc"></a>中车唐山机车车辆有限公司科技人才飞地</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>中车唐山机车车辆有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李毅磊</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>唐山市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2028-01</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-06</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+科技人才飞地”格式填写，如：****公司科技人才飞地。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">单位名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwmc1"></a>中车唐山机车车辆有限公司</p></td><td colspan="2"><p class="docx-paragraph">单位性质</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">通讯地址</p></td><td colspan="9"><p class="docx-paragraph"><a id="cddwdz1"></a>唐山市丰润区厂前路3号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwxydm"></a>911302216636887669</p></td><td colspan="2"><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-唐山市-丰润区</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">注册时间</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwzcsj"></a>2007-07-10</p></td><td colspan="2"><p class="docx-paragraph">注册资本</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzczb"></a>403092.0万元</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">法定代表人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwfr1"></a>周军年</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="lclxrsj"></a>13223166025</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="frbgdh"></a>0315-3089450</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="frEmail"></a>013600063089@crrcgc.cc</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">项目联系人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxr"></a>金静飞</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxrsj"></a>18631521685</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0315-3089450</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxryx"></a>jinjingfei2008@163.com</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhmc"></a>中车唐山机车车辆有限公司</p></td><td colspan="2"><p class="docx-paragraph">开户银行行号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwhh"></a>105124000693</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户银行</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhh"></a>中国建设银行股份有限公司唐山丰润林荫路支行</p></td><td colspan="2"><p class="docx-paragraph">帐号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzh"></a>13001625509059300300</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>8807人</p></td><td colspan="2"><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwjjsry"></a>1831人</p></td><td colspan="2"><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzgjry"></a>1625人</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">企业类型</p></td><td colspan="5"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td colspan="2"><p class="docx-paragraph">所属产业（集群）</p></td><td colspan="2"><p class="docx-paragraph"><a id="tscyjq"></a>丰润区轨道交通特色产业集群</p></td></tr><tr><td colspan="11"><p class="docx-paragraph">近三年研发投入和销售收入（万元）</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2023"></a>2023 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2023"></a>76107.7</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2023"></a>1277894.24</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2023"></a>5.96</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2024"></a>2024 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2024"></a>97354.63</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2024"></a>1641061.26</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2024"></a>5.93</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2025"></a>2025 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2025"></a>130093.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2025"></a>1982267.18</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2025"></a>6.56</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">研发平台情况</p></td><td colspan="8"><p class="docx-paragraph"><a id="ptqksys"></a><a id="ptqkgjjsys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><strong>申报单位简介</strong></p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><a id="xmjj"></a>中车唐山机车车辆有限公司是中国中车核心子企业，主营轨道交通装备研发、制造、检修、服务，同步布局数字产业化、新能源等战略性新兴产业。公司坚持创新驱动发展，“十四五”以来年均科技投入超8亿元，科技投入占比超6%，基础共性与原创技术研究投入持续提升。</p><p class="docx-paragraph"><strong>1.研发基础条件雄厚</strong></p><p class="docx-paragraph">公司拥有国家级企业技术中心、国家级工业设计中心、国家地方联合工程研究中心和河北省高能级技术创新中心等创新平台，是国家创新型企业、高新技术企业、国家技术创新示范企业、国家级智能制造示范工厂等。公司工程研究中心配备大型试验设备40余台（套），设备原值超2亿元，拥有CNAS认可项目191项，建成覆盖静强度、疲劳、碰撞、动力学、空气动力学、振动噪声、电磁兼容等15个学科领域的试验平台，构建起整车、系统、部件、材料全链条试验技术体系。</p><p class="docx-paragraph">“十四五”以来，公司承担及参与国家级课题51项、省部级17项、市级9项、国铁集团课题75项。科研成果屡获国家级大奖，参与的京沪高速铁路工程、复兴号高速列车获国家科学技术进步特等奖，京津城际铁路工程获国家科学技术进步一等奖；自主研制的CJ2城际动车组获中国设计红星奖至尊金奖，可变编组动车组、新型高速卧铺动车组分获中国优秀工业设计奖金奖、红星奖金奖。</p><p class="docx-paragraph"><strong>2.知识产权管理规范高效</strong></p><p class="docx-paragraph">公司为国家知识产权示范企业，依据GB/T29490-2023标准构建完善知识产权管理体系，通过内部审核与第三方外审保障体系稳定运行。</p><p class="docx-paragraph">2024—2025年，公司围绕轨道交通、战新产业、数字化等技术领域197项科研项目布局专利106件、软著45件、论文135篇。近两年，累计申请专利约500件，授权专项200余件。截至2025年底，公司拥有有效专利1950项，其中发明专利1179项。近年来累计获国家专利奖7项，其中中国专利银奖1项、河北省专利三等奖1项，为技术创新与产品迭代提供坚实保障。</p><p class="docx-paragraph"><strong>3.科研成果转化成效显著</strong></p><p class="docx-paragraph">公司坚持创新与市场深度融合，承接纵向课题与内部科研立项300余项，建成覆盖全速度等级动车组、城际市域车、城轨车、磁浮车、铁路客车等全谱系产品平台，成功研制复兴号系列高速动车组、时速350公里高速货运动车组、中低速磁浮列车、新一代无人驾驶地铁等20余种新产品。</p><p class="docx-paragraph">多个成果转化项目获河北省重大科技成果转化专项资金支持，转化新产品累计签订国内外订单30余项，助力公司销售收入连续突破百亿。时速160公里动力集中动车组及多款高速动车组大批量投入干线运营；城轨、磁浮、有轨电车、新能源列车等成果服务国内9个城市23个项目。公司产品出口全球20多个国家和地区，实现从产品出口到“产品+技术+服务”组合出海，是“一带一路”建设重要参与者，凭借优良品质取得显著经济社会效益。</p><p class="docx-paragraph"><strong>4.产学研与国际合作协同创新</strong></p><p class="docx-paragraph">公司深化产学研合作，与西南交通大学、北京交通大学、清华大学、北京航空航天大学、中南大学及中科院多所研究所建立长期合作，年均签订技术合同百余项，科研经费投入上亿元。通过共建平台、联合攻关、人才共育等模式，推动高校科研优势与企业产业优势深度融合。作为核心单位牵头建设国家轨道交通装备行业产教融合共同体，推进区域实训基地建设，形成“需求导向—资源整合—成果转化—人才输送”闭环体系。</p><p class="docx-paragraph">依托国家国际科技合作基地，公司与意大利、德国、法国、美国等10余个国家的顶尖企业与科研机构开展技术合作，包括西门子、德铁系统技术、意大利BLUE公司等。联合开展无轨电车、转向架、智能运维、试验认证、仿真分析等关键技术研发，在整车动力学、噪声热场、全生命周期运维等领域实现突破，持续提升技术竞争力，带动行业开放创新与高质量发展。</p></td></tr></table><p class="docx-paragraph"><strong>二、人才飞地基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">人才飞地名称</p></td><td colspan="7"><p class="docx-paragraph"><a id="fdmc"></a>天津中车唐车轨道交通科技有限公司</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">负责人</p></td><td colspan="3"><p class="docx-paragraph"><a id="fdfzr"></a>王志伟</p></td><td><p class="docx-paragraph">职务</p></td><td><p class="docx-paragraph"><a id="fdfzrzw"></a>董事长</p></td><td><p class="docx-paragraph">联系电话</p></td><td><p class="docx-paragraph"><a id="fdfzrdh"></a>13582929660</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">是否独立法人</p></td><td colspan="4"><p class="docx-paragraph"><a id="fdsfdlfr"></a>是</p></td><td><p class="docx-paragraph">注册资本</p><p class="docx-paragraph">（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzczb"></a>2000</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">场地面积（㎡）</p></td><td><p class="docx-paragraph"><a id="fdcdmj"></a>881.82</p></td><td colspan="4"><p class="docx-paragraph">注册地址</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzcdz"></a>天津市华苑产业区海泰西路18号中北楼204-1</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">飞地研发人员数量</p></td><td><p class="docx-paragraph"><a id="fdyfrysl"></a>18</p></td><td colspan="4"><p class="docx-paragraph">专职研发人员数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfyrysl"></a>11</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">硕士研究生及以上学历或高级专业技术职称人员占比</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdryzb"></a>72.22</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度在高层次人才引进培育使用和技术研发方面</p><p class="docx-paragraph">支出的费用（万元）</p></td><td colspan="2"><p class="docx-paragraph"> <a id="fdzcfy"></a>589.02 （万元）</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度飞地为申报单位引进副高及以上人才数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfgry"></a>1</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">在飞地所在地签订产学研合作协议数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdhzxy"></a>4</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">申报单位对人才飞地是否拥有实际控制权	</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdgzq"></a>是</p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">股权</p><p class="docx-paragraph">构成</p></td><td colspan="2"><p class="docx-paragraph">第1大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc1"></a>中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl1"></a>80 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第2大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc2"></a>天津滨海新区轨道交通投资发展有限公司</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl2"></a>10 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第3大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc3"></a>天津轨道交通运营集团有限公司</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl3"></a>10 %</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">上年度营业收入（万元）</p></td><td colspan="6"><p class="docx-paragraph"><a id="fdyye"></a>6620.35</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">主要研发设备情况</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="3"><p class="docx-paragraph">设备名称</p></td><td colspan="3"><p class="docx-paragraph">主要用途</p></td><td colspan="2"><p class="docx-paragraph">设备价值</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="3"><p class="docx-paragraph">惠普Z4 G5工作站</p></td><td colspan="3"><p class="docx-paragraph">轨道车辆研发设计及仿真计算</p></td><td colspan="2"><p class="docx-paragraph">3.33</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="3"><p class="docx-paragraph">惠普Z4 G5工作站</p></td><td colspan="3"><p class="docx-paragraph">轨道车辆研发设计及仿真计算</p></td><td colspan="2"><p class="docx-paragraph">3.33</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="3"><p class="docx-paragraph">惠普Z4 G5工作站</p></td><td colspan="3"><p class="docx-paragraph">轨道车辆研发设计及仿真计算</p></td><td colspan="2"><p class="docx-paragraph">2.46</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="3"><p class="docx-paragraph">惠普Z4 G5工作站</p></td><td colspan="3"><p class="docx-paragraph">轨道车辆研发设计及仿真计算</p></td><td colspan="2"><p class="docx-paragraph">2.46</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="3"><p class="docx-paragraph">惠普Z4 G5工作站</p></td><td colspan="3"><p class="docx-paragraph">轨道车辆研发设计及仿真计算</p></td><td colspan="2"><p class="docx-paragraph">2.46</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="3"><p class="docx-paragraph">能耗及碳排放仿真系统平台</p></td><td colspan="3"><p class="docx-paragraph">轨道车辆能耗及碳排放仿真及优化</p></td><td colspan="2"><p class="docx-paragraph">114.48</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="3"><p class="docx-paragraph">便携式平稳性测试仪</p></td><td colspan="3"><p class="docx-paragraph">测试轨道车辆不同工况下运行的平稳性参数</p></td><td colspan="2"><p class="docx-paragraph">26.89</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">副高及以上职称人才情况（ <a id="fgjzcrs"></a>11 人）</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">专业</p></td><td colspan="3"><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">工作单位</p></td><td><p class="docx-paragraph">是否专职研发人员</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李毅磊</p></td><td><p class="docx-paragraph">农业机械化工程</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">曹春伟</p></td><td><p class="docx-paragraph">电气工程及其自动化</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">殷立阳</p></td><td><p class="docx-paragraph">材料成型及控制工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">孙健</p></td><td><p class="docx-paragraph">自动控制</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">张倩</p></td><td><p class="docx-paragraph">热能与动力工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">皮国瑞</p></td><td><p class="docx-paragraph">车辆工程</p></td><td colspan="3"><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">寇晓阳</p></td><td><p class="docx-paragraph">机械设计及理论</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">吴迪</p></td><td><p class="docx-paragraph">车辆工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">张静</p></td><td><p class="docx-paragraph">通信与信息系统</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">吴昊</p></td><td><p class="docx-paragraph">材料加工工程</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">杨惠利</p></td><td><p class="docx-paragraph">工业电气自动化</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">否</p></td></tr></table><p class="docx-paragraph"><strong>三、近三年人才飞地成效情况</strong></p><table class="docx-table"><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年开发新技术、新产品、新工艺、专利、软著等情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2023"></a>2023 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2023"></a>1.新产品：车载轨道检测系统</p><p class="docx-paragraph">天津科技公司开发的车载轨道检测系统，利用线阵相机和光源集成模块与3D相机配合识别钢轨状态，采用图形测量和激光三维技术，可实时计算轨道断面磨损、线路状态等信息，及时发现故障隐患，提高线路检测效率。</p><p class="docx-paragraph">2.新产品：空气净化系统</p><p class="docx-paragraph">天津科技公司开发的空气净化系统可迅速杀灭室内细菌、病毒、真菌及各种酶菌；祛除室内烟味等不良气味，清除室内甲醛、笨、氨气、挥发性有机物等有害化学气体，监测温湿度、二氧化碳浓度、可吸入颗粒物浓度、TVOC浓度、甲醛浓度等。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2024"></a>2024 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2024"></a>3.专利：一种轨道车辆受电弓控制系统（专利号：ZL 2024 1 1959760.5）</p><p class="docx-paragraph">首先，基于受电弓动力学与气动学的耦合特性，提出了多目标优化控制模型，实现了接触压力、能耗与磨耗之间的动态平衡。其次，引入强化学习与深度神经网络，构建了智能自学习机制，使受电弓能够在不同工况下自主演化控制策略并实现持续优化。同时，结合多源传感与数据融合，建立了工况特征自动识别方法，能够高效提取和分类运行环境特征，实现实时感知与适应。</p><p class="docx-paragraph">4.软著：车辆受电弓智能调控管理系统（登记号：2025SR1145428）</p><p class="docx-paragraph">融合压力、加速度、电弧信号与环境参数，构建了多源感知融合机制，形成了受电弓运行的全景监测体系，全面提升了运行状态感知的精度与可靠性。引入深度学习与强化学习方法，研发了智能调控算法，实现了复杂工况下的自动识别与参数自适应调节，显著增强了系统的灵活性与自适应能力。同时，基于大数据分析技术，建立了受电弓全生命周期管理机制，覆盖运行、维护及寿命预测等环节。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2025"></a>2025 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2025"></a>5.软著：列车受电弓高效运维管理系统（登记号：2025SR1145369）</p><p class="docx-paragraph">建立了全生命周期监测机制，覆盖受电弓从运行、检修到退役的全周期状态监测与管理，实现设备状态的全面掌控。基于深度学习与大数据分析，研发了智能诊断与预测算法，可对故障模式进行识别并进行寿命预测，为运维策提供科学依据。同时，利用运维大数据，构建了运维资源优化配置方法，实现备件管理、检修计划和作业资源的动态化分配，提高运维效率与资源利用率。</p><p class="docx-paragraph">6.专利：一种轨道车辆防爬吸能装置（专利号：ZL 2024 2 3077959.3）</p><p class="docx-paragraph">在防爬吸能装置装置关键技术方向形成了核心技术。首先，装置理论工作载荷为1100kN，其平均动作力与理论工作载荷的偏差控制在10%以内，确保了装置在设计工况下的可靠性与稳定性。其次，装置垂向承载能力不低于206kN，满足列车爬安全性能要求，为车辆运行提供了坚实的安全保障。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在当地开展产学研合作情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">合作单位</p></td><td colspan="2"><p class="docx-paragraph">合作方式</p></td><td colspan="3"><p class="docx-paragraph">合作成果</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">天津市地下铁道集团有限公司、中国铁路设计集团有限公司、天津凯发电气股份有限公司、交控科技股份有限公司、天津七一二移动通信股份有限公司</p></td><td colspan="2"><p class="docx-paragraph">合作框架协议</p></td><td colspan="3"><p class="docx-paragraph">联合中国铁路设计集团有限公司等单位共同承担了天津市创新联合体科技重大项目“基于垂直大模型的轨道交通基础设施建养体系”，负责城轨车载式隧道智能快速感知技术。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">天津中德应用技术大学</p></td><td colspan="2"><p class="docx-paragraph">联合开发</p></td><td colspan="3"><p class="docx-paragraph">碳化硅变流和永磁牵引技术</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">天津市政工程设计研究院有限公司</p></td><td colspan="2"><p class="docx-paragraph">联合开发</p></td><td colspan="3"><p class="docx-paragraph">匹配新一代数字化胶轮无轨电车的线路、站场基建技术</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">天津奕辰智能装备有限公司</p></td><td colspan="2"><p class="docx-paragraph">联合开发</p></td><td colspan="3"><p class="docx-paragraph">智行捷运车辆牵引及转向装置工程化样机</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在河北省科技成果转化及效益情况</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="2"><p class="docx-paragraph">知识产权类别</p></td><td colspan="2"><p class="docx-paragraph">知识产权名称</p></td><td><p class="docx-paragraph">知识产权所有人</p></td><td><p class="docx-paragraph">经济效益(万元)</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">一种轨道车辆受电弓控制系统</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">150.0</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="2"><p class="docx-paragraph">实用新型专利</p></td><td colspan="2"><p class="docx-paragraph">一种车辆防爬吸能装置</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">750.0</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="2"><p class="docx-paragraph">软件著作权</p></td><td colspan="2"><p class="docx-paragraph">车辆受电弓智能调控管理系统V1.0</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">80.0</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="2"><p class="docx-paragraph">软件著作权</p></td><td colspan="2"><p class="docx-paragraph">列车受电弓动态控制运行系统V1.0</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">70.0</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">车辆洁净空调系统及轨道车辆</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">600.0</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">一种吸能防爬装置及轨道车辆</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">1000.0</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="2"><p class="docx-paragraph">发明专利</p></td><td colspan="2"><p class="docx-paragraph">列车撒砂控制方法及车辆</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">420.0</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述申报单位支持人才飞地建设的制度和举措，主要从投入、人才、管理、产出、产学研合作等方面阐述。</p><p class="docx-paragraph"><a id="zdjc"></a>中车唐山公司高度重视科技人才飞地建设，将天津中车唐车轨道交通科技有限公司作为承接京津创新资源、落地河北产业转化的核心平台，围绕投入、人才、管理、产出、产学研合作五大维度，构建全链条支持体系，全力打造“京津引智、天津研发、河北转化”的创新高地。</p><p class="docx-paragraph">1.强化资金投入，筑牢飞地建设根基</p><p class="docx-paragraph">公司设立人才飞地专项建设资金，优先保障科研立项、研发设备、场地改造、人才引进等支出，确保飞地研发投入力度持续提升。统筹母公司科技创新资源向飞地倾斜，支持开展轨道交通装备前沿技术攻关与产品研发，为飞地高效运行提供稳定、充足的资金保障。</p><p class="docx-paragraph">2.完善人才引育，集聚京津创新力量</p><p class="docx-paragraph">依托飞地平台实施柔性引才+刚性培育双轨模式，面向京津地区精准引进轨道交通领域高层次专家、研发团队与青年科技人才。选派公司内部技术骨干入驻飞地，搭建“京津人才+河北产业”协同创新队伍。建立人才激励与保障机制，落实薪酬、职称、科研成果奖励等政策，实现“人才在外地、服务为河北”。</p><p class="docx-paragraph">3.规范运营管理，保障飞地高效运行</p><p class="docx-paragraph">建立飞地专项管理制度与考核机制，明确母公司与飞地权责分工，实行规范化、市场化运作。对飞地科研项目、经费使用、人才管理实施全过程监管，定期开展绩效评估与动态调整。打通母公司技术体系、质量体系、供应链体系与飞地对接通道，确保飞地研发活动与河北产业需求高度契合。</p><p class="docx-paragraph">4.聚焦成果产出，推动京津研发河北转化</p><p class="docx-paragraph">以成果转化为核心目标，明确飞地研发方向聚焦轨道交通装备智能化、绿色化关键技术。建立成果优先落地河北转化机制，推动飞地形成的专利、新技术、新工艺在中车唐山公司及河北省内产业链企业应用转化，助力提升区域轨道交通产业核心竞争力，实现创新价值与产业效益双提升。</p><p class="docx-paragraph">5.深化产学研合作，构建协同创新生态</p><p class="docx-paragraph">依托公司国家级和省级创新平台，推动飞地与京津高校、科研院所及省内院校深度合作，共建研发平台、人才培养基地。开放母公司研发设施、试验验证平台与生产资源，实现产学研资源共享。联合开展关键核心技术攻关，促进前沿技术快速落地，为飞地可持续创新与河北产业升级提供强力支撑。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述人才飞地近三年取得的重大成效，包括技术创新、管理创新、生产效率、市场开拓等方面。</p><p class="docx-paragraph"><a id="zdcx"></a>作为中车唐山公司立足天津打造的科技人才飞地，天津中车唐车轨道交通科技有限公司（简称天津科技公司）紧扣“强基固本、创新拓展”主线，以体系建设筑牢运营根基、以技术创新驱动成果转化、以市场开拓提升发展效能，在管理体系、技术攻关、成果落地、市场布局等方面取得显著成效，有力支撑母公司轨道交通产业高质量发展。</p><p class="docx-paragraph">1.管理创新与人才飞地建设方面</p><p class="docx-paragraph">天津科技公司紧扣科技人才飞地功能定位，强化基础管理、深化体系协同、集聚高端智力资源，持续完善现代化经营管理模式。聚焦质量、环境、职业健康安全一体化管控，顺利通过三大管理体系认证，成功获评高新技术企业。依托天津区位与人才优势，畅通与中车唐山公司资源互通、技术协同、人才共享机制，以飞地模式实现“研发在天津、转化在河北、市场全覆盖”，为轨道交通科技创新与产业落地提供高效管理保障与人才支撑。</p><p class="docx-paragraph">2.在技术创新及成果转化方面</p><p class="docx-paragraph">天津科技公司坚持自主研发与工程化应用并重，突破多项关键核心技术。遵循标准化、模块化设计，建成防爬吸能装置谱系化产品，覆盖A/B型地铁、动力集中动车组等多场景，成果通过试验验证并成功应用于雄安新区至北京大兴机场快线项目。完成弓网、轨检装置迭代升级，形成在线监测与轨道检测系统系列产品，相关技术成果落地石家庄地铁1号线二期、三期工程项目。自主研发货舱区主动灭火系统，有效提升车辆及货物安全保障能力；完成柔性化自动焊接装置研制，实现机器人焊接、非标工装集成与生产验证，提升智能制造水平。同时，推进地铁物流智能装备开发，打造具备自动运行、智能网联、安全防护的轨道交通物流装备；完成镁合金零部件工程化研究，推动轻量化材料在天津地铁车辆应用。牵头智行捷运低运量轨道交通系统研制，完成多专业方案设计并通过公司级评审，1:2.4缩比原理样机完成试制与耦合试验，为新型轨道交通系统奠定技术基础。</p><p class="docx-paragraph">3.市场开拓方面</p><p class="docx-paragraph">天津科技公司依托技术优势与飞地协同资源，积极拓展外部市场，对外承接天津 7 号线弓网轨检服务、轨道交通车辆技术服务等10余项业务，成功中标天津地铁7号线一期工程联合调试服务、弓网轨检测试及关键技术研究项目。通过深度协同中车唐山公司技术体系，实现从技术研发到技术服务的全链条延伸，初步构建起以天津为核心、辐射周边的市场化业务格局，市场竞争力与品牌影响力持续提升。</p></td></tr></table><p class="docx-paragraph"><strong>四、未来2年发展规划</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><a id="zdrw"></a>1.人才引进：精准引育、结构优化</p><p class="docx-paragraph">聚焦核心业务领域，实施“筑基人才计划”。未来两年引进硕士及以上学历创新人才4名及以上，培养正高级或高级职称专业技术人员2人及以上；柔性引进行业专家4人及以上，共建智库与攻关小组。完善“薪酬+项目分红”激励，配套科研启动经费与安居保障，稳定人才留存。建立内部培养与外部引进互补机制，定向培育技术管理复合型人才，形成梯队合理、专业匹配的人才结构。</p><p class="docx-paragraph">2.科研团队建设：体系化、任务型、高效能</p><p class="docx-paragraph">按技术方向组建2-3支专项攻关团队，明确项目技术负责人与项目管理机制。完善研发流程、知识产权与项目考核体系。推行“揭榜挂帅”和“赛马”机制，针对关键核心技术难题，不论资历、不设门槛，开放平台，建立容错机制与绩效激励，提升研发效率与创新活力，打造能攻关、可转化、善迭代的硬核团队，负责市级以上科研项目1项。</p><p class="docx-paragraph">3.代表性技术成果转化：聚焦核心、加速落地</p><p class="docx-paragraph">加快推动智能化地铁物流装置核心技术研发和成果转化，推进智能化地铁物流装置在天津地铁试运行，开展智能化地铁物流装置技术定型与中试验证，配套完成地下物流运输系统智能调度平台开发，打造城市地下物流体系平台并通过天津地区的试运行验证，具备在全国范围内复制、推广的条件，推进技术成果的规模化落地，带动地铁货运产业链发展和成套技术体系升级。</p><p class="docx-paragraph">4.重点方向业务拓展：模式创新、拓展增量</p><p class="docx-paragraph">拓展弓网监测、轨道检测、空气净化装置等智能装备增量市场，承接车辆全生命周期服务技术相关项目≥2个；完成智能化地铁物流模式验证，推进项目落地；人才飞地研发成果在河北省内落地转化3项及以上，实现新增收入1000万元及以上。</p><p class="docx-paragraph">年度规划：</p><p class="docx-paragraph">2026年，申请发明专利1项，引进创新人才2人，培养正高级或高级职称专业技术人员1人，人才飞地研发成果在河北省内落地转化1项，新增收入400万元及以上。</p><p class="docx-paragraph">2027年，申请发明专利1项，授权实用新型专利3项，登记软件著作权2项，撰写科技报告1篇，引进创新人才2人，培养正高级或高级职称专业技术人员1人，柔性引进行业专家4人及以上，负责市级以上科研项目1项，人才飞地研发成果在河北省内落地转化2项，新增收入600万元及以上。</p><p class="docx-paragraph">2028年1月，申请项目验收。</p></td></tr></table><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">以中车唐山公司为主体、天津中车唐车轨道交通科技有限公司为载体，联合建设河北省科技人才飞地，立足京津引智、天津研发、河北转化定位，聚焦轨道交通装备智能化、绿色化发展方向，开展轨道车辆运输系统关键技术研发。完善人才引育、技术攻关、成果转化机制，推动创新资源跨区域高效配置。力争建成特色鲜明、机制灵活、成效显著的科技人才飞地，形成一批关键技术成果、知识产权与产业化项目，提升企业自主创新能力与核心竞争力，为河北省轨道交通产业高质量发展和区域创新协同提供坚实人才支撑与技术保障。</p></td><td><p class="docx-paragraph">聚焦轨道交通装备智能化、绿色化发展方向，开展轨道车辆运输系统关键技术研究，申请发明专利1项，引进创新人才2人，培养正高级或高级职称专业技术人员1人，人才飞地研发成果在河北省内落地转化1项，新增收入400万元及以上。</p></td><td><p class="docx-paragraph">聚焦轨道交通装备智能化、绿色化发展方向，开展轨道车辆运输系统关键技术研究，申请发明专利1项，授权实用新型专利3项，登记软件著作权2项，撰写科技报告1篇，引进创新人才2人，培养正高级或高级职称专业技术人员1人，柔性引进行业专家4人及以上，负责市级以上科研项目1项，人才飞地研发成果在河北省内落地转化2项，新增收入600万元及以上。</p></td></tr><tr><td rowspan="10"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">新增收入（万元）</p></td><td><p class="docx-paragraph">1000</p></td><td><p class="docx-paragraph">400</p></td><td><p class="docx-paragraph">600</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">授权实用新型专利（件）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">3</p></td></tr><tr><td><p class="docx-paragraph">负责市级以上科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">引进创新人才（人）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">撰写科技报告、研究报告（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">软件著作权（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2</p></td></tr></table><p class="docx-paragraph"><strong>六、项目组主要成员</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">年龄</p></td><td><p class="docx-paragraph">证件号码</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">分工</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李毅磊</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">41</p></td><td><p class="docx-paragraph">130521198503082023</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">农业机械化</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">负责人才飞地全面工作，推进项目实施</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">张绍东</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">45</p></td><td><p class="docx-paragraph">211422198103194810</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">母公司科技资源统筹</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">王大海</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">38</p></td><td><p class="docx-paragraph">130825198810195919</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">母公司科技资源统筹</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">殷立阳</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">40</p></td><td><p class="docx-paragraph">130221198604196816</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">轨道车辆运输系统设计</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">曹春伟</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">44</p></td><td><p class="docx-paragraph">130224198203044116</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">本科</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">铁路电气化工程</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">轨道车辆运输系统电气设计</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">金静飞</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">38</p></td><td><p class="docx-paragraph">130224198809036233</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">采矿机械</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">轨道车辆运输系统机械设计</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">刘子豪</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">31</p></td><td><p class="docx-paragraph">130184199501193019</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">水路运输管理</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">轨道车辆运输系统总体设计</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">张静</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">38</p></td><td><p class="docx-paragraph">130184198810201524</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">通信网络技术</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">轨道车辆运输系统通信设计</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">寇晓阳</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">39</p></td><td><p class="docx-paragraph">131128198701010032</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">铁路机车车辆工程</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司</p></td><td><p class="docx-paragraph">轨道车辆运输系统机械设计</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">徐成祥</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">29</p></td><td><p class="docx-paragraph">130924199701060912</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高铁与城市轨道交通机车关键零部件</p></td><td><p class="docx-paragraph">机械设计原理与方法</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司</p></td><td><p class="docx-paragraph">科技人才飞地建设</p></td></tr></table><p class="docx-paragraph">                </p><p class="docx-paragraph"><strong>预算填写说明</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p><p class="docx-paragraph">预算的编制要坚持任务相关性、政策相符性和经济合理性，实事求是编制提出项目预算。填报时，直接费用应按设备费、业务费、劳务费三个类别填报。直接费用中除50万元以上的设备费外，其他费用只提供基本测算说明，不需要提供明细。</p><p class="docx-paragraph">（一）直接费用</p><p class="docx-paragraph">指在项目实施过程中发生的与之直接相关的费用，具体包括：</p><p class="docx-paragraph">1.设备费：指在项目实施过程中购置或试制专用仪器设备，对现有仪器设备进行升级改造，以及租赁外单位仪器设备而发生的费用。计算类仪器设备和软件工具可在设备费科目列支。应当严格控制设备购置，鼓励开放共享、自主研制、租赁专用仪器设备以及对现有仪器设备进行升级改造，避免重复购置。填报时，50万元以上的设备详细说明。</p><p class="docx-paragraph">2.业务费：指在项目实施过程中消耗的各种材料、辅助材料等低值易耗品的采购、运输、装卸、整理等费用，发生的测试化验加工、燃料动力、出版／文献／信息传播／知识产权事务、会议／差旅／国际合作交流等费用，以及其他相关支出。填报时，对单笔大额支出、对外委托支出重点说明。</p><p class="docx-paragraph">3.劳务费：指在项目实施过程中支付给参与项目研究的研究生、博士后、访问学者以及项目科研辅助人员等的劳务性费用，以及支付给临时聘请的咨询专家的费用等。</p><p class="docx-paragraph">项目聘用人员的劳务费开支标准，参照当地科学研究和技术服务业从业人员平均工资水平，根据其在项目研究中承担的工作任务确定，其由单位缴纳的社会保险补助、住房公积金等“五险一金”纳入劳务费科目开支。</p><p class="docx-paragraph">专家咨询费不得支付给参与项目及其项目管理相关的工作人员。专家咨询费标准参照《中央财政科研项目专家咨询费管理办法》（财科教〔2017〕128号）规定，由项目申报单位结合实际自行确定。</p><p class="docx-paragraph">（二）间接费用</p><p class="docx-paragraph">指项目申报单位和项目合作单位在组织实施项目过程中发生的无法在直接费用中列支的相关费用。主要包括：项目申报单位为项目研究提供的房屋占用，日常水、电、气、暖消耗，有关管理费用的补助支出，以及激励科研人员的绩效支出等。</p><p class="docx-paragraph">间接费用实行总额控制，项目申报单位申请的间接费用总额按照不超过直接费用扣除设备购置费的一定比例核定，其中：100万元以下的部分为30%，100万元至300万元的部分为25%；300万元以上的部分为20%；数学等纯理论基础研究项目间接费用比例可提高到不超过60%。</p><p class="docx-paragraph">间接费用由项目承担单位统筹安排使用，可全部用于绩效支出，并向创新绩效突出的团队、个人和青年人才倾斜。</p><p class="docx-paragraph"><strong>二、自筹资金</strong></p><p class="docx-paragraph">对自筹资金主要用途、支出预算做简要说明。</p></td></tr></table><p class="docx-paragraph"><strong>七、项目预算表</strong></p><p class="docx-paragraph">                                             单位：万元</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>序号</strong></p></td><td><p class="docx-paragraph"><strong>预算科目名称</strong></p></td><td><p class="docx-paragraph"><strong>金额</strong></p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">（一）直接费用</p></td><td><p class="docx-paragraph">40.00</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1.设备费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">其中：购置设备费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2.业务费</p></td><td><p class="docx-paragraph">40.00</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">3.劳务费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">（二）间接费用</p></td><td><p class="docx-paragraph">10.00</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">其中：绩效支出</p></td><td><p class="docx-paragraph">8.00</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph"><strong>二、自筹资金</strong></p></td><td><p class="docx-paragraph">100.00</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph"><strong>合 计</strong></p></td><td><p class="docx-paragraph">150.00</p></td></tr></table><p class="docx-paragraph">注：1.间接费用无需编制预算说明；2.绩效支出在间接费用中无比例限制。</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目预算基本测算说明（不包含单价50万以上的设备详细说明）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="qtzc"></a>本项目总预算150万元，其中申请省级财政资金50万元，企业自筹资金100万元。</p><p class="docx-paragraph">1.省级财政资金50万元</p><p class="docx-paragraph">（1）直接费用40万元，全部为业务费。</p><p class="docx-paragraph">材料费12万元，主要用于购置本项目开展轨道车辆运输系统和物流装置关键技术研究所需的各种物料，车轮、空气弹簧、转向架用轴承及装卸系统等。</p><p class="docx-paragraph">测试化验加工费15万元，主要用于轨道车辆运输系统和物流装置关键部件样机试制及性能仿真测试。</p><p class="docx-paragraph">会议／差旅／国际合作交流费8万元，主要用于科技人才飞地研发人员和申报单位配套人员赴外地开展技术调研和交流的差旅费用。</p><p class="docx-paragraph">出版／文献／信息传播／知识产权事务5万元，主要用于本项目申请专利、登记软件著作权和技术资料打印等。</p><p class="docx-paragraph">（2）间接费用10万元</p><p class="docx-paragraph">主要用于在组织实施项目过程中发生的无法在直接费用中列支的相关费用。</p><p class="docx-paragraph">2.自筹资金100万元</p><p class="docx-paragraph">材料费30万元，主要用于购置本项目开展轨道车辆运输系统和物流装置关键技术研究所需的各种物料，包括轴承、减振器、枕梁和铝型材等。</p><p class="docx-paragraph">测试化验加工费60万元，主要用于轨道车辆运输系统关键部件和物流装置样机的仿真分析、性能测试和优化提升。</p><p class="docx-paragraph">会议／差旅／国际合作交流费10万元，主要用于科技人才飞地研发人员和申报单位配套人员赴外地开展技术调研、交流的差旅费用。</p></td></tr><tr><td><p class="docx-paragraph"><strong>单价50万元以上的设备详细说明（无相关情况，本栏填“无”）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="sbxxsm"></a>无</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a></p><p class="docx-paragraph">               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>八、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>九、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司营业执照</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司章程</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">中车唐山机车车辆有限公司高企证书</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">中车唐山公司省级技术创新中心批复文件</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">中车唐山公司近三年审计报告或财务报表（含研发投入）</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地（天津中车唐车轨道交通科技有限公司）营业执照</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">天津中车唐车轨道交通科技有限公司合资协议（中车唐山公司控股）</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地办公和科研场地租赁合同</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地研发人员名单、劳动合同</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地硕士或高级职称人员学历学位及职称证书</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地2025年度在高层次人才引进培育使用和技术研发方面支出明细账</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">人才飞地产学研合作协议</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">飞地为申报单位引进副高级以上职称的高层次人才</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">近三年飞地研发的新产品和获得的知识产权</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">近三年申报单位依托飞地研发成果开发的新产品和获得的知识产权</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">科技人才飞地相关研发成果近3年在河北省科技成果转化及效益情况</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

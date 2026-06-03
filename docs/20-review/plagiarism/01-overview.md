@@ -1,152 +1,75 @@
-# 🔍 查重服务概述
+# 查重服务概述
 
 ## 服务定位
 
-查重服务用于识别申报材料中的重复、改写重复和模板化内容，输出可解释、可复核的比对结果。最终展示以 `mammoth` HTML 为准。
+查重服务旨在通过对比用户上传的申报材料（Primary）与预定义的比对库（Corpus）中的历史申报文档、学术资源等，识别其中的字面重复、改写重复和模板化重复。
 
-## 设计目标
+服务核心能力：
+- **库驱动查重**：支持从大规模预索引库（Corpus）中自动召回可疑来源。
+- **Primary 驱动归并**：以主文档为中心，自动合并来自多个来源的重叠命中。
+- **有效重复统计**：计算主文档去重后的物理重复覆盖率，而非简单的 Pairwise 相似度。
+- **Mammoth HTML 报告**：生成保留 Word 原始格式的高亮查重报告，主文档高亮与多来源片段联动展示。
 
-- **召回有效重复**：覆盖字面重复与改写重复
-- **控制误报**：抑制模板句、表格结构、短碎片噪声
-- **边界可用**：重复片段的起止位置尽量贴近人工判断
-- **展示可信**：Word 原貌保留，且高亮与检测结果一致
-- **检测区域可控**：仅对 `primary` 的业务正文区域查重
-
-## 当前架构（基于现有代码）
-
-### 核心能力
-
-1. **文本提取**
-- PDF：`common/file_handler/pdf_parser.py`
-- DOCX：`common/file_handler/docx_parser.py`
-
-2. **Primary 检测区截取（配置驱动）**
-- 仅对 `primary docx` 执行 Section 截取
-- `source` 文档默认全文参与比对，不做区域裁剪
-- 截取器：`section_extractor.py`
-
-3. **分句与预过滤**
-- 语义分句：`tokenizer.py`
-- 前置模板过滤：`template_prefilter.py`
-- 模板判定：`template_filter.py`
-
-4. **查重主链路**
-- N-gram 切分：`ngram.py`
-- 指纹比对 + 连续区间：`engine.py`（Winnowing）
-- 结果聚合：`aggregator.py`
-
-5. **报告输出**
-- 最终报告：`mammoth_report_builder.py`
-- 最终交付文件：`debug_plagiarism/plagiarism_report_mammoth.html`
-
-### 现存问题（已验证）
-
-- 对“长段改写型相似”召回不足，常退化为短句命中
-- 检测边界偏短会直接限制 HTML 高亮范围
-- 局部片段可命中，但整段连续性不足，影响人工观感
-
-## 业界实践对齐（知网/Turnitin 类）
-
-主流方案不是单一算法，而是分层流程：
-
-1. **候选召回**：优先保召回（能找到可疑段）
-2. **细粒度对齐**：做边界校准（字符/句子级）
-3. **结果过滤**：排除模板、引用、小片段噪声
-4. **报告解释**：区分命中类型并支持人工复核
-
-## 本项目增量改造路线（不推翻现有实现）
-
-### 阶段 A：检测层补强（`engine.py`）
-
-- 保留现有 `exact`（字面重复）主链路
-- 在 `exact` 命中窗口内补做句级相似对齐，产出 `paraphrase`
-- 合并邻接句，改善长段边界
-
-### 阶段 B：聚合层扩展（`aggregator.py`）
-
-- 保持 `duplicate_segments` 主结构
-- 增加字段：`match_type`、`confidence`、`parent_match_id`
-- 兼容现有 API/debug，不改路由协议
-
-### 阶段 C：展示层增强（`mammoth_report_builder.py`）
-
-- 仅维护 `mammoth` 报告
-- 双层高亮：`exact` 深色、`paraphrase` 浅色
-- 导航筛选：全部 / 仅 exact / 仅 paraphrase
-- 保持 Word 原貌，仅叠加高亮
-
-### 阶段 D：过滤微调（`template_filter.py` / `template_prefilter.py`）
-
-- 调整正文语句与模板语句的判定阈值
-- 降低“本应保留却被预过滤”的漏检
-
-## 统一流程（改造后）
-
-```text
-上传文件
-  -> 文本提取（PDF/DOCX）
-  -> Primary Section 提取（仅 primary）
-  -> 分句与位置映射
-  -> 前置过滤（模板/表格/短句）
-  -> Exact 检测（N-gram + Winnowing）
-  -> Paraphrase 补全（句级相似）
-  -> 片段合并与去重
-  -> 后置过滤与打分
-  -> 结果聚合
-  -> Mammoth HTML 渲染（最终交付）
-```
-
-## Section 配置约定（Primary Only）
-
-- `primary`：必须配置待检区域（起止边界）
-- `source`：不配置区域，直接全文比对
-- 建议优先用“标题到标题”的边界模式，避免固定行号/固定字符位偏移
-
-示例：
-
-```json
-{
-  "primary_scope": {
-    "start_pattern": "项目立项背景及意义",
-    "end_pattern": "三、项目实施方案"
-  }
-}
-```
-
-说明：
-- 实际运行时仅从 `primary` 提取 `start_pattern` 到 `end_pattern` 之间文本进入检测。
-- `source` 仍保留全文，以最大化召回。
-
-## 调参原则
-
-- 先稳边界，再扩召回
-- 参数调整与展示逻辑分离验证
-- 统一以样本集比较改造前后结果
-
-| 参数 | 方向 | 目标 |
-|------|------|------|
-| `min_continuous_match` | 适度下调或保持 | 保证连续命中稳定性 |
-| `min_match_length` | 分层阈值（exact/paraphrase） | 降低短碎片噪声 |
-| `max_fingerprint_frequency` | 结合样本微调 | 抑制高频模板误连 |
-| 句级相似阈值（新增） | 从严到松迭代 | 控制改写误报 |
-
-## 模块结构
+## 模块定位
 
 ```text
 src/services/plagiarism/
-├── api.py
-├── agent.py
-├── config.py
-├── tokenizer.py
-├── template_prefilter.py
-├── template_filter.py
-├── ngram.py
-├── engine.py
-├── aggregator.py
-└── mammoth_report_builder.py
+├── api.py                       # 接口入口
+├── agent.py                     # 流程编排（库召回 + 精比对 + 归并）
+├── corpus.py                    # [New] 比对库管理（挂载扫描、预索引、延迟加载）
+├── retrieval.py                 # 候选来源召回（基于 N-gram 指纹索引）
+├── config.py                    # Section / 过滤配置
+├── section_extractor.py         # Primary 检测区提取
+├── tokenizer.py                 # 语义分句与原文位置映射
+├── template_prefilter.py        # 前置排除区间标记
+├── template_filter.py           # 模板/短句/标题后置过滤
+├── engine.py                    # 细粒度比对内核（Winnowing + 连续区间）
+├── aggregator.py                # Pairwise 片段清洗
+├── multi_source_aggregator.py   # Primary-centered 多源归并与统计
+└── mammoth_report_builder.py    # 多源查重 HTML 报告生成
 ```
 
-## 下游文档
+## 核心业务链路
 
-- [Agent 设计](02-agent.md)
-- [API 接口文档](03-api.md)
+```text
+上传 Primary 文档
+  -> 文本提取（PDF/DOCX）
+  -> 检测区提取 (Section Extraction)
+  -> 库查重召回 (Corpus Retrieval)
+     - 先基于倒排索引做粗召回，再做窗口级重排
+  -> 候选文档按需加载 (Lazy Loading)
+     - 仅对最终 Top-K 候选从远程挂载目录读取正文
+  -> 细粒度比对 (Fine-grained Matching)
+     - 对每个候选来源运行精比对内核
+  -> 多源归并 (Multi-source Merging)
+     - 以 Primary 坐标系合并所有来源的命中片段
+  -> 结果统计与报告生成
+     - 计算有效重复率，生成 Mammoth HTML（Primary 全文 + 多来源片段面板）
+```
+
+## 库管理原则 (Corpus Principles)
+
+针对“附件位于远程服务器”的场景，遵循以下原则：
+- **挂载访问**：通过 NFS/Samba 挂载远程目录，逻辑上视为本地访问。
+- **特征预存**：库中文档的元数据、特征分片与倒排索引预先计算并持久化，避免查重时实时解析。
+- **分阶段召回**：先缩小候选范围，再加载少量候选特征，最后才读取原文。
+- **按需读取**：仅在精比对阶段读取最终 Top-K 文档原文。
+
+## 统计口径
+
+- **有效重复率 (Effective Duplicate Rate)**：
+  主文档检测区内，去重后的重复覆盖字符数 / 主文档检测区总字符数。
+- **排除项策略**：
+  默认排除参考文献、引文、系统模板以及低于 15 字的细碎匹配。
+
+- 不推翻当前细粒度内核
+- 先补多源召回，再补多源归并
+- 先稳统计口径，再升级报告结构
+- 所有最终展示继续以 `mammoth` HTML 为准
+
+## 相关文档
+
+- [Agent 设计](03-agent.md)
+- [比对库管理](04-corpus.md)
+- [API 接口文档](05-api.md)
+- [图片查重库设计](06-image-corpus.md)

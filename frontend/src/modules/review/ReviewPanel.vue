@@ -328,9 +328,37 @@ function selectProject(index) {
   renderAll();
 }
 
-function selectRule(ruleId) {
-  state.ruleId = ruleId;
-  state.evidenceIndex = 0;
+function selectRule(ruleId, cycleEvidence = true) {
+  const project = projects.value[state.projectIndex];
+  if (state.ruleId === ruleId) {
+    if (cycleEvidence && project) {
+      const rule = getActiveRule(project);
+      if (rule) {
+        const navTargets = (rule.evidence_targets || []).filter(t => Number(t?.packet_page || 0) > 0);
+        if (navTargets.length > 1) {
+          const currentTarget = (rule.evidence_targets || [])[state.evidenceIndex];
+          let navIdx = navTargets.indexOf(currentTarget);
+          navIdx = (navIdx + 1) % navTargets.length;
+          state.evidenceIndex = (rule.evidence_targets || []).indexOf(navTargets[navIdx]);
+        }
+      }
+    }
+  } else {
+    state.ruleId = ruleId;
+    state.evidenceIndex = 0;
+    if (project) {
+      const rule = [...(project?.policy_sections||[]), ...(project?.extra_sections||[])]
+        .flatMap(s => s.groups||[])
+        .flatMap(g => g.items||[])
+        .find(i => i.id === ruleId);
+      if (rule) {
+        const firstNav = (rule.evidence_targets || []).findIndex(t => Number(t?.packet_page || 0) > 0);
+        if (firstNav >= 0) {
+          state.evidenceIndex = firstNav;
+        }
+      }
+    }
+  }
   renderRulesPanel();
   renderPdfPanel();
 }
@@ -416,9 +444,28 @@ function renderFoldedGroups(groups) {
 }
 
 function renderRuleCard(item) {
-  const evidenceCount = Array.isArray(item?.evidence_targets) ? item.evidence_targets.length : 0;
+  const navigableTargets = (item?.evidence_targets || []).filter(t => Number(t?.packet_page || 0) > 0);
+  const evidenceCount = navigableTargets.length;
+  const isSelected = item.id === state.ruleId;
+  
+  let evidenceHtml = '<div>无可跳转证据</div>';
+  if (evidenceCount > 0) {
+    if (evidenceCount === 1) {
+      evidenceHtml = `<div class="evidence-locator">1 个命中</div>`;
+    } else {
+      let currentNavIndex = 0;
+      if (isSelected) {
+        const currentTarget = (item.evidence_targets || [])[state.evidenceIndex];
+        currentNavIndex = navigableTargets.indexOf(currentTarget);
+        if (currentNavIndex === -1) currentNavIndex = 0;
+      }
+      const text = isSelected ? `${evidenceCount} 个命中 (第 ${currentNavIndex + 1} 个)` : `${evidenceCount} 个命中`;
+      evidenceHtml = `<div class="evidence-locator">${text}</div>`;
+    }
+  }
+
   return `
-    <button class="rule-card ${item.id === state.ruleId ? 'active' : ''}" data-rule-id="${escapeHtml(item.id)}">
+    <button class="rule-card ${isSelected ? 'active' : ''}" data-rule-id="${escapeHtml(item.id)}">
       <div class="rule-card-top">
         <div class="rule-card-title">${escapeHtml(item.title)}</div>
         <div>${statusBadge(item.status, item.status_label)}</div>
@@ -427,7 +474,7 @@ function renderRuleCard(item) {
       <div class="rule-card-meta">
         <div class="rule-card-meta-label">核验来源</div><div>${escapeHtml(item.source_rule_label || '-')}</div>
         <div class="rule-card-meta-label">结果说明</div><div>${escapeHtml(item.summary || '-')}</div>
-        <div class="rule-card-meta-label">证据定位</div><div>${evidenceCount ? `${evidenceCount} 个命中` : '无可跳转证据'}</div>
+        <div class="rule-card-meta-label">证据定位</div>${evidenceHtml}
       </div>
     </button>
   `;
@@ -453,8 +500,9 @@ function renderRulesPanel() {
   `;
 
   panel.querySelectorAll('.rule-card').forEach((node) => {
-    node.addEventListener('click', () => {
-      selectRule(String(node.dataset.ruleId || ''));
+    node.addEventListener('click', (e) => {
+      const isLocator = !!e.target.closest('.evidence-locator');
+      selectRule(String(node.dataset.ruleId || ''), isLocator);
     });
   });
 }
@@ -1327,5 +1375,19 @@ onMounted(() => {
     height: auto;
     min-height: 480px;
   }
+}
+
+.evidence-locator {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.evidence-locator:hover {
+  opacity: 0.8;
 }
 </style>

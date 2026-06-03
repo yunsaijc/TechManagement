@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - a86b6ec9447144cfa21568064d172801.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：a86b6ec9447144cfa21568064d172801.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">5,496</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>a86b6ec9447144cfa21568064d172801.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010201-“科技人才飞地”项目</p><p class="docx-paragraph">项 目 名 称：<a id="xmmc"></a>河北天成药业股份有限公司科技人才飞地</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北天成药业股份有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>侯西成</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>沧州市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-03 至 2028-02</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-12</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+科技人才飞地”格式填写，如：****公司科技人才飞地。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">单位名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwmc1"></a>河北天成药业股份有限公司</p></td><td colspan="2"><p class="docx-paragraph">单位性质</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">通讯地址</p></td><td colspan="9"><p class="docx-paragraph"><a id="cddwdz1"></a>河北沧州经济技术开发区金光大街18号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwxydm"></a>911309001066207186</p></td><td colspan="2"><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-沧州市-河北沧州经济开发区</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">注册时间</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwzcsj"></a>1998-09-28</p></td><td colspan="2"><p class="docx-paragraph">注册资本</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzczb"></a>2830.0万元</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">法定代表人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwfr1"></a>王振刚</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="lclxrsj"></a>15731783065</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="frbgdh"></a></p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">项目联系人</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxr"></a>李淑敏</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxrsj"></a>15731783065</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户名称</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北天成药业股份有限公司</p></td><td colspan="2"><p class="docx-paragraph">开户银行行号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwhh"></a>313143005010</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开户银行</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwkhh"></a>沧州银行南湖支行</p></td><td colspan="2"><p class="docx-paragraph">帐号</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzh"></a>5010120101000006645</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>831人</p></td><td colspan="2"><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwjjsry"></a>353人</p></td><td colspan="2"><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td colspan="2"><p class="docx-paragraph"><a id="cddwzgjry"></a>87人</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">企业类型</p></td><td colspan="5"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td colspan="2"><p class="docx-paragraph">所属产业（集群）</p></td><td colspan="2"><p class="docx-paragraph"><a id="tscyjq"></a>沧州经开区生物医药产业集群</p></td></tr><tr><td colspan="11"><p class="docx-paragraph">近三年研发投入和销售收入（万元）</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2023"></a>2023 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2023"></a>8252.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2023"></a>60896.0</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2023"></a>13.55</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2024"></a>2024 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2024"></a>7570.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2024"></a>56364.0</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2024"></a>13.43</p></td></tr><tr><td><p class="docx-paragraph"> <a id="jsn2025"></a>2025 年</p></td><td colspan="3"><p class="docx-paragraph">研发投入</p></td><td colspan="2"><p class="docx-paragraph"><a id="yftr2025"></a>7463.0</p></td><td colspan="2"><p class="docx-paragraph">销售收入</p></td><td><p class="docx-paragraph"><a id="xssr2025"></a>56674.0</p></td><td><p class="docx-paragraph">研发投入强度</p></td><td><p class="docx-paragraph"><a id="yftrqd2025"></a>13.17</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">研发平台情况</p></td><td colspan="8"><p class="docx-paragraph"><a id="ptqksys"></a><a id="ptqkgjjsys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><strong>申报单位简介</strong></p></td></tr><tr><td colspan="11"><p class="docx-paragraph"><a id="xmjj"></a>河北天成药业股份有限公司始建于1970年，是一家集药物研发、生产、销售为一体的集团性制药企业。下设河北道恩药业、诺特药业、天津应天成科技3个全资子公司，现有员工千余人。公司可生产大容量注射剂、小容量注射剂、片剂、颗粒剂、粉针剂、冲洗液、原料药（含部分中药提取物）等剂型近200个品规。现已建成“研发+原料+制剂”的全产业链，布局从普药打基础，特色药求利润，高仿制药、创新药力求长远发展的战略格局。逐渐在研发、生产、销售各大版块形成自己的核心竞争力。</p><p class="docx-paragraph">在研发基础条件方面，公司构建沧州产业化基地+天津研发飞地双平台研发体系，硬件设施与人才团队支撑有力。天津应天成科技有限公司作为核心研发载体，拥有近千余平方米专业实验室，配备价值700多万元的高端研发设备，聚焦基础药物开发、抗肿瘤药新产品开发、原料药产品开发、包材转型升级等领域；沧州总部建有符合GMP标准的车间、智能化生产基地，拥有八大剂型生产线，可实现研发成果规模化转化。人才方面，引进硕士以上学历组建专职研发团队。</p><p class="docx-paragraph">在单位知识产权方面，公司坚持自主创新+专利布局，知识产权储备丰富、核心技术自主可控。现有专利29项，新药证书4个，行业标准2个，多项自主研发的产品实现成果转化。我公司立项项目60余项，包括抗肿瘤药品种、治疗糖尿病品种、抗病毒品种、抗感染品种等多品种研发项目，自主研发的复方α-酮酸片、注射用紫杉醇（白蛋白结合型）、帕拉米韦注射液等产品均拥有自主知识产权，为人才飞地技术创新提供坚实知识产权支撑。</p><p class="docx-paragraph">在科研成果转化方面，公司近年来成果转化成效显著，研发的多种药品品种已取得药品批件，并实现沧州产业化落地。历时10年研发的两款抗肿瘤高端复杂制剂批量上市，大幅降低患者治疗成本。</p><p class="docx-paragraph">在产学研合作方面，天成药业与应天成科技达成长期委托关系，天成药业委托应天成科技进行项目的研发工作，同时应天成也与多家专业机构达成合作关系，进行企业专利，高新技术等事项的开展。</p><p class="docx-paragraph">    在国际交流合作方面，公司立足国际化发展战略，搭建全球交流合作网络。子公司河北道恩药业通过欧盟GMP认证，具备国际高端药品生产资质，承接国际临床样品、商业批生产业务；产品远销东欧、东南亚、中亚、南美洲等30多个国家和地区；提升人才飞地国际化创新水平，助力企业与国际医药产业接轨。</p></td></tr></table><p class="docx-paragraph"><strong>二、人才飞地基本情况</strong></p><table class="docx-table"><tr><td colspan="2"><p class="docx-paragraph">人才飞地名称</p></td><td colspan="7"><p class="docx-paragraph"><a id="fdmc"></a>天津应天成科技有限公司</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">负责人</p></td><td colspan="3"><p class="docx-paragraph"><a id="fdfzr"></a>王俊峰</p></td><td><p class="docx-paragraph">职务</p></td><td><p class="docx-paragraph"><a id="fdfzrzw"></a>院长</p></td><td><p class="docx-paragraph">联系电话</p></td><td><p class="docx-paragraph"><a id="fdfzrdh"></a>15028687618</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">是否独立法人</p></td><td colspan="4"><p class="docx-paragraph"><a id="fdsfdlfr"></a>是</p></td><td><p class="docx-paragraph">注册资本</p><p class="docx-paragraph">（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzczb"></a>500</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">场地面积（㎡）</p></td><td><p class="docx-paragraph"><a id="fdcdmj"></a>964</p></td><td colspan="4"><p class="docx-paragraph">注册地址</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdzcdz"></a>天津滨海高新区海泰发展六道6号海泰绿色产业基地E座</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">飞地研发人员数量</p></td><td><p class="docx-paragraph"><a id="fdyfrysl"></a>61</p></td><td colspan="4"><p class="docx-paragraph">专职研发人员数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfyrysl"></a>61</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">硕士研究生及以上学历或高级专业技术职称人员占比</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdryzb"></a>52.4</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度在高层次人才引进培育使用和技术研发方面</p><p class="docx-paragraph">支出的费用（万元）</p></td><td colspan="2"><p class="docx-paragraph"> <a id="fdzcfy"></a>1500 （万元）</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">上年度飞地为申报单位引进副高及以上人才数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdfgry"></a>1</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">在飞地所在地签订产学研合作协议数量</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdhzxy"></a>1</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">申报单位对人才飞地是否拥有实际控制权	</p></td><td colspan="2"><p class="docx-paragraph"><a id="fdgzq"></a>是</p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">股权</p><p class="docx-paragraph">构成</p></td><td colspan="2"><p class="docx-paragraph">第1大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc1"></a>河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl1"></a>100 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第2大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc2"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl2"></a>0 %</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">第3大股东名称</p></td><td colspan="4"><p class="docx-paragraph"><a id="gdmc3"></a>无</p></td><td><p class="docx-paragraph">股权占比</p></td><td><p class="docx-paragraph"> <a id="gqbl3"></a>0 %</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">上年度营业收入（万元）</p></td><td colspan="6"><p class="docx-paragraph"><a id="fdyye"></a>1860</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">主要研发设备情况</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="3"><p class="docx-paragraph">设备名称</p></td><td colspan="3"><p class="docx-paragraph">主要用途</p></td><td colspan="2"><p class="docx-paragraph">设备价值</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="3"><p class="docx-paragraph">单冲压片机</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">27433.63元</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="3"><p class="docx-paragraph">鼓风干燥箱</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">15775.86元</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="3"><p class="docx-paragraph">超纯水机一体机</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">25663.72元</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="3"><p class="docx-paragraph">光照试验箱</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">42477.88元</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="3"><p class="docx-paragraph">全自动溶出仪</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">247787.6元</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="3"><p class="docx-paragraph">容量法卡式水分仪</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">65486.73元</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="3"><p class="docx-paragraph">台式顶空残氧/溶氧分析仪</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">85840.71元</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td colspan="3"><p class="docx-paragraph">旋转蒸发仪</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">4424.78元</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td colspan="3"><p class="docx-paragraph">药品高温试验箱</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">7586.21元</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td colspan="3"><p class="docx-paragraph">真空干燥箱</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">7068.97元</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td colspan="3"><p class="docx-paragraph">药品稳定性试验箱</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">116058.9元</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td colspan="3"><p class="docx-paragraph">气相色谱仪</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">1504867.24元</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td colspan="3"><p class="docx-paragraph">高效液相色谱仪</p></td><td colspan="3"><p class="docx-paragraph">研发用设备</p></td><td colspan="2"><p class="docx-paragraph">5310486.59元</p></td></tr><tr><td colspan="9"><p class="docx-paragraph">副高及以上职称人才情况（ <a id="fgjzcrs"></a>3 人）</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">专业</p></td><td colspan="3"><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">工作单位</p></td><td><p class="docx-paragraph">是否专职研发人员</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">巴晓雨</p></td><td><p class="docx-paragraph">中药学</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">高翠华</p></td><td><p class="docx-paragraph">分析化学</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">谷守娜</p></td><td><p class="docx-paragraph">微生物与生化药学</p></td><td colspan="3"><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">是</p></td></tr></table><p class="docx-paragraph"><strong>三、近三年人才飞地成效情况</strong></p><table class="docx-table"><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年开发新技术、新产品、新工艺、专利、软著等情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2023"></a>2023 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2023"></a>开发复方α-酮酸片新工艺并取得批件</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2024"></a>2024 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2024"></a>完成帕拉米韦注射液、盐酸莫西沙星氯化钠注射液、葡萄糖酸钙氯化钠注射液产品的研发与产业化；硫酸镁注射液新工艺并取得批件</p></td></tr><tr><td colspan="2"><p class="docx-paragraph"> <a id="xcpxgyzlNf2025"></a>2025 年</p></td><td colspan="5"><p class="docx-paragraph"><a id="xcpxgyzl2025"></a>完成盐酸莫西沙星片产品的研发；复方电解质注射液、氯化钙注射液、氟康唑氯化钠注射液、乳酸环丙沙星氯化钠注射液、葡萄糖注射液等新工艺的研发并获得批件</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在当地开展产学研合作情况</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">合作单位</p></td><td colspan="2"><p class="docx-paragraph">合作方式</p></td><td colspan="3"><p class="docx-paragraph">合作成果</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">中国科学院天津工业生物技术研究所</p></td><td colspan="2"><p class="docx-paragraph">技术服务</p></td><td colspan="3"><p class="docx-paragraph">完成抗体和配体结合的KD值检测、流式分析等技术服务要求</p></td></tr><tr><td colspan="7"><p class="docx-paragraph"><strong>近3年在河北省科技成果转化及效益情况</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td colspan="2"><p class="docx-paragraph">知识产权类别</p></td><td colspan="2"><p class="docx-paragraph">知识产权名称</p></td><td><p class="docx-paragraph">知识产权所有人</p></td><td><p class="docx-paragraph">经济效益(万元)</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-复方α-酮酸片</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">650.39</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td colspan="2"><p class="docx-paragraph">新产品</p></td><td colspan="2"><p class="docx-paragraph">药品注册证书-帕拉米韦注射液(15ml:0.15g)</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">99.82</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td colspan="2"><p class="docx-paragraph">新产品</p></td><td colspan="2"><p class="docx-paragraph">药品注册证书-帕拉米韦注射液（60ml:03g）</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">31.86</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td colspan="2"><p class="docx-paragraph">新产品</p></td><td colspan="2"><p class="docx-paragraph">药品注册证书-盐酸莫西沙星氯化钠注射液</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">60.46</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td colspan="2"><p class="docx-paragraph">新产品</p></td><td colspan="2"><p class="docx-paragraph">药品注册证书-葡萄糖酸钙氯化钠注射液</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">3.65</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-硫酸镁注射液（10ml:5g）</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">4.83</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-硫酸镁注射液（5ml:2.5g）</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">1.33</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td colspan="2"><p class="docx-paragraph">新产品</p></td><td colspan="2"><p class="docx-paragraph">药品注册证书-盐酸莫西沙星片</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">23.88</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-复方电解质注射液</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">110.15</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-氯化钙注射液（5ml:0.5g）</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">44.34</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-氯化钙注射液（10ml:1g）</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">37.37</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-氟康唑氯化钠注射液</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">6.84</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-乳酸环丙沙星氯化钠注射液</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">21.63</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td colspan="2"><p class="docx-paragraph">新工艺</p></td><td colspan="2"><p class="docx-paragraph">药品补充申请批准通知书-葡萄糖注射液</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">3.25</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述申报单位支持人才飞地建设的制度和举措，主要从投入、人才、管理、产出、产学研合作等方面阐述。</p><p class="docx-paragraph"><a id="zdjc"></a>天津应天成科技有限公司是河北天成药业股份有限公司的全资子公司，天成药业对应天成科技有限公司拥有实际控制权。为了实现天成药业的“研发+原料+制剂”产业链建设，在天津建立自己的药物研究院——天津应天成科技有限公司。研究院秉承国际化、锐意创新、开放合作的理念，不断吸纳和引进优秀人才、科研项目，创新管理机制，致力于创新和仿制相结合的原料药与制剂研究与开发，为天成药业实现研发产品的产业化生产提供坚实的研发成果基础。</p><p class="docx-paragraph">在投入方面，天成药业积极向研究院提供资金支持、研发设备支持，签订多项科技项目研发、技术授权等合同协议，保证应天成日常研发、管理工作可以有序、稳定地开展。</p><p class="docx-paragraph"> 在人才引进和培养方面，天成药业制定一系列措施用于人才引进、培养。积极协助应天成科技吸纳优秀的研发人员、后勤保障人员等，以更好地完成研发工作和技术改造工作，从而带动培养更多的技术人员为最终目的。应天成通过自主招聘、企业内推等方式吸纳优秀研发人员十余人，为应天成更好地开展研发工作积蓄了人才力量。对做出优异成绩，为企业发展、经济效益提高做出重大贡献的员工，公司将给予不同程度的奖励措施。</p><p class="docx-paragraph">在管理方面，天成药业定期对应天成科技内部人员进行考核管理，同时协助应天成制定并根据日常工作中出现的问题，不断修订企业管理手册，以更符合应天成实际发展情况。定期安排天成药业优秀的研发人员、中高层领导与应天成人员进行专业及管理经验沟通，促进双方人员取长补短，积累经验。</p><p class="docx-paragraph"> 产出方面，在符合市场需要的前提，公司组织专业技术委员会的专家对项目建议的可行性进行评估、论证，经过可行性分析后，对研发项目进行立项，开展项目研究工作。应天成科技根据天成药业的具体需求，以及内部设施、人员配置，设立相应的研发项目以帮助天成药业完成药品的研发工作，进一步开展产品的产业化推广。</p><p class="docx-paragraph">产学研方面，应天成科技和天成药业达成长期委托关系，天成药业委托应天成科技进行项目的研发工作，同时应天成也与多家专业机构达成合作关系，进行企业专利，高新技术等事项的开展。</p></td></tr><tr><td colspan="7"><p class="docx-paragraph">简述人才飞地近三年取得的重大成效，包括技术创新、管理创新、生产效率、市场开拓等方面。</p><p class="docx-paragraph"><a id="zdcx"></a>技术创新方面，近三年，天津应天成科技有限公司完成了复方α-酮酸片、硫酸镁注射液、复方电解质注射液、氯化钙注射液、氟康唑氯化钠注射液、乳酸环丙沙星氯化钠注射液、葡萄糖注射液等新工艺以及帕拉米韦注射液、盐酸莫西沙星氯化钠注射液、葡萄糖酸钙氯化钠注射液、盐酸莫西沙星片等新产品的研发并下达批件。</p><p class="docx-paragraph">管理创新方面，建立健全人员绩效考核制度，完善企业管理制度。建立人才引进措施，引进高层次人才参与项目研发。</p><p class="docx-paragraph">生产效率方面，通过飞地研发的新工艺、新技术，帮助河北天成药业优化了多条生产线的生产流程，使核心产品生产效率提高，单位成本降低。提高了产品的产量，降低了产品的不良率。</p><p class="docx-paragraph">市场开拓方面，依托飞地研发的产品，成功进入全国30余个省市的医药市场，国内市场占有率稳步提升。部分创新药品种已启动国际注册申报，为扩展国外市场奠定了基础。</p></td></tr></table><p class="docx-paragraph"><strong>四、未来2年发展规划</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><a id="zdrw"></a>未来两年计划引进1名具有高级职称的专业技术人员，重点聚焦与企业核心赛道高度匹配的领域。以人才引进为基础，人才飞地着力打造一支能力突出，协同高校的科技研发团队，并负责市级以上科研项目1项，为技术创新提供核心动能。人才飞地将以成果转化为核心目标，推动更多创新成果切实转化为现实生产力。未来两年取得国家药品监督管理局批准的新产品2个、新工艺3项，申请实用新型专利1项，其中河北省落地转化品种3个，形成新的经济增长点。人才飞地研发机构建设坚持经济效益、社会效益与生态效益同步提升，在经济效益上，通过新产品产业化、工艺优化与市场拓展，显著提升企业应收规模与盈利能力，依托飞地成果转化新增销售收入600万元。</p></td></tr></table><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">依托飞地取得国家药品监督管理局批准的新产品2个、新工艺3项，申请实用新型专利1项；其中河北省落地转化品种3个；依托飞地成果转化新增销售收入600万元；为飞地或申报单位培养引进1名具有高级职称研发人员；飞地研发人员负责市级以上科研项目1项。</p></td><td><p class="docx-paragraph">取得国家药品监督管理局批准的新产品1个、新工艺1项</p></td><td><p class="docx-paragraph">取得国家药品监督管理局批准的新产品1个、新工艺2项，申请实用新型专利1项；其中河北省落地转化品种3个；依托飞地成果转化新增销售收入600万元；为飞地或申报单位培养引进1名具有高级职称研发人员；飞地研发人员负责市级以上科研项目1项</p></td></tr><tr><td rowspan="8"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">新产品（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新工艺（项）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">3</p></td></tr><tr><td><p class="docx-paragraph">引进专业技术人员（人）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新增销售（万元）</p></td><td><p class="docx-paragraph">600</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">600</p></td></tr><tr><td><p class="docx-paragraph">负责市级以上科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">申请实用新型专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"><strong>六、项目组主要成员</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">年龄</p></td><td><p class="docx-paragraph">证件号码</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">学历</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">分工</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">侯西成</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">45</p></td><td><p class="docx-paragraph">130922198106065615</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">森林培育学(亦称造林学)</p></td><td><p class="docx-paragraph">河北天成药业股份有限公司</p></td><td><p class="docx-paragraph">项目管理</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">李庆燕</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">40</p></td><td><p class="docx-paragraph">130130198603120626</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">新制剂技术</p></td><td><p class="docx-paragraph">药剂学</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">药物制剂研究</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">刘培岩</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">47</p></td><td><p class="docx-paragraph">120103197911223517</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">博士后</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">新制剂技术</p></td><td><p class="docx-paragraph">药物化学(包括天然药物化学等)</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">药物制剂研究</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">高翠华</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">45</p></td><td><p class="docx-paragraph">371327198109101823</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">色谱分析</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">质量研究</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">谷守娜</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">43</p></td><td><p class="docx-paragraph">120221198303111426</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">微生物生物化学</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">质量研究</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">刘传婷</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">37</p></td><td><p class="docx-paragraph">371526198909040445</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">化学分析(包括定性分析、定量分析等)</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">质量研究</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">巴晓雨</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">41</p></td><td><p class="docx-paragraph">220722198511072844</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">中药化学</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">质量管理</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">沈书庆</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">44</p></td><td><p class="docx-paragraph">372523198210182935</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">研究生</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">其它</p></td><td><p class="docx-paragraph">微生物药物学</p></td><td><p class="docx-paragraph">天津应天成科技有限公司</p></td><td><p class="docx-paragraph">项目管理</p></td></tr></table><p class="docx-paragraph">                </p><p class="docx-paragraph"><strong>预算填写说明</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p><p class="docx-paragraph">预算的编制要坚持任务相关性、政策相符性和经济合理性，实事求是编制提出项目预算。填报时，直接费用应按设备费、业务费、劳务费三个类别填报。直接费用中除50万元以上的设备费外，其他费用只提供基本测算说明，不需要提供明细。</p><p class="docx-paragraph">（一）直接费用</p><p class="docx-paragraph">指在项目实施过程中发生的与之直接相关的费用，具体包括：</p><p class="docx-paragraph">1.设备费：指在项目实施过程中购置或试制专用仪器设备，对现有仪器设备进行升级改造，以及租赁外单位仪器设备而发生的费用。计算类仪器设备和软件工具可在设备费科目列支。应当严格控制设备购置，鼓励开放共享、自主研制、租赁专用仪器设备以及对现有仪器设备进行升级改造，避免重复购置。填报时，50万元以上的设备详细说明。</p><p class="docx-paragraph">2.业务费：指在项目实施过程中消耗的各种材料、辅助材料等低值易耗品的采购、运输、装卸、整理等费用，发生的测试化验加工、燃料动力、出版／文献／信息传播／知识产权事务、会议／差旅／国际合作交流等费用，以及其他相关支出。填报时，对单笔大额支出、对外委托支出重点说明。</p><p class="docx-paragraph">3.劳务费：指在项目实施过程中支付给参与项目研究的研究生、博士后、访问学者以及项目科研辅助人员等的劳务性费用，以及支付给临时聘请的咨询专家的费用等。</p><p class="docx-paragraph">项目聘用人员的劳务费开支标准，参照当地科学研究和技术服务业从业人员平均工资水平，根据其在项目研究中承担的工作任务确定，其由单位缴纳的社会保险补助、住房公积金等“五险一金”纳入劳务费科目开支。</p><p class="docx-paragraph">专家咨询费不得支付给参与项目及其项目管理相关的工作人员。专家咨询费标准参照《中央财政科研项目专家咨询费管理办法》（财科教〔2017〕128号）规定，由项目申报单位结合实际自行确定。</p><p class="docx-paragraph">（二）间接费用</p><p class="docx-paragraph">指项目申报单位和项目合作单位在组织实施项目过程中发生的无法在直接费用中列支的相关费用。主要包括：项目申报单位为项目研究提供的房屋占用，日常水、电、气、暖消耗，有关管理费用的补助支出，以及激励科研人员的绩效支出等。</p><p class="docx-paragraph">间接费用实行总额控制，项目申报单位申请的间接费用总额按照不超过直接费用扣除设备购置费的一定比例核定，其中：100万元以下的部分为30%，100万元至300万元的部分为25%；300万元以上的部分为20%；数学等纯理论基础研究项目间接费用比例可提高到不超过60%。</p><p class="docx-paragraph">间接费用由项目承担单位统筹安排使用，可全部用于绩效支出，并向创新绩效突出的团队、个人和青年人才倾斜。</p><p class="docx-paragraph"><strong>二、自筹资金</strong></p><p class="docx-paragraph">对自筹资金主要用途、支出预算做简要说明。</p></td></tr></table><p class="docx-paragraph"><strong>七、项目预算表</strong></p><p class="docx-paragraph">                                             单位：万元</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>序号</strong></p></td><td><p class="docx-paragraph"><strong>预算科目名称</strong></p></td><td><p class="docx-paragraph"><strong>金额</strong></p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph"><strong>一、省级财政资金</strong></p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">（一）直接费用</p></td><td><p class="docx-paragraph">50.00</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1.设备费</p></td><td><p class="docx-paragraph">40.00</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">其中：购置设备费</p></td><td><p class="docx-paragraph">40.00</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2.业务费</p></td><td><p class="docx-paragraph">10.00</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">3.劳务费</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">（二）间接费用</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">其中：绩效支出</p></td><td><p class="docx-paragraph">0.00</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph"><strong>二、自筹资金</strong></p></td><td><p class="docx-paragraph">450.00</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph"><strong>合 计</strong></p></td><td><p class="docx-paragraph">500.00</p></td></tr></table><p class="docx-paragraph">注：1.间接费用无需编制预算说明；2.绩效支出在间接费用中无比例限制。</p><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目预算基本测算说明（不包含单价50万以上的设备详细说明）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="qtzc"></a>1、本项目共计支出500万元，其中专项支出50万元，自筹经费支出450万元。</p><p class="docx-paragraph">2、本项目专项经费50万元，其中购置设备费40万元。业务费10万元。</p><p class="docx-paragraph">3、本项目自筹经费450万元，主要用于项目检验使用耗材等及小型设备支出。</p></td></tr><tr><td><p class="docx-paragraph"><strong>单价50万元以上的设备详细说明（无相关情况，本栏填“无”）</strong></p></td></tr><tr><td><p class="docx-paragraph"><a id="sbxxsm"></a>用于检测原料及起始物料的有关物质的高效液相色谱仪51万元。</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a></p><p class="docx-paragraph">               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>八、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>九、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">河北天成药业营业执照</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">高新技术企业证书</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天津应天成营业执照</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业公司章程1</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业公司章程2</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业公司章程3</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业公司章程4</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业公司章程5</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业公司章程6</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天津应天成公司章程</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2023年审计报告1</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2023年审计报告2</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2023年审计报告3</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2024年审计报告1</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2024年审计报告2</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2024年审计报告3</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2025年审计报告1</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2025年审计报告2</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2025年审计报告3</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2025年审计报告4</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">天成药业2025年审计报告5</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">飞地房产证明</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">研发设备照片</p></td></tr><tr><td><p class="docx-paragraph">24</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">飞地人员花名册</p></td></tr><tr><td><p class="docx-paragraph">25</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">人员社保参保证明1</p></td></tr><tr><td><p class="docx-paragraph">26</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">人员社保参保证明2</p></td></tr><tr><td><p class="docx-paragraph">27</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">高级职称证书</p></td></tr><tr><td><p class="docx-paragraph">28</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">高级职称证书</p></td></tr><tr><td><p class="docx-paragraph">29</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">高级职称证书</p></td></tr><tr><td><p class="docx-paragraph">30</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">引进高层次人才劳动合同</p></td></tr><tr><td><p class="docx-paragraph">31</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">基地人员学历证书</p></td></tr><tr><td><p class="docx-paragraph">32</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">应天成2025年审计报告1</p></td></tr><tr><td><p class="docx-paragraph">33</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">应天成2025年审计报告2</p></td></tr><tr><td><p class="docx-paragraph">34</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">应天成2025年审计报告3</p></td></tr><tr><td><p class="docx-paragraph">35</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">应天成2025年审计报告4</p></td></tr><tr><td><p class="docx-paragraph">36</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">产学研合同</p></td></tr><tr><td><p class="docx-paragraph">37</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">委托飞地研究项目说明及合同登记证明</p></td></tr><tr><td><p class="docx-paragraph">38</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">成果转化（批件1）</p></td></tr><tr><td><p class="docx-paragraph">39</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">成果转化（批件2）</p></td></tr><tr><td><p class="docx-paragraph">40</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">成果转化（批件3）</p></td></tr><tr><td><p class="docx-paragraph">41</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">成果转化（批件4）</p></td></tr><tr><td><p class="docx-paragraph">42</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">转化成果发票1</p></td></tr><tr><td><p class="docx-paragraph">43</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">转化成果发票2</p></td></tr><tr><td><p class="docx-paragraph">44</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">转化成果发票3</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

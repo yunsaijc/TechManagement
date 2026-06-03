@@ -214,6 +214,14 @@ const MODULES = [
         fillExample() {}
     },
     {
+        id: 'knowledge_graph',
+        icon: '🕸️',
+        title: '知识图谱',
+        description: '连接 Neo4j，按项目查看人员、机构、计划与成果关系',
+        actions: [],
+        fillExample() {}
+    },
+    {
         id: 'sandbox',
         icon: '🧪',
         title: '政策沙盘',
@@ -278,6 +286,14 @@ const MODULES = [
         icon: '🧩',
         title: '逻辑自洽',
         description: '展示 debug_logicon/reports 下最新 batch 核验结果',
+        actions: [],
+        fillExample() {}
+    },
+    {
+        id: 'accept',
+        icon: '📋',
+        title: '验收核查',
+        description: '展示结题验收核查调试页面',
         actions: [],
         fillExample() {}
     },

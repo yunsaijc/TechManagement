@@ -1,6 +1,8 @@
 .env
 .vscode
 *cache
+.codex
+data
 
 # Python-generated files
 __pycache__/
@@ -16,10 +18,16 @@ wheels/
 # debug
 debug_*
 
+# generated archives / reports
+results.zip
+
 # model
 yolo*
 
 #test data
 tests/
 
-frontend/node_modules/
+# test data / artifacts
+tests/**
+!tests/**/
+!tests/**/*.py

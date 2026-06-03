@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - e3b19cd027d5442e80dd9b6c8bd95ca1.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：e3b19cd027d5442e80dd9b6c8bd95ca1.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,075</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>e3b19cd027d5442e80dd9b6c8bd95ca1.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>沃森能源技术（廊坊）有限公司PF20x高性能风粉测量产品研究创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>沃森能源技术（廊坊）有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>闫勇</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>廊坊市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-03 至 2029-02</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-26</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>沃森能源技术（廊坊）有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>合资企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省廊坊市广阳区广阳经济开发区伟业路102号</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91131000MA08TWQ724</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-廊坊市-广阳区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2017-07-21</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>3750.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>常寿兵</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18911228775</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0316-2881500</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>stan.chang@walsn.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>王鹏</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>13331051738</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>peng.wang@walsn.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>沃森能源技术（廊坊）有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>104146000010</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国银行廊坊分行营业部</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>101534404987</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>68人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>20人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>2人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>高端装备制造产业</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>10008.88</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>9681.49</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>68.64</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>4.95</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>□技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>R其他（请注明）：  <a id="ptqkqtsm"></a>河北省工业企业A级研发机构       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司研发占地面积930平方米，具备完善的研发、生产及检测条件，设有专家委员会、技术委员会、工业设计中心、质量控制中心和技术研发部等。拥有激光粒度分布仪、平头取样枪、三通道拉曼光谱仪主机等先进研发与检测设备，可满足气固两相流测量、煤粉特性分析、烟气监测等实验需求。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司获得知识产权45件，其中发明10件，参与制定团体标准2项</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>自成立以来，公司始终致力于能源工业数字化与智能化领域的技术创新与成果转化，已形成“研发-专利-产品-应用”的完整转化链条。公司依托河北省工业企业A级研发机构，将核心技术如气固双相流测量、煤质工业分析等转化为具有自主知识产权的产品体系，目前获得知识产权45件，其中发明10件，参与制定团体标准2项。相关成果已成功应用于国内外数百家电厂，核心产品通过了SGS TÜV-SAAR功能安全SIL3认证及欧盟CE认证，并出口至巴基斯坦等国家，实现了国产高端测试装备的国际市场突破。特别是在锅炉动态智能燃烧控制领域，公司通过将CO/O2测量技术与人工智能算法深度融合，形成了具有行业领先水平的智能控制系统解决方案，技术成果荣获中国电力科学技术进步奖二等奖、电力建设科学技术进步奖一等奖等多项省部级奖励，体现了强大的科技成果转化能力与行业认可度。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司与国内外顶尖科研机构和高校保持紧密合作。于2024年11月引进英国皇家工程院院士、北京航空航天大学国际创新研究院首席科学家闫勇，负责静电传感器、数字成像监测等领域研发，提升企业科研实力。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">8</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">5</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">7</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">0人</p></td><td colspan="3"><p class="docx-paragraph">6人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">4人</p></td><td colspan="3"><p class="docx-paragraph">2人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">闫勇</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1963-02</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">多相流检测技术、燃烧过程检测技术、二氧化碳封存链中的检测技术</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2024-11-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京航空航天大学国际创新研究院</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">杭州</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">碳中和国际研究中心主任、首席科学家</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">首席科学家</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">065000</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省廊坊市广阳区广阳经济开发区伟业路102号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">13552295864</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13552295864</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">yongyan55@hotmail.com</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>R长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>□国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>国家千人计划专家  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1980-09-01至1985-06-30</p></td><td colspan="9"><p class="docx-paragraph">清华大学</p></td><td colspan="4"><p class="docx-paragraph">本科</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1985-09-01至1988-06-30</p></td><td colspan="9"><p class="docx-paragraph">清华大学</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1988-07-01至1989-08-31</p></td><td colspan="9"><p class="docx-paragraph">清华大学</p></td><td colspan="4"><p class="docx-paragraph">助教</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1989-09-01至1993-06-30</p></td><td colspan="9"><p class="docx-paragraph">提赛德大学</p></td><td colspan="4"><p class="docx-paragraph">研究助理/博士生/博后</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1993-07-01至1996-06-30</p></td><td colspan="9"><p class="docx-paragraph">提赛德大学</p></td><td colspan="4"><p class="docx-paragraph">讲师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1996-07-01至2004-02-26</p></td><td colspan="9"><p class="docx-paragraph">格林威治大学</p></td><td colspan="4"><p class="docx-paragraph">高级讲师/Reader/教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2004-02-27至2004-06-30</p></td><td colspan="9"><p class="docx-paragraph">英国肯特大学</p></td><td colspan="4"><p class="docx-paragraph">教授/院士、科研创新主任、测控研究中心主任</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2005-04-05至2008-12-30</p></td><td colspan="9"><p class="docx-paragraph">浙江大学</p></td><td colspan="4"><p class="docx-paragraph">光彪特聘教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2006-01-01至2011-11-30</p></td><td colspan="9"><p class="docx-paragraph">天津大学</p></td><td colspan="4"><p class="docx-paragraph">长江学者讲座教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2011-04-01至2026-02-28</p></td><td colspan="9"><p class="docx-paragraph">华北电力大学</p></td><td colspan="4"><p class="docx-paragraph">国家千人计划（柔性）</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2011-02-01至2026-02-28</p></td><td colspan="9"><p class="docx-paragraph">国际电气电子工程师学会（IEEE）</p></td><td colspan="4"><p class="docx-paragraph">会士（IEEE Fellow）</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2020-09-01至2026-02-28</p></td><td colspan="9"><p class="docx-paragraph">英国皇家工程院</p></td><td colspan="4"><p class="docx-paragraph">院士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2021-06-01至2026-02-28</p></td><td colspan="9"><p class="docx-paragraph">浙江大学</p></td><td colspan="4"><p class="docx-paragraph">求是讲座教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2024-07-01至2026-02-28</p></td><td colspan="9"><p class="docx-paragraph">北京航空航天大学国际创新研究院;碳中和国际研究中心</p></td><td colspan="4"><p class="docx-paragraph">主任、首席科学家</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">先进流量传感器的研发</p></td><td colspan="7"><p class="docx-paragraph">2022.06-2024.06</p></td><td colspan="4"><p class="docx-paragraph">英国国家科技创新部</p></td><td colspan="4"><p class="docx-paragraph">技术转化项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">通过多模态传感与机器学习在碳捕获与存储条件下二氧化碳流量测量</p></td><td colspan="7"><p class="docx-paragraph">2020.05-2021.04</p></td><td colspan="4"><p class="docx-paragraph">英国工程与自然科学基金委</p></td><td colspan="4"><p class="docx-paragraph">技术转化项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">燃烧火焰自由基、颗粒物、主要气态产物光谱/成像检测系统</p></td><td colspan="7"><p class="docx-paragraph">2019.01-2023.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">仪器仪表重大专项</p></td><td><p class="docx-paragraph">第一参与人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">全英在IEEE发表论文最多的学者</p></td><td colspan="4"><p class="docx-paragraph">金牌奖章</p></td><td colspan="3"><p class="docx-paragraph">国际</p></td><td colspan="2"><p class="docx-paragraph">2020-06-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">IEEE</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">IEEE仪表与测量学会最佳应用奖</p></td><td colspan="4"><p class="docx-paragraph">最佳应用奖</p></td><td colspan="3"><p class="docx-paragraph">国际</p></td><td colspan="2"><p class="docx-paragraph">2017-05-25</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">IEEE仪表与测量学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">IEEE仪表与测量大会最佳会议论文奖</p></td><td colspan="4"><p class="docx-paragraph">一等奖</p></td><td colspan="3"><p class="docx-paragraph">国际</p></td><td colspan="2"><p class="docx-paragraph">2016-05-26</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">IEEE仪表与测量学会</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Size distribution measurement of pneumatically conveyed particles in a square-shaped pipe through acoustic emission detection and electrostatic sensing</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Measurement</p></td><td colspan="5"><p class="docx-paragraph">2025</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Electrostatic sensors – Their principles and applications</p></td><td colspan="6"><p class="docx-paragraph">第一作者兼通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Measurement</p></td><td colspan="5"><p class="docx-paragraph">2020</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Measurement of the mass flow and velocity distributions of pulverised fuel in primary air pipes using electrostatic sensing techniques</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">IEEE Transactions on Instrumentation and Measurement</p></td><td colspan="5"><p class="docx-paragraph">2017</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI收录</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">基于科氏流量计和数据驱动模型的气液两相流质量流量测量方法</p></td><td colspan="5"><p class="docx-paragraph">DE0202011471A</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">2</p></td><td colspan="5"><p class="docx-paragraph">2021-12-09</p></td><td colspan="3"><p class="docx-paragraph">徳国</p></td></tr><tr><td><p class="docx-paragraph">基于静电感应的矩形管中粉体流流动参数检测装置及方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201510023187.1</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2017-08-04</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种防止信号中强共模噪声干扰的测速方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201910571260.7</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2023-05-05</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际测量联合会（IMEKO）</p></td><td colspan="9"><p class="docx-paragraph">副主席</p></td><td colspan="6"><p class="docx-paragraph">2026 年至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际火焰研究基金会（IFRF）</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">2018 年至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">欧洲燃料与能源研究协会（FERF）</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">2010 年至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际学术刊物《Measurement：Energy》</p></td><td colspan="9"><p class="docx-paragraph">创刊主编</p></td><td colspan="6"><p class="docx-paragraph">2023年11月至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际学术刊物《Measurement》编辑</p></td><td colspan="9"><p class="docx-paragraph">编辑</p></td><td colspan="6"><p class="docx-paragraph">2018年1月至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">《中国仪器仪表学报》</p></td><td colspan="9"><p class="docx-paragraph">外籍编委</p></td><td colspan="6"><p class="docx-paragraph">2011年9月至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际学术刊物《Flow Measurement and Instrumentation》</p></td><td colspan="9"><p class="docx-paragraph">编委</p></td><td colspan="6"><p class="docx-paragraph">2000年8月至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际学术刊物《Measurement：Sensors》</p></td><td colspan="9"><p class="docx-paragraph">编辑</p></td><td colspan="6"><p class="docx-paragraph">2018年1月至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国际学术刊物《IEEE Transactions on Instrumentation and Measurement》</p></td><td colspan="9"><p class="docx-paragraph">副编辑</p></td><td colspan="6"><p class="docx-paragraph">2010 年—2023年</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>闫勇于2020年当选为英国皇家工程院院士，这是全球工程领域的最高荣誉之一，相当于中国工程院院士。于2011年当选为第五批中组部千人计划专家（非全职类），同年当选为仪表与测量领域的IEEE Fellow。2006年被评为教研部长江学者讲座教授，是检测技术与自动化装置领域的首位长江学者。在多相流测量、燃烧检测等领域取得了突破性成果，并在多个火力发电厂应用，产生了显著的经济和社会效益。发表550多篇学术论文（260篇SCI期刊论文，70篇顶刊论文）。拥有40多项国际国内发明专利，并多次受邀在国际会议作主旨报告，获20多项国际国内科研奖励，担任国际测量联合会(IMEKO)副主席、国际火焰研究学会（IFRF）理事、英国燃料与能源研究学会委员会执行理事、Measurement: Energy期刊创刊主编、Measurement期刊编辑、浙江大学求是讲座教授等。在应用基础理论研究和工程应用方面取得的主要技术成果、对社会经济的贡献及行业地位如下：</p><p class="docx-paragraph">1.粉体燃料流动参数测量</p><p class="docx-paragraph">针对气力输送管道中粉体燃料（煤粉、生物质粉）流动参数测量这一世界性工程难题，闫勇首创基于静电和声发射传感器的测量仪器，突破性地实现了颗粒流速、浓度、质量流量及粒度分布的在线连续测量。该技术集成新型传感器阵列、先进信号处理与机器学习算法，已在多座火力发电厂应用，显著提升了低碳转化效率，降低温室气体与颗粒物排放，推动生物质能源规模化利用。相关成果获IET成就奖、IEEE Fellow、IEEE仪表与测量学会最佳应用奖、英国皇家工程院院士等荣誉。</p><p class="docx-paragraph">2.新型火焰数字成像检测技术</p><p class="docx-paragraph">闫勇开发出国际领先的火焰数字成像监测系统，获英国（欧盟）及中国发明专利。系统可在线定量测量火焰闪烁频率、亮度、温度分布及稳定性，为低碳燃烧优化提供科学依据。他首次提出火焰稳定性定量测量概念，通过数字图像处理和人工智能算法实现多参数同步监控。样机已在英国、爱尔兰、法国、中国等国电力企业开展工业试验，相关论文近百篇，获IEE工程创新奖、英国测控学会亚历克•霍夫-格拉斯比奖、IEEE Fellow、英国皇家工程院院士等荣誉。</p><p class="docx-paragraph">3.碳捕集、利用与封存链中的碳计量技术</p><p class="docx-paragraph">在国际上率先将科氏质量流量计与人工智能算法结合，研发出适用于CCUS管道中二氧化碳质量流量的高精度计量方法，测量精度优于±2.5%，满足欧盟碳排放交易要求。主持建成国际上管径最大、技术最先进的2英寸管径二氧化碳标准装置，已为中石油、中海油等大型CCUS示范项目提供关键测试数据，为碳计量体系建设奠定坚实基础。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">闫勇</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1963-02</p></td><td><p class="docx-paragraph">911826196302240019</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">新型自动化仪器仪表</p></td><td><p class="docx-paragraph">流量与物位仪表</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京航空航天大学 教授</p></td><td><p class="docx-paragraph">长江学者,国家级科技项目、工程项目主要负责人,国家百千万人才工程人才</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">常寿兵</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1978-08</p></td><td><p class="docx-paragraph">132201197808084973</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">电力电子技术和设备</p></td><td><p class="docx-paragraph">电力电子技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">王鹏</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-05</p></td><td><p class="docx-paragraph">130530198605252018</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">新型自动化仪器仪表</p></td><td><p class="docx-paragraph">热工测量与仪器仪表</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司研发主管</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">左旭东</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-11</p></td><td><p class="docx-paragraph">131026198711068619</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">专用机械</p></td><td><p class="docx-paragraph">工业锅炉</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司结构工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">张维愚</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1969-02</p></td><td><p class="docx-paragraph">310222196902150219</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">电力电子技术和设备</p></td><td><p class="docx-paragraph">电力电子技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司测试工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">弭朋朋</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1995-07</p></td><td><p class="docx-paragraph">131023199507141212</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">面向行业的工业生产过程综合自动化控制系统</p></td><td><p class="docx-paragraph">计算机辅助制造</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司测试工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">南俊峰</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1985-09</p></td><td><p class="docx-paragraph">620521198509133035</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">采用数字化、信息化技术，提高设备性能及自动化水平的</p></td><td><p class="docx-paragraph">电气测量技术及其仪器仪表</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司电气工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">宋晨磊</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-09</p></td><td><p class="docx-paragraph">131124198609242855</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">无职称</p></td><td><p class="docx-paragraph">新型自动化仪器仪表</p></td><td><p class="docx-paragraph">机电一体化技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司电气工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>沃森能源技术（廊坊）有限公司PF20x高性能风粉测量产品研究创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-03 至 2029-02</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>198.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>138.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>R高端装备制造  <a id="jsly_jmyq"></a>R精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>气固两相流在线测量、燃煤锅炉均衡燃烧控制、多参数融合与智能优化控制</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>本项目依托英国皇家工程院院士闫勇的技术指导优势，坚持“引进与培养并举”的原则，计划在项目执行期内引进2名高水平专业技术人员，并通过“青蓝计划”导师制培养3名具备独立研发能力的青年技术骨干，旨在打造一支涵盖算法、硬件、软件、结构等多学科交叉的产业创新团队，为气固两相流测量与燃煤锅炉智能控制领域的长效发展提供坚实的人才支撑。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>成功研发PF20x系列高性能风粉测量产品，突破基于静电感应与声发射双原理融合的关键技术，实现煤粉流速（10～40m/s，精度±1%）、浓度及细度（R90重复性偏差≤±5%）的多参数在线监测，并配套点动调节阀构建闭环均衡燃烧优化控制系统。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>在项目执行期内获得发明专利1项，实用新型专利2项，项目研究过程中产生的知识产权归承担单位沃森能源技术（廊坊）有限公司所有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目背景</p><p class="docx-paragraph">（1）符合政策要求，实现节能减排目标。我国电源结构以火电为主，燃煤发电占主导。2026年1月1日起，河北省实施更严格《火电厂大气污染物排放标准》，对NOx排放提出更高要求，同时全省推进环保绩效创A，对精准监测与控制技术需求迫切。本项目通过均衡燃烧技术，为火电企业满足新排放标准和碳减排目标提供关键技术支撑。</p><p class="docx-paragraph">（2）保障锅炉安全运行，降低设备老化加剧风险。制粉系统因系统复杂、工作环境恶劣，常出现各类设计和运行问题。当前运行人员主要根据给粉机电压、转速及一次风静压等参数组织燃烧，静压无法准确反映一次风管喷口的流动速度，难以准确判断入炉的一次风量和粉量。项目研发精准在线监测系统，实现风粉参数的“可视、可测、可控”，降低设备故障率，从源头消除安全隐患。</p><p class="docx-paragraph">（3）数字化电厂趋势提出技术升级需求。云计算、物联网、人工智能等前沿技术快速发展，数字化电厂建设成为行业转型升级的必然方向。风粉在线监测与智能控制是智慧电厂核心技术环节。本项目采集流速、浓度、细度等关键参数，为智能决策提供数据支撑，助力火电企业降低运营成本，增强竞争力。</p><p class="docx-paragraph">2、项目概述</p><p class="docx-paragraph">（1）研究内容</p><p class="docx-paragraph">本项目研发高性能风粉测量系列产品，采用“静电感应+声发射”双原理融合方案，构建风粉均衡燃烧优化控制系统。</p><p class="docx-paragraph">①固体燃料流速在线测量技术，基于静电感应原理，通过上下游电极感应煤粉颗粒携带的静电荷，利用互相关算法计算颗粒流动速度，实现实时流速测量；</p><p class="docx-paragraph">②固态燃料浓度在线测量技术，结合静电信号强度与流动特性，反演管道内风粉浓度，支持风粉浓度动态监测与调控；</p><p class="docx-paragraph">③点动调节阀的开发，设计可实现远程/就地控制的电动调节阀，配合测量系统实现风粉比例的闭环调节，支持锅炉燃烧器的风粉均衡控制；</p><p class="docx-paragraph">④基于声发射法技术，通过波导杆采集煤粉颗粒撞击探杆产生的机械振动信号，结合统计模型推算煤粉粒径分布，实现细度在线反馈；同时也可进行风粉浓度的补充测量；</p><p class="docx-paragraph">⑤多参数融合与闭环控制系统集成，将流速、浓度、细度等测量数据与燃料信息数据和DCS系统联动，同时引入机器学习算法，为磨煤机最优控制和同层燃烧器风粉动态调平提供反馈信号，最终实现燃煤锅炉的均衡燃烧和智能化运行。</p><p class="docx-paragraph">（2）与我省重点产业领域战略发展方向的相关性</p><p class="docx-paragraph">①契合我省传统产业转型升级的战略方向。本项目研发的风粉在线监测与智能控制系统，是数字化电厂建设的核心技术环节，符合《河北省数字经济发展规划（2020-2025年）》中关于推动传统产业数字化转型的战略部署。</p><p class="docx-paragraph">②契合我省绿色低碳发展的战略方向。2026年1月1日起实施的《火电厂大气污染物排放标准》对燃煤锅炉NOx排放提出更严格限值，全省重点行业环保绩效创A工作全面推进。项目建设响应火电超低排放和碳减排需求。</p><p class="docx-paragraph">③契合我省高端装备制造产业发展的战略方向。《中华人民共和国国民经济和社会发展第十五个五年规划纲要（草案）》中指出加快数智技术创新，深化拓展“人工智能+”。产品引入人工智能算法，带动传感器、智能控制等产业链发展，符合我省高端装备制造产业发展方向。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">公司成立于2017年专注于基于CO/O2双参量的锅炉智能燃烧控制技术研发与应用，为国家高新技术企业、国家知识产权优势企业、河北省专精特新中小企业，建有河北省工业企业A级研发机构。</p><p class="docx-paragraph">公司设有工业设计中心、质量控制中心、技术研发部等研发部门。研发面积930平方米，拥有激光粒度分布仪、平头取样枪、三通道拉曼光谱仪主机等研发与检测设备，具备完善的研发、生产及检测条件。</p><p class="docx-paragraph">公司引进英国皇家工程院院士闫勇作为首席科学家，现有专职研发人员20人，涵盖电气设计、软件工程、燃烧控制等专业，具备丰富的工业自动化与仪器仪表开发经验。</p><p class="docx-paragraph">公司近两年经营稳健，2025年资产总额达到10008.88万元，营业收入9681.49万元，同比增长60.52%，研发费用479.25万元（占营收4.95%），利润总额2134.75万元。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">公司专注于能源工业数字化与智能化领域，在煤质工业分析技术、气固双相流测量技术方面处于领先地位。获得知识产权45件，其中发明10件，参与制定团体标准2项。相关技术成果获2021年度电力科技创新奖二等奖、获中国电力科学技术进步奖二等奖、2022年度电力建设科学技术进步奖一等奖2022年度电力建设科学技术进步奖三等奖等多项奖励。成果已应用到数百家电厂，通过SGS TÜV-SAAR功能安全SIL3认证，获得欧盟CE认证，出口至巴基斯坦等国家，在锅炉动态智能燃烧模型与CO/O2测量技术相结合方面处于国际领先。</p><p class="docx-paragraph">公司与国内外顶尖科研机构和高校保持紧密合作。项目负责人闫勇院士为英国皇家工程院院士、北航国际创新研究院碳中和国际研究中心主任，从事检测技术与自动化装置研究三十多年，在静电传感器、数字成像监测等领域取得国际领先水平的研究成果。形成了“院士领衔+企业落地”的高效产学研合作模式。</p><p class="docx-paragraph">3、项目负责人及团队核心成员的基本情况</p><p class="docx-paragraph">闫勇，男，英国皇家工程院院士、IEEE Fellow、北京航空航天大学教授、博士生导师。北航国际创新研究院“碳中和国际研究中心主任及首席科学家，曾任英国肯特大学工程学院教授、科研创新主任、测控研究中心主任。自2024年11月起成为沃森能源首席科学家。从事检测技术与自动化装置学科的科研和教学工作三十多年，主要研究方向为多相流检测技术、燃烧过程检测技术等。在静电传感器、数字成像监测、智能仪表等领域取得了国际领先水平的研究成果，已获得20多项国际国内科研奖励，包括2017年度IEEE仪表与测量学会最佳应用奖等。已发表550余篇学术论文，其中有60多篇发表于顶级学术期刊IEEE Transactions on Instrumentation and Measurement, h-index 56。</p><p class="docx-paragraph">项目组成员常寿兵，高级工程师，硕士，专注于能源工业数字化与智能化领域，在电厂锅炉智能燃烧优化、在线监测技术及煤质检测等方面取得突出成果。主持了“基于激光光谱的煤成分在线检测技术”等多项省部级项目，获授权发明专利2项、实用新型专利10余项，参与制定中电联《燃煤锅炉一氧化碳在线监测技术规范》。荣获2021年度中国电力科学技术进步奖二等奖和电力科技创新奖二等奖，并在国内外学术期刊发表论文多篇，同时担任华北电力大学、北京航空航天大学等多所高校的硕士生校外导师。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">公司在气固两相流测量领域积累深厚，具备全链条研发能力。目前已完成流速传感器结构定型并获专利授权，精度达±1%；细度测量完成原理验证，模型进入优化阶段；点动调节阀及系统集成方案形成专利保护网，样机通过测试并进入小批量试产。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">（1）气固两相流多参数在线测量难题</p><p class="docx-paragraph">项目拟采用静电感应+互相关算法测速，静电信号反演浓度，声发射法测细度。</p><p class="docx-paragraph">（2）极端工况下的传感器可靠性与寿命问题</p><p class="docx-paragraph">针对高温、高粉尘、高磨损工况，在实验室通过结构形状及耐磨耐高温材料的选择逐步提高产品的适用性。优化防堵塞结构，提升密封可靠性。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">（1）通过上下游电极相关性分析确定煤粉运动速度。</p><p class="docx-paragraph">（2）通过仿真及试验设计符合信号提取的电极形状及尺寸。</p><p class="docx-paragraph">（3）通过试验确定煤粉撞击信号频率范围，通过高性能嵌入式电路存储撞击信号，通过数据校准声发射信号的分布函数，实现煤粉颗粒的质量测量和粒径分布统计。</p><p class="docx-paragraph">（4）通过设计试验装置验证样机测量的重复性及精度。</p><p class="docx-paragraph">（5）通过材料分析及试验确定材料的耐磨及信号在其内部传播的性能。</p><p class="docx-paragraph">（6）通过传感器固定结构设计降低物理干扰信号的导入。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">项目由闫勇院士作为项目负责人，针对制粉系统测量精度差问题，开发基于静电感应与声发射原理的高性能风粉测量系列产品，完成流速测量工业化定型，精度±1%，突破细度在线测量技术。项目已获核心专利授权，完成实验室验证。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">目前，气固两相流测量中，静电法利用颗粒流动中自然产生的荷电现象进行测量，具有结构简单、响应快、非侵入等优点，但依赖于颗粒荷电和易受环境影响所导致的稳定性与精度问题。</p><p class="docx-paragraph">本项目采用静电感应测速与声发射测细度相融合的技术路线，能够同时实现煤粉流速、浓度及细度的多参数在线监测，并配套点动调节阀实现闭环控制。与传统产品相比，填补细度测量空白，适应恶劣工况，具备差异化优势。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">煤粉速度：测量范围10～40m/s，精度±1%</p><p class="docx-paragraph">R90：测量范围3～70%，重复性最大允许偏差5%R（锅炉手册按煤类型给出的R90范围5%至60%）</p><p class="docx-paragraph">风粉浓度：测量范围0～2.0 kg/m³，精度10%以内。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">（1）技术风险。建立多工况数据库，优化算法鲁棒性；采用耐磨材料与冗余设计；实施电磁兼容设计；模块化接口确保集成。</p><p class="docx-paragraph">（2）国家政策风险。建立常态化政策跟踪机制，确保产品研发方向与国家战略导向保持高度一致。</p><p class="docx-paragraph">（3）供应商风险。建立供应商准入评估机制，关键物料双供应商备份。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">（1）基于交流电荷法的煤粉流速测量原理。通过上下游电极感应信号的互相关分析，计算颗粒群的流动时间差，结合电极间距得到瞬时流速。</p><p class="docx-paragraph">（2）基于声发射原理实现煤粉细度测量。通过分析撞击能量的统计分布，建立与煤粉粒径的函数关系，实现细度在线测量。</p><p class="docx-paragraph">（3）基于声发射原理实现风粉浓度测量。通过声发射信号，建立与煤粉质量流量的关系，实现风粉浓度的在线测量。</p><p class="docx-paragraph">（4）产品结构设计。条形电极与波导杆组合，侧壁开孔安装；信号处理电路集成放大、滤波与模数转换；嵌入式系统实现数据采集与算法计算；调节阀支持远程/就地控制。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">本项目由闫勇院士带头，组建了经验丰富的研发团队，建有气固两相流实验室，可为项目实施提供人才、试验保障；财务部对本项目实施经费进行专项管理，实施转关专用。沃森能源具有严格的管理方法和组织机构保障体系，具备市里雄厚的研发队伍和研发试验条件，为本项目实施提供了资源保障。项目已完成静电感应测速与声发射测细度的原理验证，细度测量初步模型已建立并进入优化阶段。</p><p class="docx-paragraph">3、项目的具体实施方案</p><p class="docx-paragraph">本项目采用“院士团队理论支撑+企业工程化落地”的协同创新模式，英国皇家工程院院士闫勇担任技术总指导，负责核心技术原理把关、算法模型构建。承担单位沃森能源负责产品设计、试验与改进研究。</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">2026.03-2026.12：完成细度测量模型优化与硬件升级，开展流速模块稳定性测试。</p><p class="docx-paragraph">2027.01-2027.08：完成产品工业设计定型。</p><p class="docx-paragraph">2027.09-2028.03：开展小批量试产，验证工艺稳定性。</p><p class="docx-paragraph">2028.04-2029.02：发布PF20x系列正式产品，完成项目结题验收。</p><p class="docx-paragraph">5、项目知识产权状况</p><p class="docx-paragraph">项目研究过程中产生的知识产权归承担单位沃森能源技术（廊坊）有限公司所有。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">（1）人才培养</p><p class="docx-paragraph">培养2-3名具备独立研发能力的气固两相流测量领域青年技术骨干，实施“青蓝计划”进行“一对一”导师制培养。</p><p class="docx-paragraph">（2）团队建设</p><p class="docx-paragraph">项目依托闫勇院士，引进技术人员2人，组建一支由算法、硬件、软件、结构等多学科人才构成的产业创新团队。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">（1）核心技术指标领先</p><p class="docx-paragraph">实现流速、风粉浓度、细度多参数在线测量，流速精度±1%，细度重复性偏差≤±5%R，测量范围0～2.0 kg/m³，精度10%以内，达国际先进水平。</p><p class="docx-paragraph">（2）差异化设计与系统集成优势</p><p class="docx-paragraph">模块化创新设计，包括单静电模块、静电+声发射模块、备用模块、基座模块及转换器模块基座安装后可跟进需求进行模块组合，大幅降低施工难度和成本。</p><p class="docx-paragraph">（3）产业化能力明显</p><p class="docx-paragraph">项目由闫勇院士担任技术总指导，承担单位建有气固两相流专业实验室，具备从原理验证到现场测试的全流程研发能力。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">均衡燃烧可降低机械不完全燃烧损失，锅炉效率提升，NOx排放降低。以年耗煤量10万吨的锅炉为例，效率提升5%可节省燃料约6500-7500吨标准煤。目前该产品市场普及率几乎为0，随着数字锅炉及智慧电厂的推动，市场空间大前景广阔。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">经济效益：新增销售收入2000万元，实现利润200万元。</p><p class="docx-paragraph">社会效益：项目产品降低NOx排放，减少飞灰含碳量，改善大气环境质量；推动传统产业转型升级。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">沃森能源技术（廊坊）有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">项目承担单位，负责整体项目的研究</p></td><td><p class="docx-paragraph">闫勇</p></td><td><p class="docx-paragraph">198.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">138.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">开发完成PF20x高性能风粉测量系列产品，形成新技术1项，完成科技成果转化应用，带来销售收入2000万元，授权发明专利1件、实用新型专利2件，合作发表学术期刊论文1篇，团队成员主持企业科研项目1项。</p></td><td><p class="docx-paragraph">形成PF20x高性能风粉测量系列产品设计方案，并开展稳定性试验，授权实用新型专利1件，团队成员主持企业科研项目1项。</p></td><td><p class="docx-paragraph">开发完成PF20x高性能风粉测量系列产品，进行小批量生产，验证工艺稳定性，授权发明专利1件，合作发表学术期刊论文1篇。</p></td><td><p class="docx-paragraph">开发完成高性能风粉测量系列产品，形成新技术1项，从完成科技成果转化应用，带来销售收入2000万元，授权实用新型专利1件。</p></td></tr><tr><td rowspan="10"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">授权发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">授权实用新型专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养高层次产业技术创新团队（个）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">引进专业技术人员（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">新增收入（万元）</p></td><td><p class="docx-paragraph">2000</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">400</p></td><td><p class="docx-paragraph">1600</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人身份、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">负责人担任国内外学术组织、重要学术期刊、学术科研机构职务证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">劳务合同</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">项目团队人才引进证明</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人申请及授权的知识产权</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队申请及获授权的专利和其他知识产权证明</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">科研项目</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">科技奖励证书</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业资质</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业营业执照</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">章程</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

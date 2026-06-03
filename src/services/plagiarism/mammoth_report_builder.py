@@ -43,7 +43,9 @@ class MammothPlagiarismReportBuilder:
         debug_json_path: Path | str,
         output_html_path: Path | str,
         primary_docx_path: Optional[Path | str] = None,
-        source_docx_path: Optional[Path | str] = None
+        source_docx_path: Optional[Path | str] = None,
+        source_docx_paths: Optional[Dict[str, Path | str]] = None,
+        highlight_template_segments: bool = True,
     ) -> Path:
         """从debug JSON文件生成HTML报告
 
@@ -52,51 +54,79 @@ class MammothPlagiarismReportBuilder:
             output_html_path: 输出HTML文件路径
             primary_docx_path: 主文档DOCX路径（可选）
             source_docx_path: 来源文档DOCX路径（可选）
+            source_docx_paths: 多个来源文档DOCX路径映射（可选）
         """
         debug_json_path = Path(debug_json_path)
         output_html_path = Path(output_html_path)
 
         # 读取debug数据
         data = json.loads(debug_json_path.read_text(encoding="utf-8"))
+        data["highlight_template_segments"] = bool(highlight_template_segments)
 
         # 获取文档信息
         primary_doc = data.get("primary_doc", "Unknown")
-        source_doc = ""
-        for segment in data.get("duplicate_segments", []):
-            sources = segment.get("sources", [])
-            if sources:
-                source_doc = sources[0].get("doc", "")
-                break
+        hide_source_panel = (not highlight_template_segments) and self._get_effective_duplicate_chars(data) == 0
+        source_docs = [] if hide_source_panel else self._collect_source_docs(data)
+        source_doc = source_docs[0] if source_docs else ""
+        if hide_source_panel:
+            source_doc_display = "无有效重复来源"
+        else:
+            source_doc_display = "按片段切换" if len(source_docs) > 1 else source_doc
 
         # 转换DOCX为HTML
         left_html = ""
-        right_html = ""
+        right_html_by_doc: Dict[str, str] = {}
+        source_path_lookup: Dict[str, Path] = {}
+
+        for doc_name, doc_path in (source_docx_paths or {}).items():
+            if doc_name and doc_path:
+                source_path_lookup[str(doc_name)] = Path(doc_path)
+        if source_doc and source_docx_path:
+            source_path_lookup.setdefault(source_doc, Path(source_docx_path))
 
         if primary_docx_path and Path(primary_docx_path).exists():
             left_html, _ = convert_docx_to_html_mammoth(primary_docx_path)
         else:
             left_html = self._build_fallback_content(data, "primary")
 
-        if source_docx_path and Path(source_docx_path).exists():
-            right_html, _ = convert_docx_to_html_mammoth(source_docx_path)
+        if hide_source_panel:
+            right_html = '<div class="docx-content"><p class="empty">无有效重复来源</p></div>'
+        elif source_docs:
+            for doc_name in source_docs:
+                source_path = source_path_lookup.get(doc_name)
+                if source_path and source_path.exists():
+                    right_html_by_doc[doc_name], _ = convert_docx_to_html_mammoth(source_path)
+                else:
+                    right_html_by_doc[doc_name] = self._build_source_fallback_content(data, doc_name)
+            right_html = self._render_source_sections(right_html_by_doc, source_docs)
         else:
-            right_html = self._build_fallback_content(data, "source")
+            right_html_by_doc[""] = self._build_fallback_content(data, "source")
+            right_html = self._render_source_sections(right_html_by_doc, source_docs)
         
         # 同时处理两侧高亮，确保每个片段都有两侧匹配
-        left_html, right_html, match_results = self._apply_highlights_both_sides(
-            left_html, right_html, data
+        left_html, right_html_by_doc, match_results = self._apply_highlights_both_sides(
+            left_html,
+            right_html_by_doc,
+            data,
+            highlight_template_segments=highlight_template_segments,
         )
+        if not hide_source_panel:
+            right_html = self._render_source_sections(right_html_by_doc, source_docs)
         
         # 构建统计信息
         stats = self._build_statistics(data)
 
         # 构建匹配导航
-        match_cards = self._build_match_nav(data, match_results)
+        match_cards = self._build_match_nav(
+            data,
+            match_results,
+            highlight_template_segments=highlight_template_segments,
+        )
 
         # 渲染完整页面
         html_page = self._render_html_page(
             primary_doc=primary_doc,
-            source_doc=source_doc,
+            source_doc=source_doc_display,
             stats=stats,
             match_cards=match_cards,
             left_html=left_html,
@@ -113,29 +143,33 @@ class MammothPlagiarismReportBuilder:
     def _apply_highlights_both_sides(
         self,
         left_html: str,
-        right_html: str,
-        data: Dict
-    ) -> Tuple[str, str, Dict[str, Dict[str, Any]]]:
-        """基于 canonical 坐标映射在两侧 HTML 应用高亮。"""
+        right_html_by_doc: Dict[str, str],
+        data: Dict,
+        highlight_template_segments: bool = True,
+    ) -> Tuple[str, Dict[str, str], Dict[str, Dict[str, Any]]]:
+        """优先使用 canonical 坐标映射，并在失败时回退到文本定位。"""
         segments = data.get("duplicate_segments", [])
         if not segments:
-            return left_html, right_html, {}
+            return left_html, right_html_by_doc, {}
 
         primary_doc = data.get("primary_doc", "")
         documents = data.get("documents", {})
-        source_doc = next(
-            (s.get("sources", [{}])[0].get("doc", "") for s in segments if s.get("sources")),
-            "",
-        )
         left_canonical = documents.get(primary_doc, "")
-        right_canonical = documents.get(source_doc, "")
         left_map = build_coordinate_map(left_canonical, left_html) if left_canonical else None
-        right_map = build_coordinate_map(right_canonical, right_html) if right_canonical else None
+        left_index = self._build_html_index(left_html) if left_html else None
+        right_states: Dict[str, Dict[str, Any]] = {}
+        for source_doc, right_html in right_html_by_doc.items():
+            right_canonical = documents.get(source_doc, "")
+            right_states[source_doc] = {
+                "canonical": right_canonical,
+                "coord_map": build_coordinate_map(right_canonical, right_html) if right_canonical else None,
+                "html_index": self._build_html_index(right_html) if right_html else None,
+            }
 
         left_spans: List[Tuple[int, int, str, bool, str]] = []
-        right_spans: List[Tuple[int, int, str, bool, str]] = []
-        left_occupied: List[Tuple[int, int]] = []
-        right_occupied: List[Tuple[int, int]] = []
+        right_spans_by_doc: Dict[str, List[Tuple[int, int, str, bool, str]]] = {
+            source_doc: [] for source_doc in right_html_by_doc
+        }
         match_results: Dict[str, Dict[str, Any]] = {}
 
         sorted_segments = sorted(
@@ -147,62 +181,120 @@ class MammothPlagiarismReportBuilder:
             match_id = segment.get("match_id") or f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
             match_type = segment.get("match_type", "exact")
+            # 仅在指定分支关闭模板高亮时跳过模板重复
+            if is_template and not highlight_template_segments:
+                continue
             sources = segment.get("sources", [])
             if not sources:
                 continue
 
             primary_start = int(segment.get("primary_start", 0) or 0)
             primary_end = int(segment.get("primary_end", 0) or 0)
-            source_start = int(sources[0].get("start", 0) or 0) if sources else 0
-            source_end = int(sources[0].get("end", 0) or 0) if sources else 0
-            if primary_end <= primary_start or source_end <= source_start:
+            source = sources[0]
+            source_doc = source.get("doc", "")
+            source_start = int(source.get("start", 0) or 0)
+            source_end = int(source.get("end", 0) or 0)
+            if primary_end <= primary_start:
+                continue
+            if source_doc not in right_states:
                 continue
 
-            if not left_map or not right_map:
-                continue
-            left_fragments, left_cov = left_map.span_to_html_fragments(primary_start, primary_end)
-            right_fragments, right_cov = right_map.span_to_html_fragments(source_start, source_end)
+            primary_text = segment.get("primary_text", "")
+            if not primary_text and primary_end > primary_start and left_canonical:
+                primary_text = left_canonical[primary_start:primary_end]
+
+            right_canonical = right_states[source_doc]["canonical"]
+            source_text = source.get("text", "")
+            if not source_text and source_end > source_start and right_canonical:
+                source_text = right_canonical[source_start:source_end]
+
+            left_fragments, left_mode, left_conf = self._resolve_highlight_fragments(
+                coord_map=left_map,
+                html_index=left_index,
+                segment_text=primary_text,
+                span_start=primary_start,
+                span_end=primary_end,
+                total_len=len(left_canonical),
+            )
+            right_fragments, right_mode, right_conf = self._resolve_highlight_fragments(
+                coord_map=right_states[source_doc]["coord_map"],
+                html_index=right_states[source_doc]["html_index"],
+                segment_text=source_text,
+                span_start=source_start,
+                span_end=source_end,
+                total_len=len(right_canonical),
+            )
             if not left_fragments or not right_fragments:
                 continue
 
-            left_filtered = self._filter_non_overlapping_fragments(left_fragments, left_occupied)
-            right_filtered = self._filter_non_overlapping_fragments(right_fragments, right_occupied)
+            left_filtered = self._sanitize_fragments(left_fragments)
+            right_filtered = self._sanitize_fragments(right_fragments)
             if not left_filtered or not right_filtered:
                 continue
 
             for left_start, left_end in left_filtered:
-                left_occupied.append((left_start, left_end))
                 left_spans.append((left_start, left_end, match_id, is_template, match_type))
             for right_start, right_end in right_filtered:
-                right_occupied.append((right_start, right_end))
-                right_spans.append((right_start, right_end, match_id, is_template, match_type))
+                right_spans_by_doc[source_doc].append((right_start, right_end, match_id, is_template, match_type))
 
-            coverage = min(left_cov, right_cov)
+            locate_mode = "full" if left_mode == "full" and right_mode == "full" else "core"
+            coverage = min(left_conf, right_conf)
             match_results[match_id] = {
-                "mode": "full" if coverage >= 0.85 else "core",
+                "mode": locate_mode,
                 "confidence": round(coverage, 4),
                 "match_type": match_type,
+                "source_doc": source_doc,
             }
 
+        highlighted_right_html = {
+            source_doc: self._inject_spans(right_html_by_doc[source_doc], spans, "source", source_doc=source_doc)
+            for source_doc, spans in right_spans_by_doc.items()
+        }
         return (
             self._inject_spans(left_html, left_spans, "primary"),
-            self._inject_spans(right_html, right_spans, "source"),
+            highlighted_right_html,
             match_results,
         )
 
-    def _filter_non_overlapping_fragments(
+    def _resolve_highlight_fragments(
+        self,
+        coord_map,
+        html_index: Optional[_HtmlIndex],
+        segment_text: str,
+        span_start: int,
+        span_end: int,
+        total_len: int,
+    ) -> Tuple[List[Tuple[int, int]], str, float]:
+        if coord_map and span_end > span_start:
+            fragments, coverage = coord_map.span_to_html_fragments(span_start, span_end)
+            if fragments:
+                mode = "full" if coverage >= 0.85 else "core"
+                return fragments, mode, coverage
+
+        if html_index and segment_text:
+            located = self._locate_segment_fragments(html_index, segment_text, span_start, total_len)
+            if located:
+                return located
+
+        return [], "miss", 0.0
+
+    def _sanitize_fragments(
         self,
         fragments: List[Tuple[int, int]],
-        occupied: List[Tuple[int, int]],
         min_len: int = 3,
     ) -> List[Tuple[int, int]]:
         filtered: List[Tuple[int, int]] = []
-        for start, end in fragments:
+        seen = set()
+        for start, end in sorted(fragments):
+            start = max(0, int(start))
+            end = max(0, int(end))
             if end - start < min_len:
                 continue
-            if self._has_overlap(occupied, start, end):
+            key = (start, end)
+            if key in seen:
                 continue
-            filtered.append((start, end))
+            seen.add(key)
+            filtered.append(key)
         return filtered
 
     def _normalize_text(self, text: str) -> str:
@@ -304,6 +396,39 @@ class MammothPlagiarismReportBuilder:
             return None
         return html_span[0], html_span[1], "core", confidence
 
+    def _locate_segment_fragments(
+        self,
+        index: _HtmlIndex,
+        segment_text: str,
+        raw_start: int,
+        raw_total_len: int,
+    ) -> Optional[Tuple[List[Tuple[int, int]], str, float]]:
+        segment_norm = self._normalize_text(segment_text)
+        if not segment_norm or len(segment_norm) < 8 or not index.norm_text:
+            return None
+
+        expected = 0
+        if raw_total_len > 0:
+            expected = int(raw_start / raw_total_len * len(index.norm_text))
+        expected = max(0, min(expected, max(len(index.norm_text) - 1, 0)))
+
+        exact_positions = self._find_all(index.norm_text, segment_norm)
+        if exact_positions:
+            start = min(exact_positions, key=lambda p: abs(p - expected))
+            fragments = self._norm_span_to_html_fragments(index, start, start + len(segment_norm))
+            if fragments:
+                return fragments, "full", 1.0
+
+        anchored = self._locate_with_anchors(index.norm_text, segment_norm, expected)
+        if anchored is None:
+            return None
+
+        start, end, confidence = anchored
+        fragments = self._norm_span_to_html_fragments(index, start, end)
+        if not fragments:
+            return None
+        return fragments, "core", confidence
+
     def _locate_with_anchors(
         self,
         norm_text: str,
@@ -402,6 +527,36 @@ class MammothPlagiarismReportBuilder:
             html_end = close + 1
         return html_start, html_end
 
+    def _norm_span_to_html_fragments(
+        self,
+        index: _HtmlIndex,
+        norm_start: int,
+        norm_end: int,
+    ) -> List[Tuple[int, int]]:
+        if norm_start < 0 or norm_end <= norm_start or norm_end > len(index.norm_to_plain):
+            return []
+
+        mapped: List[int] = []
+        for norm_idx in range(norm_start, norm_end):
+            plain_idx = index.norm_to_plain[norm_idx]
+            if 0 <= plain_idx < len(index.plain_to_html):
+                mapped.append(index.plain_to_html[plain_idx])
+        if not mapped:
+            return []
+
+        fragments: List[Tuple[int, int]] = []
+        frag_start = mapped[0]
+        frag_end = mapped[0] + 1
+        for pos in mapped[1:]:
+            if pos == frag_end:
+                frag_end = pos + 1
+                continue
+            fragments.append((frag_start, frag_end))
+            frag_start = pos
+            frag_end = pos + 1
+        fragments.append((frag_start, frag_end))
+        return fragments
+
     def _has_overlap(self, used: List[Tuple[int, int]], start: int, end: int) -> bool:
         for s, e in used:
             if start < e and end > s:
@@ -413,21 +568,158 @@ class MammothPlagiarismReportBuilder:
         html_content: str,
         spans: List[Tuple[int, int, str, bool, str]],
         side: str,
+        source_doc: str = "",
     ) -> str:
-        result = html_content
-        for start, end, match_id, is_template, match_type in sorted(spans, key=lambda x: x[0], reverse=True):
+        if not html_content or not spans:
+            return html_content
+
+        normalized_spans: List[Tuple[int, int, str, bool, str]] = []
+        content_len = len(html_content)
+        for start, end, match_id, is_template, match_type in spans:
+            start = max(0, min(int(start), content_len))
+            end = max(0, min(int(end), content_len))
+            if end <= start:
+                continue
+            normalized_spans.append((start, end, match_id, is_template, match_type))
+        if not normalized_spans:
+            return html_content
+
+        boundaries = {0, content_len}
+        for start, end, *_ in normalized_spans:
+            boundaries.add(start)
+            boundaries.add(end)
+        sorted_boundaries = sorted(boundaries)
+
+        parts: List[str] = []
+        for idx in range(len(sorted_boundaries) - 1):
+            chunk_start = sorted_boundaries[idx]
+            chunk_end = sorted_boundaries[idx + 1]
+            if chunk_end <= chunk_start:
+                continue
+
+            chunk_html = html_content[chunk_start:chunk_end]
+            covering = [
+                span for span in normalized_spans
+                if span[0] < chunk_end and span[1] > chunk_start
+            ]
+            if not covering:
+                parts.append(chunk_html)
+                continue
+
+            match_ids: List[str] = []
+            seen_match_ids = set()
+            has_template = False
+            has_paraphrase = False
+            primary_match_id = ""
+            primary_match_type = "exact"
+            for _, _, match_id, is_template, match_type in covering:
+                if match_id not in seen_match_ids:
+                    seen_match_ids.add(match_id)
+                    match_ids.append(match_id)
+                    if not primary_match_id:
+                        primary_match_id = match_id
+                        primary_match_type = match_type
+                has_template = has_template or is_template
+                has_paraphrase = has_paraphrase or match_type == "paraphrase"
+
             classes = ["hit"]
-            if is_template:
+            if has_template:
                 classes.append("template")
-            if match_type == "paraphrase":
+            if has_paraphrase:
                 classes.append("paraphrase")
-            class_attr = " ".join(classes)
-            wrapped = (
-                f'<span class="{class_attr}" data-match-id="{match_id}" data-side="{side}" data-match-type="{match_type}">'
-                f"{result[start:end]}</span>"
+
+            attrs = [
+                f'class="{" ".join(classes)}"',
+                f'data-match-id="{html.escape(primary_match_id)}"',
+                f'data-match-ids="{html.escape(",".join(match_ids))}"',
+                f'data-side="{html.escape(side)}"',
+                f'data-match-type="{html.escape(primary_match_type)}"',
+            ]
+            if source_doc:
+                attrs.append(f'data-source-doc="{html.escape(source_doc)}"')
+
+            parts.append(f'<span {" ".join(attrs)}>{chunk_html}</span>')
+
+        return "".join(parts)
+
+    def _get_effective_duplicate_chars(self, data: Dict) -> int:
+        summary = data.get("summary", {}) or {}
+        value = summary.get("effective_duplicate_chars")
+        if value is not None:
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError):
+                pass
+        return self._union_length(
+            [
+                (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
+                for s in (data.get("duplicate_segments", []) or [])
+            ]
+        )
+
+    def _collect_source_docs(self, data: Dict) -> List[str]:
+        seen = set()
+        source_docs: List[str] = []
+        for segment in list(data.get("duplicate_segments", []) or []) + list(data.get("template_segments", []) or []):
+            sources = segment.get("sources", [])
+            if not sources:
+                continue
+            source_doc = str(sources[0].get("doc", "") or "").strip()
+            if source_doc and source_doc not in seen:
+                seen.add(source_doc)
+                source_docs.append(source_doc)
+        # 兜底：当片段为空时，尝试使用调试输出中的 report_source_doc
+        if not source_docs:
+            fallback_source_doc = str(data.get("report_source_doc", "") or "").strip()
+            if fallback_source_doc:
+                source_docs.append(fallback_source_doc)
+        return source_docs
+
+    def _build_source_fallback_content(self, data: Dict, source_doc: str) -> str:
+        documents = data.get("documents", {})
+        text = documents.get(source_doc, "") if source_doc else documents.get("source", "")
+        if not text and source_doc:
+            snippets: List[str] = []
+            seen = set()
+            for segment in data.get("duplicate_segments", []):
+                sources = segment.get("sources", [])
+                if not sources:
+                    continue
+                source = sources[0]
+                if source.get("doc", "") != source_doc:
+                    continue
+                snippet = str(source.get("text", "") or "").strip()
+                if not snippet or snippet in seen:
+                    continue
+                seen.add(snippet)
+                snippets.append(snippet)
+            text = "\n".join(snippets)
+
+        if not text:
+            return '<div class="docx-content"><p class="empty">无内容</p></div>'
+
+        paragraphs = text.split('\n')
+        html_paras = []
+        for para in paragraphs:
+            if para.strip():
+                html_paras.append(f'<p>{html.escape(para)}</p>')
+        return f'<div class="docx-content">\n{ "".join(html_paras) }\n</div>'
+
+    def _render_source_sections(self, right_html_by_doc: Dict[str, str], source_docs: List[str]) -> str:
+        if not right_html_by_doc:
+            return '<div class="docx-content"><p class="empty">无内容</p></div>'
+
+        ordered_docs = source_docs or list(right_html_by_doc.keys())
+        sections: List[str] = []
+        for idx, source_doc in enumerate(ordered_docs):
+            content = right_html_by_doc.get(source_doc, '<div class="docx-content"><p class="empty">无内容</p></div>')
+            hidden_class = " hidden" if idx > 0 else ""
+            source_doc_value = html.escape(source_doc or "")
+            source_name = html.escape(source_doc or "N/A")
+            sections.append(
+                f'<div class="source-doc-section{hidden_class}" data-source-doc="{source_doc_value}" data-source-name="{source_name}">{content}</div>'
             )
-            result = result[:start] + wrapped + result[end:]
-        return result
+        return "".join(sections)
 
     def _apply_highlights(
         self,
@@ -637,6 +929,7 @@ class MammothPlagiarismReportBuilder:
         segments = data.get("duplicate_segments", [])
         template_segments = data.get("template_segments", [])
         primary_doc = data.get("primary_doc", "")
+        highlight_template_segments = bool(data.get("highlight_template_segments", True))
         
         # 统计口径：统一按主文档字数计算，避免与普通HTML口径冲突
         total_chars = int(text_lengths.get(primary_doc, 0)) if primary_doc else 0
@@ -657,10 +950,10 @@ class MammothPlagiarismReportBuilder:
             for s in template_segments
         ])
         
-        duplicate_chars = self._union_length([
-            (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
-            for s in segments + template_segments
-        ])
+        # 统计口径（可加和）：总重复 = 有效重复 + 模板重复
+        # 注意：若两类在主文档坐标上有重叠，这里会按“相加口径”重复计入重叠部分，
+        # 以保证“总重复率 = 有效重复率 + 模板重复率”成立。
+        duplicate_chars = effective_chars + template_chars
         
         # 计算重复率
         total_rate = (duplicate_chars / total_chars * 100) if total_chars > 0 else 0
@@ -686,9 +979,18 @@ class MammothPlagiarismReportBuilder:
         total += cur_end - cur_start
         return total
 
-    def _build_match_nav(self, data: Dict, match_results: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
+    def _build_match_nav(
+        self,
+        data: Dict,
+        match_results: Optional[Dict[str, Dict[str, Any]]] = None,
+        highlight_template_segments: bool = True,
+    ) -> str:
         """构建匹配片段导航"""
-        segments = data.get("duplicate_segments", [])
+        segments = [
+            s
+            for s in (data.get("duplicate_segments", []) or [])
+            if highlight_template_segments or not s.get("is_template", False)
+        ]
         if not segments:
             return '<p class="empty">无重复片段</p>'
 
@@ -704,9 +1006,12 @@ class MammothPlagiarismReportBuilder:
             
             sources = segment.get("sources", [])
             source_info = ""
+            source_doc = ""
             if sources:
                 source_doc = sources[0].get("doc", "")
                 source_info = f"来源: {html.escape(source_doc)}"
+            if result and result.get("source_doc"):
+                source_doc = str(result.get("source_doc") or source_doc)
             
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
             type_badge = '<span class="template-badge" style="background:#2563eb;">改写</span>' if match_type == "paraphrase" else ''
@@ -715,7 +1020,7 @@ class MammothPlagiarismReportBuilder:
             else:
                 locate_badge = '<span class="locate-badge miss">未定位</span>'
             
-            cards.append(f'''<button class="nav-item" data-match-id="{match_id}" data-template="{1 if is_template else 0}" data-type="{html.escape(match_type)}" data-locate="{html.escape(locate_mode or '')}">
+            cards.append(f'''<button class="nav-item" data-match-id="{match_id}" data-source-doc="{html.escape(source_doc)}" data-template="{1 if is_template else 0}" data-type="{html.escape(match_type)}" data-locate="{html.escape(locate_mode or '')}">
                 <div class="nav-header">#{i} {template_badge} {type_badge} {locate_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度 {similarity:.2f} · {source_info}</small>
@@ -853,8 +1158,25 @@ class MammothPlagiarismReportBuilder:
 
     .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }}
     .panel {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }}
-    .panel-header {{ padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }}
-    .panel-body {{ padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }}
+    .panel-header {{ padding: 12px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; font-size: 16px; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }}
+    .panel-header span:last-child {{ font-size: 14px; color: var(--muted); word-break: break-all; text-align: right; }}
+    .panel-body {{ padding: 20px 18px 32px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 420px; background: #fff; }}
+    .panel-body .docx-content {{ font-size: 16px !important; line-height: 1.9 !important; color: #111827; }}
+    .panel-body .docx-content p,
+    .panel-body .docx-content li,
+    .panel-body .docx-content td,
+    .panel-body .docx-content th,
+    .panel-body .docx-content div,
+    .panel-body .docx-content span {{ font-size: 16px; line-height: 1.9; overflow-wrap: anywhere; word-break: break-word; }}
+    .panel-body .docx-content h1,
+    .panel-body .docx-content h2,
+    .panel-body .docx-content h3,
+    .panel-body .docx-content h4,
+    .panel-body .docx-content h5,
+    .panel-body .docx-content h6 {{ line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }}
+    .panel-body .docx-content table {{ display: block; width: 100%; overflow-x: auto; border-collapse: collapse; }}
+    .panel-body .docx-content img {{ max-width: 100%; height: auto; }}
+    .source-doc-section.hidden {{ display: none; }}
 
     .empty {{ color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }}
     .hit {{
@@ -869,9 +1191,15 @@ class MammothPlagiarismReportBuilder:
     .hit.paraphrase {{ background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }}
     .hit.active {{ box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }}
 
+    @media (min-width: 1400px) {{
+      .content {{ grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr); }}
+      .panel-body {{ min-height: 520px; }}
+    }}
+
     @media (max-width: 1100px) {{
       .main {{ grid-template-columns: 1fr; }}
       .content {{ grid-template-columns: 1fr; }}
+      .panel-body {{ min-height: 320px; }}
     }}
   </style>
 </head>
@@ -924,7 +1252,7 @@ class MammothPlagiarismReportBuilder:
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><span>来源文档</span><span>{html.escape(source_doc or 'N/A')}</span></div>
+          <div class="panel-header"><span>来源文档</span><span id="source-doc-label">{html.escape(source_doc or 'N/A')}</span></div>
           <div id="source-panel" class="panel-body">
             {right_html}
           </div>
@@ -935,15 +1263,37 @@ class MammothPlagiarismReportBuilder:
   <script>
     (function() {{
       const highlightMap = new Map();
+      const sourceLabel = document.getElementById('source-doc-label');
+
+      function getMatchIds(el) {{
+        return String(el.dataset.matchIds || el.dataset.matchId || '')
+          .split(',')
+          .map(item => item.trim())
+          .filter(Boolean);
+      }}
       
       function initHighlights() {{
         document.querySelectorAll('.hit[data-match-id]').forEach(el => {{
-          const matchId = el.dataset.matchId;
-          if (!highlightMap.has(matchId)) {{
-            highlightMap.set(matchId, []);
-          }}
-          highlightMap.get(matchId).push(el);
+          getMatchIds(el).forEach(matchId => {{
+            if (!highlightMap.has(matchId)) {{
+              highlightMap.set(matchId, []);
+            }}
+            highlightMap.get(matchId).push(el);
+          }});
         }});
+      }}
+
+      function switchSourceDoc(sourceDoc) {{
+        const sections = Array.from(document.querySelectorAll('#source-panel .source-doc-section[data-source-doc]'));
+        if (!sections.length) {{
+          return null;
+        }}
+        const target = sections.find(el => el.dataset.sourceDoc === sourceDoc) || sections[0];
+        sections.forEach(el => el.classList.toggle('hidden', el !== target));
+        if (sourceLabel) {{
+          sourceLabel.textContent = target.dataset.sourceName || target.dataset.sourceDoc || 'N/A';
+        }}
+        return target;
       }}
       
       let currentMatchId = null;
@@ -961,7 +1311,11 @@ class MammothPlagiarismReportBuilder:
         
         if (hits.length > 0) {{
           const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
-          const sourceHit = hits.find(el => el.dataset.side === 'source');
+          const sourceDoc = (navItem && navItem.dataset.sourceDoc) || '';
+          if (sourceDoc) {{
+            switchSourceDoc(sourceDoc);
+          }}
+          const sourceHit = hits.find(el => el.dataset.side === 'source' && (!sourceDoc || el.dataset.sourceDoc === sourceDoc));
 
           if (primaryHit) {{
             primaryHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});

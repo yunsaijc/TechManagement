@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - ab8e53cd964042d8b5235165f1eb8ad9.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：ab8e53cd964042d8b5235165f1eb8ad9.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,352</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>ab8e53cd964042d8b5235165f1eb8ad9.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>承德隆宏生物科技有限公司香菇多糖绿色制造与高值转化关键技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>承德隆宏生物科技有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>彭锋</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>承德市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-01</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-09</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>承德隆宏生物科技有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>平泉市卧龙镇八家社区（平泉经济开发区61号）</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91130823MA07R6Q61X</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-承德市-平泉市</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2014-03-11</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>2700.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>王彦军</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>19913097777</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0314-6256888</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>chengdelonghong@163.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>张鑫媛</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>19103143676</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0314-6256888</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>chengdelonghong@163.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>承德隆宏生物科技有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>103142392053</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国农业银行股份有限公司平泉城关支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>5092 0501 0400 06847</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>35人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>16人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>12人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>专精特新企业、企业技术创新中心、企业技术中心、新型研发机构、省级林业、农业重点龙头企业、技术创新战略联盟）<a id="qylxqt"></a>R</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>平泉食用菌特色产业集群</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>6716.24</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>3881.49</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>24.47</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>6.59</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>项目承担单位承德隆宏生物科技有限公司注册资金2700万元，专业从事植物提取及应用产业的项目研发，企业重点为香菇有效成分提取及深加工、香菇多糖技术的研发与应用、松针负氧离子功能材料及植物芳香持久缓释技术，公司组织成立了技术研发中心、技术创新中心、企业技术中心、技术创新战略联盟，与北京林业大学共建标准化研发实验室，并配备电镜、气相色谱质谱联用仪、离子溅射仪、牛津能谱仪等先进检测设备，先后被认定为国家级高新技术企业、国家科技型中小企业、省级林业重点龙头企业、农业产业化重点龙头企业、专精特新企业、特色产业集群“领跑者”企业，2022年被评定为河北省新型研发机构，河北省企业标准“领跑者”。为中国林业产业联合会松针负氧离子产业分会理事长单位。荣获第十二届中国创新创业大赛河北赛区二等荣誉。承担单位依托平泉香菇资源优势，进行资源综合利用，突破传统工艺限制，和北京林业大学联合研发香菇多糖提取技术，深化香菇产业链，实现香菇高值化利用。技术智力：目前承担单位已取得国家专利41项，其中发明专利5项，实用新型专利26项。拥有科研技术团队16人，其中中高技术人员12人。先后与中科院、北京林业大学等多所高校及科研机构开展产学研用合作，具备项目孵化、技术转移、联合开发、技术支持和市场对接等条件。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>项目申报单位建立了完善的知识产权管理制度，形成了贯穿研发、申报、应用的全生命周期管理体系。对关键核心技术、新产品、新工艺积极中请专利，进行保护。对不宜申请专利的专有技术，中心将其作为技术秘密进行保护，并采取一系列措施加强管理。此外，还制定严格的保密制度，确定保密的等级、期限，并和涉密人员签定保密承诺书。为项目实施提供强有力的技术确权保障和创新动能支撑。目前，累计获得授权国家专利41项，其中发明专利5项，实用新型专利26项。此外，企业持续推进产学研合作，与高校共建联合实验室，推动知识产权成果转化，并通过专利池、交叉许可等策略，积极参与相关行业标准制定，为技术创新与市场竞争构筑坚实壁垒。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>承德隆宏生物科技有限公司依托河北食用菌产业资源优势，深耕香菇深加工领域，已形成“技术研发-中试验证-产业适配”的系统性布局。企业申报的植物提取方向专利41项，已成功转化15项，转化落地北京林业大学专利及科技成果5项。公司以“植物活性成分提取及香菇多糖功能性应用”为核心攻关方向，2023年起联合科研机构及高等院校开展香菇多糖提取工艺优化专项研究，凭借技术创新实力获评“河北省企业技术中心”，为香菇多糖中试及产业化奠定坚实基础。同时，公司通过参与河北省创新创业大赛等平台，积累了功能性产品开发与成果转化经验，为技术规模化落地提供实践支撑。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>产学研合作方面，项目申报单位与中科院、农科院、北京林业大学、承德石油职业技术大学建立了桥梁型产学研合作模式，依托其全国重点实验室、教育部重点实验室和工程中心等重点平台，结合其在农林生物质多糖高值化利用领域的长期积累，共同聚焦植物资源组分分离、新型溶剂体系开发等关键技术攻关。双方通过资源共享、优势互补，已合作开展多项国家级、省部级及企业委托项目，在天然药物多糖提取、生物质多糖分离纯化等领域产出SCI一区top论文、授权专利等系列成果，并获教育部及梁希林业科技奖励，有效推动了科技成果向产业应用的转化。</p><p class="docx-paragraph">国际交流合作上，企业已获得国际发明专利2项，双方通过参与国际学术会议、合作撰写论文专著、发表高水平SCI论文等方式，与国外研究机构保持密切互动，提升了在植物资源利用领域的国际影响力，为后续开展跨境联合研发与技术推广奠定了坚实基础。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">3人</p></td><td colspan="4"><p class="docx-paragraph">3人</p></td><td colspan="5"><p class="docx-paragraph">4人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">4人</p></td><td colspan="4"><p class="docx-paragraph">0人</p></td><td colspan="5"><p class="docx-paragraph">5人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">彭锋</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1979-05</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">生物质多糖分离与高值转化</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2025-06-03</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京林业大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">教授、院长</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">技术专家</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">100083</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">北京市海淀区清华东路35号北京林业大学西区</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">010-62337751</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">15811052459</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">fengpeng@bjfu.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>R“两院”院士  <a id="rcjh_zdrc"></a>R国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>R长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2000-09-01至2007-06-01</p></td><td colspan="9"><p class="docx-paragraph">西北农林科技大学</p></td><td colspan="4"><p class="docx-paragraph">学士、硕士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2007-06-01至2010-06-01</p></td><td colspan="9"><p class="docx-paragraph">华南理工大学</p></td><td colspan="4"><p class="docx-paragraph">博士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2011-06-01至2016-06-01</p></td><td colspan="9"><p class="docx-paragraph">北京林业大学</p></td><td colspan="4"><p class="docx-paragraph">讲师、副教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2016-06-01至2026-02-09</p></td><td colspan="9"><p class="docx-paragraph">北京林业大学</p></td><td colspan="4"><p class="docx-paragraph">副院长、院长、教授</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">木质纤维生物质多糖高值化利用</p></td><td colspan="7"><p class="docx-paragraph">2023.03-2028.02</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家杰出青年科学基金项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">林业工程与森林培育学科创新引智基地</p></td><td colspan="7"><p class="docx-paragraph">2020.02-2024.01</p></td><td colspan="4"><p class="docx-paragraph">教育部</p></td><td colspan="4"><p class="docx-paragraph">教育部“111”引智计划</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">半纤维素功能糖及化学品定向转化技术</p></td><td colspan="7"><p class="docx-paragraph">2022.02-2022.02</p></td><td colspan="4"><p class="docx-paragraph">科技部</p></td><td colspan="4"><p class="docx-paragraph">十四五国家重点研发计划</p></td><td><p class="docx-paragraph">子课题负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">木聚糖类半纤维素分离纯化及高值化利用研究</p></td><td colspan="4"><p class="docx-paragraph">教育部高等学校自然科学奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2019-01-09</p></td><td colspan="4"><p class="docx-paragraph">排名第一 （1/6）</p></td><td colspan="4"><p class="docx-paragraph">教育部</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">半纤维素分离纯化及转化为软材料的研究</p></td><td colspan="4"><p class="docx-paragraph">梁希林业科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2019-04-09</p></td><td colspan="4"><p class="docx-paragraph">排名第一 （1/6）</p></td><td colspan="4"><p class="docx-paragraph">国家林业和草原局、中国林学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">生物质木质素的结构表征及多糖功能材料的构建</p></td><td colspan="4"><p class="docx-paragraph">教育部高等学校自然科学奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2012-05-14</p></td><td colspan="4"><p class="docx-paragraph">排名第三 （3/9）</p></td><td colspan="4"><p class="docx-paragraph">教育部</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Bio-based hot-melt adhesive from xylan</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Nature Sustainability</p></td><td colspan="5"><p class="docx-paragraph">2025年</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Hierarchical luminescence center coupling enables time-dependent phosphorescence color from self-protective carbonized polymer dots</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Nature Communication</p></td><td colspan="5"><p class="docx-paragraph">2025年</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Confinement-modulated clusterization-triggered time-dependent phosphorescence color from xylan carbonized polymer dots</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Journal of the American Chemical Society</p></td><td colspan="5"><p class="docx-paragraph">2025年</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种具有生物相容性的木聚糖纳米晶的制备方法</p></td><td colspan="5"><p class="docx-paragraph">ZL 2022 1 0395176.6</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">排名第一</p></td><td colspan="5"><p class="docx-paragraph">2022-04-15</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td><p class="docx-paragraph">一种木聚糖纳米晶及其制备方法</p></td><td colspan="5"><p class="docx-paragraph">ZL 2022 1 0098864.6</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">排名第一</p></td><td colspan="5"><p class="docx-paragraph">2022-01-24</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td><p class="docx-paragraph">一种棒状木聚糖纳米晶、其制备方法及在洗涤剂中的应用</p></td><td colspan="5"><p class="docx-paragraph">ZL 2022 1 0841571.2</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">排名第一</p></td><td colspan="5"><p class="docx-paragraph">2022-04-15</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">国家林草局林木生物质清洁分离及转化国家创新联盟</p></td><td colspan="9"><p class="docx-paragraph">理事长</p></td><td colspan="6"><p class="docx-paragraph">2019年6月-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国林学会林产化学化工分会</p></td><td colspan="9"><p class="docx-paragraph">副理事长</p></td><td colspan="6"><p class="docx-paragraph">2024年10月-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">林业科学期刊</p></td><td colspan="9"><p class="docx-paragraph">执行副主编</p></td><td colspan="6"><p class="docx-paragraph">2024年4月-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国林学会生物质材料科学分会第四届委员会</p></td><td colspan="9"><p class="docx-paragraph">副主任委员</p></td><td colspan="6"><p class="docx-paragraph">2024年7月-至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国林学会青工委第四届委员会</p></td><td colspan="9"><p class="docx-paragraph">副主任委员</p></td><td colspan="6"><p class="docx-paragraph">2023年11月-至今</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>彭锋，北京林业大学教授，博士生导师。国家杰出青年基金获得者，入选青年长江学者、中组部青年拔尖人才、全国林草科技领军人才、教育部新世纪人才等人才计划、全国优秀博士学位论文获得者，现任北京林业大学材料科学与技术学院院长，任国家林草局“林木生物质清洁分离及转化国家创新联盟”理事长、中国林学会林产化工分会副理事长、中国林学会生物质材料科学分会第四届委员会、中国林学会青年工作委员会副主任委员。主要从事生物质多糖高值化利用研究，在Nat. Sustain.、Nat. Comm.、J. Am. Chem. Soc.、Angew. Chem. Int. Ed.、Adv. Mater.等学术期刊发表论文150余篇，被他人引用14000余次；被邀参与编写英文专著6部、中文专著3部，获授权发明专利20余件。获教育部自然科学一、二等奖、梁希林业科技自然科学二等奖、梁希林业科技奖等多项奖励。担任期刊“林业科学”执行副主编、西北林学院学报副主编、林业工程学报青年编委会副主任委员、生物质化学工程、东北林业大学学报、Paper and Biomaterials等期刊编委。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">彭锋</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1979-05</p></td><td><p class="docx-paragraph">511121197905238516</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">农业生物技术</p></td><td><p class="docx-paragraph">生物化学工程</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京林业大学 教授、院长</p></td><td><p class="docx-paragraph">“两院”院士,国家重点人才工程计划入选人才,长江学者,其他:国家杰青、教育部青年长江学者、中组部青年拔尖人才</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">陈阁谷</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1990-02</p></td><td><p class="docx-paragraph">610523199002070069</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">农业生物技术</p></td><td><p class="docx-paragraph">生物材料</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京林业大学 教授</p></td><td><p class="docx-paragraph">其他:中组部青年拔尖人才</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">吕保中</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1992-06</p></td><td><p class="docx-paragraph">42028119920606843x</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副教授</p></td><td><p class="docx-paragraph">农业生物技术</p></td><td><p class="docx-paragraph">生物材料</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京林业大学 副教授</p></td><td><p class="docx-paragraph">其他:中国科协青年托举计划</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">饶俊</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1992-03</p></td><td><p class="docx-paragraph">411521199203043033</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">讲师</p></td><td><p class="docx-paragraph">农业生物技术</p></td><td><p class="docx-paragraph">生物材料</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京林业大学 讲师</p></td><td><p class="docx-paragraph">其他:国家资助博士后研究人员计划</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">刘常英</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1979-06</p></td><td><p class="docx-paragraph">132624197906056542</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">天然产物有效成份的分离提取及加工技术</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司 工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">栾丽茹</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1979-08</p></td><td><p class="docx-paragraph">132624197908140027</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">天然产物有效成份的分离提取及加工技术</p></td><td><p class="docx-paragraph">林产化学加工学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司 工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">张鑫媛</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1985-03</p></td><td><p class="docx-paragraph">132624198503015767</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">农艺师</p></td><td><p class="docx-paragraph">生物技术在食品安全和食品添加剂领域的应用</p></td><td><p class="docx-paragraph">森林植物学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司 工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">周立娟</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1991-01</p></td><td><p class="docx-paragraph">130823199101296225</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">农艺师</p></td><td><p class="docx-paragraph">生物技术在食品安全和食品添加剂领域的应用</p></td><td><p class="docx-paragraph">植物化学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司 工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">周成伟</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1994-08</p></td><td><p class="docx-paragraph">130823199408276210</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">农艺师</p></td><td><p class="docx-paragraph">其它生物医用材料</p></td><td><p class="docx-paragraph">土壤与植物测试仪器</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司 工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">黄玉文</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1968-12</p></td><td><p class="docx-paragraph">132628196812100013</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级农艺师</p></td><td><p class="docx-paragraph">农业生物技术</p></td><td><p class="docx-paragraph">农业植物学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司 工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>承德隆宏生物科技有限公司香菇多糖绿色制造与高值转化关键技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-01</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>180.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>120.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>R生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>香菇深加工、绿色智造、香菇有效成分提取、香菇多糖提取及应用</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>本项目聚焦香菇多糖绿色制造关键技术研发与产业化落地，打造集生物工程、绿色提取、智能制造、成果转化于一体的复合型专业人才梯队，强化团队跨学科协同攻关能力，深度融合生物制药、食品营养、生命健康、智能制造等多学科技术体系，精准匹配香菇多糖绿色提取、工艺优化、中试放大、产业化应用全链条研发创新需求。深化与省内外高校、科研院所产学研合作，建立“理论教学+实训实操+项目攻关”定向培养机制，为项目技术迭代、产能扩张持续注入人才动力。</p><p class="docx-paragraph">未来3年内，精准培育香菇多糖绿色提取、活性检测、工艺优化的专业技术骨干和熟悉项目研发管理、成果转化、产业化运营的复合型管理人才；构建“技术研发+生产管理+成果转化”结构合理、梯队完整、可持续创新的核心人才团队，为香菇多糖绿色制造产业化项目提供坚实人才保障。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>通过项目实施，在香菇绿色制造技术突破与值转化、产业化上实现重大突破，实现“技术创新-产业升级-健康惠民-生态保护”的多重价值统一，既是破解当前我国香菇多糖产业化困境的关键举措，更是推动我省生物制造产业高质量发展、惠及民生健康的重要实践。</p><p class="docx-paragraph">1.聚焦香菇多糖绿色提取纯度不足、活性成分易流失、产品附加值偏低等关键共性技术难题，通过优化绿色提取工艺、改进活性保鲜技术，该技术使香菇多糖提取率达 90%以上，纯度达 90% 以上，解决食用菌产业活性成分易流失关键共性技术难题1项，形成新产品1种。同时，本项目聚焦工艺创新，旨在通过系统优化能源结构、显著降低生产能耗，并引入先进绿色溶剂技术，从源头实现全过程低污染。推动生产废副物的高值化转化，充分挖掘原料利用潜力，构建资源循环利用的可持续发展新模式。基于该技术开发的高活性、高纯度香菇多糖产品，可广泛应用于膳食补充剂、功能性食品配料及医药辅料领域，其绿色安全的品质特性契合当前消费升级与生态环保理念，可有效填补省内高活性绿色香菇多糖产品的市场空白。</p><p class="docx-paragraph">2. 申请与项目相关的发明专利1项、软件著作权1项。</p><p class="docx-paragraph">3. 合作发表与项目相关学术期刊论文1篇。</p><p class="docx-paragraph">4. 团队成员中的企业人员主持企业科研项目1 项。</p><p class="docx-paragraph">5. 执行期内累计实现销售收入200万元。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>预期申请香菇有效成份提取方向发明专利1项、软件著作权1项。</p><p class="docx-paragraph">项目预期产生的知识产权归承德隆宏生物科技有限公司所有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1.项目背景与必要性：本项目面向全球健康消费升级与生物技术革命的战略机遇，紧扣河北省食用菌及中药材全产业链高质量发展需求，针对我国香菇产业深加工转化率不足、高品质多糖规模化生产空白、传统提取技术效率低等行业痛点，开展香菇多糖绿色生物制造关键技术研发及高值转化应用。项目由承德隆宏生物科技有限公司承担，联合北京林业大学顶尖科研团队，致力于突破香菇多糖高值化开发的核心技术瓶颈，推动平泉香菇主产区从初级农产品向高附加值生物制品跨越，服务“健康中国”与“乡村振兴”战略。</p><p class="docx-paragraph">2.项目概述：本项目聚焦香菇多糖绿色制造与高值化开发，攻克高效绿色提取、精准分离纯化、节能干燥成型、全组分资源化等关键技术，实现香菇多糖规模化、绿色化、标准化生产及加工副产物高值化利用，契合河北省生物制造、农产品精深加工等产业战略，助力农业高附加值转型升级。</p><p class="docx-paragraph">3.预期指标</p><p class="docx-paragraph">聚焦香菇多糖绿色提取纯度不足、活性成分易流失、产品附加值偏低等关键共性技术难题，通过优化绿色提取工艺、改进活性保鲜技术，该技术使香菇多糖提取率达 90%以上，纯度达 90% 以上，解决食用菌产业活性成分易流失关键共性技术难题1项，形成新产品1种。本项目聚焦工艺创新，旨在通过系统优化能源结构、显著降低生产能耗，并引入先进绿色溶剂技术，从源头实现全过程低污染。同时，推动生产废副物的高值化转化，充分挖掘原料利用潜力，构建资源循环利用的可持续发展新模式。基于该技术开发的高活性、高纯度香菇多糖产品，可广泛应用于膳食补充剂、功能性食品配料及医药辅料领域，其绿色安全的品质特性契合当前消费升级与生态环保理念，可有效填补省内高活性绿色香菇多糖产品的市场空白；申请与项目相关的发明专利1项、软件著作权1项；合作发表与项目相关学术期刊论文1篇；团队成员中的企业人员主持企业科研项目1 项；执行期内累计实现销售收入200万元。</p><p class="docx-paragraph">二、申报单位及人才团队情况</p><p class="docx-paragraph">1.申报单位：项目由承德隆宏生物科技有限公司承担，公司注册资金2700万元，专注于植物提取及应用产业研发，核心布局香菇有效成分深加工、香菇多糖技术研发等领域。公司建有多个研发中心、创新中心与创新战略联盟，与北京林业大学共建标准化实验室，配备先进检测设备，获评国家高新技术企业、省级林业及农业重点龙头企业、专精特新企业、企业技术创新中心等多个平台。目前已取得国家专利41项，拥有16人科研技术团队，其中中高技术人员12人，与中科院、北京林业大学等开展深度产学研用合作，具备完善的技术研发与市场转化能力。</p><p class="docx-paragraph">2.产学研合作：项目与北京林业大学深度合作，依托其林业生物质材料领域顶尖科研平台开展技术研发。团队在农林生物质高值化利用领域积淀深厚，开发新型溶剂体系，发表多篇多糖研究高水平SCI论文并拥有相关专利，已完成香菇多糖小试工艺探索，为中试与产业化奠定基础。</p><p class="docx-paragraph">3.核心团队：项目由北京林业大学彭锋教授领衔，其为国家杰出青年基金获得者，入选多项国家级人才计划，长期从事生物质多糖高值化利用研究，发表高水平论文150余篇，获授权发明专利20余件，斩获教育部自然科学奖等多项荣誉，学术与科研实力雄厚，近期在香菇多糖构效关系领域取得新进展，可为项目实施提供坚实的理论与技术支撑。</p><p class="docx-paragraph">三、技术先进性和可行性分析</p><p class="docx-paragraph">1.拟解决关键技术问题：破解传统提取效率低、能耗高、溶剂用量大的问题；解决多糖纯化活性损失大、纯度低、有有机溶剂污染的痛点；攻克干燥过程中多糖活性易破坏、能耗高的难题；化解加工副产物浪费、资源利用率低的问题；突破产业化工艺参数工程化、设备适配等瓶颈。</p><p class="docx-paragraph">2.技术支撑：项目团队依托与北京林业大学的产学研合作，拥有农林生物质资源高值化利用，特别是植物多糖提取与功能开发方面的核心技术储备与科研成果，为项目的技术攻坚与持续优化提供了坚实的理论保障。</p><p class="docx-paragraph">3.项目基础：项目选址全国重要香菇生产基地河北省平泉市，依托当地年产超60万吨鲜香菇的原料优势与完善产业基础，以绿色制造和全组分高值化利用为核心竞争力，推动香菇产业从初级农产品向高附加值生物制品跨越。</p><p class="docx-paragraph">4.技术对比与趋势：国内外现有技术以传统热水提取、有机溶剂沉淀为主，普遍存在提取效率低、纯度不稳定、污染重等问题，高端产品稀缺。本项目集成创新超声预处理耦合逆流动态提取、定向酶解与多级膜分离耦合、低温真空干燥及全组分资源化利用等核心技术，构建了显著的技术、成本与产品品质壁垒。当前行业技术正加速向绿色化、高效化、标准化、资源化方向演进，本项目技术路线高度契合这一趋势。</p><p class="docx-paragraph">5.技术风险与对策：</p><p class="docx-paragraph">本项目在技术研发和产业化过程中，可能面临以下技术风险：一是中试放大阶段，实验室小试的工艺参数与工程化生产的实际需求存在不匹配的情况，可能影响规模化生产的稳定性和产品品质的一致性；二是核心生产设备的选型与工艺体系适配不当，导致工艺效率降低，影响产品质量和生产效率；三是全组分资源化技术的产业化应用效果未达预期，副产物开发的经济效益和产品稳定性不足，影响原料综合利用效率；四是产业化过程中，可能出现新的技术难题，若未能及时解决，将制约项目的推进进度。</p><p class="docx-paragraph">应对对策：</p><p class="docx-paragraph">针对上述潜在技术风险，项目团队制定了全方位的应对对策：一是严格遵循“实验室小试-中试放大-产业化”的技术转化路径，在中试阶段开展大量工艺优化实验，实现工艺参数的工程化适配，形成完整、成熟的工艺包，为产业化生产提供可靠的技术支撑；二是提前开展核心设备的市场调研和选型工作，结合项目工艺特点与设备厂家开展定制化合作，对核心设备进行充分的适配测试，确保设备与工艺体系高度匹配；三是持续深化全组分资源化技术研发，优化副产物开发的工艺参数，提升副产物产品的品质和经济效益，同时开展多品类副产物开发研究，拓宽副产物应用领域；四是依托产学研合作体系，组建由高校科研骨干、企业技术核心人员组成的技术攻坚团队，建立技术难题快速响应机制，及时解决项目研发和产业化过程中出现的技术问题；五是建立技术研发储备机制，在开展核心技术研发的同时，关注行业前沿技术发展，提前布局相关技术研究，提升项目的技术抗风险能力。</p><p class="docx-paragraph">四、项目实施方案</p><p class="docx-paragraph">1.核心技术路线：一是高效绿色提取技术，创新采用超声预处理耦合逆流动态提取工艺，利用超声空化效应破坏细胞壁结构，显著提升多糖溶出效率，提取率可达 25% 以上，较传统热工艺提升5-10%以上；二是精准分离纯化技术，突破传统有机溶剂沉淀法的局限，开发定向酶解与多级膜分离耦合工艺，通过专一性酶解除去蛋白质杂质，结合无机陶瓷膜进行分子量精准分级，产品纯度达到 90% 以上，三螺旋结构保留率超过 85%，确保免疫调节活性，且实现全程无有机溶剂残留；三是节能干燥成型技术，采用膜预浓缩结合低温真空干燥，在降低能耗的同时有效保护多糖活性；四是全组分资源化利用技术，对提取残渣进行生物酶解处理，制备功能性多肽、膳食纤维等高附加值产品，实现原料“吃干榨净”和零固废排放。整体工艺向生物制药标准靠拢，产品指标可满足抗肿瘤辅助药物、免疫调节制剂等医药级原料要求，填补省内高活性香菇多糖产品空白。</p><p class="docx-paragraph">2.前期准备：已完成香菇多糖小试工艺探索，与北京林业大学建立产学研合作，完成选址与市场调研，初步规划产业化路径，奠定技术、合作、区位与市场基础。</p><p class="docx-paragraph">3.实施安排：团队投入核心技术与成果，北京林业大学提供理论与平台支撑；团队负责中试与产业化运营，高校负责技术深化与难题解决；建立校企定期交流机制，构建协同研发转化体系，资金通过政府扶持、企业自筹、银行贷款多渠道筹措。</p><p class="docx-paragraph">4.实施进度：创新创业团队主要综合解决香菇多糖绿色制造领域的4大共性问题：</p><p class="docx-paragraph">技术层面：香菇多糖提取工艺不够绿色环保、提取率低、活性成分易流失，以及智造设备适配性不足的共性痛点；生产层面：生产效率低、产品稳定性差、生产成本偏高，缺乏标准化生产流程的行业共性问题；质量层面：行业内香菇多糖纯度、活性等核心指标检测标准不统一、不规范的共性短板；产业化层面：技术成果转化难、市场推广不足、售后服务体系不完善，难以实现规模化应用的共性困境。</p><p class="docx-paragraph">具体进度及阶段目标：</p><p class="docx-paragraph">第一阶段:技术攻坚与基础搭建</p><p class="docx-paragraph">2026年02月—2026年05月:项目需求调研，重点调研香菇多糖绿色制造的行业痛点、原料供应及产品应用需求，组建由生物提取、质量检测等领域人才构成的研发团队，完成项目计划制定，确定核心技术路线。</p><p class="docx-paragraph">2026年06月—2026年10月:研发香菇多糖绿色提取核心工艺，搭建初步工艺调控系统架构；并进行工艺参数优化，提升多糖提取率与活性保留率。</p><p class="docx-paragraph">2026年11月—2027年01月:完成香菇多糖绿色制造设备初步设计，启动核心提取、纯化部件定制生产；建立产品质量检测标准与流程，重点规范多糖纯度、活性及重金属残留等核心指标的检测方法。</p><p class="docx-paragraph">第二阶段:产品优化与试产验证</p><p class="docx-paragraph">2027年02月—2027年07月:优化香菇多糖提取工艺与调控系统，重点解决生产效率、产品稳定性问题；制造工业级香菇多糖绿色制造设备，开展小范围试应用，收集反馈数据，提升设备稳定性，启动小批量试产。</p><p class="docx-paragraph">2027年08月—2027年10月:建立香菇多糖绿色制造标准化生产流程，规范原料预处理、提取、纯化、干燥等各环节操作，完成小批量产品生产并进行全面性能测试，确保产品符合行业标准。</p><p class="docx-paragraph">2027年11月—2028年01月:持续优化产品工艺与设备性能，降低生产成本，提升产品竞争力，申请发明专利1项。申请软件著作权1项。</p><p class="docx-paragraph">第三阶段:市场拓展与规模应用</p><p class="docx-paragraph">2028年02月—2028年07月:加大市场推广力度，拓展保健品、医药辅助、功能性食品等应用领域；优化规模化生产工艺，提升产能，发表学术期刊论文1篇。</p><p class="docx-paragraph">2028年08月—2028年12月:组建专业技术服务团队，完善售后服务体系，提供工艺指导与设备运维支持，推动市场占有率进入行业前列，形成完整的香菇多糖绿色制造技术应用解决方案。</p><p class="docx-paragraph">2029年01月:总结项目实施全过程经验，梳理技术成果与产业化成效，完成项目终期验收工作。</p><p class="docx-paragraph">5.本项目高度重视知识产权保护与管理，建立完善的知识产权工作体系：一是及时开展核心技术的专利申报工作，对项目研发过程中形成的创新技术、工艺方法等及时申请发明专利、实用新型专利，对软件系统申请软件著作权，全方位保护项目知识产权；二是按照合作协议，明确各方在研究成果方面的共享机制，联合开展技术成果转化，充分发挥科研成果的价值；三是明确各方的权利和义务，规范技术成果的使用和转让，杜绝知识产权侵权行为，保障各方的合法权益。</p><p class="docx-paragraph">五、项目前景</p><p class="docx-paragraph">人才建设：通过项目实施培养生物制造、农产品精深加工复合型人才，充实研发与生产团队，依托产学研搭建高水平科研队伍，吸引外部专业人才，优化区域人才结构。</p><p class="docx-paragraph">产品竞争力：项目产品以高品质标准化香菇多糖为主、副产物为辅，技术行业领先、成本优势显著、产品纯度高且无污染，依托平泉原料优势降低物流成本，可填补国内高端市场空白，副产物开发进一步提升综合效益。</p><p class="docx-paragraph">市场与产业化前景：香菇多糖在医药、功能性食品、化妆品领域需求强劲，市场持续扩容。项目已具备充足的原料、完善的产业、成熟的技术与利好的政策等产业化条件，产业化后可填补国内高品质香菇多糖规模化生产空白，带动下游产业集群形成，推动香菇产业绿色高值化转型，市场前景广阔、辐射效应显著。</p><p class="docx-paragraph">六、效益分析</p><p class="docx-paragraph">经济效益：执行期内累计实现销售收入200万元，主副产物双重收益提升盈利能力；绿色工艺降低能耗与原料成本，提升毛利率；拉动香菇收购价格，促进菇农增收，带动高端装备应用与下游企业聚集，贡献持续产值与税收。</p><p class="docx-paragraph">社会效益：推动平泉香菇产业向高科技生物制造转型，拉动香菇收购价格促进菇农增收，推动平泉香菇产业向高科技生物制造转型，提升“平泉香菇”区域品牌价值，践行乡村振兴战略；直接与间接创造大量就业岗位，培养专业人才，优化区域人才结构；稳定供应高品质香菇多糖，推动健康产品开发，服务“健康中国2030”战略。</p><p class="docx-paragraph">生态效益：加工残渣资源化利用实现近乎零固废排放，解决传统加工污染问题；工艺无有机溶剂引入，能耗低、废水易处理，契合“双碳”战略，改善区域生态环境，实现资源循环利用。为河北省食用菌及中药材全产业链高质量发展提供科技支撑与示范样板。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责组织项目实施</p></td><td><p class="docx-paragraph">彭锋</p></td><td><p class="docx-paragraph">180.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">120.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1.解决香菇多糖绿色提取纯度不足、活性成分易流失、产品附加值偏低等食用菌产业关键共性技术难题1项，形成香菇多糖新产品 1 项。</p><p class="docx-paragraph">2.申请与项目相关的发明专利 1 项、软件著作权 1 项。</p><p class="docx-paragraph">3.合作发表与项目相关学术期刊论文1篇。</p><p class="docx-paragraph">4.团队成员中的企业人员主持企业科研项目 1 项。</p><p class="docx-paragraph">5.执行期内实现销售收入 200 万元。</p></td><td><p class="docx-paragraph">1.解决香菇多糖绿色提取纯度不足、活性成分易流失、产品附加值偏低等食用菌产业关键共性技术难题1项，形成香菇多糖新产品 1 项。</p></td><td><p class="docx-paragraph">1.团队成员中的企业人员负责主持企业科研项目1 项。</p><p class="docx-paragraph">2.实现销售收入 100 万元。</p></td><td><p class="docx-paragraph">1.申请与项目相关的发明专利 1 项、软件著作权 1 项。  </p><p class="docx-paragraph">2.合作发表与项目相关学术期刊论文1篇。</p><p class="docx-paragraph">3.实现销售收入 100 万元</p></td></tr><tr><td rowspan="8"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">新产品（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td></td></tr><tr><td><p class="docx-paragraph">软件著作权（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">组织和承担研发项目数量（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td></td></tr><tr><td><p class="docx-paragraph">新增销售（万元）</p></td><td><p class="docx-paragraph">200</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">100</p></td><td><p class="docx-paragraph">100</p></td></tr><tr><td><p class="docx-paragraph">解决关键共性技术难题</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">负责人身份证、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">专家聘任协议</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">团队负责人或核心成员入选的国家或省部级人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人申请及获授权的发明专利和论文证明</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">团队负责人承担的重点科研项目</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">团队负责人获奖证书</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司章程</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">高新技术企业证书</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">承德隆宏生物科技有限公司荣誉资质及证书</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">企业与工程人员签订的合同</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">技术路线图</p></td><td><p class="docx-paragraph">技术路线图</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队负责人担任国内外学术组织、重要学术期刊、学术科研机构职务情况证明材料</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

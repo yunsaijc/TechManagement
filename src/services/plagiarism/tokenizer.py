@@ -28,7 +28,7 @@ class SentenceTokenizer:
     INTERNAL_SEPARATORS = ['，', '、', ':', '：', '(', ')', '（', '）']
     TABLE_ROW_MARKER = re.compile(r"\[表格行\d+\]")
     HEADING_BOUNDARY = re.compile(
-        r"(第[一二三四五六七八九十]+部分|第一部分|第二部分|第三部分|项目简介|项目立项背景及意义|[一二三四五六七八九十]、)"
+        r"(第[一二三四五六七八九十]+部分|第一部分|第二部分|第三部分|项目简介|项目立项背景及意义|[一二三四五六七八九十]、|[（(][一二三四五六七八九十]+[）)])"
     )
 
     def tokenize(self, text: str) -> List[Sentence]:

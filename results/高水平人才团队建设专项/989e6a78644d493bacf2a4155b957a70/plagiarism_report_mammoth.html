@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 989e6a78644d493bacf2a4155b957a70.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：989e6a78644d493bacf2a4155b957a70.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">7,320</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>989e6a78644d493bacf2a4155b957a70.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>廊坊赫尔劳斯太阳能光伏有限公司半导体级高端石英坩埚创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>廊坊赫尔劳斯太阳能光伏有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李焕勇</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>廊坊市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-02</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-27</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>廊坊赫尔劳斯太阳能光伏有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省廊坊市大厂县潮白河工业区工业二路与福喜二路交叉口</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>911310285632419325</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-廊坊市-大厂回族自治县</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2010-10-26</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>5000.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>贾建亮</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18733628566</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0316-8968369</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>heerlaosi@163.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>晁红梅</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>18910803021</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0316-8968369</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>heerlaosi@163.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>廊坊赫尔劳斯太阳能光伏有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>102146816326</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国工商银行大厂支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>0410000709300013702</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>78人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>32人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>13人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>廊坊市大厂回族自治县高端装备零部件加工制造产业集群</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>19352.04</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>9622.07</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>43.61</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>5.6</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>1.公司现有科研办公用房880平方米(其中试验用房650平方米，办公用房230平方米)；仪器设备18台(套)，设备原值285.1万元；中试设备21台(套)，设备原值1696.77万元。</p><p class="docx-paragraph">2.公司现拥有一支梯队结构合理、研发实力雄厚的科研团队，固定人员32人，高级职称3人，中级职称10人，本科及以上学历人员16人（博士1人，硕士1人，本科14人）。</p><p class="docx-paragraph">3.公司每年开展研发项目6-7项，研发经费占销售收入比例5.6%以上，2025年研发费用投入总额540.48万元。</p><p class="docx-paragraph">4.公司技术创新中心在2025年认定河北省半导体级石英坩埚技术创新中心，另外还获得河北省工业企业研发机构A级、廊坊市工业设计中心、廊坊市半导体用单晶硅生长技术研发中心等荣誉。</p><p class="docx-paragraph">5.公司在2025年承担中央引导地方科技发展资金项目，项目名称：单晶硅生长用大尺寸石英坩埚关键生产技术及设备的研究与应用，项目编号：254Z4304G。</p><p class="docx-paragraph">6.公司参与制定国家标准1项，团体标准2项，地方标准1项，企业标准4项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司共申请专利34件，取得授权专利29件，其中发明专利授权7件，实用新型专利授权22件，公司所获得的知识产权全部为公司自主知识产权。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>公司的主导产品是半导体级石英坩埚，该产品应用于直拉法半导体级单晶硅规模化生产场景，在单晶硅拉制炉内作为关键“熔体容器”，配合控温系统、真空系统实现硅熔体的稳定保温与单晶硅的定向生长。公司产品纯度高，耐硅熔体腐蚀，热稳定性好，尺寸精度高，可保障拉晶成晶率与稳定性，所产出的高纯度单晶硅（纯度通常需达9N级以上），是制造逻辑芯片、功率芯片、存储芯片、射频芯片及MEMS传感器等核心半导体器件的基础原料。公司在石英制品核心技术研发上持续突破，主要科技成果如下：</p><p class="docx-paragraph">1.公司自主研发的高纯石英热屏成功填补国内技术空白，该产品凭借高耐温、高保温、高纯度特性，加之创新型梯度结构设计，有效解决高温环境下热场不均、杂质迁移等行业难题，构建起对国内同行的技术壁垒，成为半导体石英材料细分领域的技术标杆。</p><p class="docx-paragraph">2.公司自主研发的单晶硅生长用大尺寸石英坩埚成型技术及设备，多个石墨电极均匀布置在内外模筒之间，保证了加热的均匀性，技术水平处于国际先进。</p><p class="docx-paragraph">3.公司首创真空抑制气泡与多级温控技术，突破性降低坩埚内表面气泡密度与热膨胀系数，消除棕色环与位错缺陷，突破高纯石英坩埚制备瓶颈。</p><p class="docx-paragraph">4公司首创双精度（凸起&lt;0.01mm、裂纹&lt;2mm）检测技术，设计多模块化的凸起检测和裂纹检测机构，开发了单晶硅生长用大尺寸石英坩埚检测设备，攻克石英坩埚顶部、内底部检测盲区难题。</p><p class="docx-paragraph">5.公司首创钡涂层强化工艺，提升抗硅液侵蚀性，产品寿命达950h，较行业水平（450h）提升111.11%，提升坩埚利用率，补足产业链短板。</p><p class="docx-paragraph">6.公司首创高纯化工艺，金属杂质含量降至20ppm，低于行业标准（100-200ppm）5-10倍。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司深化与西北工业大学、华北航天工业学院、中国电子材料行业协会的合作，在石英制品核心技术领域成果显著。与西北工业大学联合开发“高纯石英坩埚”，通过优化酸洗液配方等技术，将产品石英杂质含量降至20ppm，突破行业100-200ppm的杂质去除效率瓶颈；同华北航天工业学院共同研发“单晶硅生长用大尺寸石英坩埚生产线智能化技术”，实现全自动清洗、坩埚自动识别、清洗程序自动匹配等功能，为公司节约成本19.80%。</p><p class="docx-paragraph">未来公司将通过与国内外企业和研究机构的合作，加速科技成果的转化和应用，提升整个行业的竞争力，为河北省半导体级石英坩埚行业培养专业人才，进一步推动石英坩埚技术行业的可持续发展。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">7</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">8</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">0人</p></td><td colspan="4"><p class="docx-paragraph">3人</p></td><td colspan="5"><p class="docx-paragraph">5人</p></td><td colspan="3"><p class="docx-paragraph">2人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1人</p></td><td colspan="4"><p class="docx-paragraph">0人</p></td><td colspan="5"><p class="docx-paragraph">8人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">李焕勇</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1972-10</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">副教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">高熔点化合物晶体材料，稀土硫化物红外材料，非氧化物及合金纳米材料</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2022-10-22</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">西北工业大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">陕西省西安市</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">材料学院的副教授、硕士生导师‌</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">技术顾问、省级技术创新中心副主任</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">710000</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">陕西省西安市碑林区友谊西路一二七号南院12号楼3单元201号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">029-88493450</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13572263608</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">lihuanyong@nwpu.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1990-09-01至1994-07-06</p></td><td colspan="9"><p class="docx-paragraph">大连工业大学</p></td><td colspan="4"><p class="docx-paragraph">本科</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1994-09-01至1997-07-20</p></td><td colspan="9"><p class="docx-paragraph">中国科学院长春光学精密机械与物理研究所</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1997-08-06至2006-07-30</p></td><td colspan="9"><p class="docx-paragraph">西北大学化学与材料科学学院</p></td><td colspan="4"><p class="docx-paragraph">讲师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1999-09-01至2003-11-20</p></td><td colspan="9"><p class="docx-paragraph">西北工业大学材料学院</p></td><td colspan="4"><p class="docx-paragraph">博士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2005-06-01至2006-07-30</p></td><td colspan="9"><p class="docx-paragraph">西安交通大学</p></td><td colspan="4"><p class="docx-paragraph">博士后</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2011-11-01至2012-12-30</p></td><td colspan="9"><p class="docx-paragraph">The University of Warwick,UK</p></td><td colspan="4"><p class="docx-paragraph">访问学者</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2006-08-01至2026-02-28</p></td><td colspan="9"><p class="docx-paragraph">西北工业大学材料学院</p></td><td colspan="4"><p class="docx-paragraph">副教授</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">长波红外窗口材料γ-La2S3热压多晶的高温抗氧化机理及热压动力</p></td><td colspan="7"><p class="docx-paragraph">2016.01-2019.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金面上项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">组成元素单质直接气相生长六方纤锌矿结构ZnMgSe 体单晶及生长</p></td><td colspan="7"><p class="docx-paragraph">2011.01-2014.04</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金面上项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">8～14μm 波段高性能红外窗口材料γ-La2S3 块体多晶制备</p></td><td colspan="7"><p class="docx-paragraph">2009.01-2011.12</p></td><td colspan="4"><p class="docx-paragraph">国家科学技术部</p></td><td colspan="4"><p class="docx-paragraph">国家高技术研究发展计划（863）项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">太赫兹产生与探测用碲化锌基电光晶体的制备技术</p></td><td colspan="4"><p class="docx-paragraph">陕西省技术发明奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2020-04-06</p></td><td colspan="4"><p class="docx-paragraph">3</p></td><td colspan="4"><p class="docx-paragraph">陕西省人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">典型II-VI族化合物半导体晶体生长与性能表征</p></td><td colspan="4"><p class="docx-paragraph">陕西省技术发明奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2009-01-21</p></td><td colspan="4"><p class="docx-paragraph">4</p></td><td colspan="4"><p class="docx-paragraph">陕西省人民政府</p></td></tr><tr><td colspan="3"></td><td colspan="4"></td><td colspan="3"></td><td colspan="2"></td><td colspan="4"></td><td colspan="4"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Realization of Fermi level unpinning and high-quality p-type contacts for 2D β-TeO2 by a built-in intercalation</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Materials Today Nano</p></td><td colspan="5"><p class="docx-paragraph">2023</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Influence of NaX (X=Cl, Br, I) additive on phase composition, thermostability and high infrared performances of γ-La2S3 transparent ceramics</p></td><td colspan="6"><p class="docx-paragraph">第一作者和通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Ceramics International</p></td><td colspan="5"><p class="docx-paragraph">2020</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">β-ZnS透明陶瓷的制备及相生成机理</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">材料研究学报</p></td><td colspan="5"><p class="docx-paragraph">2025</p></td><td colspan="2"><p class="docx-paragraph">被EI收录</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种低温烧结稀土硫化物γ-Ln2S3红外透明陶瓷的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201810570348.2</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2021-04-20</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种常温下快速烧结制备金属氧化物织构陶瓷材料的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201910841234.1</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2022-06-28</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种常温下无炉快速烧结制备氧化物陶瓷的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL201910841475.6</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2022-07-26</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国电子材料行业协会石英材料分会</p></td><td colspan="9"><p class="docx-paragraph">委员</p></td><td colspan="6"><p class="docx-paragraph">2024.6-2028.7</p></td></tr><tr><td colspan="5"></td><td colspan="9"></td><td colspan="6"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>李焕勇作为西北工业大学材料学博士、副教授，深耕高熔点化合物晶体材料、稀土硫化物红外材料、非氧化物及合金纳米材料领域20余年，始终面向国家重大战略需求与行业“卡脖子”技术痛点开展攻关，在高性能高温材料基础研究与技术转化领域形成了系统性、原创性的成果积累，为我国高熔点化合物晶体材料领域技术突破与应用落地作出突出贡献。</p><p class="docx-paragraph">1.在科研项目攻关方面，他作为核心负责人牵头承担国家级、省部级等重点科研项目十余项，形成了从基础原理探索到工程化应用验证的完整研究体系，累计争取科研经费超千万元，为相关领域技术迭代提供了持续的项目支撑。</p><p class="docx-paragraph">2.在学术研究与专利布局方面，他围绕高熔点化合物晶体材料的制备工艺、性能优化等核心方向发表学术论文20余篇，其中10余篇被SCI、EI等国际权威检索数据库收录，同时获得国家发明专利授权15项，覆盖高纯度石英材料制备、高温杂质抑制、晶体生长工艺优化等多个核心应用场景，有效提升了我国高熔点晶体材料的自主可控水平。</p><p class="docx-paragraph">作为半导体级高端石英坩埚创新创业团队的核心负责人，他将积累20余年的高熔点化合物晶体研究成果向光伏、半导体产业延伸，牵头攻克石英坩埚分层梯度熔融、杂质迁移抑制等关键技术，为打破国外高端石英坩埚垄断、支撑新能源与集成电路产业链自主安全提供了核心技术支撑，实现了基础研究成果向产业价值的高效转化。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李焕勇</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1972-10</p></td><td><p class="docx-paragraph">612132197210014050</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副教授</p></td><td><p class="docx-paragraph">半导体材料</p></td><td><p class="docx-paragraph">材料合成与加工工艺</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">西北工业大学/副教授</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">王平</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1965-01</p></td><td><p class="docx-paragraph">610421196501070512</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">半导体材料</p></td><td><p class="docx-paragraph">半导体加工技术</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">中航工业西安庆安航空电气有限责任公司/技术工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">贾建亮</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1981-06</p></td><td><p class="docx-paragraph">130503198106183039</p></td><td><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">电子元器件用金属功能材料</p></td><td><p class="docx-paragraph">半导体加工技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">叶邵华</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1981-06</p></td><td><p class="docx-paragraph">44022119810625772x</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">大功率半导体器件</p></td><td><p class="docx-paragraph">应用化学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">周志武</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1968-02</p></td><td><p class="docx-paragraph">420111196802124153</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">半导体材料</p></td><td><p class="docx-paragraph">无机固体化学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">楼刚刚</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-10</p></td><td><p class="docx-paragraph">330724198610072610</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">大功率半导体器件</p></td><td><p class="docx-paragraph">材料化学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术负责人</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">李宇轩</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1990-08</p></td><td><p class="docx-paragraph">120109199008240537</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">半导体材料</p></td><td><p class="docx-paragraph">电力系统及其自动化</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">孙宇</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-05</p></td><td><p class="docx-paragraph">131028199105162012</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">大功率半导体器件</p></td><td><p class="docx-paragraph">材料合成与加工工艺</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">王满</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1998-01</p></td><td><p class="docx-paragraph">131028199801242016</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">大功率半导体器件</p></td><td><p class="docx-paragraph">材料检测与分析技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">孟营</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1987-04</p></td><td><p class="docx-paragraph">131028198704076824</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">助理工程师</p></td><td><p class="docx-paragraph">电子元器件用金属功能材料</p></td><td><p class="docx-paragraph">材料检测与分析技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司/技术工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>廊坊赫尔劳斯太阳能光伏有限公司半导体级高端石英坩埚创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-02</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>220.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>160.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>R人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>R集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>石英坩埚、单晶硅材料、高纯度、大尺寸、光伏太阳能、新能源</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>公司高度重视人才队伍的建设，持续推进“英才计划”，进一步优化人才引进机制，吸引更多行业优秀人才。未来三年内将引进硕士或中级以上职称专业技术人员4人；加大人才培养力度，提升团队专业能力，计划培养企业人员4-6人，形成专业覆盖全面、梯队结构合理、老中青有机结合的研发与管理团队，为核心技术研发与产品工艺优化提供坚实人才支撑，高效推进技术开发与成果转化工作。此外，公司还通过内部培养和外部引进相结合的方式，不断充实研发队伍，为技术创新提供持续的人才动力。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>预计解决产业关键共性技术难题，开发4项核心工艺技术，包括分层布料梯度熔融技术、杂质迁移抑制技术、大尺寸坩埚高精度成型技术等，相关技术指标达到国际先进水平。发表相关领域学术论文3篇，申请专利8件，其中发明专利4件。参与制定3项半导体级石英坩埚技术标准，构建技术壁垒。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>本项目执行过程中，利用廊坊赫尔劳斯太阳能光伏有限公司的资金、设备、场地等物质技术条件，结合柔性引进人才（李焕勇团队）的技术成果共同完成的发明创造、技术成果、学术成果等，由廊坊赫尔劳斯太阳能光伏有限公司与李焕勇团队所属单位（西北工业大学）共同所有，双方另行签订协议约定使用、收益分配及转化相关权益，其中专利申请权、所有权双方各占50%，成果转化收益按照双方贡献比例协商分配。柔性引进人才在项目启动前已取得的、与本项目相关的原有技术成果、专利等知识产权归属原权利人所有。项目结项后，双方基于共有技术开展的后续改进成果，由投入研发资源的一方所有，双方共同投入的另行约定归属。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1.项目提出的背景和意义</p><p class="docx-paragraph">半导体级石英坩埚是承载高温硅熔体的核心基础材料，直接决定单晶硅纯度、结晶质量及芯片良率，是半导体制造产业链上游不可或缺的关键器件。我国半导体级高端石英坩埚长期依赖进口，32英寸及以上产品进口占比超40%，价格是国产中低端产品的5-8倍，严重制约下游产业发展。河北省作为京津冀半导体产业集群重要承载地，当前企业以22-28英寸中低端产品为主，32英寸及以上产品稀缺，无法满足区域内12英寸硅片厂商配套需求，产业链自主安全风险突出，高端产品国产化替代迫在眉睫。</p><p class="docx-paragraph">本项目突破半导体级高端石英坩埚核心技术，将填补我省32英寸及以上产品技术空白，达产后可实现年销售收入超4000万元，带动上下游就业超100人，对保障我国新能源与集成电路产业链自主安全、推动区域电子信息产业升级具有重要战略意义。</p><p class="docx-paragraph">2.项目概述</p><p class="docx-paragraph">研究内容：项目围绕半导体级石英坩埚“高纯度、大尺寸、长寿命、高可靠”四大核心需求，重点开展三大方向技术攻关：①高纯度关键技术，突破分层布料梯度熔融、杂质迁移抑制工艺；②大尺寸与长寿命技术，攻克大尺寸高精度成型、梯度壁厚热场适配、耐硅熔体腐蚀技术；③综合质量监控技术，开发多模态缺陷检测、精准杂质测定、生产过程在线监测系统。</p><p class="docx-paragraph">合作分工：廊坊赫尔劳斯公司负责产业化场地、生产设备、资金投入及市场推广；李焕勇团队负责核心技术研发、工艺参数优化、检测体系搭建；双方联合开展中试验证与量产线调试。</p><p class="docx-paragraph">与我省重点产业领域战略发展方向的相关性：项目属于河北省重点发展的电子信息核心产业领域，直接支撑京津冀半导体产业集群配套能力建设，契合我省“推动产业链供应链自主可控”“打造千亿级电子信息产业集群”的战略目标。</p><p class="docx-paragraph">3.项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">经济指标：项目相关技术成果推广应用后，可帮助下游半导体、光伏企业进一步降低芯片制造成本，预计每年为下游产业创造间接经济效益超10亿元；同时将带动本地高纯石英砂提纯、专用装备制造、精密检测仪器等上下游产业发展，预计5年内可吸引10家以上配套企业落地廊坊，形成百亿级石英材料产业集群，为区域新增产业产值超20亿元，创造税收超2亿元，有力支撑河北省电子信息产业千亿集群建设。</p><p class="docx-paragraph">技术指标：金属杂质总含量≤10ppb，较行业常规水平降低5-10倍，缺陷检测精度达0.01mm级，杂质检测精度达ppb级，检测覆盖率100%；生产能耗较行业平均降低15%，原料利用率提升至85%以上，核心性能达到国际先进水平。</p><p class="docx-paragraph">二、申报单位、人才（团队）情况</p><p class="docx-paragraph">1.申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">公司位于廊坊市大厂回族自治县高新技术产业开发区，现有科研办公用房880平方米，其中试验用房650平方米，办公用房230平方米；配备研发仪器设备18台（套），原值285.1万元，中试设备21台（套），原值1696.77万元，覆盖从原料检测到中试生产全流程研发需求。公司现有固定研发人员32人，其中高级职称3人，中级职称10人，本科及以上学历16人，形成结构合理的研发梯队。</p><p class="docx-paragraph">公司营业收入呈现高速增长态势，近两年平均增长率达63.10%，每年研发经费占销售收入比例5.6%以上，2025年研发费用投入总额540.48万元，具备项目实施的资金保障能力。</p><p class="docx-paragraph">2.申报单位情况</p><p class="docx-paragraph">公司是国内半导体级石英坩埚行业重点骨干企业，2025年主导产品国内外细分市场占有率达12.52%，全国排名第三，河北省内排名第一，建有河北省半导体级石英坩埚技术创新中心、廊坊市工业设计中心、廊坊市半导体用单晶硅生长技术研发中心，是国家级高新技术企业、河北省专精特新中小企业。</p><p class="docx-paragraph">公司每年开展研发项目6-7项，累计申请专利34件，取得授权专利29件，其中发明专利7件、实用新型专利22件，全部为自主知识产权；参与制定国家标准1项、团体标准2项、地方标准1项、企业标准4项。公司在石英制品核心技术领域形成6项独创成果，多项自主研发技术填补国内技术空白。</p><p class="docx-paragraph">公司与西北工业大学联合开发“高纯石英坩埚”技术，将杂质含量降至20ppm，突破行业瓶颈；与华北航天工业学院共同研发生产线智能化技术，实现全自动清洗等功能，节约成本19.8%。</p><p class="docx-paragraph">3.项目负责人及团队核心成员基本情况</p><p class="docx-paragraph">项目核心团队共10人，具备“基础研究+技术转化+产业落地”全链条能力：</p><p class="docx-paragraph">（1）李焕勇（团队负责人）：西北工业大学材料学博士、副教授，深耕高熔点化合物晶体材料领域20余年，是国内石英材料研究资深专家。先后主持国家自然科学基金项目3项、国家863项目2项，发表学术论文20余篇，获国家发明专利授权15项，在石英材料高温制备、性能调控领域拥有深厚技术积累。</p><p class="docx-paragraph">（2）王平（核心成员）：高级工程师，毕业于西北工业大学自动控制系航空电气专业，曾任职于中航工业陕西秦岭航空电气，获中航工业部级二等功，参与4项石英坩埚耐腐蚀、高纯度技术研发项目，具备丰富工艺控制经验。</p><p class="docx-paragraph">4.与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">在石英制品及半导体材料领域，公司聚焦规模化、智能化制造体系搭建，布局10条全自动制埚生产线、2条全自动清洗线及100余台套晶圆生产设备，形成从石英坩埚核心制备到晶圆加工的全流程产能布局。公司以“大尺寸石英坩埚自动加工设备”等核心发明专利为支撑，推动工艺持续升级，半导体级石英坩埚产品单次拉晶寿命达950小时，核心性能指标显著优于行业平均水平，规模化生产与高端品质兼具，奠定产品市场竞争硬实力。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1.项目拟解决的关键技术和问题</p><p class="docx-paragraph">（1）破解高纯度制备共性难题。通过分层布料梯度熔融技术优化、杂质迁移抑制工艺创新，解决内层纯度提升与外层性能保障的平衡难题，降低金属杂质含量。</p><p class="docx-paragraph">（2）突破大尺寸与长寿命核心瓶颈。通过大尺寸成型工艺优化、梯度壁厚与热场适配设计、耐硅熔体腐蚀技术研发，实现大尺寸产品成型精度提升、热稳定性增强及使用寿命延长，满足单晶硅规模化生产需求。</p><p class="docx-paragraph">2.人才（团队）可提供的相关技术支撑及其途径</p><p class="docx-paragraph">李焕勇团队可提供高熔点材料熔融机理、杂质调控、热场仿真等核心技术支撑，通过派驻2名研发人员驻厂、每月开展技术研讨，开放西北工业大学材料实验室使用权限等方式，将实验室技术向产业化工艺转化；王平团队负责自动化控制系统、热场优化、检测设备开发等工程化技术落地，保障工艺稳定性；公司研发团队负责中试与量产工艺迭代，实现技术成果快速转化。</p><p class="docx-paragraph">3.项目的基本情况介绍</p><p class="docx-paragraph">项目核心团队共10人，负责人李焕勇为西北工业大学材料学博士、副教授，深耕高熔点化合物晶体材料领域20余年，是国内石英材料研究资深专家。项目围绕“高纯度、大尺寸、长寿命、高可靠”四大核心需求，重点布局三大研究方向系统性突破行业共性技术难题：一是高纯度关键技术，二是大尺寸与长寿命技术，三是综合质量监控技术，聚焦半导体级高端石英坩埚“卡脖子”技术攻关，旨在破解国内光伏与集成电路产业核心耗材依赖进口的行业痛点，实现高端石英坩埚的自主可控与国产化替代。</p><p class="docx-paragraph">4.国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">国际龙头已实现内层8N+纯度、合成坩埚零气泡，国内虽突破32英寸量产，但受制于高纯石英砂进口依赖，存在深度除杂短板，高温下杂质迁移及方石英结晶问题未解决，需攻关精准掺杂及绿色提纯技术。国外32英寸以上产品规模化供应，热形变士0.75mm、寿命超600小时，国内仅少数企业能量产32英寸，36英寸仍处于研发阶段，模具变形、壁厚不均等问题突出，寿命300-400小时，需优化大尺寸模具、攻关三区PID热场调控及梯度耐腐蚀涂层技术，破解40%高端产品进口依赖。</p><p class="docx-paragraph">本项目通过攻克高纯度控制、大尺寸制备、长寿命保障等关键共性技术，形成分层布料梯度熔融、大尺寸成型、杂质精准检测等一系列核心技术成果，填补国内相关技术空白，推动行业技术水平从“跟跑”向“领跑”跨越，助力国产石英坩埚在纯度、尺寸、寿命等核心指标上对标国际先进水平。</p><p class="docx-paragraph">未来行业技术发展呈现三大趋势：一是大尺寸化，36英寸及以上产品逐步进入研发验证阶段；二是特种化，适配第三代半导体生长的高耐温坩埚需求快速增长；三是绿色智能化，低排放工艺与全流程数字化管控成为行业主流。</p><p class="docx-paragraph">5.项目预期达到的技术性能指标</p><p class="docx-paragraph">产品金属杂质总含量≤10ppb，较行业常规水平降低5-10倍，缺陷检测精度达0.01mm级，杂质检测精度达ppb级，检测覆盖率100%；生产能耗较行业平均降低15%，原料利用率提升至85%以上，核心性能达到国际先进水平。</p><p class="docx-paragraph">6.项目技术风险分析与对策</p><p class="docx-paragraph">（1）大尺寸成型工艺不稳定风险，通过采用拓扑优化高强度合金模具设计，配套智能温控系统，建立成型工艺参数数据库，可将模具变形量控制在有效范围内。</p><p class="docx-paragraph">（2）涂层与基体结合力不足风险，通过开发梯度涂层工艺，开展万次高温腐蚀测试验证，建立涂层性能快速评估方法，可保障涂层结合力提升。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1.项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">工艺路线：高纯石英砂分选→多组分精准配料→分层布料→真空电弧离心成型→梯度熔融→氢氧焰气炼涂覆→钡基涂层制备→高温晶化→多模态缺陷检测→杂质分析。</p><p class="docx-paragraph">研究手段：采用有限元仿真模拟热场分布与应力变化，通过动态腐蚀测试表征耐蚀性能，整合线阵相机、超声探头、激光位移传感器等多维度检测数据，搭建中试试验线开展工艺参数优化。</p><p class="docx-paragraph">2.项目的前期准备情况</p><p class="docx-paragraph">公司与西北工业大学联合开发“高纯石英坩埚”，通过优化酸洗液配方等技术，将产品石英杂质含量降至20ppm，突破行业100-200ppm的杂质去除效率瓶颈。公司和华北航天工业学院共同研发“单晶硅生长用大尺寸石英坩埚生产线智能化技术”，实现全自动清洗、坩埚自动识别、清洗程序自动匹配等功能，为公司节约成本19.80%。</p><p class="docx-paragraph">3.项目的具体实施方案</p><p class="docx-paragraph">公司提供生产场地、量产设备、市场渠道，派驻8名研发与生产人员，负责产业中试工艺迭代，总投资金额220万元。李焕勇团队负责核心技术研发、工艺参数优化，派驻2名研发人员驻场，开放西北工业大学材料实验室，提供技术咨询与指导。</p><p class="docx-paragraph">4.项目的实施进度</p><p class="docx-paragraph">（1）2026年2月-2026年8月：完成详细市场调研和技术现状分析，确定研发核心方向，搭建项目团队，制定详细研发计划，设计高纯度关键技术方案并进行试验。</p><p class="docx-paragraph">（2）2026年9月-2027年12月：启动检测技术理论研究，探索新检测方法，检测技术研究取得理论突破。</p><p class="docx-paragraph">（3）2028年1月-2028年8月：基于前期试验优化实验方案和路线，进行模拟检测测试。</p><p class="docx-paragraph">（4）2028年9月-2029年2月：对样品进行全面性能检测，根据检测结果改进技术和设备，进一步优化工艺路线和技术参数，准备项目验收。</p><p class="docx-paragraph">5.项目知识产权状况</p><p class="docx-paragraph">项目执行期内计划新申请发明专利4项，实用新型专利4项，由廊坊赫尔劳斯与西北工业大学共同所有，建立知识产权保护机制，明确保密责任，核心技术人员签订竞业禁止协议，防止技术泄密。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1.人才培养、团队建设目标</p><p class="docx-paragraph">公司高度重视人才队伍的建设，未来三年内将引进硕士或中级以上职称专业技术人员4人；加大人才培养力度，提升团队专业能力，计划培养企业人员4-6人，形成专业覆盖全面、梯队结构合理、老中青有机结合的研发与管理团队，为核心技术研发与产品工艺优化提供坚实人才支撑。</p><p class="docx-paragraph">2.项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">产品性能达到国际先进水平，价格较进口产品低45%，交付周期仅为进口的1/4，具备显著的性价比优势；项目技术填补我省32英寸及以上产品空白，依托京津冀区位优势，物流成本较华东企业低15%，具备明显的区域竞争优势。</p><p class="docx-paragraph">3.项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">2025年国内半导体级石英坩埚市场规模达18.6亿元，同比增长14.2%，其中32英寸及以上高端产品占比58.4%，市场缺口超40万只。预计到2030年市场规模将增至42.2亿元，高端产品占比提升至72.6%，市场空间广阔。</p><p class="docx-paragraph">本项目相关工艺技术具备成熟的产业化基础，可成为京津冀地区核心半导体级石英坩埚供应基地。未来随着产品研发与量产，预计2030年市场占有率可达20%。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">1.经济效益</p><p class="docx-paragraph">项目相关技术成果推广应用后，可帮助下游半导体、光伏企业进一步降低芯片制造成本，预计每年为下游产业创造间接经济效益超10亿元；同时将带动本地高纯石英砂提纯、精密检测仪器等上下游产业发展，预计5年内可吸引10家以上配套企业落地廊坊，形成百亿级石英材料产业集群，为区域新增产业产值超20亿元，有力支撑河北省电子信息产业千亿集群建设。</p><p class="docx-paragraph">2.社会效益</p><p class="docx-paragraph">（1）填补我省32英寸及以上半导体级石英坩埚技术空白，突破国外技术垄断，保障京津冀半导体产业链自主安全。</p><p class="docx-paragraph">（2）带动上下游高纯石英砂加工、高端装备制造、半导体器件生产等产业发展，直接创造就业岗位100个以上。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">廊坊赫尔劳斯太阳能光伏有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">全部研究任务由申报单位独自承担，没有合作单位。</p></td><td><p class="docx-paragraph">李焕勇</p></td><td><p class="docx-paragraph">220.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">160.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1.预计开发4项核心工艺和技术，转化科技成果2项。</p><p class="docx-paragraph">2.发表相关领域论文2篇。</p><p class="docx-paragraph">3.申请专利8件，其中发明专利4件。</p><p class="docx-paragraph">4.参与制定2项技术标准，构建技术壁垒。</p><p class="docx-paragraph">5.培养高水平创新团队1个。</p><p class="docx-paragraph">6.培养技术人员6人。</p><p class="docx-paragraph">7.引进专业人才4人。</p><p class="docx-paragraph">8.主持企业项目8项。</p></td><td><p class="docx-paragraph">1.预计开发1项核心工艺和技术。</p><p class="docx-paragraph">2.申请专利2件，其中发明专利1件。</p><p class="docx-paragraph">3.培养技术人员2人。</p><p class="docx-paragraph">4.引进专业人才1人。</p><p class="docx-paragraph">5.主持企业项目3项。</p></td><td><p class="docx-paragraph">1.预计开发1项核心工艺和技术，转化科技成果1项。</p><p class="docx-paragraph">2.发表相关领域论文1篇。</p><p class="docx-paragraph">3.申请专利3件，其中发明专利2件。</p><p class="docx-paragraph">4.参与制定1项标准，构建技术壁垒。</p><p class="docx-paragraph">5.培养技术人员2人。</p><p class="docx-paragraph">6.引进专业人才2人。</p><p class="docx-paragraph">7.主持企业项目3项。</p></td><td><p class="docx-paragraph">1.预计开发2项核心工艺和技术，转化科技成果1项。</p><p class="docx-paragraph">2.发表相关领域论文1篇。</p><p class="docx-paragraph">3.申请专利3件，其中发明专利1件。</p><p class="docx-paragraph">4.参与制定1项标准，构建技术壁垒。</p><p class="docx-paragraph">5.培养高水平创新团队1个。</p><p class="docx-paragraph">6.培养技术人员2人。</p><p class="docx-paragraph">7.引进专业人才1人。</p><p class="docx-paragraph">8.主持企业项目2项。</p></td></tr><tr><td rowspan="11"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">申请实用新型专利（件）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">制定企业标准（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新技术（项）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">培养高层次产业技术创新团队（个）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培训企业技术人员（人）</p></td><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">引进专业技术人员（人）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">1.团队负责人身份、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">11.1团队负责人承担主要科研任务证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">11.2团队负责人获得主要科研学术奖励证明材料</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">11.3团队负责人发表代表性论文证明材料</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">2.与团队负责人引进类型相对应的材料</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">6.1团队负责人引进协议证明材料</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">6.2团队核心成员王平引进协议证明材料</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">6.3团队其他核心成员引进协议证明材料</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">3.团队负责人入选的国家或省部级人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">5.团队负责人申请及获授权的发明专利证明材料</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">9.团队申请及获授权知识产权证明</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">7.团队承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">8.团队重要获奖证书</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">10.企业资质</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">11.4团队核心成员王平身份、学历职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">11.5团队参与制定国家标准材料</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">11.6公司获得其他知识产权材料</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">11.7公司产学研合作协议材料</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">11.8公司主持制定其他标准材料</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">11.9公司获得荣誉证书材料</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">公司营业执照和公司章程</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -84,6 +84,20 @@ class EvaluationStorage:
             if result and result.evaluation_id == evaluation_id:
                 return result
         return None
+
+    async def set_chat_ready(self, evaluation_id: str, chat_ready: bool) -> bool:
+        """按评审记录ID更新 chat_ready 状态"""
+        files = list(self.storage_dir.glob("*.json"))
+        for file in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
+            with open(file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("evaluation_id") != evaluation_id:
+                continue
+            data["chat_ready"] = chat_ready
+            with open(file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+            return True
+        return False
     
     async def get_latest(self, project_id: str) -> Optional[EvaluationResult]:
         """获取项目最新的评审结果

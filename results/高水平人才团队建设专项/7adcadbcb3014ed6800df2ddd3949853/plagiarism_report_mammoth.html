@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 7adcadbcb3014ed6800df2ddd3949853.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：7adcadbcb3014ed6800df2ddd3949853.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,980</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>7adcadbcb3014ed6800df2ddd3949853.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>河北华通线缆集团股份有限公司高导热氮化硅陶瓷基板技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北华通线缆集团股份有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>李晓雷</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>唐山市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-01</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-22</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>河北华通线缆集团股份有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>唐山市丰南经济开发区华通大街</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>9113020074017492XD</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-唐山市-丰南区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2002-06-21</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>51152.48万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>张文东</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>13703250155</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>18903250155</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>刘艳平</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>18903250155</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北华通线缆集团股份有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>103124070406</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国农业银行唐山丰南支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>50704001040011709</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>1138人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>213人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>83人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>R</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>R</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>丰南陶瓷产业集群</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>708610.54</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>634684.15</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>45</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>3.1</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司厂区占地面积 15 万平方米，拥有进口、国产生产设备 400 多台套，检测设备200多台套。2021年至2024年之间公司投资7000万元，对现有中试基地进行改扩建，增加管缆、装备试验分中心，形成了系列研发能力。目前已经拥有三大板块产品业内最先进的实验检测仪器和试制设备，同时完善了辐照技术中心、CNAS实验室等中试平台，建设了华北唯一的燃烧是实验室。建有国家级企业技术中心1个，国家级CNAS试验室2个，省级工程技术研究中心1个，省级技术创新中心2个，省级工业设计中心2个，企业技术中心2个，博士后创新实践基地1个，是院士合作重点单位。现有用于电气性能测试、物理机械性能测试、声学性能测试等仪器设备118台套，检测站5个，辐照技术中心1个。可用于井下模拟试验、海洋声学模拟试验、产品可靠性分析等平台5个。建有10万级净化室3个，导体、橡胶塑料配料、挤出中试线10条，新建压电陶瓷基片试制线1条，氮化硅基板中试线1条，拥有准静态dd33测量仪、超声元件分析仪，激光粒度仪等仪。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>先后主持和参与起草了国际、国家和行业标准制定20项；完成了8项国家及省部委科技研发任务；累计取得专利技术369项；通过了20个国家的体系认证</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>近几年公司与西安交通大学、哈尔滨理工大学、华北理工大学、河北工业大学等多家院校合作研发。与天津大学合作开展氮化硅高导热基片技术及产业化项目研究，完善原料处理、成型、烧结等制备工艺，制定高导热氮化硅基片生产工艺文件。近三年先后引进转化科研院所专利技术并实施转化5项，转化技术中心科技成果30多项。为唐山市中试试验基地，河北省创新联合体。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>积极开展国际科技合作，先后与日本古河电工、理研电线、美国通用等多家知名企业开展科技合作，被命名为国际科技合作基地。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">7</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">1人</p></td><td colspan="4"><p class="docx-paragraph">4人</p></td><td colspan="5"><p class="docx-paragraph">4人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">2人</p></td><td colspan="5"><p class="docx-paragraph">6人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">李晓雷</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1969-11</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">材料学</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2024-01-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">天津大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">天津市津南区雅观路135号</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">天津大学材料学院无机非金属材料系副主任及先进陶瓷研究所副所长</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">高级技术顾问</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">063300</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省唐山市丰南经济开发区运河东路</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">18903250155</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">18903250155</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">huatongxianlan@126.com</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>R国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>□国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1992-06-01至1996-07-01</p></td><td colspan="9"><p class="docx-paragraph">化工部天津化工研究院</p></td><td colspan="4"><p class="docx-paragraph">无机材料研究室技术人员；</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1996-09-01至2003-07-01</p></td><td colspan="9"><p class="docx-paragraph">天津大学</p></td><td colspan="4"><p class="docx-paragraph">材料学专业 研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2003-08-01至2026-02-01</p></td><td colspan="9"><p class="docx-paragraph">天津大学材料学院</p></td><td colspan="4"><p class="docx-paragraph">历任博士后、副教授、教授；天津大学材料学院无机非金属材料系副主任及先进陶瓷研究所副所长</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">耐高温超低导热多级孔莫来石纤维类气凝胶复合材料研究</p></td><td colspan="7"><p class="docx-paragraph">2019.01-2020.12</p></td><td colspan="4"><p class="docx-paragraph">教育部联合基金管理办公室</p></td><td colspan="4"><p class="docx-paragraph">装备预研教育部联合基金项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">纳米超级隔热材料的研究及在节能领域的应用研究</p></td><td colspan="7"><p class="docx-paragraph">2017.01-2019.12</p></td><td colspan="4"><p class="docx-paragraph">天津市科学技术委员会</p></td><td colspan="4"><p class="docx-paragraph">天津市科技计划项目</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">隔热气凝胶材料的工作机理和室内研制</p></td><td colspan="7"><p class="docx-paragraph">2023.01-2025.12</p></td><td colspan="4"><p class="docx-paragraph">国家石油天然气管网集团有限公司科学技术研究总院分公司</p></td><td colspan="4"><p class="docx-paragraph">无</p></td><td><p class="docx-paragraph">负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">压电陶瓷的组结构与性能优化新技术</p></td><td colspan="4"><p class="docx-paragraph">天津市技术发明奖</p></td><td colspan="3"><p class="docx-paragraph">三等奖</p></td><td colspan="2"><p class="docx-paragraph">2018-03-20</p></td><td colspan="4"><p class="docx-paragraph">2</p></td><td colspan="4"><p class="docx-paragraph">天津市人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">硅凝胶产业化关键技术开发及其在动力电池热防护中的应用</p></td><td colspan="4"><p class="docx-paragraph">天津市技科技进步</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2024-04-10</p></td><td colspan="4"><p class="docx-paragraph">3</p></td><td colspan="4"><p class="docx-paragraph">天津市人民政府</p></td></tr><tr><td colspan="3"></td><td colspan="4"></td><td colspan="3"></td><td colspan="2"></td><td colspan="4"></td><td colspan="4"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"></td><td colspan="6"></td><td colspan="5"></td><td colspan="5"></td><td colspan="2"></td></tr><tr><td colspan="2"></td><td colspan="6"></td><td colspan="5"></td><td colspan="5"></td><td colspan="2"></td></tr><tr><td colspan="2"></td><td colspan="6"></td><td colspan="5"></td><td colspan="5"></td><td colspan="2"></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种多孔陶瓷表面氮化硅基涂层的制备方法</p></td><td colspan="5"><p class="docx-paragraph">201110440427.X</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2018-08-18</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">添加PMMA造孔剂制备0-Sialon多孔陶瓷的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL 2013 1 0664869.1</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2015-12-30</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">溶胶凝胶技术掺杂改性钛酸锶钡材料的方法</p></td><td colspan="5"><p class="docx-paragraph">Z 2011 1 0143465.9</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2013-04-03</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国电子元件协会电子陶瓷与器件分会</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">2023年11月至2028年11月</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国核学会核石墨及碳材料测试与应用分会</p></td><td colspan="9"><p class="docx-paragraph">理事</p></td><td colspan="6"><p class="docx-paragraph">2023年11月至2028年11月</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国复合材料学会航天复合材料及应用专业委员会</p></td><td colspan="9"><p class="docx-paragraph">委员</p></td><td colspan="6"><p class="docx-paragraph">2023年11月至2028年11月</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>李晓雷，天津大学材料学专业博士导师。主要研究方向透波材料、高温防隔热材料、电子功能陶瓷。曾参与国家攻关(863，973)项目12项，国家自然科学基金课题 19项，国防军工配套项目23项，省部级基金课题44项，横向课题50余项，取得了氧化锆-氧化硅复合气凝胶的制备方法， 凝胶注模制备O-Sialon多孔材料及制备方法等专利技术。</p><p class="docx-paragraph">主要业绩如下：</p><p class="docx-paragraph">1.主持过国家、省级重大项目5项：</p><p class="docx-paragraph">（1）2019-2020年，军科委创新特区项目，项目名称：氮化硅支撑材料制造技术研究，项目编号：19-163-18-ZT-013-008-01；</p><p class="docx-paragraph">（2）2022-2023年，中央引导地方科技发展专项资金：半导体制造用高精密陶瓷器件的关键技术研究，项目编号：YDZX2021151；</p><p class="docx-paragraph">（3）2019-2020年，航天科技集团合作项目：氮化硅陶瓷产品的密封和粘接研究。</p><p class="docx-paragraph">（4）2017-2019年，天津市重点研发计划项目：纳米超级隔热材料的研究及在节能领域的应用研究，项目编号：17YFZCGX00600</p><p class="docx-paragraph">（5）2019-2020年，装备预研教育部联合基金：耐高温超低导热多级孔莫来石纤维类气凝胶复合材料，项目编号：6141A02022259</p><p class="docx-paragraph">2.研究成果：</p><p class="docx-paragraph">李晓雷教授研究方向为氮化硅高导热陶瓷、氮化硅天线罩材料、先进结构功能一体化陶瓷。承担多项国防新材料专项课题和教育部攻关课题。发展了氮化硅陶瓷低温烧结方法，建立了梯度氮化硅材料制备新方法，开发了耐高温气凝胶纳米超级隔热材料。具体成果如下：</p><p class="docx-paragraph">（1）研发出了氮化硅高导热基片制造新技术路线，达到了热导率≥100 W/(m.K)，抗弯强度≥750 MPa的优异性能，并实现了中试生产；</p><p class="docx-paragraph">（2）开发了以低廉无机盐为原料的耐高温高性能气凝胶隔热材料，具有低导热系数（＜0.03W/m·K）、耐高温性（~1200℃）、低密度（＜0.30 g/cm3）等特点。</p><p class="docx-paragraph">（3）开发了具有优良压电性的BNT-BKT-BT三元体系无铅压电陶瓷并将此类材料应用在超声波传感器、执行器产品，获得天津市技术发明奖三等奖。</p><p class="docx-paragraph">3.知识产权：授权专利10余项国内外重要期刊发表论文50余篇。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">课题组前期开展了具有优异力学性能的高导热氮化硅陶瓷基板制备技术的研究。已经完成了高导热氮化硅陶瓷配方体系的探索和与之匹配的制备技术的开发，所制备的氮化硅陶瓷兼具高热导率和优异的力学性能，其热导率可达100W/（m·K），断裂韧性可达8.2MPa˙m1/2，弯曲强度可达840MPa。课题组在高导热氮化硅技术领域具备坚实的理论基础和较为充分的技术储备，可为该类产品的产业化开发提供支持。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">李晓雷</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1969-11</p></td><td><p class="docx-paragraph">120106196911081015</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">高性能功能陶瓷</p></td><td><p class="docx-paragraph">特种功能无机非金属材料</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">天津大学材料学院无机非金属材料系副主任及先进陶瓷研究所副所长</p></td><td><p class="docx-paragraph">国家重点学科、重点实验室学术技术带头人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">林彬</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1963-05</p></td><td><p class="docx-paragraph">120103196305072611</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">高性能功能陶瓷</p></td><td><p class="docx-paragraph">无机陶瓷材料(包括耐火材料等)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">天津大学材料学院教授</p></td><td><p class="docx-paragraph">国家重点学科、重点实验室学术技术带头人</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">刘艳平</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1978-12</p></td><td><p class="docx-paragraph">130229197812187021</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">数控加工技术及其设备</p></td><td><p class="docx-paragraph">非金属加工工艺</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">游佳豪</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1995-03</p></td><td><p class="docx-paragraph">130183199503022532</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">高性能功能陶瓷</p></td><td><p class="docx-paragraph">特种功能无机非金属材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">王维兴</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1981-03</p></td><td><p class="docx-paragraph">210423198103130310</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">其他正高级</p></td><td><p class="docx-paragraph">高性能功能陶瓷</p></td><td><p class="docx-paragraph">特种功能无机非金属材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">李敏娜</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1990-08</p></td><td><p class="docx-paragraph">130984199008101540</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">大功率半导体器件</p></td><td><p class="docx-paragraph">半导体测试技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">李君</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-04</p></td><td><p class="docx-paragraph">230119198704071910</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型高分子功能材料</p></td><td><p class="docx-paragraph">材料合成与加工工艺</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">田志明</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1984-09</p></td><td><p class="docx-paragraph">230125198409295011</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">新型传感器</p></td><td><p class="docx-paragraph">特种功能无机非金属材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">郭巍</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1979-10</p></td><td><p class="docx-paragraph">210726197910036735</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副教授</p></td><td><p class="docx-paragraph">先进制造系统</p></td><td><p class="docx-paragraph">数控技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">吴健</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1987-12</p></td><td><p class="docx-paragraph">120225198712062974</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">高性能功能陶瓷</p></td><td><p class="docx-paragraph">无机陶瓷材料(包括耐火材料等)</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>河北华通线缆集团股份有限公司高导热氮化硅陶瓷基板技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-01</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>210.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>150.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>R新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>半导体功率器件关键封装材</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>建设一支由国家高层次人才领衔、高级职称科研人员、工程技术人员及实验工艺人员组成的科技团队，年轻化、专业化、国际化、极具创新力的高素质从事中试工作的人才团队，在研究院持续研发、孵化、集成技术成果的同时，新型材料产业的良性运行和持续发展提供人才保障。培养针对河北省功能性陶瓷材料专业技术人才2名，为公司乃至全省的建设发展提供有力的智力支持。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>建设专用的中试平台，提高自主研发能力和技术装备水平。两年内，研究院新增中试用房面积500平方米，购置5万以上大型科研设备10台（套）。</p><p class="docx-paragraph">1.转化应用科技成果1项并实现销售收入1000万元；</p><p class="docx-paragraph">2.申请与项目相关的发明专利2项，实用新型专利2项，制定企业标准1项；</p><p class="docx-paragraph">3.合作发表与项目相关的学术期刊论文1篇；</p><p class="docx-paragraph">4.团队成员中的企业人员主持企业科研项目2项。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>天津大学和河北华通线缆集团股份有限公司可共享研究成果。项目合作研究开发的知识产权归属河北华通线缆集团股份有限公司。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目提出的背景、依据、必要性、紧迫性及科技、经济和社会意义</p><p class="docx-paragraph">在我国“双碳”政策背景下，电力电子技术发展至关重要，其核心功率器件广泛应用于多个领域，但散热问题成为制约其性能和寿命的关键，热失效占比达55%。氮化硅基片因优异性能，成为功率器件封装基片首选。</p><p class="docx-paragraph">目前，高导热氮化硅陶瓷基板及覆铜载板核心技术被日欧美企业垄断，日本东芝占据全球70%市场份额，国内尚未实现真正产业化，虽有部分科研机构和企业研制出接近国际水平的产品，但多处于实验室或中试阶段，产能小、稳定性差，高度依赖进口，国产化势在必行。</p><p class="docx-paragraph">本项目针对高功率器件对氮化硅高导热基板的迫切需求，研发高性能氮化硅基板并批量生产，解决国产粉体痛点，加快国产化进程，破解“卡脖子”难题，引领相关材料发展，提升国际竞争力，为国家经济和军事发展提供技术保障。</p><p class="docx-paragraph">2、项目主要研发内容</p><p class="docx-paragraph">基于优化完成高导热氮化硅陶瓷材料设计的基础上，重点解决氮化硅基片烧成、加工工艺及性能的检测手段等关键技术问题。</p><p class="docx-paragraph">（1）面向产业技术的高导热氮化硅陶瓷材料的设计与分析研究</p><p class="docx-paragraph">基于氮化硅陶瓷烧结过程中液相组成和性质对氮化硅陶瓷的晶格氧和微观结构起到决定性作用。在已有研究的基础上，从氮化硅陶瓷液相烧结机理、微观结构演化机制等角度分析影响其热导率及力学性能的主要因素，通过配方、烧结制度以及烧结方式的设计优化，提升氮化硅陶瓷的热导率和力学性能，筛选出产业化生产氮化硅陶瓷基片最优的技术路线。</p><p class="docx-paragraph">（2）产业化技术研究</p><p class="docx-paragraph">重点解决规模化生产中氮化硅基片形变、开裂、质量不稳定、成品率低等问题；深度分析产生生产质量问题的内在原因，解决生产技术中的烧成和加工等关键技术问题，并形成技术规范和标准，提升氮化硅基片规模化生产的尺寸稳定性和性能稳定性。                                  </p><p class="docx-paragraph">（3）应用研究及评价</p><p class="docx-paragraph">结合第三代半导体封装所用氮化硅基片的典型工况，确定试验方法，开展应用技术研究。通过得到的性能参数，对所研制的氮化硅陶瓷基片作出评价。                                       </p><p class="docx-paragraph">（4）产业化生产技术规范研究</p><p class="docx-paragraph">通过对氮化硅基片关键技术的研究和突破，形成材料设计方案和生产与加工技术规范，最终使我国本土企业具备高功率半导体器件封装关键材料氮化硅基片的国产化能力</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标.</p><p class="docx-paragraph">氮化硅陶瓷基板生产线，提升产线规模及产线自动化信息化水平。年产10万片氮化硅基板能力。</p><p class="docx-paragraph">本项目所产业化生产的氮化硅陶瓷基板材料拥有优异的力学性能和导热性能，制备的氮化硅基板技术指标达到国际先进水平。产品技术指标为：热导率≥100W/(m·K)，弯曲强度≥770MPa（优于指南的≥750MPa），断裂韧性≥8 MPa·m1/2。翘曲度≤0.6%；表面粗糙度Ra≤0.6um。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">公司主板上市公司，始建于1993年，主营海洋装备、油气开发用线缆及陶瓷材料等产品，其潜油泵线缆全球市场占有率达15%。公司于2015年涉足压电陶瓷材料研发，2021年参与中国首次赤道物探项目，逐步进军尖端陶瓷材料领域。公司总占地面积35万平方米，其中新增陶瓷材料制造厂区143亩，建有氮化硅陶瓷基板中试线及各类生产检验设备100多台套。</p><p class="docx-paragraph">公司拥有国家级、省级技术创新中心等各类科研平台，包括国家级CNAS实验室、博士后创新实践基地，配备仪器设备118台套及多个模拟试验平台，与多所高校、国际知名企业开展合作，拥有多项专利及标准制定成果，并有院士进站指导科研工作。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位等情况</p><p class="docx-paragraph">国内特种线缆行业龙头企业，国家级单项冠军企业，潜油泵电缆销量连续三年位居全国第一、世界前三；成功打破国际垄断，研发海底地震拖缆并参与赤道物探项目。公司承担多项国家及省级研发任务，拥有323项专利，填补15项国内外技术空白，主持或参与43项国际、国家级行业标准制定。</p><p class="docx-paragraph">公司产学研合作基础深厚，与天津大学合作开展氮化硅基片产业化研究，已具备相关产业化能力；同时积极开展国际合作，获评国际科技合作基地，正逐步向陶瓷材料领域转型，为行业提供可复制的发展模式。</p><p class="docx-paragraph">4、项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">李晓雷，天津大学材料学专业，博士导师。主要研究方向透波材料、高温防隔热材料、电子功能陶瓷。曾参与国家攻关(863，973)项目12项，国家自然科学基金课题 19项，国防军工配套项目23项，省部级基金课题44项，横向课题50余项，取得了氧化锆-氧化硅复合气凝胶的制备方法， 凝胶注模制备O-Sialon多孔材料及制备方法等专利技术。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">课题组前期开展了具有优异力学性能的高导热氮化硅陶瓷基板制备技术的研究。已经完成了高导热氮化硅陶瓷配方体系的探索和与之匹配的制备技术的开发，所制备的氮化硅陶瓷兼具高热导率和优异的力学性能，其热导率可达100W/（m·K），断裂韧性可达8.2MPa˙m1/2，弯曲强度可达840MPa。课题组在高导热氮化硅技术领域具备坚实的理论基础和较为充分的技术储备，可为该类产品的产业化开发提供支持。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">优化氮化硅基片的生产工艺，提升其性能稳定性，满足利用国产粉体实现氮化硅基片批量生产的需求，使性能指标达到国际先进水平，形成具有自主知识产权的大尺寸氮化硅陶瓷基板产业化制备技术，完成产业化生产线设计并实现批量化生产。在完成高导热氮化硅陶瓷材料优化设计的基础上，重点解决氮化硅基片烧成、加工工艺及性能检测手段等关键技术问题。</p><p class="docx-paragraph">2、国内外同类技术发展现状及与本项目技术的比较、技术发展趋势</p><p class="docx-paragraph">（1）国外现状</p><p class="docx-paragraph">国外高导热氮化硅陶瓷基板及覆铜载板性能领先于国内，批量化生产以日、欧、美企业为主导，核心供应商包括日本东芝、京瓷、丸和及美国罗杰斯等。截至2016年，日本东芝占据全球70%的氮化硅基片市场份额，在混合动力汽车/电动汽车（HEV/EV）领域占比高达95%，其TSN-90型基板热导率为85~95 W/(m·K)、弯曲强度650MPa、断裂韧性5~7 MPa·m¹/²。</p><p class="docx-paragraph">美国罗杰斯curamik®系列基板采用AMB工艺制备，20℃时热导率达90 W/(m·K)，20~300℃热膨胀系数为2.5 ppm/K，兼具长寿命与高可靠性，适用于高功率模块、可再生能源等领域。此外，《瓦森纳协定》对基板技术及原料实施封锁，进一步拉大了我国与国际先进水平的差距。</p><p class="docx-paragraph">（2）国内现状及与本项目技术比较</p><p class="docx-paragraph">该领域的核心技术为热导率＞80 W/(m·K)的氮化硅陶瓷制备，国内尚未实现真正产业化，多数研发处于实验室或中试阶段。北京中材、新特能源研制的基板热导率均为80 W/(m·K)，前者处于中试阶段，后者产业化进程尚不明确；中科院上海硅酸盐所研发的产品最优导热率达136.9 W/(m·K)，但仍停留在实验室阶段。</p><p class="docx-paragraph">公司已完成配方体系探索及制备技术开发，所产氮化硅陶瓷综合性能优异，热导率达100 W/(m·K)、断裂韧性8.2MPa·m¹/²、弯曲强度840MPa，优于国内同类产品，接近并部分超越国外水平，可助力破解国产化“卡脖子”难题，实现进口产品替代。</p><p class="docx-paragraph">（3）项目预期达到的技术性能指标</p><p class="docx-paragraph">本项目在已完成高导热氮化硅陶瓷基板性能优化的基础上（现有产品技术指标为：热导率≥100 W/(m·K)，弯曲强度≥770MPa，断裂韧性≥8 MPa·m¹/²，翘曲度≤0.6%，表面粗糙度Ra≤0.6μm），重点解决现有生产技术存在的规模化生产成本高、产品稳定性差、成品率低及性能考核标准不达标等问题。通过深度分析生产质量问题的内在原因，优化生产技术中的烧成、加工等关键环节，形成技术规范与标准，提升氮化硅基片规模化生产的尺寸稳定性和性能稳定性，最终形成年产10万片的生产能力。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">创新开发“预烧结-超薄切片-重烧结”技术方案，以替代现有流延成型技术。该技术制备的氮化硅陶瓷为块体，薄片需通过后续加工切片获取。目前陶瓷线锯切割技术已完全成熟，加工成本逐步降低，且线锯切割氮化硅基片的材料损耗较低，可实现高效率超薄切片，提升产品出品率。针对氮化硅高强度、高硬度导致的加工难度，项目采用两步烧结工艺，即对预烧结体加工切片后进行二次重烧结。该技术方案具有降低成本、提升产品性能与稳定性等优势。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">课题组前期围绕高导热氮化硅陶瓷基板制备技术展开研究，重点开发兼具优异力学性能的产品。目前已完成高导热氮化硅陶瓷配方体系的探索及配套制备技术的开发，所制氮化硅陶瓷同时具备高热导率与优异力学性能：热导率可达100W/（m·K），断裂韧性可达8.2MPa˙m1/2，弯曲强度可达840MPa。课题组在高导热氮化硅技术领域拥有坚实理论基础与充分技术储备，可为本类产品的产业化开发提供有力支持。</p><p class="docx-paragraph">四、项目实施阶段安排</p><p class="docx-paragraph">第一阶段（2026年2月-2027年2月）：技术攻关及产业化基地建设阶段</p><p class="docx-paragraph">目标：破解规模化生产痛点，建立标准化制备体系</p><p class="docx-paragraph">聚焦规模化生产核心痛点，重点攻关生产成本偏高、产品稳定性不足、成品率偏低及性能未达考核标准等关键问题。创新采用根源性质量剖析方法，优化烧成、加工等关键生产环节，形成适配规模化生产的技术规范与标准，提升产品尺寸一致性及性能稳定性，同步推进产业化基地配套建设。</p><p class="docx-paragraph">第二阶段（2027年2月-2028年2月）：技术转化及产能提升阶段</p><p class="docx-paragraph">目标：技术标准化转化，产能高效提升</p><p class="docx-paragraph">突破氮化硅基片核心制备关键技术，形成标准化材料设计方案及生产加工技术规范，助力本土企业具备高功率半导体器件封装用氮化硅基片国产化自主生产能力；通过生产工艺升级、设备智能化改造，实现生产能力高效提升50%。</p><p class="docx-paragraph">第三阶段（2028年1月-2029年2月）：市场拓展及应用深化阶段</p><p class="docx-paragraph">目标：场景化定制，产业链协同发展</p><p class="docx-paragraph">在稳固现有技术成果及产能基础上，开展下游场景精准对接，聚焦高功率半导体、新能源汽车等核心应用领域。构建产业链协同合作体系，加强与上下游企业联动，建立标准化供应链体系，降低采购成本，提升市场快速响应能力；创新市场推广模式，通过行业展会、技术交流会等渠道拓展市场。同步跟踪行业技术前沿及市场需求变化，开展前瞻性技术研发，为产品迭代升级及技术持续创新奠定基础。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">通过本项目实施，建立联合培养与协调创新机制，培养工程技术人员2名。强化科研开发、工程化、生产管理与市场营销的融合，打造一支复合型科技人才队伍，保障公司持续创新、巩固技术优势，同时推进成果二次开发及工程化转化，形成技术工艺包，通过转让或自主产业化，带动行业进步并实现自身良性发展。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">本项目产业化的氮化硅陶瓷基板，力学与导热性能优异，技术指标达国际先进水平，填补国内空白、打破国产产品性能单一的弊端。重点解决规模化生产中基片形变、开裂、质量不稳定、成品率低等痛点，攻克烧成、加工等关键技术，形成技术规范与标准，提升产品尺寸及性能稳定性，加快国产化进程，为国内第三代半导体功率器件散热基片发展发挥引领示范作用。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">氮化硅陶瓷基板适用于航天航空、轨道交通、电动汽车、光伏逆变等极端环境场景，2021-2026年全球市场年均增长率约14.2%。目前国内产品完全依赖进口，少数企业处于中试阶段，项目主要竞争对手为国外成熟企业。市场定位以国内为主，依托现有客户资源及高校力量开展技术营销与成本营销；国际市场为辅，依托公司现有国际渠道逐步推广，产业化前景广阔。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">6.1 经济效益</p><p class="docx-paragraph">建设氮化硅陶瓷基板生产线，提升产线规模及自动化、信息化水平，形成年产10万片氮化硅基板的能力；建成应力、热仿真设计与分析平台，提升可靠设计仿真能力。满负荷生产年销售收入1000万元，第一年销售额预计400万元，经济效益可观。</p><p class="docx-paragraph">6.2 社会效益</p><p class="docx-paragraph">（1）推动半导体行业发展及技术升级，实现氮化硅陶瓷覆铜载板及关键材料国产化自主可控，打破国外垄断；带动河北、天津、福建等地经济发展与就业，解决劳动力就业问题、提高群众收入，助力地方经济社会建设，项目建设条件优越、方案可行。</p><p class="docx-paragraph">（2）项目相关产业线可适应特殊突发状况，工业设施达重点类抗震设防标准，符合各类安全防护要求，保障从业人员工作安全，助力培养优秀人才，推动半导体行业稳定健康持续发展。</p><p class="docx-paragraph">（3）带动建材、冶金、机械、建筑、咨询等相关行业发展，所需材料、辅料可在当地及周边解决，激活相关企业生产与服务活力.</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">河北华通线缆集团股份有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">项目实施</p></td><td><p class="docx-paragraph">李晓雷</p></td><td><p class="docx-paragraph">210.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">150.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">通过两步烧结的方法制备氮化硅陶瓷。解决现有技术中氮化硅陶瓷晶格氧含量高导致其实际热导率低以及长时间保温导致其力学性能下降的问题，开发出具有优异力学性能的高导热氮化硅陶瓷材料；</p><p class="docx-paragraph">培养高导热氮化硅专业技术人员2名，建立一支高水平研发团队；</p><p class="docx-paragraph">实现科技成果转化1项并实现销售收入1000万，申请发明专利2项、实用新型专利2项。</p><p class="docx-paragraph">制定企业标准1项，发表科技论文一篇，主持企业科研项目2项</p></td><td><p class="docx-paragraph">面向产业技术的高导热氮化硅陶瓷材料的设计与分析研究。通过配方、烧结制度以及烧结方式的设计优化，提升氮化硅陶瓷的热导率和力学性能，筛选出产业化生产氮化硅陶瓷基片最优的技术路线。实施成果转化1项，制定企业标准1项，主持企业科研项目1项。</p></td><td><p class="docx-paragraph">重点解决规模化生产中氮化硅基片形变、开裂、质量不稳定、成品率低等问题；深度分析产生生产质量问题的内在原因，解决生产技术中的烧成和加工等关键技术问题。形成生产线一条，申请发明专利2件、实用新型专利2项，主持企业科研项目1项</p></td><td><p class="docx-paragraph">应用研究及评价。结合第三代半导体封装所用氮化硅基片的典型工况，确定试验方法，开展应用技术研究。通过得到的性能参数，对所研制的氮化硅陶瓷基片做出评价。建立研发平台1个，组建技术团队，培养2名工程技术人员，发表科技论文1篇。</p></td></tr><tr><td rowspan="8"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">申请实用新型专利（件）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">制定企业标准（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">项目负责人身份学历等证明</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人担任国内外学术组织、重要学术期刊、学术科研机构职务情况证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">人才引进协议</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人申请专利情况</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">团队承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">负责人团队重要获奖证书；</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业资质证明</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">公司章程</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">省级以上研发机构</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">团队其他成员资质</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同1</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同2</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同3</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同4</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同5</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同6</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同7</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">基地固定人员证明</p></td><td><p class="docx-paragraph">固定人员劳动合同8</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">营业执照</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

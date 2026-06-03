@@ -468,6 +468,15 @@ class ReportGenerator:
         Returns:
             List[str]: 建议列表
         """
+
+### 调试输出约定
+
+- 评审完成后，`EvaluationAgent` 应调用 `ReportGenerator` 生成 HTML 调试报告
+- 调试产物统一写入 `debug_eval/`
+- 文件命名建议：
+  - `{evaluation_id}.json`
+  - `{evaluation_id}.html`
+  - `index.html`
         recommendations = []
         
         # 根据等级添加总体建议

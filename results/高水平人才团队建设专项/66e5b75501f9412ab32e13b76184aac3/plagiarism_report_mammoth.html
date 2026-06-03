@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 66e5b75501f9412ab32e13b76184aac3.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：66e5b75501f9412ab32e13b76184aac3.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,960</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>66e5b75501f9412ab32e13b76184aac3.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>中国二十二冶集团有限公司固废资源化与低碳建材技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>中国二十二冶集团有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>刘晓明</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>唐山市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-02 至 2029-01</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-15</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>中国二十二冶集团有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>国有企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省唐山市丰润区幸福道16号</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91130200104761074G</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-唐山市-丰润区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>1997-04-01</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>278000.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>袁斯浪</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>19930020031</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>韩春</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>15930532557</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0315-3220026</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a></p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>中国二十二冶集团有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>104124000293</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国银行唐山市新城道支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>100148264570</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>5429人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>3067人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>2003人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>R</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>🞎</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>生态环境治理</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>4690611.13</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>3366123.83</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>82.84</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>3.05</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>作为国家高新技术企业，中国二十二冶集团有限公司在顶层设计上建立了“143393”大科技创新体系。在资金保障方面，公司设立了5000万元内部科研基金与1000万元开放型科创基金，前者聚焦关键技术攻关，后者通过产学研深度融合解决行业共性难题，形成了稳健的科研投入增长机制。在平台建设上，公司系统布局了横向到边、纵向到底的44个科创平台矩阵，涵盖国家级平台13个（含国家装配式建筑产业基地、国家知识产权优势企业、国家钢结构技术研究中心中试基地等）及省级平台26个（含燕赵钢铁实验室、河北省重型装备预应力制造工程技术创新中心等），并依托唐山现代装备产业研究院、新型工业化建筑研究院、钢结构智能制造研究院三大研究院开展成果孵化。在人才与协同创新方面，公司推行“揭榜挂帅”与“柔性引才”机制，打造了由外部资深专家智囊团、内部专家及博士领衔的“内外兼顾、梯次培养”高端人才队伍，并与清华大学、西安交通大学、同济大学、山东大学、南京工业大学等10余所顶尖高校共建创新联合体。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>中国二十二冶集团作为国家高新技术企业和国务院国资委“双百行动”标杆企业，构建了完善的知识产权管理体系。拥有国家知识产权优势企业、国家技术标准创新基地、国家装配式建筑产业基地、国家钢结构技术研究中心中试基地、省级“专精特新”中小企业、河北省企业技术中心、北京市企业技术中心、河北省重型装备预应力制造工程技术研究中心、河北省新型建筑工业化技术创新中心、建筑钢构数字化技术与应用河北省工程研究中心、河北省工业企业研发机构(A级)2个、城市智慧建造陕西省高校工程研究中心，拥有中冶集团工程技术中心2个、技术研究院1个；建立了以企业技术中心为龙头的创新体系；拥有国家级工法6项，省部级工法342项，授权中国专利2812件（其中发明专利474件），授权外国专利4件，累计计算机软件著作权登记证书102件，主编、参编百余项国家、行业、地方、协会标准；</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>中国二十二冶集团有限公司构建了“国家级中试平台牵引、核心专利产业化应用、产学研协同创新”的科研成果转化体系，依托“国家钢结构工程技术研究中心中试基地”和“多向模锻件及重型装备中试验证平台”两个入选国务院国资委名录的权威平台，推动关键技术熟化与产业化。公司自主研发的装配式钢结构技术体系已实现规模化应用，覆盖京津冀地区100余项工程，示范面积超500万平方米，全装配式钢结构研发楼实现“两天一层”的建造效率，综合节能率达40%；在智能制造领域，多向模锻技术攻克钛合金成形瓶颈，支撑航空航天等重大工程需求；在工业环境治理方面，公司在开展余热、余能回收、工业绿色微电网、烟气治理、钢渣和除尘灰资源化利用等方面的研究，对冶金行业绿色、低碳、高质量发展具有重要的意义。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>中国二十二冶集团有限公司构建了多层次、宽领域的国内产学研合作体系。在产学研合作方面，推动与外部科研机构的产学研深度融合，协同“外脑”开展科技攻关，联合西安交通大学、唐山市人民政府成立唐山市现代装备研究院，与同济大学共建同济大学国家土建结构预制装配化工程技术研究中心-二十二治新型建筑工业化技术研究中心，先后与清华大学、同济大学、北京科技大学等35所高校开展产学研合作，从新型建筑工业化、风电混塔建造技术、固废资源化利用、城市更新、智能建造、新能源利用、增材打印等方面开展研究，签订合作协议70余项，在固废资源化利用、装配式建筑、钢结构工程及软件、重型装备及多向模锻、工业环境治理等方面取得突破性进展。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">9</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">5人</p></td><td colspan="4"><p class="docx-paragraph">3人</p></td><td colspan="5"><p class="docx-paragraph">2人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">2人</p></td><td colspan="5"><p class="docx-paragraph">6人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">刘晓明</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1980-11</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">工业固废资源化处理</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2024-08-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京科技大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市海淀区</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">副院长</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">技术专家</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">063000</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省唐山丰润区幸福道16号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">13681016308</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13681016308</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">liuxm@ustb.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>R国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>国家“万人计划”科技创新领军人才  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1999-09-01至2003-06-28</p></td><td colspan="9"><p class="docx-paragraph">中国矿业大学</p></td><td colspan="4"><p class="docx-paragraph">本科</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2004-09-01至2010-06-28</p></td><td colspan="9"><p class="docx-paragraph">中国矿业大学</p></td><td colspan="4"><p class="docx-paragraph">博士研究生</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">京津冀工业园区典型危险废物环境风险防控与高值化利用关键技术研究与</p></td><td colspan="7"><p class="docx-paragraph">2025.09-2029.08</p></td><td colspan="4"><p class="docx-paragraph">京津冀环境综合治理国家科技重大专项</p></td><td colspan="4"><p class="docx-paragraph">京津冀环境综合治理国家科技重大专项</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">工业窑炉协同处置城市固废全过程污染控制关键技术研究与工程示范</p></td><td colspan="7"><p class="docx-paragraph">2020.11-2024.04</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">课题负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">广西北部湾赤泥-电解锰渣-钢渣多元固废协同梯级全组分利用基础研究</p></td><td colspan="7"><p class="docx-paragraph">2024.01-2027.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金资助项目</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金资助项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">电解锰渣中氨氮循环及多固废全组分协同利用研究与应用</p></td><td colspan="4"><p class="docx-paragraph">冶金科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-08-08</p></td><td colspan="4"><p class="docx-paragraph">第一</p></td><td colspan="4"><p class="docx-paragraph">中国钢铁工业协会，中国金属学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">赤泥等工业固废协同材料化全组分利用研究与实践</p></td><td colspan="4"><p class="docx-paragraph">中国有色金属工业科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2022-12-19</p></td><td colspan="4"><p class="docx-paragraph">第一</p></td><td colspan="4"><p class="docx-paragraph">中国有色金属工业协会，中国有色金属学会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">赤泥等工业固废材料化全组分协同利用研究与应用</p></td><td colspan="4"><p class="docx-paragraph">教育部科学研究优秀成果奖(自然科学和工程技术)</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-12-19</p></td><td colspan="4"><p class="docx-paragraph">第一</p></td><td colspan="4"><p class="docx-paragraph">中华人民共和国教育部</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Synergistic utilization of blast furnace slag with other industrial solid wastes in cement and concrete industry: Synergistic mechanisms, applications, and challenges</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Green Energy and Resources</p></td><td colspan="5"><p class="docx-paragraph">2023年</p></td><td colspan="2"><p class="docx-paragraph">SCI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Synergistic effect of red mud, desulfurized gypsum and fly ash in cementitious materials: Mechanical performances and microstructure</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Construction and Building Materials</p></td><td colspan="5"><p class="docx-paragraph">2023年</p></td><td colspan="2"><p class="docx-paragraph">SCI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Insight into the synergistic effects of circulating fluidized bed fly ash, red mud and blast furnace slag in preparation of ultrahigh-performance concrete: Reaction mechanism and performance optimization</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Construction and Building Materials</p></td><td colspan="5"><p class="docx-paragraph">2023年</p></td><td colspan="2"><p class="docx-paragraph">SCI收录</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种循环流化床粉煤灰基低碳水泥及其制备方法</p></td><td colspan="5"><p class="docx-paragraph">CN 114538808 B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第一</p></td><td colspan="5"><p class="docx-paragraph">2023-04-07</p></td><td colspan="3"><p class="docx-paragraph">中国（国家知识产权局）</p></td></tr><tr><td><p class="docx-paragraph">一种利用固废材料的生态友好复合胶凝材料及其制备方法</p></td><td colspan="5"><p class="docx-paragraph">CN 110467385 B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第一</p></td><td colspan="5"><p class="docx-paragraph">2020-09-11</p></td><td colspan="3"><p class="docx-paragraph">中国（国家知识产权局）</p></td></tr><tr><td><p class="docx-paragraph">一种利用电解锰渣催化处理垃圾焚烧飞灰的方法</p></td><td colspan="5"><p class="docx-paragraph">CN 112979190 B</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">第一</p></td><td colspan="5"><p class="docx-paragraph">2022-04-15</p></td><td colspan="3"><p class="docx-paragraph">中国（国家知识产权局）</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">《Materials》</p></td><td colspan="9"><p class="docx-paragraph">期刊编委会成员</p></td><td colspan="6"><p class="docx-paragraph">2021年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">《矿物冶金与材料学报（英文版）》</p></td><td colspan="9"><p class="docx-paragraph">期刊编委会成员</p></td><td colspan="6"><p class="docx-paragraph">2025年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国硅酸盐学会固废与生态材料分会</p></td><td colspan="9"><p class="docx-paragraph">第二届理事会常务理事</p></td><td colspan="6"><p class="docx-paragraph">2021年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">《轻金属》</p></td><td colspan="9"><p class="docx-paragraph">期刊编辑出版委员会委员</p></td><td colspan="6"><p class="docx-paragraph">2025年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国有色金属学会固废资源化专业委员会</p></td><td colspan="9"><p class="docx-paragraph">第一届委员会委员</p></td><td colspan="6"><p class="docx-paragraph">2024年</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>项目负责人刘晓明为国家重大人才工程入选者，国家科技重大专项项目负责人，国家级一流本科课程教学团队成员，教育部“课程思政教学名师及教学团队成员”，第十二届中国金属学会“冶金青年科技奖”，第四届中国有色金属学会“创新争先计划”，美国斯坦福大学“World top 2% scientists”，第二届IJMMM“鼎新青年科学家奖”，第二届邱定蕃有色冶金青年科技奖提名奖。</p><p class="docx-paragraph">一直从事工业固废资源化低碳利用（包括有色/钢铁冶炼渣尘、煤基固废、工业副产石膏、尾矿、垃圾焚烧飞灰等），固废中有价元素的提取利用，工业窑炉协同处置城市固废和生态环境功能材料领域的研究与应用工作。先后主持京津冀生态环境治理国家科技重大专项项目、国家自然科学基金联合重点项目、十三五国家重点研发计划课题等国家、省部级和企业科研项目50余项；在国内外学术期刊发表论文180余篇，其中ESI高被引12篇；已授权国家发明专利38件。主持3项技术成果获评“国际领先”水平，以第一完成人获2022年度中国有色金属科技进步一等奖、2025年度冶金科技一等奖和教育部科学研究优秀成果二等奖等奖励6项。兼任中国有色金属学会固废资源化专业委员会委员、节能减排专业委员会委员，中国硅酸盐学会固废分会常务理事、青年委员会主任委员，中国建筑学会建材分会理事，《International Journal of Minerals, Metallurgy and Materials》、《Green Energy and Resources》、《Materials》和《Materials Reports: Solid waste and Ecomaterials》期刊编委，《工程科学学报》和《中国有色金属学报》期刊青年编委。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">刘晓明</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1980-11</p></td><td><p class="docx-paragraph">371302198011301010</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">固体污染防治工程</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京科技大学 教授</p></td><td><p class="docx-paragraph">国家重点人才工程计划入选人才,国家级科技项目、工程项目主要负责人,其他:国家“万人计划”科技创新领军人才</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">王军勇</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1978-04</p></td><td><p class="docx-paragraph">130323197804056619</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">非金属建筑材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">朱立雷</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-01</p></td><td><p class="docx-paragraph">370181198301175618</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">非金属建筑材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">韩春</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1988-01</p></td><td><p class="docx-paragraph">150105198801294632</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">非金属建筑材料</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">梁鹏</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1990-03</p></td><td><p class="docx-paragraph">130225199003065933</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">矿山综合利用工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">张晓峰</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1979-03</p></td><td><p class="docx-paragraph">211382197903205019</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">混凝土与钢筋混凝土结构</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">杨毛毛</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-10</p></td><td><p class="docx-paragraph">152628198310270218</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">混凝土与钢筋混凝土结构</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">孙涛</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-01</p></td><td><p class="docx-paragraph">321323198601215115</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">混凝土与钢筋混凝土结构</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">冯洪宇</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1992-11</p></td><td><p class="docx-paragraph">230126199211252631</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">混凝土与钢筋混凝土结构</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">张建英</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1973-09</p></td><td><p class="docx-paragraph">150102197309284543</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">工业固体废弃物的资源综合利用技术</p></td><td><p class="docx-paragraph">混凝土与钢筋混凝土结构</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>中国二十二冶集团有限公司固废资源化与低碳建材技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-02 至 2029-01</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>150.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>50.0万元，企业自筹经费  <a id="xmzcjf"></a>100.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>R新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>冶金工业污染治理   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>多元工业固废；协同活化；中钙体系；多聚合度匹配；有害元素固化；绿色生态建材；工程示范</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>本项目将严格遵循“燕赵黄金台聚才计划”要求，组建一支由项目负责人领衔的10人精准攻关团队。团队结构中，中国二十二冶集团有限公司的工程技术骨干占比将不低于60%，且45周岁以下青年科技人才占比不低于60%，旨在通过“赤泥-钢渣-粉煤灰协同利用”关键技术的研发与示范，培养具备解决复杂产业技术瓶颈能力的复合型创新人才。执行期内，将重点支持团队中的企业人员主持1项市级以上科研项目，或负责企业科研项目，或参与获得省级以上科技奖励，并鼓励具备高创新能力的一线产业工人参与本项目以提升实践效能。通过深化协同创新，团队计划在攻克产业共性技术难题的同时，联合产出高水平学术论文与核心发明专利，最终建成一支技术领先、梯队合理、深度契合我省重点产业发展需求的工业固废资源化利用创新团队。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>本项目预期在三年执行期内，攻克赤泥、钢渣及粉煤灰等大宗工业固废协同活化及其有害元素固化稳定化的关键共性技术难题。在技术性能方面，将制备出熟料用量30%且符合GB175-2023标准的复合胶凝材料，并实现公路水稳层水泥用量5%且达到一级公路重载要求，各项制品指标均满足国家相关标准。在环境安全方面，将探明有害元素固化机理，确保制品有害元素浸出特性严格符合我国III类地下水质量标准。此外，将通过规模化工程示范实现工业固废的高值化利用，显著降低企业生产成本，在缓解环境压力的同时，为我省现代化钢铁及绿色化工产业的低碳转型提供关键技术支撑与行业示范。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>本项目预期在执行期内转化应用科技成果1项并取得较好经济效益，申请与项目相关的发明专利1项，合作发表与项目相关的学术期刊论文1篇，团队成员中的企业人员主持企业科研项目1项。项目产生的知识产权由申报单位中国二十二冶集团有限公司拥有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">随着我国工业生产规模不断扩大，大宗工业固废累计堆存量已达800亿吨，且年产量约120亿吨，传统处置方式对土地占用和环境安全的压力日益凸显。由于赤泥、脱硫石膏、钢渣和粉煤灰等典型固废存在成分复杂、胶凝活性低及污染组分控制难等关键技术问题，研发多元固废协同利用技术以实现其高效、绿色、高值化处置已成为行业发展的迫切需求。本项目的提出不仅紧扣国家循环经济与绿色发展战略，更基于“中钙体系”及“多聚合度匹配设计”等前沿核心理论，旨在攻克产业关键共性技术难题并产出高性能建筑材料。其科技意义在于构建多元固废协同活化的基本理论体系，并从配位化学层面探明有害元素的固化稳定化机理；经济意义在于通过规模化利用大幅降低固废基生态建材的制备成本，提升产品的市场竞争力与企业经济效益；社会意义则在于切实提高资源综合利用水平、减少环境负荷，并深度契合“燕赵黄金台聚才计划”关于推动科技创新与产业创新融合、培育高素质创新团队的战略部署。</p><p class="docx-paragraph">本项目“赤泥-钢渣-粉煤灰等多元工业固废协同建材化利用关键技术研究与示范”旨在针对赤泥、脱硫石膏、钢渣及粉煤灰等大宗固废成分复杂、胶凝活性低及污染组分控制难等瓶颈问题，形成涵盖道路水稳层、商品混凝土及预制混凝土的成套材料化制备工艺，并深入探明有害元素固化稳定化机理以保障制品的长期环境友好。项目由中国二十二冶集团有限公司牵头，在战略相关性方面，本项目紧密结合河北省现代化钢铁、绿色化工等支柱产业的绿色转型需求，通过对大宗工业固废的高效协同利用，直接服务于我省重点产业领域的节能减排与循环经济发展，高度契合“燕赵黄金台聚才计划”关于支持重点产业创新发展、推动科技创新与产业创新深度融合的战略方向，对提升我省建筑业及相关县域特色产业集群的自主创新能力具有重要意义。</p><p class="docx-paragraph">本项目预期在技术性能方面实现重大突破，通过研发多元固废协同活化技术，制备出熟料用量≤30%且符合GB175-2023标准的高固废掺量水泥基复合胶凝材料；在应用端，实现公路水稳层材料水泥用量≤5%并达到一级公路重载要求，同时确保商品混凝土与预制构件中水泥用量分别控制在30%和50%以内，各项性能指标均满足GB/T 14902-2012国家标准。在环境安全方面，项目将探明有害元素固化机理，确保公路水稳层及地下结构用混凝土的有害元素浸出特性严格符合我国III类地下水标准。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">申报单位中国二十二冶集团有限公司是世界500强中国五矿和中国中冶旗下的核心骨干子企业，具备建筑工程和冶金工程施工总承包双特级资质，拥有钢结构、装配式、重型装备制造等八座大规模现代化产业园，属于国家级高新技术企业。公司财务状况良好，为本项目提供自有资金保障，涵盖了设备购置、材料研发及劳务支出等全方位需求 。在科研队伍方面，本项目组建了一支由10名研发人员构成的高水平团队，人才梯队在职称与学历结构上均具备极强的科研攻坚能力。</p><p class="docx-paragraph">中国二十二冶集团有限公司作为世界500强企业核心骨干，拥有建筑与冶金工程双特级资质及国家级高新技术企业认定，在冶金建设、装配式建筑及道路桥梁等领域处于行业领先地位。公司拥有多项核心发明专利，并构建了完善的成果转化机制，确保创新技术在集团内部高效推广并稳步实现市场化。此外，依托合作伙伴在冶金工程领域的国际领先地位，公司积极参与高层次行业技术交流，具备国际视野下的产业协同竞争优势，持续引领行业技术进步。</p><p class="docx-paragraph">项目负责人为国家重大人才工程入选者，国家科技重大专项项目负责人，国家级一流本科课程教学团队成员，教育部“课程思政教学名师及教学团队成员”，第十二届中国金属学会“冶金青年科技奖”，第四届中国有色金属学会“创新争先计划”，美国斯坦福大学“World top 2% scientists”，第二届IJMMM“鼎新青年科学家奖”，第二届邱定蕃有色冶金青年科技奖提名奖。一直从事工业固废资源化低碳利用（包括有色/钢铁冶炼渣尘、煤基固废、工业副产石膏、尾矿、垃圾焚烧飞灰等），固废中有价元素的提取利用，工业窑炉协同处置城市固废和生态环境功能材料领域的研究与应用工作。先后主持京津冀生态环境治理国家科技重大专项项目、国家自然科学基金联合重点项目、十三五国家重点研发计划课题等国家、省部级和企业科研项目50余项；在国内外学术期刊发表论文180余篇，其中ESI高被引12篇；已授权国家发明专利38件。</p><p class="docx-paragraph">团队在多元固废资源化利用领域已积累了丰厚的研究基础，依托中国二十二冶的现代化产业园，形成了成熟的材料制备工艺与施工技术标准。目前，项目已完成初步配比设计，并在协同活化理论研究上取得了突破，明确了碱性、硫酸盐及硅铝质固废之间的协同增强机理。团队已在相关领域获得多项科技成果鉴定，并荣获中国有色金属工业科技进步一等奖等省部级奖项，为本项目的顺利实施提供了可靠的技术储备与理论支撑。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">本项目“赤泥-钢渣-粉煤灰等多元工业固废协同建材化利用关键技术研究与示范”旨在攻克我国大宗固废累计堆存量大、综合利用效率低的痛点。研究聚焦于解决工业固废成分复杂、潜在胶凝活性激发难及污染组分固化控制等关键技术难题。通过设立活性增强机理、公路水稳材料、商品混凝土、预制构件制备及环境性能评价五个核心子课题，项目打通了从微观机理研发到大规模工程应用的全产业链条 。针对赤泥等高粘性固废，项目将突破传统单一利用模式，致力于实现大宗固废的高值化、全量化协同处置。这一基本情况介绍展示了项目在解决建筑业绿色转型及资源循环利用方面的系统性布局，为实现“化废为宝”提供了科学的实施路径。</p><p class="docx-paragraph">在人才团队与技术支撑方面，本项目组建了一支由31名专家构成的跨学科团队，包括国家“万人计划”青年拔尖人才、中国科协青年人才托举工程入选者以及拥有丰富实践经验的正高工，依托北京科技大学世界第一的冶金工程学科提供全方位支撑。团队通过MAS NMR、Raman光谱等高精尖手段精准量化聚合度，运用Materials Studio软件开展分子动力学模拟，并结合机器学习算法对蒸养工艺参数进行动态优化。预期技术性能指标极具前瞻性：水泥基复合胶凝材料熟料用量需30%，公路水稳层材料水泥用量需5%且需达到一级公路重载标准，商品混凝土与预制桩中水泥用量也将分别降至30%与50%以下。此外，项目力求使有害元素浸出特性符合我国III类地下水质量标准。</p><p class="docx-paragraph">纵观国内外同类技术现状，传统处置多停留在单一固废的物理填充或低掺量简单替代阶段，缺乏对多元组分化学互补性的深度挖掘，导致固废掺量低且制品环境安全性受限。相比之下，本项目创新提出了基于“中钙体系”理论架构的“多聚合度匹配设计”技术方案，实现了从“被动消纳”向“主动分子设计”的技术跨越。通过硅铝四面体在聚合过程中的电荷平衡效应，充分发挥不同固废间的复合协同活化潜能，其技术深度处于国际前沿水平。这种全组分全量利用的技术趋势，不仅在理论层面解决了固废基建材性能不稳定的难题，更在实际应用中大幅拓宽了建材的适用范围与利用效率，显著优于现有同类技术。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">本项目采取“微观表征—机理建模—配比多目标优化—工程验证”的技术路线，全面打通从基础研究到规模化应用的全产业链条。研究手段高度集成化，首先利用XRF、XRD、SEM-EDS等精密仪器深度分析原料的元素组成、矿相及微观形貌。随后，通过分析原料中硅铝钙配位形式，计算[SiO_4]与[AlO_4]四面体的聚合度，科学评价多元固废的潜在胶凝活性。在此基础上，运用分子动力学模拟构建硅铝钙基反应产物空间模型及有害离子固化模型，并引入机器学习算法对工艺参数进行动态优化。目前，项目前期准备充分，已完成五个子课题的总体策划，并对赤泥、钢渣等核心原料进行了系统的理化特性预处理及粉磨工艺分析。相关的实验积累与初步配比设计已为后续规模化应用奠定了坚实的技术底蕴。</p><p class="docx-paragraph">在具体实施方案中，申报单位发挥其作为国家级高新技术企业的产业化平台优势，统筹调配优质科研资源。单位配备了全套施工与科研资产，保障了研发活动的高强度开展。人才团队由拥有丰富实践经验的正高工领衔，涵盖了环境工程、材料科学、土木工程等多个专业背景，其中企业工程技术人员与青年人才占比均严格遵循指南要求 。在合作机制上，项目建立了完善的决策委员会与专项管理小组，负责制定进度计划与评估标准。通过产学研用的深度协作模式，单位将内部研发基地与施工一线深度挂钩，通过定期的技术交流与培训，切实将“走高技术发展之路”的战略转化为核心竞争优势。</p><p class="docx-paragraph">本项目执行期定为2026年2月至2029年1月，分年度落实阶段性目标。首年度重点攻克固废活性增强技术，并形成初步专利成果；次年度全面开展水稳材料、商品混凝土及预制构件的成套化制备优化，并完成包括1km水稳层试验段在内的多项工程示范验收。确保各项制品环境性能严格符合我国III类地下水标准。在知识产权管理方面，单位已建立清晰的成果分享协议，明确专利申请与成果归属，并设立专项保护小组。研究成果将遵循“内部推广应用、成熟后市场化转化”的共享方案，优先在内部重大工程中实现转化应用，通过行业论坛及展览宣传研究成果，在实现工业固废规模化消纳的同时，全方位保护研发权益并提升技术溢价。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">本项目实施后的经济效益主要体现在显著的降本增效与市场竞争力的提升上。通过研发多元工业固废协同活化技术，实现大宗固废对水泥熟料的高比例替代（熟料用量可降低至30%以下），大幅降低建材制备过程中的原材料成本 。依托示范工程，项目将直接转化为可量化的经济产出，并显著增强企业在低碳建材领域的王牌技术优势。随着“绿色建筑”与“固废基建材”市场需求的爆发，项目所形成的专利与论文将转化为长期技术溢价，为企业在循环经济领域开辟广阔的市场空间。</p><p class="docx-paragraph">在社会效益方面，项目对缓解我国工业固废囤积压力具有重大战略意义。通过规模化、高值化消纳赤泥、钢渣等堆存量巨大的固废，项目能有效减少固废对土地的占用及潜在的环境污染风险，切实提高多元固废的综合利用水平。尤为关键的是，项目通过配位理论控制有害元素，确保所有建材制品的有害元素浸出特性严格符合我国标准，保障地下水环境与土壤生态的长期安全。这种绿色、低碳的材料制备工艺，不仅助力建筑业实现减污降碳的转型目标，更为我国大宗固废的“减量化、无害化、资源化”处置提供了可复制的行业示范样板。</p><p class="docx-paragraph">此外，本项目的成功实施将有力推动河北省重点产业领域的绿色低碳转型与协同发展。通过形成一套完善的多元固废协同制备高性能材料理论与应用体系，提升我省在新型建材领域的自主创新话语权。项目不仅在执行期内完成预定的工程示范与人才梯队建设，更将在长远尺度上为地方经济的循环发展提供技术引擎，实现经济增长与生态环境保护的双赢局面。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">本项目实施后的经济效益主要体现在大幅降低原材料及制备成本与提升产品市场竞争力两个维度。通过研发多元工业固废协同活化技术，实现工业固废对水泥熟料的高比例替代，如水稳层材料中水泥用量可降至5%以下，复合胶凝材料中熟料用量降至30%以下，有效破解了大宗固废利用率低、成本高的难题，显著降低了生态建材的制备成本。同时，产出的高性能水稳材料、商品混凝土及预制构件能显著增强单位在绿色建筑市场中的竞争优势，将技术优势直接转化为规模化产值。</p><p class="docx-paragraph">在社会效益方面，项目对缓解我国工业固废囤积压力、保障生态安全具有重大意义。我国目前工业固废年产量约120亿吨，本项目通过对赤泥、钢渣等的高效协同利用，不仅实现了废弃物的“资源化、无害化、减量化”，更能有效减少固废堆存对土地的占用，防范潜在的环境污染风险。尤为关键的是，项目通过配位理论控制有害元素，确保固废基建材中有害元素的浸出特性严格符合标准，保障了地下水环境与土壤生态的长期安全。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">项目承担单位</p></td><td><p class="docx-paragraph">刘晓明</p></td><td><p class="docx-paragraph">150.00</p></td><td><p class="docx-paragraph">50.00</p></td><td><p class="docx-paragraph">100.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">本项目旨在通过”基础理论突破-关键技术研发-成套装备集成-工程应用示范”的全链条攻关，攻克赤泥、钢渣、粉煤灰等大宗工业固废活性激发难、组分变异性大及有害元素控制难等行业瓶颈，构建基于“中钙体系”理论架构的多元固废协同活化及有害离子稳固化技术体系。项目拟制备出熟料用量≤30%且符合国家标准的高固废掺量复合胶凝材料，并在应用端实现公路水稳层水泥用量≤5%及商品混凝土、预制构件水泥用量分别降至30%和50%以下的性能突破，确保制品有害元素浸出特性严格符合我国I类地下水标准，从根本上解决固废利用的环境后顾之忧。最终目标是形成一套具有自主知识产权的绿色低碳建材制备成套工艺，完成1km水稳层试验段等系列工程示范，并依托项目建设一支以中青年骨干为主体的跨学科创新团队，显著提升单位在固废资源化高值利用领域的原始创新能力与核心竞争王牌。预期在执行期内转化应用科技成果1项并取得100万元的经济效益，申请与项目相关的发明专利1项，合作发表与项目相关的学术期刊论文1篇，团队成员中的企业人员主持企业科研项目1项。</p></td><td><p class="docx-paragraph">基础理论研究与实验室配比攻关阶段本年度重点完成赤泥、钢渣、脱硫石膏及粉煤灰等原料的理化特性表征，建立多元工业固废资源动态数据库，探明”中钙体系”下各组分的协同活化机理。通过MASNMR、Raman光谱等手段量化固废聚合度，研发出熟料用量≤30%的水泥基复合胶凝材料实验室配方，力学性能需达到GB175-2023标准要求。同时，完成”粒级与活性双重协同优化”技术的初步原型设计，完成项目团队的组建与初期技术培训。</p></td><td><p class="docx-paragraph">关键技术研发与中试验证阶段本年度重点攻克高粘性固废的均化分散工艺，完成400th均化分散成套装备的集成与调试。针对道路水稳、商混及预制构件三个应用场景，优化形成成套制备技术方案，实现公路水稳材料水泥用量≤5%、商混水泥用量≤30%、预制桩水泥用量≤50%的设计目标。开展有害元素固化机理研究，确保实验制品的浸出特性符合我国川类地下水标准，并选定工程示范现场，完成施工方案的编制与前期物料准备。</p></td><td><p class="docx-paragraph">工程示范应用与成果转化总结阶段本年度重点落实各项工程示范任务，完成1km公路水稳层试验段、100m2商品混凝土及100m2预制构件的工程应用，并采集现场服役数据进行性能评估。系统评价示范工程的环境安全性，确保有害元素固化效果持续达标。完成全部考核指标，转化应用科技成果1项并取得100万元的经济效益，申请与项目相关的发明专利1项，合作发表与项目相关的学术期刊论文1篇，团队成员中的企业人员主持企业科研项目1项。实现团队青年骨干培养目标，显著提升企业在绿色建材领域的行业地位。</p></td></tr><tr><td rowspan="5"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">主持企业科研项目（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">刘晓明博士毕业证书</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">刘晓明博士学位证</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">刘晓明教授证书</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">刘晓明新身份证</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">项目柔性引进科技人才合作议书</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">国家“万人计划”科技创新领军人才证明</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">Editor-Certificate-324443-Materials编委证书</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">IJMMM编委证书</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">Xiaoming-Liu_MRSE-certificate</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">第二届固废分会常务理事</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">刘晓明《轻金属》编委</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">有色学会固废专委会委员</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">中国有色金属学会节能减排专委会</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">论文1</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">论文2</p></td></tr><tr><td><p class="docx-paragraph">16</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">论文3</p></td></tr><tr><td><p class="docx-paragraph">17</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">【专利证书】202210246183X-一种循环流化床粉煤灰基低碳水泥及其制备方法-20230407</p></td></tr><tr><td><p class="docx-paragraph">18</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">【专利证书】一种利用固废材料的生态友好复合胶凝材料及其制备方法</p></td></tr><tr><td><p class="docx-paragraph">19</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">【专利证书】202110173935X-一种利用电解锰渣催化处理垃圾焚烧飞灰的方法-发明专利证书(签章)</p></td></tr><tr><td><p class="docx-paragraph">20</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">京津冀国家重大专项信息</p></td></tr><tr><td><p class="docx-paragraph">21</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">国家十三五重点研发课题二任务书</p></td></tr><tr><td><p class="docx-paragraph">22</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">2023项目批准通知-联合重点基金</p></td></tr><tr><td><p class="docx-paragraph">23</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">2020国自然面上批准通知书</p></td></tr><tr><td><p class="docx-paragraph">24</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">河北重大科技计划项目任务书</p></td></tr><tr><td><p class="docx-paragraph">25</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">冶金一等奖证书 刘晓明</p></td></tr><tr><td><p class="docx-paragraph">26</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">有色一等奖-刘晓明</p></td></tr><tr><td><p class="docx-paragraph">27</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">教育部二等奖证书扫描版(刘晓明)</p></td></tr><tr><td><p class="docx-paragraph">28</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">中国金属学会冶金青年科技奖</p></td></tr><tr><td><p class="docx-paragraph">29</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">有色创新争先先进个人</p></td></tr><tr><td><p class="docx-paragraph">30</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司高企证书（2024-2027）</p></td></tr><tr><td><p class="docx-paragraph">31</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">河北省企业技术中心评价结果</p></td></tr><tr><td><p class="docx-paragraph">32</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">制造业单项冠军企业公示</p></td></tr><tr><td><p class="docx-paragraph">33</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">二十二冶国家知识产权优势企业</p></td></tr><tr><td><p class="docx-paragraph">34</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">国家装配式建筑产业基地</p></td></tr><tr><td><p class="docx-paragraph">35</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">中心成立证书-国家土建结构预制装配化工程技术研究中心-二十二冶新型建筑工业化技术研究中心</p></td></tr><tr><td><p class="docx-paragraph">36</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">建筑钢结构数字化技术及应用河北省工程研究中心</p></td></tr><tr><td><p class="docx-paragraph">37</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">河北省新型建筑工业化技术创新中心（装配式）</p></td></tr><tr><td><p class="docx-paragraph">38</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">河北省新型建筑工业化技术创新中心（筹）</p></td></tr><tr><td><p class="docx-paragraph">39</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">省技术创新中心评估结果公示-河北省新型建筑工业化技术创新中心</p></td></tr><tr><td><p class="docx-paragraph">40</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司营业执照</p></td></tr><tr><td><p class="docx-paragraph">41</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司建筑业企业资质证书1</p></td></tr><tr><td><p class="docx-paragraph">42</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司建筑业企业资质证书2</p></td></tr><tr><td><p class="docx-paragraph">43</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">中国二十二冶集团有限公司最新版公司章程（科技部）</p></td></tr><tr><td><p class="docx-paragraph">44</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">王军勇劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">45</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">朱立雷劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">46</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">韩春劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">47</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">梁鹏劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">48</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">张晓峰劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">49</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">杨毛毛劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">50</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">孙涛劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">51</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">冯洪宇劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">52</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">张建英劳动合同书</p></td></tr><tr><td><p class="docx-paragraph">53</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">张建英缴费证明</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

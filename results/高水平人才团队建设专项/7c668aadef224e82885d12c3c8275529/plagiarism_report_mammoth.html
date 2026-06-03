@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - 7c668aadef224e82885d12c3c8275529.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：7c668aadef224e82885d12c3c8275529.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,294</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>7c668aadef224e82885d12c3c8275529.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>河北协同水处理技术有限公司工业废水处理微生物菌剂关键技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北协同水处理技术有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>孙志强</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>石家庄高新技术产业开发区</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2025-01 至 2027-12</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-25</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>河北协同水处理技术有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>石家庄市昆仑大街55号B座一层</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91130101MA08UB6P0C</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-石家庄市-石家庄高新技术产业开发区</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2017-07-26</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>5400.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>王崇璞</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>18533144158</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a></p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>孔兴华</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>18533144158</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a></p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>1205746255@qq.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北协同水处理技术有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>313121003035</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>北京银行股份有限公司高新区科技支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>20000035250700018051391</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>228人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>142人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>65人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>R</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>河北省科技型中小企业、石家庄市科技领军企业）<a id="qylxqt"></a>R</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>无</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>34504.81</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>34621.31</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>30.13</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>3.61</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>R技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>R省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>□其他（请注明）：  <a id="ptqkqtsm"></a>       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>拥有微生物菌剂及微生物处理相关的发明专利6项；现拥有科研办公用房800平米，试验用房总共1500平米，总面积达2300平米，拥有一支由环境工程、材料科学、化学工程等多领域专业人才组成的研发团队，团队成员具有丰富的研发经验和项目经验，熟悉环保领域和材料科学的最新技术，公司将研发成果广泛应用于焦化、钢铁、化工等行业，已在全国40余个省市开展80余项焦化废水治理项目，生化出水COD含量在40mg/L以下，远低于《炼焦化学工业污染物排放标准》GB16171-2012国家标准要求的COD&lt;80mg/L，充分展现了在微生物菌剂领域从技术研发到产业化应用的全链条实力。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>现拥有自主知识产权90项，发明专利30项，实用新型45项，软件著作权12件，数据知识产权3项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>聚焦重点行业废水治理领域，每年投入销售收入5%用于研发，已承担35项研发项目，其中国家、省市级项目11项。公司累计获授权发明专利30项、实用新型45项、软件著作权12项，发表高水平论文20余篇，起草/参与制定国家标准8项、主持行业标准1项，并培养专业人才50余名，荣获国家高新技术企业、国家专精特新小巨人企业等称号，《焦化废水全流程关键技术及应用》项目获河北省科学技术进步奖三等奖。</p><p class="docx-paragraph">依托微生物絮凝剂、除氟剂等多项专利技术，构建&quot;技术创新-中试验证-产业应用&quot;完整转化链条。通过与高校院所深度产学研用合作，近三年投入研发超4000万元，转化专利技术30余项。公司研发成果已广泛应用于焦化、钢铁、化工等行业，在全国40余个省市开展80余项焦化废水治理项目，实现了技术成果的规模化工程转化。</p><p class="docx-paragraph">核心技术包括：研发的复合微生物菌剂活菌参数保持在每毫升10的8次方以上，在医药领域应用实现污泥减量率50%以上，在化工、焦化等重点领域生物强化脱氮率达85-90%。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司与哈尔滨工业大学、北京大学、南京大学、中科院过程所、河北省科学院能源研究所等高校、科研院所建立深度产学研合作机制，共享科研资源与技术网络，联合开展技术攻关；同时依托合作高校的国际科研合作平台，间接参与污水处理技术领域的国际交流，吸收国际先进技术理念。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">9</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">4人</p></td><td colspan="4"><p class="docx-paragraph">4人</p></td><td colspan="5"><p class="docx-paragraph">1人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">3人</p></td><td colspan="4"><p class="docx-paragraph">5人</p></td><td colspan="5"><p class="docx-paragraph">1人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">孙志强</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1991-01</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">工业水处理</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>R全职引进  <a id="yjlx_hz"></a>□柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2024-05-01</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">黑龙江省哈尔滨市</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">研究生院培养处副处长</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">技术副总</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">050000</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省石家庄市昆仑大街55号</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">13101611830</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">13101611830</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">sunhit@hit.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>R长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>□其他（请注明）：  <a id="rcjh_qtsm"></a>  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2009-09-01至2013-07-01</p></td><td colspan="9"><p class="docx-paragraph">郑州大学</p></td><td colspan="4"><p class="docx-paragraph">本科生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2013-09-01至2015-07-01</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2015-09-01至2019-12-19</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">博士研究生</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2020-04-17至2022-12-31</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">讲师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2022-04-19至2026-02-25</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">硕士生导师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2023-01-01至2024-12-31</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">副教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2024-03-23至2026-02-25</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">博士生导师</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2025-01-01至2026-02-25</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2023-10-01至2025-09-30</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">市政系党支部副书记</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2024-10-01至2025-09-30</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">研究生院院长助理</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2025-10-01至2026-02-25</p></td><td colspan="9"><p class="docx-paragraph">哈尔滨工业大学</p></td><td colspan="4"><p class="docx-paragraph">研究生院培养处副处长</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2024-05-01至2029-05-31</p></td><td colspan="9"><p class="docx-paragraph">河北协同水处理技术有限公司</p></td><td colspan="4"><p class="docx-paragraph">技术副总</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">生物安全理化防护及复杂环境洗消技术及装备</p></td><td colspan="7"><p class="docx-paragraph">2021.11-2024.11</p></td><td colspan="4"><p class="docx-paragraph">科技部</p></td><td colspan="4"><p class="docx-paragraph">国家重点研发计划</p></td><td><p class="docx-paragraph">子课题负责人（100万）</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">体相氧空位耦合膜限域催化臭氧高选择性净水增效机制</p></td><td colspan="7"><p class="docx-paragraph">2025.01-2028.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然基金委</p></td><td colspan="4"><p class="docx-paragraph">自然科学基金面上项目</p></td><td><p class="docx-paragraph">负责人（48万）</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">氮/磷共掺杂纳米炭催化臭 氧去除饮用水中典型内分泌干扰物的降解</p></td><td colspan="7"><p class="docx-paragraph">2021.01-2023.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然基金委</p></td><td colspan="4"><p class="docx-paragraph">自然科学基金青年项目</p></td><td><p class="docx-paragraph">负责人（24万）</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">纳米界面介导活性氧定向生成及水污染控制机制</p></td><td colspan="4"><p class="docx-paragraph">环境保护科学技术奖自然科学奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-12-01</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">生态环境部</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">超深度脱磷关键新材料与新技术及韧性低碳水处理体系</p></td><td colspan="4"><p class="docx-paragraph">黑龙江省科技进步奖</p></td><td colspan="3"><p class="docx-paragraph">二等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-06-10</p></td><td colspan="4"><p class="docx-paragraph">2</p></td><td colspan="4"><p class="docx-paragraph">黑龙江省人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">基于锰基微纳界面特性调控的催化氧化深度水处理技术与装备</p></td><td colspan="4"><p class="docx-paragraph">黑龙江省技术发明奖</p></td><td colspan="3"><p class="docx-paragraph">一等奖</p></td><td colspan="2"><p class="docx-paragraph">2025-06-10</p></td><td colspan="4"><p class="docx-paragraph">5</p></td><td colspan="4"><p class="docx-paragraph">黑龙江省人民政府</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Asymmetric Coordination Engineering of MXene-Based Metal Arrays for Oriented Generation of High-Valent Metal-Oxo Species from Peroxymonosulfate for Fast Water Decontamination</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Angew. Chem. Int. Ed.</p></td><td colspan="5"><p class="docx-paragraph">2025年12月</p></td><td colspan="2"><p class="docx-paragraph">SCI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Identifying the Persistent Free Radicals (PFRs) Formed as Crucial Metastable Intermediates during Peroxymonosulfate (PMS) Activation by N-Doped Carbonaceous Materials</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Environ. Sci. Tech.</p></td><td colspan="5"><p class="docx-paragraph">2021年7月</p></td><td colspan="2"><p class="docx-paragraph">SCI收录</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Oxygen Vacancy-Induced Nonradical Degradation of Organics: Critical Trigger of Oxygen (O2) in the Fe-Co LDH/Peroxymonosulfate System</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Environ. Sci. Tech.</p></td><td colspan="5"><p class="docx-paragraph">2021年10月</p></td><td colspan="2"><p class="docx-paragraph">SCI收录</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种利用改性多壁碳纳米管催化过氧乙酸降解水中内分泌干扰物的方法</p></td><td colspan="5"><p class="docx-paragraph">ZL 2022 1 1639779.2</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2024-04-05</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种高盐低COD煤化工废水TFO耦合RO处理工艺</p></td><td colspan="5"><p class="docx-paragraph">ZL 2024 1 1350513.5</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2025-11-18</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td><p class="docx-paragraph">一种富缺陷碳化钛的可控制备方法及其应用</p></td><td colspan="5"><p class="docx-paragraph">ZL 2024 1 0059190.8</p></td><td colspan="3"><p class="docx-paragraph">发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2026-01-13</p></td><td colspan="3"><p class="docx-paragraph">中国</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国智慧工程研究会劳动与科技工程教育工作委员会</p></td><td colspan="9"><p class="docx-paragraph">常务理事</p></td><td colspan="6"><p class="docx-paragraph">2023年-2028年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">黑龙江省环境科学学会</p></td><td colspan="9"><p class="docx-paragraph">副秘书长</p></td><td colspan="6"><p class="docx-paragraph">2024年-2029年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">《Chinese Chemical Letters》</p></td><td colspan="9"><p class="docx-paragraph">青年编委</p></td><td colspan="6"><p class="docx-paragraph">2022年-2028年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国给水排水</p></td><td colspan="9"><p class="docx-paragraph">青年编委</p></td><td colspan="6"><p class="docx-paragraph">2024年-2026年</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">石家庄融智节水低碳研究所</p></td><td colspan="9"><p class="docx-paragraph">秘书长</p></td><td colspan="6"><p class="docx-paragraph">2025年-2030年</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>孙志强，工学博士，教授/博导，国家级高层次青年人才，哈尔滨工业大学青年拔尖人才，马军院士团队成员。担任研究生院培养处副处长，国家水中心主任助理。兼任中国智慧工程研究会劳动与科技工程教育工作委员会常务理事，《Chinese Chemical Letter》与《中国给水排水》青年编委，黑龙江省环境科学学会副秘书长。面向工业水处理开展高级氧化水处理技术与原理、膜分离材料与应用、水环境智慧管理方法与理论等方向研究。主持国家自然科学基金面上/青年、重点研发计划子课题、黑龙江省优秀青年基金、中国博士后科学基金面上、黑龙江省博士后特别资助等项目18项。以第一/通讯作者在环境与材料领域著名期刊Angew Chemie (1)、Environmental Science &amp; Technology (4)、Water Research (5) 等发表SCI论文共24篇，中科院一区20篇。授权发明专利11项，工程转化3项（110万元）。获环境保护科技奖自然科学二等奖1项(1/5)、黑龙江省技术发明一等奖1项(5/11)、黑龙江省科技进步二等奖1项(2/9)、黑龙江省教学成果二等奖1项(8/12)。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">孙志强</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-01</p></td><td><p class="docx-paragraph">220282199101023250</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">城市给水排水工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">哈尔滨工业大学研究生院培养处副处长</p></td><td><p class="docx-paragraph">长江学者,国家级科技项目、工程项目主要负责人</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">李昂</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1980-10</p></td><td><p class="docx-paragraph">230104198010270232</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">环境生物学</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">哈尔滨工业大学 环境生态系主任</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">王崇璞</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1975-03</p></td><td><p class="docx-paragraph">370122197503093034</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">环境保护工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司 董事长</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">刘洪泉</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1972-05</p></td><td><p class="docx-paragraph">310104197205225613</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">正高级工程师</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">应用化学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司  技术总工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">次新波</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1981-08</p></td><td><p class="docx-paragraph">130124198108122416</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">环境保护工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司 总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">剧盼盼</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1986-10</p></td><td><p class="docx-paragraph">130182198610250548</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">水污染防治工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司  产品中心总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">陈以頔</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1993-05</p></td><td><p class="docx-paragraph">23010319930511194x</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">发酵工程(亦称微生物工程)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">哈尔滨工业大学 环境生态系讲师</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">郭振国</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1986-04</p></td><td><p class="docx-paragraph">130123198604063631</p></td><td><p class="docx-paragraph">硕士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">生物催化技术及产品</p></td><td><p class="docx-paragraph">微生物药物学</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司  产品中心副总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">张欢</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-02</p></td><td><p class="docx-paragraph">130125199102257011</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">高浓度，难降解，有毒有害工业废水处理</p></td><td><p class="docx-paragraph">水污染防治工程</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司 技术工程师</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>河北协同水处理技术有限公司工业废水处理微生物菌剂关键技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2025-01 至 2027-12</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>260.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>60.0万元，企业自筹经费  <a id="xmzcjf"></a>200.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>□新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>生物医药   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">哈尔滨工业大学</p></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>工业废水处理、微生物菌剂关键技术</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>项目执行期内，培养研究生2人、培养及晋升专业技术人员4人，形成结构合理、稳定持续的微生物水处理研发与应用创新团队1支。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>围绕重点行业工业废水处理痛点，突破生物环保制剂关键技术1项；新增省部级及以上科研项目/课题1项；申请发明专利3项；发表SCI / EI收录的期刊论文2篇；实现科技成果转化2项；成果转化应用于重点行业工业废水处理（含生物制剂使用），新增相关收入5000万元；新增税金1200万元；形成结构合理、稳定持续的微生物水处理研发与应用创新团队1支。全面提升企业在工业废水生物处理领域的科技创新能力与行业影响力。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>本项目实施过程中，预计申请发明专利3项，一方独立创造的技术成果归该方所有，双方共同创造的技术成果归双方共有。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>本项目由河北协同水处理技术有限公司牵头、哈尔滨工业大学协同参与，聚焦煤化工、制药等重点行业高浓度有机废水治理难题，研发针对性微生物菌剂关键技术，响应国家环保政策与河北省绿色产业发展战略，推动工业废水处理技术升级与产业绿色转型。</p><p class="docx-paragraph">一、总论</p><p class="docx-paragraph">（一）项目背景、必要性与意义</p><p class="docx-paragraph">国家出台多项政策强化工业废水治理，要求实现达标排放并提升用水重复利用率，《清洁生产促进法》也为废水处理设施升级提供保障。我国煤化工、制药等行业工业废水具有复合污染特征，传统物化处理工艺能耗高、易产生二次污染，现有生物处理方案存在菌群冗余、调控不足等问题，难以适配复杂工况，河北省作为相关产业大省，技术升级需求迫切。</p><p class="docx-paragraph">项目兼具科技、经济与社会意义：科技上构建“污染物精准识别-合成菌群构建-菌群活性动态调控”技术体系，推动前沿技术工程化应用；经济上降低企业处理成本，形成环保产品体系，为申报单位带来可观收益；社会上解决废水污染问题，培养专业人才，提升我国该领域国际竞争力，契合可持续发展理念。</p><p class="docx-paragraph">（二）项目概述</p><p class="docx-paragraph">1.核心研究内容：围绕高浓度有机废水治理难题，建立全流程技术体系。一是创制合成微生物菌剂，构建“降解-抗逆-共生”功能模块；二是攻关菌剂动态适配与调控机制，实现降解活性自主调节；三是开展菌剂中试及工程验证，建立多尺度验证体系并提出靶向削减策略。</p><p class="docx-paragraph">2.合作分工：河北协同负责项目整体推动、资金落实、工艺设计、中试及成果转化；哈工大提供核心技术研发、工艺优化、性能测试等支撑。</p><p class="docx-paragraph">3.产业相关性：项目属于河北省生物医药领域，契合当地战略性新兴产业发展方向，可解决省内重点行业废水污染问题，推动传统产业绿色低碳转型，助力“双碳”目标实现。</p><p class="docx-paragraph">（三）预期指标</p><p class="docx-paragraph">突破1项生物环保制剂关键技术，新增1项省部级及以上科研项目，申请3项发明专利，发表2篇SCI/EI收录论文，实现2项科技成果转化，新增收入5000万元、税金1200万元，培养研究生2人、培养及晋升专业技术人员4人，打造1支高层次产业技术创新团队。</p><p class="docx-paragraph">二、申报单位及人才团队情况</p><p class="docx-paragraph">（一）申报单位概况</p><p class="docx-paragraph">申报单位为河北协同水处理技术有限公司，拥有2300平米科研及试验场地，建成省级研发平台，配备GC-MS等先进设备；现有职工228人，技术人员142人，中高级技术人员65人，团队研发与工程化经验丰富；公司为中型私营企业，注册资本5400万元，2025年销售收入3.46亿元，财务状况良好，是国家高新技术企业、专精特新小巨人企业，拥有两大省级优秀研发平台，分别为河北省焦化水污染物控制与资源化技术创新中心和河北省企业技术中心。</p><p class="docx-paragraph">公司在该领域省内领先，累计承担60项研发项目，获30项发明专利、45项实用新型专利，研发成果已在全国40余个省市落地80余项工程，获河北省科技进步奖三等奖；与哈工大、北大等高校院所建立深度产学研合作，间接参与国际技术交流。</p><p class="docx-paragraph">（二）核心团队成员</p><p class="docx-paragraph">团队汇集企业工程专家与高校科研领军人才，核心成员包括：项目负责人孙志强（哈工大教授，深耕高级氧化水处理技术，科研成果丰硕）；主研人李昂（哈工大教授，专注难降解有机物微生物降解，拥有多项专利与成果）；核心工程技术人员王崇璞（河北协同法定代表人，具备丰富工程实施经验）；核心研发人刘洪泉（河北协同总工程师，焦化废水治理领域专家，获多项省级奖励）。</p><p class="docx-paragraph">（三）前期工作积累</p><p class="docx-paragraph">公司2014年布局微生物菌剂研发，获6项相关专利，菌剂产品效能优异；掌握焦化废水全流程处理技术，出水指标优于国标；建成省级研发平台，培养50余名专业人才，与哈工大合作掌握前沿技术；已完成污染物解析、功能菌株初步筛选，获得耐盐降解菌，具备污染物定性定量检测能力。</p><p class="docx-paragraph">三、项目技术先进性和可行性分析</p><p class="docx-paragraph">（一）拟解决的关键技术问题</p><p class="docx-paragraph">当前微生物菌剂开发依赖经验筛选，缺乏精准靶向设计；合成菌剂在复杂环境中适应性差、功能易流失；现有菌剂多底物降解效能低，无精准靶向削减策略；合成生物学等前沿技术工程化应用不足，缺乏系统性技术架构。</p><p class="docx-paragraph">（二）技术支撑</p><p class="docx-paragraph">哈工大团队提供合成微生物组、多组学联用等核心技术支撑，依托全国重点实验室提供实验平台；河北协同专家解决工程化适配、设备调试等问题，实现技术落地；团队还可提供工艺优化验证、产业化推广及国际技术融合支撑，全方位保障项目研发。</p><p class="docx-paragraph">（三）国内外技术现状及本项目优势</p><p class="docx-paragraph">1.国外：起步早、工程化程度高，在菌群设计、极端环境适应性、智能化融合等方面优势明显，但存在技术授权成本高、对我国废水特征适配性不足等问题。</p><p class="docx-paragraph">2.国内：处于能力提升阶段，在菌株筛选、菌群优化方面有积累，但在菌群精准设计、复杂工况稳定性等方面与国外有差距，抗冲击能力弱、前沿技术应用浅、技术集成度低。</p><p class="docx-paragraph">3.本项目优势：靶向性更强，建立“分子靶点库”实现精准设计；菌群稳定性更高，构建多功能合成群落并引入动态调控；场景适配性更广，针对多种废水开展验证；技术体系更系统，形成从解析到应用的闭环；成本更具优势，依托产学研合作降低研发与产业化成本。</p><p class="docx-paragraph">（四）技术发展趋势</p><p class="docx-paragraph">行业呈现多技术深度集成、提升菌剂严苛工况适用性、精准化与绿色化、产学研用协同、资源化与能源化的发展趋势，废水处理从单纯治理向“减污降碳、资源回收”转变。</p><p class="docx-paragraph">（五）预期技术性能指标</p><p class="docx-paragraph">建立污染物“分子靶点库”，实现定性定量检测；构建1套技术体系，开发1种高效菌剂，适配5%以上盐度废水；突破1项核心技术，实现2项成果转化；申请3项专利，发表2篇高水平论文；揭示降解路径与规律，形成标准化技术方案。</p><p class="docx-paragraph">（六）技术风险及对策</p><p class="docx-paragraph">潜在风险包括菌剂效能未达预期、前沿技术融合难度大、中试与小试偏差、技术先进性不足；应对对策为依托前期基础迭代优化菌群、组建跨学科团队并聘请专家指导、分步推进试验优化工艺、密切关注技术动态并打造自主知识产权。</p><p class="docx-paragraph">四、项目实施方案</p><p class="docx-paragraph">（一）技术工艺路线</p><p class="docx-paragraph">以“源头设计—动态优化—精准削减”为主线，分三步开展研究：一是通过污染物解析、核心菌株筛选，构建“降解-抗逆-共生”模块化合成菌群，依托DBTL循环迭代优化；二是引入基因开关、群体感应等调控策略，结合适应性进化提升菌剂鲁棒性，解析降解机制；三是开展多底物、多场景效能验证，借助同位素示踪、Raman-SIMS等技术揭示代谢机制，制定靶向削减策略。</p><p class="docx-paragraph">（二）前期准备</p><p class="docx-paragraph">申报单位已掌握核心技术，筛选出耐盐降解菌；哈工大在前沿领域有阶段性成果；双方拥有完善的科研平台与设备；已建立深度产学研合作，明确分工；申报单位落实200万元自筹资金，完成省级财政资金申报；组建跨学科团队，聘请专家指导；完成样品采集、成分解析与菌株初步筛选，取得阶段性数据。</p><p class="docx-paragraph">（三）具体实施安排</p><p class="docx-paragraph">1.各方投入：河北协同投入6名工程技术人员，提供工程化技术、200万元自筹资金及2300平米场地与设备；哈工大投入3名科研人员，提供前沿技术与实验室设备，利用自有经费开展基础研究。</p><p class="docx-paragraph">2.任务分工：河北协同负责项目牵头、资金管理、中试实施、市场推广；哈工大负责污染物解析、菌剂研发、机制解析、专利论文申报及研究生培养。</p><p class="docx-paragraph">3.人员交流：双方每月线上、每季度线下交流，互相派驻人员进修，开展技术培训，每半年邀请专家进行技术咨询。</p><p class="docx-paragraph">4.合作机制：建立项目领导小组与技术小组，实行利益共享、风险共担、共同验收的机制，明确知识产权归属与使用权限。</p><p class="docx-paragraph">（四）实施进度</p><p class="docx-paragraph">项目周期36个月，分三个阶段：</p><p class="docx-paragraph">1.前期研究与技术攻关（2025.1-2026.4）：完成污染物解析与靶点库建立，筛选核心菌株，构建并优化合成菌群，引入调控模块，建立菌剂精准投加策略。</p><p class="docx-paragraph">2.中试验证与工艺迭代（2026.5-2027.6）：开展多场景效能验证，解析降解机制，优化菌剂与工艺参数，搭建中试反应器平台，完成工艺精细化调校。</p><p class="docx-paragraph">3.成果凝练与推广应用（2027.7-2027.12）：编制结题材料并完成验收，实现菌剂标准化定型，推动示范工程落地，开展知识产权布局与标准制定。</p><p class="docx-paragraph">（五）知识产权状况</p><p class="docx-paragraph">项目成果由双方共同拥有，学术成果由哈工大主导发布，工程与产业化成果由河北协同主导；专利由双方共同申请，专利权归河北协同，哈工大拥有无偿使用权；建立保密制度，核心信息保密期限5年，河北协同拥有独家工程化实施权，双方不得擅自转让技术成果。</p><p class="docx-paragraph">五、项目前景</p><p class="docx-paragraph">（一）人才培养与团队建设</p><p class="docx-paragraph">培养及晋升4名专业技术人员、培养2名研究生，打造兼具科研与实践能力的复合型人才；组建跨学科、产学研融合的研发团队，加强国际交流，建立人才培养与激励机制，形成人才梯队，力争成为国内该领域优秀研发团队。</p><p class="docx-paragraph">（二）综合竞争力</p><p class="docx-paragraph">项目技术创新性强，首次建立“分子靶点库”，构建特色功能模块，拥有自主知识产权；场景适配性高，贴合国内行业废水特征；成本优势显著，产品价格为进口的1/3-1/2，可降低企业运行成本；工程化成熟度高，申报单位拥有丰富工程经验，分步推进保障技术落地；政策契合度高，符合国家与地方环保及产业政策，享受扶持政策。</p><p class="docx-paragraph">（三）市场需求与产业化前景</p><p class="docx-paragraph">1.市场需求：国家环保法规趋严，煤化工、制药、石化等行业废水治理成为硬性需求，河北省相关产业升级需求迫切，同时工业废水循环利用与第三方治理模式推动市场需求持续增长。</p><p class="docx-paragraph">2.产业化条件：项目完成实验室小试，申报单位拥有工程化转化技术、生产设备、稳定客户资源与市场渠道，享受政策支持，与哈工大及多家企业建立合作关系，产业化基础扎实。</p><p class="docx-paragraph">3.前景预测：短期1-2年内在河北省实现示范应用，年销售收入5000万元；中期3-5年推广至全国，年销售收入0.5-1亿元，成为行业标杆产品；长期5年以上形成系列化产品体系，拓展国际市场，开展废水资源化研究，提升产品经济价值与国际竞争力。</p><p class="docx-paragraph">六、经济效益与社会效益分析</p><p class="docx-paragraph">（一）经济效益</p><p class="docx-paragraph">1.实施单位：成果产业化后，河北协同新增销售收入5000万元、税金1200万元，提升市场份额与行业地位；哈工大获得技术转让费。</p><p class="docx-paragraph">2.合作企业：相比传统工艺，可降低运行成本30%以上，节约固定资产投资，提高水资源利用率，中型焦化企业每年可节约处理成本500-800万元。</p><p class="docx-paragraph">3.产业链：带动微生物菌剂生产、环保设备制造等相关产业发展，推动传统产业绿色转型，创造菌剂生产、技术研发等就业岗位，带动人员收入增长。</p><p class="docx-paragraph">（二）社会效益</p><p class="docx-paragraph">1.改善生态环境：高效降解难降解污染物，减少废水污染，生物处理工艺降低能耗与碳排放，助力“双碳”目标实现。</p><p class="docx-paragraph">2.保障公共健康：实现废水达标排放，保障饮用水安全，降低污染相关疾病发生率，提升居民生活质量。</p><p class="docx-paragraph">3.培养专业人才：输送优秀科研与工程人才，提升行业从业人员技术水平，推动人才队伍建设。</p><p class="docx-paragraph">4.推动产业升级：促进传统高污染行业绿色转型，丰富河北省生物医药产业生态，推动区域经济高质量发展。</p><p class="docx-paragraph">5.提升科技竞争力：形成自主知识产权核心技术，提升我国该领域国际影响力，推动环保技术“走出去”。</p><p class="docx-paragraph">6.完善环境治理体系：推动工业废水第三方治理模式发展，提升环保产业市场化程度，为政府环境治理提供高效技术方案。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">河北协同水处理技术有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责项目整体实施，资金筹集、设备购置和安装、工艺设计、中试试验等，负责项目推广应用</p></td><td><p class="docx-paragraph">孙志强</p></td><td><p class="docx-paragraph">260.00</p></td><td><p class="docx-paragraph">60.00</p></td><td><p class="docx-paragraph">200.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">哈尔滨工业大学</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">工艺优化和改进、性能测试、分析评价、应用试验</p></td><td><p class="docx-paragraph">李昂</p></td><td><p class="docx-paragraph">0.00</p></td><td><p class="docx-paragraph">0.00</p></td><td><p class="docx-paragraph">0.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">围绕重点行业工业废水处理痛点，突破生物环保制剂关键技术1项（突破高效降解菌群筛选、功能强化、稳定投加等核心技术）；新增省部级及以上科研项目/课题1项（如国家重点研发计划、国家自然科学基金、国家科技重大专项等）；申请发明专利3项；发表SCI / EI收录的期刊论文2篇；实现科技成果转化2项；成果转化应用于重点行业工业废水处理（含生物制剂使用），新增相关收入5000万元；新增税金1200万元；培养研究生2人、培养及晋升专业技术人员4人；形成结构合理、稳定持续的微生物水处理研发与应用创新团队1支。全面提升企业在工业废水生物处理领域的科技创新能力与行业影响力。</p></td><td><p class="docx-paragraph">申请发明专利1项；培养及晋升专业技术人员3人。</p></td><td><p class="docx-paragraph">发表SCI/EI收录的期刊论文1篇；申请发明专利2项；转化科技成果1项；新增收入2000万元，新增税金520万元；培养研究生1人；培养及晋升专业技术人员1人。</p></td><td><p class="docx-paragraph">承担国家科研项目1项；发表SCI/EI收录的期刊论文1篇；申请发明专利1项；转化科技成果1项；新增收入3000万元，新增税金680万元；培养研究生1人；培养高层次产业技术创新团队1个。</p></td></tr><tr><td rowspan="11"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">承担国家科研项目</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">SCI、EI收录的期刊论文（篇）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">突破关键技术（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">转化科技成果数量</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">新增收入（万元）</p></td><td><p class="docx-paragraph">5000</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">2000</p></td><td><p class="docx-paragraph">3000</p></td></tr><tr><td><p class="docx-paragraph">新增税金（万元）</p></td><td><p class="docx-paragraph">1200</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">520</p></td><td><p class="docx-paragraph">680</p></td></tr><tr><td><p class="docx-paragraph">培养研究生（人）</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养专业技术人员（人）</p></td><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">培养高层次产业技术创新团队（个）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">团队负责人身份、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">团队负责人引进类型相对应的材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才计划证明材料</p></td><td><p class="docx-paragraph">团队负责人或核心成员入选的国家或省部级人才计划证明材料</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队负责人申请及获授权的发明专利和其他知识产权证明</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">团队申请及获授权的专利和其他知识产权证明</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">团队承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">团队重要获奖证书</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">企业资质及省级平台证明</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队负责人担任国内外学术组织、重要学术期刊、学术科研机构职务情况证明材料</p></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队负责人发表SCI/EI代表性论文</p></td></tr><tr><td><p class="docx-paragraph">11</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队负责人其他核心期刊论文</p></td></tr><tr><td><p class="docx-paragraph">12</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">项目可行性报告</p></td></tr><tr><td><p class="docx-paragraph">13</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">合作协议</p></td></tr><tr><td><p class="docx-paragraph">14</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">团队负责人成果应用证明</p></td></tr><tr><td><p class="docx-paragraph">15</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">省级技术创新中心和企业技术中心研发平台，优秀公示证明</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>

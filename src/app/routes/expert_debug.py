@@ -1,4 +1,4 @@
-"""专家匹配调试：写死读取固定 JSON/HTML（与 match_report 版式对应）。"""
+"""专家匹配调试：读取固定 JSON/HTML（与前端展示一致）。"""
 
 import json
 import logging
@@ -13,9 +13,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # 与前端展示一致，固定为该次匹配产物
-MATCH_RESULT_JSON = Path("/home/tdkx/ljh/Tech/debug_expert/match_result_20260415_115915.json")
-MATCH_REPORT_HTML = Path("/home/tdkx/ljh/Tech/debug_expert/match_report_20260415_115915.html")
-FIXED_RUN_ID = "20260415_115915"
+MATCH_RESULT_JSON = Path("/home/tdkx/ljh/Tech/debug_expert/group_shared_match_results.json")
+MATCH_REPORT_HTML = Path("/home/tdkx/ljh/Tech/debug_expert/group_shared_match_report.html")
+FIXED_RUN_ID = "group_shared_match"
 
 
 @router.get("/latest")
@@ -49,11 +49,22 @@ async def get_latest_match_json() -> ApiResponse[dict]:
 
 @router.get("/latest-report")
 async def get_latest_match_report_html() -> FileResponse:
-    """返回固定 match_report_20260415_115915.html。"""
+    """返回固定 match_report.html。"""
     if not MATCH_REPORT_HTML.is_file():
-        raise HTTPException(status_code=404, detail="未找到 match_report_20260415_115915.html")
+        raise HTTPException(status_code=404, detail=f"未找到 {MATCH_REPORT_HTML.name}")
     return FileResponse(
         MATCH_REPORT_HTML,
         media_type="text/html; charset=utf-8",
         filename=MATCH_REPORT_HTML.name,
+    )
+
+
+@router.get("/latest-json-file")
+async def download_latest_match_json() -> FileResponse:
+    if not MATCH_RESULT_JSON.is_file():
+        raise HTTPException(status_code=404, detail=f"未找到 {MATCH_RESULT_JSON.name}")
+    return FileResponse(
+        MATCH_RESULT_JSON,
+        media_type="application/json; charset=utf-8",
+        filename=MATCH_RESULT_JSON.name,
     )

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>查重可视化报告 - dad1fc1555d149759316bc1c2ed04d10.docx</title>
+  <style>
+    
+    /* mammoth转换的DOCX内容样式 */
+    .docx-content {
+        line-height: 1.6;
+        font-size: 14px;
+        color: #333;
+    }
+    
+    .docx-content p {
+        margin: 0.5em 0;
+    }
+    
+    .docx-content h1, .docx-content h2, .docx-content h3,
+    .docx-content h4, .docx-content h5, .docx-content h6 {
+        margin: 1em 0 0.5em;
+        font-weight: bold;
+        color: #1a1a1a;
+    }
+    
+    .docx-content h1 { font-size: 1.5em; }
+    .docx-content h2 { font-size: 1.3em; }
+    .docx-content h3 { font-size: 1.15em; }
+    
+    .docx-content table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+    }
+    
+    .docx-content table td,
+    .docx-content table th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .docx-content table th {
+        background: #f5f5f5;
+        font-weight: bold;
+    }
+    
+    .docx-content ul, .docx-content ol {
+        margin: 0.5em 0;
+        padding-left: 2em;
+    }
+    
+    .docx-content li {
+        margin: 0.25em 0;
+    }
+    
+    .docx-content img {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .docx-content strong {
+        font-weight: bold;
+    }
+    
+    .docx-content em {
+        font-style: italic;
+    }
+    
+    /* 高亮样式 */
+    .docx-content .hit {
+        background: rgba(239, 68, 68, 0.25);
+        color: #991b1b;
+        border-radius: 2px;
+        padding: 1px 2px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .docx-content .hit:hover {
+        background: rgba(239, 68, 68, 0.4);
+    }
+    
+    .docx-content .hit.active {
+        background: rgba(220, 38, 38, 0.5);
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }
+    .page { height: 100vh; display: flex; flex-direction: column; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .title { font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }
+    .sub { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }
+    .toolbar-actions { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 160ms ease;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }
+    .btn.primary { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+    .btn.danger { background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn:focus { outline: none; }
+
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .pill { background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+    .pill.warn { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }
+    .pill.muted { background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 800; }
+    .stat-value { margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }
+    .sidebar { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+    .sidebar-top { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }
+    .nav-title { font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .nav-counter { font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }
+    .nav-search { width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }
+    .nav-search:focus { border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .chip { border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }
+    .chip.active { background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }
+
+    .nav-list { padding: 10px; overflow: auto; min-height: 0; }
+    .nav-item { width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }
+    .nav-item:hover { border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }
+    .nav-item.active { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+    .nav-item.hidden { display: none; }
+    .nav-header { font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .nav-text { color: #334155; line-height: 1.55; margin-bottom: 6px; }
+    .nav-item small { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .template-badge { background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; }
+    .locate-badge.ok { background: var(--ok); color: #fff; }
+    .locate-badge.partial { background: var(--accent); color: #fff; }
+    .locate-badge.miss { background: #94a3b8; color: #fff; }
+
+    .content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }
+    .panel { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }
+    .panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }
+    .panel-body { padding: 14px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 0; }
+
+    .empty { color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }
+    .hit {
+      background: rgba(239, 68, 68, 0.18) !important;
+      color: #991b1b !important;
+      border-radius: 6px;
+      padding: 0 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .hit.template { background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }
+    .hit.paraphrase { background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }
+    .hit.active { box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }
+
+    @media (max-width: 1100px) {
+      .main { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar">
+      <div>
+        <div class="title">查重可视化报告</div>
+        <div class="sub">主文档：dad1fc1555d149759316bc1c2ed04d10.docx ｜ 来源文档：N/A</div>
+        <div class="stats"><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">0.00%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">6,191</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">0</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">0</div></div></div>
+      </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：0</div>
+          <div class="pill">模板片段：0</div>
+          <div class="pill muted">未定位：0</div>
+          <div class="pill">有效字数：0</div>
+        </div>
+      </div>
+    </div>
+    <div class="main">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          <p class="empty">无重复片段</p>
+        </div>
+      </aside>
+      <section class="content">
+        <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>dad1fc1555d149759316bc1c2ed04d10.docx</span></div>
+          <div id="primary-panel" class="panel-body">
+            <div class="docx-content">
+<p class="docx-paragraph"><a id="title"></a><strong>河北省创新能力提升计划项目申报书</strong></p><p class="docx-paragraph">专 项 名 称 ：<a id="zxmc"></a>高水平人才团队建设专项</p><p class="docx-paragraph">指 南 代 码 ：<a id="zndm"></a>3010101-“燕赵黄金台聚才计划”骨干人才（科技平台）项目</p><p class="docx-paragraph">项目名称：<a id="xmmc"></a>河北华特汽车部件有限公司 AI赋能商用车混合动力控制关键技术创新创业团队</p><p class="docx-paragraph">申 报 单 位 ：<a id="cddwmc"></a>河北华特汽车部件有限公司</p><p class="docx-paragraph">项目负责人 ：<a id="xmfzr"></a>仇滔</p><p class="docx-paragraph">归口管理部门：<a id="gkbm"></a>衡水市科技局</p><p class="docx-paragraph">科技厅分管处室：<a id="fgcs"></a>省科技厅人事处</p><p class="docx-paragraph">申报预算年度：<a id="year"></a>2026年</p><p class="docx-paragraph">起 止 年 月 ：<a id="qzny"></a>2026-06 至 2029-06</p><p class="docx-paragraph">填 报 日 期 ：<a id="tbtime"></a>2026-02-25</p><p class="docx-paragraph"><a id="mark"></a><strong>河北省科学技术厅制</strong></p><p class="docx-paragraph"><strong>填 报 说 明</strong></p><p class="docx-paragraph">1、申报书中的各项内容要逐项填写，实事求是，完整准确，实际内容不发生的，请注明“无”。</p><p class="docx-paragraph">2、封面“项目名称”请按照“单位名称+研究方向+创新创业团队”格式填写，如：****公司智能环保技术创新创业团队。</p><p class="docx-paragraph">3、申报书中的有关栏目请在相应的“□”内打“√”。 </p><p class="docx-paragraph">4、教育经历请从大学时开始填写。</p><p class="docx-paragraph">5、申报书的填写内容及相关证明材料复印件中涉及国家秘密的，通过纸件和光盘报送相应材料。</p><p class="docx-paragraph"><strong>一、申报单位基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">单位名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwmc1"></a>河北华特汽车部件有限公司</p></td><td><p class="docx-paragraph">单位性质</p></td><td><p class="docx-paragraph"><a id="cddwdwxz"></a>私营企业</p></td></tr><tr><td><p class="docx-paragraph">通讯地址</p></td><td colspan="5"><p class="docx-paragraph"><a id="cddwdz1"></a>河北省景县城西工业园区</p></td></tr><tr><td><p class="docx-paragraph">社会统一</p><p class="docx-paragraph">信用代码</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwxydm"></a>91131127109977640M</p></td><td><p class="docx-paragraph">注册（纳税）</p><p class="docx-paragraph">地区</p></td><td><p class="docx-paragraph"><a id="cddwssdq"></a>河北省-衡水市-景县</p></td></tr><tr><td><p class="docx-paragraph">注册时间</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwzcsj"></a>2004-09-21</p></td><td><p class="docx-paragraph">注册资本</p></td><td><p class="docx-paragraph"><a id="cddwzczb"></a>6000.0万元</p></td></tr><tr><td><p class="docx-paragraph">法定代表人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwfr1"></a>宋立华</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="lclxrsj"></a>13483720000</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="frbgdh"></a>0318-8058702</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="frEmail"></a>Songyanhai@cnhwa.com</p></td></tr><tr><td><p class="docx-paragraph">项目联系人</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxr"></a>宋燕海</p></td><td><p class="docx-paragraph">手机</p></td><td><p class="docx-paragraph"><a id="cddwlxrsj"></a>13483720000</p></td></tr><tr><td><p class="docx-paragraph">办公电话</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwlxrdh"></a>0318-8058702</p></td><td><p class="docx-paragraph">E-mail</p></td><td><p class="docx-paragraph"><a id="cddwlxryx"></a>Songyanhai@cnhwa.com</p></td></tr><tr><td><p class="docx-paragraph">开户名称</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhmc"></a>河北华特汽车部件有限公司</p></td><td><p class="docx-paragraph">开户银行行号</p></td><td><p class="docx-paragraph"><a id="cddwhh"></a>103149143509</p></td></tr><tr><td><p class="docx-paragraph">开户银行</p></td><td colspan="3"><p class="docx-paragraph"><a id="cddwkhh"></a>中国农业银行景县支行</p></td><td><p class="docx-paragraph">帐号</p></td><td><p class="docx-paragraph"><a id="cddwzh"></a>50-435001040003447</p></td></tr><tr><td><p class="docx-paragraph">职工总数</p></td><td><p class="docx-paragraph"><a id="cddwzrs"></a>282人</p></td><td><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwjjsry"></a>28人</p></td><td><p class="docx-paragraph">中高级</p><p class="docx-paragraph">技术人员数</p></td><td><p class="docx-paragraph"><a id="cddwzgjry"></a>6人</p></td></tr><tr><td><p class="docx-paragraph">企业类型</p></td><td colspan="3"><p class="docx-paragraph">高新技术企业<a id="qylxgx"></a>R</p><p class="docx-paragraph">制造业单项冠军企业<a id="qylxkx"></a>🞎</p><p class="docx-paragraph">专精特新“小巨人”企业<a id="qylxjr"></a>R</p><p class="docx-paragraph">省级以上科技领军企业<a id="qylxkjlj"></a>🞎</p><p class="docx-paragraph">省国资委管理的国有企业<a id="qylxgzw"></a>🞎</p><p class="docx-paragraph">其他（<a id="qylx"></a>）<a id="qylxqt"></a>🞎</p></td><td><p class="docx-paragraph">所属产业（集群）</p></td><td><p class="docx-paragraph"><a id="tscyjq"></a>新能源汽车及关键零部件</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">上年度财务情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">上年末总资产（万元）</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzr"></a>30524.16</p></td><td><p class="docx-paragraph">上年度总收入（万元）</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrzw"></a>20798.73</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">资产负债率(%)</p></td><td colspan="2"><p class="docx-paragraph"><a id="wfdydwfzrdh"></a>14.97</p></td><td><p class="docx-paragraph">研发投入 / 销售收入(%)</p></td><td><p class="docx-paragraph"><a id="wfdydwfzrcz"></a>4.2</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发平台情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="ptqkgjjsys"></a><a id="ptqksys"></a>□重点实验室 （<a id="ptqkgjjsys1"></a>□国家级   <a id="ptqksjsys1"></a><a id="ptqksjsys"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkgjjzx"></a><a id="ptqkzx"></a>□技术创新中心（<a id="ptqkgjjzx1"></a>□国家级   <a id="ptqksjzx1"></a>□省级）</p><p class="docx-paragraph"><a id="ptqkysgzz"></a>□省级院士工作站</p><p class="docx-paragraph"><a id="ptqkyjy"></a>□省级产业技术研究院</p><p class="docx-paragraph"><a id="ptqkqt"></a>R其他（请注明）：  <a id="ptqkqtsm"></a>河北省级工程研究中心       </p></td></tr><tr><td colspan="2"><p class="docx-paragraph">研发基础条件情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzr"></a>公司以省级工程研究中心为依托，联合相关产业上下游企业，与北京工业大学、河北工业职业技术学院、包头稀土研究院等高校和科研院所达成科技项目的研发和转化、共建研发平台、共享科技资源等全方位的战略合作，为公司提供人才、智力等方面的支撑，提升公司的技术研发能力、人才队伍和管理水平，提升公司的综合软实力水平。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">单位知识产权情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrdh"></a>公司现有有效专利 41 项，其中发明专利 15 项，实用新型专利 26 项。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">科研成果转化情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lcfzrsj"></a>1、在北京工业大学仇滔、雷艳科技特派团支持下，完成柴油机智能尾气防护技术的转化，形成特种车辆尾气防护装置产品，</p><p class="docx-paragraph">实现国防装配批量配套。</p><p class="docx-paragraph">2、完成甲醇发电机组技术成果转化。研制甲醇发动机尾气处理装置和甲醇发动机发电机组集成，实现油田推广。</p><p class="docx-paragraph">3、开展氢气发动机专用尾气处理技术研究，正在和玉柴整机匹配。</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">产学研合作及国际交流合作情况</p></td><td colspan="4"><p class="docx-paragraph"><a id="lclxr"></a>公司先后与北京理工大学、包头稀土研究院、河北工业职业技术大学、北京工业大学等国内高等院校建立产学研合作。</p></td></tr></table><p class="docx-paragraph"><strong>二、团队成员基本情况</strong></p><table class="docx-table"><tr><td colspan="17"><p class="docx-paragraph">（一）团队人员构成</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">总人数</p></td><td colspan="2" rowspan="2"><p class="docx-paragraph">10</p></td><td colspan="6"><p class="docx-paragraph">45周岁（含）以下人数</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="6"><p class="docx-paragraph">企业技术人员数量</p></td><td colspan="6"><p class="docx-paragraph">6</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">技术职称</p></td><td colspan="2"><p class="docx-paragraph">正高级</p></td><td colspan="4"><p class="docx-paragraph">副高级</p></td><td colspan="5"><p class="docx-paragraph">中级</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">2人</p></td><td colspan="4"><p class="docx-paragraph">1人</p></td><td colspan="5"><p class="docx-paragraph">6人</p></td><td colspan="3"><p class="docx-paragraph">1人</p></td></tr><tr><td colspan="3" rowspan="2"><p class="docx-paragraph">学历</p></td><td colspan="2"><p class="docx-paragraph">博士研究生</p></td><td colspan="4"><p class="docx-paragraph">硕士研究生</p></td><td colspan="5"><p class="docx-paragraph">本科</p></td><td colspan="3"><p class="docx-paragraph">其他</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">4人</p></td><td colspan="4"><p class="docx-paragraph">0人</p></td><td colspan="5"><p class="docx-paragraph">6人</p></td><td colspan="3"><p class="docx-paragraph">0人</p></td></tr><tr><td colspan="17"><p class="docx-paragraph">（二）项目负责人简况</p></td></tr><tr><td><p class="docx-paragraph">姓名</p></td><td colspan="3"><p class="docx-paragraph">仇滔</p></td><td colspan="2"><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">民族</p></td><td colspan="3"><p class="docx-paragraph">汉族</p></td><td colspan="5"><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">1976-08</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">专业技术职称</p></td><td colspan="3"><p class="docx-paragraph">教授</p></td><td colspan="4"><p class="docx-paragraph">研究方向</p></td><td colspan="6"><p class="docx-paragraph">动力域智能控制</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">引进类型</p></td><td colspan="7"><p class="docx-paragraph"><a id="yjlx_qz"></a>□全职引进  <a id="yjlx_hz"></a>R柔性合作</p></td><td colspan="4"><p class="docx-paragraph">引进时间</p></td><td colspan="2"><p class="docx-paragraph">2022-01-26</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位及职务</p></td><td colspan="3"><p class="docx-paragraph">北京工业大学</p></td><td colspan="4" rowspan="2"><p class="docx-paragraph">引进前工作单位所在地</p></td><td colspan="6" rowspan="2"><p class="docx-paragraph">北京市朝阳区平乐园 100 号</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">专业负责人</p></td></tr><tr><td colspan="4" rowspan="2"><p class="docx-paragraph">目前担任申报单位职务或</p><p class="docx-paragraph">聘任岗位</p></td><td colspan="3" rowspan="2"><p class="docx-paragraph">科技副总</p></td><td colspan="5" rowspan="2"><p class="docx-paragraph">现通讯地址及邮编</p></td><td colspan="5"><p class="docx-paragraph">053500</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">河北省景县城西工业园区</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">办公电话</p></td><td colspan="2"><p class="docx-paragraph">03188058702</p></td><td colspan="2"><p class="docx-paragraph">手机</p></td><td colspan="4"><p class="docx-paragraph">18618323651</p></td><td colspan="2"><p class="docx-paragraph">E-mail</p></td><td colspan="5"><p class="docx-paragraph">qiutao@bjut.edu.cn</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">人才曾获国家荣誉、奖励、项目等支持情况</p></td><td colspan="13"><p class="docx-paragraph"><a id="rcjh_ys"></a>□“两院”院士  <a id="rcjh_zdrc"></a>□国家重点人才工程计划入选人才  </p><p class="docx-paragraph"><a id="rcjh_cjxz"></a>□长江学者  <a id="rcjh_xsdtr"></a>□国家重点学科、重点实验室学术技术带头人</p><p class="docx-paragraph"><a id="rcjh_xmzfr"></a>R国家级科技项目、工程项目主要负责人</p><p class="docx-paragraph"><a id="rcjh_kjwcr"></a>□国家科技奖主要完成人   <a id="rcjh_tsjt"></a>□享受国务院政府特殊津贴人员</p><p class="docx-paragraph"><a id="rcjh_wrjh"></a>□国家百千万人才工程人才  <a id="rcjh_qt"></a>R其他（请注明）：  <a id="rcjh_qtsm"></a>河北省燕赵人才  </p></td></tr><tr><td colspan="17"><p class="docx-paragraph">学习（从本科起）和工作经历</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">起止时间</p></td><td colspan="9"><p class="docx-paragraph">学校或工作单位</p></td><td colspan="4"><p class="docx-paragraph">职务</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1995-09-01至1999-07-03</p></td><td colspan="9"><p class="docx-paragraph">北京理工大学</p></td><td colspan="4"><p class="docx-paragraph">学士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">1999-09-01至2002-03-01</p></td><td colspan="9"><p class="docx-paragraph">北京理工大学</p></td><td colspan="4"><p class="docx-paragraph">硕士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2002-03-01至2005-03-01</p></td><td colspan="9"><p class="docx-paragraph">北京理工大学</p></td><td colspan="4"><p class="docx-paragraph">博士</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2005-03-01至2010-10-01</p></td><td colspan="9"><p class="docx-paragraph">北京理工大学</p></td><td colspan="4"><p class="docx-paragraph">副教授</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">2010-10-01至2026-02-26</p></td><td colspan="9"><p class="docx-paragraph">北京工业大学</p></td><td colspan="4"><p class="docx-paragraph">教授</p></td></tr></table><table class="docx-table"><tr><td colspan="20"><p class="docx-paragraph"><strong>承担主要科研任务情况（不超过3项）</strong></p></td></tr><tr><td colspan="4"><p class="docx-paragraph">项目名称 </p></td><td colspan="7"><p class="docx-paragraph">起止年月</p></td><td colspan="4"><p class="docx-paragraph">项目来源</p></td><td colspan="4"><p class="docx-paragraph">计划名称</p></td><td><p class="docx-paragraph">担任角色</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">柴油微引燃天然气（HPDI）发动机缸内直喷射流诱导湍流场和燃烧</p></td><td colspan="7"><p class="docx-paragraph">2017.01-2019.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金面上项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">燃油系统内电控阀区域的高压瞬变流场特性及气穴过程研究</p></td><td colspan="7"><p class="docx-paragraph">2011.01-2013.12</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金委员会</p></td><td colspan="4"><p class="docx-paragraph">国家自然科学基金青年基金</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="4"><p class="docx-paragraph">新能源汽车增程式动力创新技术协同创新中心</p></td><td colspan="7"><p class="docx-paragraph">2022.07-2023.06</p></td><td colspan="4"><p class="docx-paragraph">北京市朝阳区科学技术和信息化局</p></td><td colspan="4"><p class="docx-paragraph">协同创新项目</p></td><td><p class="docx-paragraph">项目负责人</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>获得主要科研学术奖励情况（不超过3项）</strong></p></td></tr><tr><td colspan="3"><p class="docx-paragraph">获奖项目名称</p></td><td colspan="4"><p class="docx-paragraph">奖励名称</p></td><td colspan="3"><p class="docx-paragraph">等级</p></td><td colspan="2"><p class="docx-paragraph">获奖时间</p></td><td colspan="4"><p class="docx-paragraph">排序</p></td><td colspan="4"><p class="docx-paragraph">授予机构</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">特种车辆动力系统智能协同管控关键技术及应用</p></td><td colspan="4"><p class="docx-paragraph">北京市科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">二等</p></td><td colspan="2"><p class="docx-paragraph">2024-05-17</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">北京市人民政府</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">特种动力后处理系统智能控制与柔性制造关键技术及应用</p></td><td colspan="4"><p class="docx-paragraph">机械工业科学技术奖</p></td><td colspan="3"><p class="docx-paragraph">三等</p></td><td colspan="2"><p class="docx-paragraph">2024-10-25</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">机械工业协会</p></td></tr><tr><td colspan="3"><p class="docx-paragraph">科技合作奖</p></td><td colspan="4"><p class="docx-paragraph">河北省科学技术合作奖</p></td><td colspan="3"><p class="docx-paragraph">无</p></td><td colspan="2"><p class="docx-paragraph">2025-04-05</p></td><td colspan="4"><p class="docx-paragraph">1</p></td><td colspan="4"><p class="docx-paragraph">河北省科技厅</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>代表性论文（第一作者或通讯作者，不超过3篇）</strong></p></td></tr><tr><td colspan="2"><p class="docx-paragraph">论文题目</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p><p class="docx-paragraph">（或通讯作者或二者兼是，请注明）</p></td><td colspan="5"><p class="docx-paragraph">期刊名称</p></td><td colspan="5"><p class="docx-paragraph">发表年份</p></td><td colspan="2"><p class="docx-paragraph">被SCI、EI、ISTP收录情况</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Research on the method of diesel particulate filters carbon load recognition based on deep learning</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Energy</p></td><td colspan="5"><p class="docx-paragraph">2024</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Experimental Research on Regulated and Unregulated Emissions from E20-Fuelled Vehicles and Hybrid Electric Vehicles</p></td><td colspan="6"><p class="docx-paragraph">第一作者</p></td><td colspan="5"><p class="docx-paragraph">Atmosphere</p></td><td colspan="5"><p class="docx-paragraph">2024</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">Experimental study of SCR DeNOX efficiency at low exhaust gas temperatures</p></td><td colspan="6"><p class="docx-paragraph">通讯作者</p></td><td colspan="5"><p class="docx-paragraph">Applied Thermal Engineering</p></td><td colspan="5"><p class="docx-paragraph">2024</p></td><td colspan="2"><p class="docx-paragraph">SCI</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>发明专利、软件著作权或动植物新品种授权情况（不超过3件）</strong></p></td></tr><tr><td><p class="docx-paragraph">名称</p></td><td colspan="5"><p class="docx-paragraph">授权号</p></td><td colspan="3"><p class="docx-paragraph">类别</p></td><td colspan="3"><p class="docx-paragraph">本人排名</p></td><td colspan="5"><p class="docx-paragraph">授权时间</p></td><td colspan="3"><p class="docx-paragraph">授权国别</p><p class="docx-paragraph">或组织</p></td></tr><tr><td><p class="docx-paragraph">一种瞬时故障发生强度的阈值判断方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202110933868.7</p></td><td colspan="3"><p class="docx-paragraph">国家发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2024-06-18</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td><p class="docx-paragraph">一种轻量静音发电机组装置和方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202211232336.1</p></td><td colspan="3"><p class="docx-paragraph">国家发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2024-11-19</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td><p class="docx-paragraph">一种适用于多个NOx排放源并联共排气管的最优控制方法</p></td><td colspan="5"><p class="docx-paragraph">ZL202010270556.8</p></td><td colspan="3"><p class="docx-paragraph">国家发明专利</p></td><td colspan="3"><p class="docx-paragraph">1</p></td><td colspan="5"><p class="docx-paragraph">2022-04-08</p></td><td colspan="3"><p class="docx-paragraph">国家知识产权局</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>科研组织与学术期刊任职情况</strong></p></td></tr><tr><td colspan="5"><p class="docx-paragraph">组织或期刊名称</p></td><td colspan="9"><p class="docx-paragraph">职务</p></td><td colspan="6"><p class="docx-paragraph">任期</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">包头科技创新智库专家</p></td><td colspan="9"><p class="docx-paragraph">专家</p></td><td colspan="6"><p class="docx-paragraph">2023-10-28至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">中国内燃机学会</p></td><td colspan="9"><p class="docx-paragraph">内燃动力智能技术分会副主任委员</p></td><td colspan="6"><p class="docx-paragraph">2020-12-19至今</p></td></tr><tr><td colspan="5"><p class="docx-paragraph">内燃机学报</p></td><td colspan="9"><p class="docx-paragraph">编委</p></td><td colspan="6"><p class="docx-paragraph">2019-02-28</p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><strong>其他重要成果及业绩、贡献等</strong></p></td></tr><tr><td colspan="20"><p class="docx-paragraph"><a id="qtzygx"></a>仇滔，研究方向为车辆动力系统匹配、车辆智能网联控制。目前担任内燃机学会智能分会副主任委员、包头科技创新智库转、航空活塞式发动机专业委员会委员， 担任《内燃机学报》编委； 《兵工学报》的优秀审稿人，国际期刊 Energy 审稿、Energy Conversion and Management、Fue l、Applied Thermal Engineering 等审稿人。负责了国家自然科学基金、国防重大研发项目、北京市自然科学基金、北京市科委、教委项目， 与国内主要内燃机厂如潍柴、玉柴保持长期合作。2005年-2010 年北京理工大学工作期间参与15 型坦克动力研制，2008-2010 年潍柴工作期间参与领导中国首款量产自主电控系统研发及产业化。在北京工业大学期间， 组织开发了故障诊断系统，用于玉柴量产电控单元和国防装备；提出了基于人工智能技术后处理虚拟感知技术和集中监管分布式控制方法，形成多源尾气处理综合技术，在国内多源台架领域应用市场市场占有率第一。发表期刊论文 70 余篇，其中 SCI 论文 48 篇、EI 论文 25 篇，授权发明专利 25 项。绿色柴油机高适应性智能控制关键技术项目获 2023 年机械工业科学技术奖-技术发明奖一等奖（排名 5），高功率密度柴油动力轴向磁通发电技术项目获 2023 年河南省技术发明奖二等奖（排名 3），特种车辆动力系统智能协同管控关键技术及应用项目获 2024 年北京市技术发明二等奖（排名 1），特种动力后处理系统智能控制与柔性制造关键技术及应用项目获 2024 年机械工业科学技术奖-技术发明奖三等奖（排名 1），2024 年获河北省科技合作奖。</p></td></tr></table><table class="docx-table"><tr><td colspan="12"><p class="docx-paragraph">（二）团队主要成员</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">姓名</p></td><td><p class="docx-paragraph">性别</p></td><td><p class="docx-paragraph">出生年月</p></td><td><p class="docx-paragraph">证件号</p></td><td><p class="docx-paragraph">学位</p></td><td><p class="docx-paragraph">职称</p></td><td><p class="docx-paragraph">研究领域</p></td><td><p class="docx-paragraph">所学专业</p></td><td><p class="docx-paragraph">是否全职引进</p></td><td><p class="docx-paragraph">引进（当）前工作单位及职务</p></td><td><p class="docx-paragraph">入选省级以上人才计划情况</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">仇滔</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1976-08</p></td><td><p class="docx-paragraph">439004197608051419</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">超级电容器与热电转换技术及其相关产品</p></td><td><p class="docx-paragraph">内燃机工程(包括汽油机、柴油机、气体燃料发动机等)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京工业大学专业负责人</p></td><td><p class="docx-paragraph">国家级科技项目、工程项目主要负责人,其他:北京市科技青年拔尖人才、河北省燕赵人才</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">王亚楠</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1994-01</p></td><td><p class="docx-paragraph">360733199401170026</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">讲师</p></td><td><p class="docx-paragraph">新型动力电池（组）与储能电池技术及其相关产品</p></td><td><p class="docx-paragraph">内燃机工程(包括汽油机、柴油机、气体燃料发动机等)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京工业大学讲师</p></td><td></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">宋燕海</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1977-06</p></td><td><p class="docx-paragraph">133001197706201251</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">高级工程师</p></td><td><p class="docx-paragraph">能量系统优化技术及相关产品</p></td><td><p class="docx-paragraph">化工机械与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司总经理</p></td><td></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">宋炳建</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1977-02</p></td><td><p class="docx-paragraph">130102197702140331</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">能量系统优化技术及相关产品</p></td><td><p class="docx-paragraph">化工机械与设备</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">贾金平</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1991-04</p></td><td><p class="docx-paragraph">131127199104083223</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">能量系统优化技术及相关产品</p></td><td><p class="docx-paragraph">机械零件及传动</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">周静</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1990-06</p></td><td><p class="docx-paragraph">131127199006153224</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">能量系统优化技术及相关产品</p></td><td><p class="docx-paragraph">机械零件及传动</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">张鹏</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1991-10</p></td><td><p class="docx-paragraph">131127199110106233</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">能量系统优化技术及相关产品</p></td><td><p class="docx-paragraph">工业机器人技术</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">郝晶晶</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1988-12</p></td><td><p class="docx-paragraph">130632198812013018</p></td><td><p class="docx-paragraph">学士</p></td><td><p class="docx-paragraph">工程师</p></td><td><p class="docx-paragraph">能量系统优化技术及相关产品</p></td><td><p class="docx-paragraph">机械零件及传动</p></td><td><p class="docx-paragraph">是</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司工程师</p></td><td></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">雷艳</p></td><td><p class="docx-paragraph">女</p></td><td><p class="docx-paragraph">1975-03</p></td><td><p class="docx-paragraph">432926197503280021</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">教授</p></td><td><p class="docx-paragraph">超级电容器与热电转换技术及其相关产品</p></td><td><p class="docx-paragraph">内燃机工程(包括汽油机、柴油机、气体燃料发动机等)</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京工业大学教授</p></td><td></td></tr><tr><td><p class="docx-paragraph">10</p></td><td><p class="docx-paragraph">田锐</p></td><td><p class="docx-paragraph">男</p></td><td><p class="docx-paragraph">1983-01</p></td><td><p class="docx-paragraph">429006198301195114</p></td><td><p class="docx-paragraph">博士</p></td><td><p class="docx-paragraph">副研究员</p></td><td><p class="docx-paragraph">集成电路设计和测试服务</p></td><td><p class="docx-paragraph">算法理论</p></td><td><p class="docx-paragraph">否</p></td><td><p class="docx-paragraph">北京工业大学副研究员</p></td><td></td></tr></table><p class="docx-paragraph"><strong>三、项目基本情况</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">项目名称</p></td><td><p class="docx-paragraph"><a id="xmmc2"></a>河北华特汽车部件有限公司 AI赋能商用车混合动力控制关键技术创新创业团队</p></td></tr><tr><td><p class="docx-paragraph">起止时间</p></td><td><p class="docx-paragraph"><a id="xmqzrq"></a>2026-06 至 2029-06</p></td></tr><tr><td><p class="docx-paragraph">项目规模</p></td><td><p class="docx-paragraph">总投资 <a id="xmzjf"></a>200.0万元。其中，申请省级财政经费 <a id="xmzxjf"></a>50.0万元，企业自筹经费  <a id="xmzcjf"></a>150.0万元。</p></td></tr><tr><td><p class="docx-paragraph">技术领域</p></td><td><p class="docx-paragraph"><a id="jsly_rgzn"></a>□人工智能  <a id="jsly_zncg"></a>□智能传感  <a id="jsly_jcdl"></a>□集成电路  <a id="jsly_smjk"></a>□生命健康  <a id="jsly_zyy"></a>□现代中医药</p><p class="docx-paragraph"><a id="jsly_swyz"></a>□生物育种  <a id="jsly_xxgncl"></a>□新型功能材料  <a id="jsly_gdzb"></a>□高端装备制造  <a id="jsly_jmyq"></a>□精密仪器</p><p class="docx-paragraph"><a id="jsly_xdtx"></a>□现代通信  <a id="jsly_xxsz"></a>□新型显示  <a id="jsly_dsj"></a>□大数据与物联网  <a id="jsly_qkl"></a>□区块链</p><p class="docx-paragraph"><a id="jsly_xny"></a>R新能源汽车及关键零部件  <a id="jsly_jqr"></a>□机器人  <a id="jsly_ktss"></a>□空天信息  <a id="jsly_xjsl"></a>□先进算力</p><p class="docx-paragraph"><a id="jsly_lsqn"></a>□绿色氢能  <a id="jsly_dkjj"></a>□<a id="OLE_LINK2"></a>低空经济  <a id="jsly_gtdc"></a>□固态电池  <a id="jsly_njjk"></a>□脑机接口  <a id="jsly_mm"></a>□密码</p><p class="docx-paragraph">其他（请注明）：   <a id="jsly_qtsm"></a>   </p></td></tr><tr><td rowspan="3"><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">北京工业大学</p></td></tr><tr><td></td></tr><tr><td></td></tr><tr><td><p class="docx-paragraph">主题词</p></td><td><p class="docx-paragraph"><a id="xmztc"></a>新能源汽车，商用车，混合动力，人工智能，控制系统</p></td></tr><tr><td><p class="docx-paragraph">人才培养</p><p class="docx-paragraph">团队建设</p><p class="docx-paragraph">目标</p></td><td><p class="docx-paragraph"><a id="xmRCPYJSMB"></a>培训从事技术创新服务不少于 5 次。</p></td></tr><tr><td><p class="docx-paragraph">预期成果</p></td><td><p class="docx-paragraph"><a id="xmYQCG"></a>解决人工智能在混合动力状态感知与控制监测的难题；完成新一代 AI 驱动的混合动力域控制器样件 1 件；发表相关论文 1 篇；申报相关专利 1项；申报相关软件著作权 1 项；团队成员中的企业人员主持企业科研项目或纵向项目 1 项。</p></td></tr><tr><td><p class="docx-paragraph">预期知识产权及归属</p></td><td><p class="docx-paragraph"><a id="xmYQzscq"></a>合作各单位在申请本项目之前各自获得、拥有的科技成果、知识产权及相应权益均归各自所有，不因共同申请本项目而改变。各方独立完成的所有权归各自所有；双方共同完成的，双方共有，由此产生的收益按照双方的实质性贡献大小进行分配。项目成果申报各级奖项，应双方共同享有。具体事宜另行商定。</p></td></tr></table><table class="docx-table"><tr><td><p class="docx-paragraph"><strong>项目可行性报告（不超过1500字）：</strong></p><p class="docx-paragraph"><a id="xmkxxbg"></a>一、总论</p><p class="docx-paragraph">1、项目背景与意义</p><p class="docx-paragraph">混合动力技术是新能源汽车的重要方式。商用车主要采用大功率低速大扭矩内燃机（如柴油机、天然气发动机等），以适用卡车、船、工程机械和农用机械等多场景以及作业工况强瞬变的需求，因此区别于乘用车汽油混合动力，基于柴油机的商用车混合技术具有自身的特点。随着国家政策的发展，商用车新能源化正在加速，因此开展商用车混合技术研发是当前的热点，成果也能快速的切入市场完成转化。本项目聚焦商用车混合动力系统的控制技术，着力在复杂工况下的感知与智能调控难题，通过引入人工智能技术，突破传统控制方法的局限性，提升系统在多场景、极端环境下的适应性与可靠性，研制商用车混合动力控制单元，成果将助力河北省商用车产业在“十五五”期间抢占技术制高点，符合国家政策具有应用价值。</p><p class="docx-paragraph">2、项目概述</p><p class="docx-paragraph">（1）研究内容</p><p class="docx-paragraph">研究内容一：混合动力系统功率状态智能感知技术研究</p><p class="docx-paragraph">开展基于多源信息融合的智能感知方法研究，构建供能功率动态虚拟感知模型，提升供能功率运行状态的实时感知能力，为后续智能调控提供准确的功率输入。</p><p class="docx-paragraph">研究内容二：AI驱动的混合动力系统智能调控技术研究</p><p class="docx-paragraph">开展基于人工智能的智能调控策略研究，开发能够适应复杂工况的动态调控算法，实现多模式切换的平顺性与能效优化，提升系统整体控制性能。</p><p class="docx-paragraph">研究内容三：AI赋能的混合动力系统智能控制器研制</p><p class="docx-paragraph">开展面向 AI 应用的动力域控制器硬件设计与样机研制，完成控制器软件与硬件的协同开发，并通过测试验证其在典型工况下的功能与性能。</p><p class="docx-paragraph">（2）合作分工</p><p class="docx-paragraph">河北华特负责项目的总体组织实施，提供实验场地等研究条件，组建技术团队，配合乙方开展科技研究。</p><p class="docx-paragraph">北京工业大学完成智能感知模型研发、智能调控算法研究、控制器硬件设计与样机加工，以及测试试验工作；发表相关论文 1 篇，申报相关专利 1项，申报相关软件著作权 1 项，撰写相关研究报告 1 份，培训从事技术创新服务不少于 5 次。</p><p class="docx-paragraph">（3）与我省重点产业领域战略发展方向的相关性</p><p class="docx-paragraph">商用车混合动力系统是河北省新能源汽车产业链的重要组成部分。本项目成果将应用在申报企业形成商用车混合动力控制零部件产品，助力河北省汽车产业向高端化、智能化、绿色化方向转型升级。</p><p class="docx-paragraph">3、项目预期达到的经济、技术性能指标</p><p class="docx-paragraph">（1）经济指标</p><p class="docx-paragraph">团队成员中的企业人员主持企业科研项目或纵向项目 1 项。</p><p class="docx-paragraph">（2）技术性能指标</p><p class="docx-paragraph">完成新一代AI 驱动的混合动力域控制器样件 1 件，技术指标：</p><p class="docx-paragraph">•	系统供能过程功率动态感知精度 &gt; 85%</p><p class="docx-paragraph">•	智能调控响应时间 &lt; 100ms</p><p class="docx-paragraph">发表相关论文 1 篇；申报相关专利 1 项；申报相关软件著作权 1 项。</p><p class="docx-paragraph">二、申报单位、人才(团队)情况</p><p class="docx-paragraph">1、申报单位基础设施、科研条件、科研队伍及财务经济状况</p><p class="docx-paragraph">河北华特汽车部件有限公司主要从事汽车零部件的设计、生产、销售和服务，包括汽车系列排气管总成、消音器总成、汽车系列中冷器等，以及国 VI 汽车、发动机的尾气后处理系统的研发。拥有一流的研发团队、先进的研发设备、丰富的技术储备。现有经验丰富的技术研发人员66 人。2024 年，公司研发投入为868.52 万元，占营业收入的 4.2%。</p><p class="docx-paragraph">2、申报单位的学术技术水平、产业行业地位、研究开发能力、知识产权、科技成果转化、产学研合作、国际交流合作等情况</p><p class="docx-paragraph">河北华特经河北省发展改革委和河北省工信厅评审，被评为省级企业技术中心和省级技术研发中心。已通过 ISO9001 国际质量管理体系认证、CCC 汽车强制性产品认证、IATF16949 国际质量管理体系认证。多次被省、市、县评为“重合同守信用 ”企业、“省科技企业 ”及“高新技术企业 ”。公司于 2023 年参与了 GB/T43201.5-2023《工业自动化系统与集成生产系统工程的标准化程序第 5 部分：制造变更管理》国家标准的制定、T/CAAMTB 146—2023《新能源汽车越野性能评级方法》团体标准的制定。获得 2024 年机械工业协会技术发明三等奖，2024 年北京市技术发明二等奖。</p><p class="docx-paragraph">3、项目负责人及团队核心成员的学习工作简历、主要科研成果、奖励等基本情况</p><p class="docx-paragraph">项目负责人，仇滔，北京工业大学教授博导，1995.9-2005.3，北京理工大学，本硕博；2008.3-2010.6 潍柴动力股份有限公司企业博士后；2014.10-2016.04 美国韦恩州立大学访问学者。2005 年在北京理工大学留校，2010 年调入北京工业大学。北京市科技拔尖人才专家，内燃机学会智能分会副主任委员，航空活塞式发动机专业委员会委员。以第一作者发表 SCI 检索论文 20 余篇；授权发明专利 20 余项。获得过国防重点研发项目、国家自然科学基金、北京市教委项目、北京市科委项目等基金项目 10 余项，企业委托项目 10 余项。2024 年获机械工业技术发明奖三等奖、北京市技术发明二等奖、河北省科技合作奖。</p><p class="docx-paragraph">项目核心成员，宋燕海，男，河北华特汽车部件有限公司，总经理，学士学位，高级工程师，研究领域为能量系统优化技术及相关产品，被评为优秀企业家和杰出青年，同时获得科技创新人才称号。</p><p class="docx-paragraph">4、与项目相关的工作积累、研发基础和已取得的阶段性成果</p><p class="docx-paragraph">引进团队为科技特派团，协助企业开展智能化，目前围绕特种车辆防护，形成了智能防护产品，在国防领域推广近两年产值超 2000 万；助力研制甲醇发电机组，正在开展油田推广；项目团队初步开展了人工智能边缘技术研究，已经获得国防项目支持。商用车混合动力控制技术正在和广西玉柴合作。</p><p class="docx-paragraph">三、项目的技术先进性和可行性分析</p><p class="docx-paragraph">1、项目拟解决的关键技术和问题</p><p class="docx-paragraph">拟解决的关键问题 1：混合动力系统供能功率动态智能感知难题</p><p class="docx-paragraph">针对真实物理传感器信号条件有限、供能功率难以直接动态测量的难点，采用数据优化与人工智能方法建立功率动态虚拟感知模型，为智能控制提供可靠的功率信息。</p><p class="docx-paragraph">拟解决的关键问题 2：混合动力系统多模式切换控制优化难题</p><p class="docx-paragraph">针对混合动力系统在多模式切换过程中存在的非线性、时变性控制难题，研究基于人工智能的智能调控策略，实现动态自适应优化控制，提升系统能效与响应性能。</p><p class="docx-paragraph">2、人才(团队)可提供的相关技术支撑及其途径</p><p class="docx-paragraph">团队拥有先进的内燃机与混合动力测试平台、仿真计算设备、控制器开发工具链。</p><p class="docx-paragraph">3、项目的基本情况介绍</p><p class="docx-paragraph">本项目围绕商用车混合动力系统，开展供能功率动态智能感知与 AI调控技术研究，研制出 AI 赋能的混合动力智能控制器样件，并完成系统集成与测试验证。</p><p class="docx-paragraph">4、国内外同类技术发展现状及与本项目技术的比较，国内外技术发展趋势</p><p class="docx-paragraph">目前商用车混合动力控制器多沿用乘用车领域的规则控制策略，针对商用车大功率、多场景、极端环境等复杂工况的专用产品尚不成熟。本项目团队前期与玉柴等龙头企业深度合作，在功率动态感知、多模式切换控制等方面积累了领先的技术经验。</p><p class="docx-paragraph">5、项目预期达到的技术性能指标</p><p class="docx-paragraph">功率动态感知模型可输出供能功率关键状态，预测精度 &gt; 85%，智能调控算法响应时间 &lt; 100ms，控制器样件具备多模式切换与智能优化能力，完成样件台架测试。</p><p class="docx-paragraph">6、项目技术风险分析与对策</p><p class="docx-paragraph">无。</p><p class="docx-paragraph">四、项目的实施方案</p><p class="docx-paragraph">1、项目的技术、工艺路线及采用的研究手段</p><p class="docx-paragraph">研究手段包括：模型构建和轻量化、软硬件开发和台架集成实验。</p><p class="docx-paragraph">2、项目的前期准备情况</p><p class="docx-paragraph">北工大已经建设完整的商用车混合动力试验台架，前期项目已经和应用单位玉柴全面合作。</p><p class="docx-paragraph">3、项目的具体实施方案</p><p class="docx-paragraph">（1）混合动力系统功率状态智能感知技术研究</p><p class="docx-paragraph">1）建立混合动力系统功率状态物理模型。引入工况特征动态聚类方法，为智能感知模型开发提供精准且适配动态场景的理论支撑。</p><p class="docx-paragraph">2）面向车载端实时在线动态感知需求，开发基于时序信号重构的动态感知数据修复算法。</p><p class="docx-paragraph">3）开发基于多模态机器学习融合算法构建发动机与发电机输出功率的动态数据驱动模型。</p><p class="docx-paragraph">（2）AI驱动的混合动力系统智能调控技术研究</p><p class="docx-paragraph">1）设计多目标协同优化的智能调控决策模型，依托 MCU、多核 SoC 搭建高算力专用运算架构，优化算法并行处理逻辑。</p><p class="docx-paragraph">2）完成适配功率优化与能量匹配需求的算法验证开发板硬件设计与制作；开展调控模型的软件程序转化与轻量化移植工作。</p><p class="docx-paragraph">3）优化模型的动态适配性与鲁棒性，形成可实现功率精准优化、能量高效匹配且具备快速响应能力的产品级 AI 调控算法方案与智能调控架构设计方案。</p><p class="docx-paragraph">（3）AI赋能的混合动力系统智能控制器研制</p><p class="docx-paragraph">1）开展控制器硬件架构的整体设计。</p><p class="docx-paragraph">2）按照硬件架构设计方案制作控制器开发板。</p><p class="docx-paragraph">3）建台架试验平台并开展实车测试，形成 AI 赋能混合动力系统智能控制器的产品级设计方案。</p><p class="docx-paragraph">课题由河北华特公司牵头，成立课题领导小组，领导小组负责协调、指导、督促、检查课题组的课题研究工作。</p><p class="docx-paragraph">课题研究实行例会制度，课题组每个月召开例会。</p><p class="docx-paragraph">4、项目的实施进度及预期达到的阶段目标</p><p class="docx-paragraph">第一年度：开展混合动力系统功率状态智能感知技术全流程研究。</p><p class="docx-paragraph">第二年度：开展 AI 驱动的混合动力系统智能调控技术研究。</p><p class="docx-paragraph">第三年度：开展 AI 赋能的混合动力系统智能控制器研制，完成控制器样件的集成、台架测试与实车验证。</p><p class="docx-paragraph">5、项目知识产权状况</p><p class="docx-paragraph">合作各单位在申请本项目之前各自获得、拥有的科技成果、知识产权及相应权益均归各自所有，不因共同申请本项目而改变。</p><p class="docx-paragraph">五、项目的前景</p><p class="docx-paragraph">1、人才培养、团队建设目标</p><p class="docx-paragraph">支撑团队建立混合动力智能控制系统科研平台 1 个，培训从事技术创新服务 5 次。拟引进专业技术人员不少于3人。</p><p class="docx-paragraph">2、项目技术（产品）的综合竞争力分析</p><p class="docx-paragraph">项目将AI技术与商用车混合动力控制深度融合，区别于当前的规则控制器，技术水平高。已经和需求单位广西玉柴全面合作，市场需求明确。</p><p class="docx-paragraph">3、项目的市场需求分析，已具备的产业化条件及前景预测</p><p class="docx-paragraph">在国家“双碳”战略与商用车新能源化、智能化趋势下，AI混合动力控制系统应用前景广阔。项目研发的AI赋能混合动力控制单元，公司有产业化条件。前期和广西玉柴、国防特种动力等单位的合作，市场应用风险小。</p><p class="docx-paragraph">六、经济效益、社会效益分析</p><p class="docx-paragraph">1、经济效益</p><p class="docx-paragraph">商用车混合动力的市场目前大概是每年10万套规模，未来完成全面渗透估计在200万套，，玉柴每年为55万套供货，因此市场需求量大。</p><p class="docx-paragraph">2、社会效益</p><p class="docx-paragraph">本项目契合国家 “双碳” 战略与新能源汽车产业高质量发展的政策导向，项目形成具备自主知识产权的核心算法与控制器产品，引领河北省在商用车混合动力智能控制领域的技术发展。成果将助力河北省本地汽车零部件企业向智能化方向转型，提升配套产品竞争力，夯实区域产业链供应链技术基础。</p></td></tr></table><p class="docx-paragraph"><strong>四、申报单位、合作单位经费预算明细表</strong></p><table class="docx-table"><tr><td colspan="8"><p class="docx-paragraph"><strong>申报单位、合作单位经费预算明细表</strong></p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">单位名称</p></td><td><p class="docx-paragraph">单位类型</p></td><td><p class="docx-paragraph">任务分工</p></td><td><p class="docx-paragraph">研究任务</p><p class="docx-paragraph">负责人</p></td><td><p class="docx-paragraph">合计</p></td><td><p class="docx-paragraph">专项经费</p></td><td><p class="docx-paragraph">自筹经费</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">河北华特汽车部件有限公司</p></td><td><p class="docx-paragraph">申报单位</p></td><td><p class="docx-paragraph">负责子研究内容一和三，包括研究基于多源信息融合的智能感知方法并构建功率动态虚拟感知模型，将智能感知与调控技术集成，开展控制器硬件设计与样机研制并验证。</p></td><td><p class="docx-paragraph">宋燕海</p></td><td><p class="docx-paragraph">177.50</p></td><td><p class="docx-paragraph">27.50</p></td><td><p class="docx-paragraph">150.00</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">北京工业大学</p></td><td><p class="docx-paragraph">合作单位</p></td><td><p class="docx-paragraph">负责研究内容二，即研究基于人工智能的智能调控策略，开发适应商用车复杂工况的动态调控算法，实现多模式切换的平顺性与能效优化。</p></td><td><p class="docx-paragraph">仇滔</p></td><td><p class="docx-paragraph">22.50</p></td><td><p class="docx-paragraph">22.50</p></td><td><p class="docx-paragraph">0.00</p></td></tr></table><p class="docx-paragraph">	</p><p class="docx-paragraph"><strong>五、项目绩效评价考核目标及指标</strong></p><table class="docx-table"><tr><td rowspan="2"><p class="docx-paragraph">总体</p><p class="docx-paragraph">目标</p></td><td colspan="2"><p class="docx-paragraph">实施期目标</p></td><td><p class="docx-paragraph">第一年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第二年度目标</p><p class="docx-paragraph">（当前年度）</p></td><td><p class="docx-paragraph">第三年度目标</p><p class="docx-paragraph">（当前年度）</p></td></tr><tr><td colspan="2"><p class="docx-paragraph">攻克人工智能在商用车混合动力状态感知与控制监测的核心关键技术，成功研制新一代 AI 驱动的混合动力域控制器样件 1 件；发表相关学术论文 1 篇，申报发明专利 1项、软件著作权 1 项；实现核心技术指标达标，即供能功率动态感知精度＞85%、智能调控响应时间＜100ms，且控制器样件具备多模式切换与智能优化能力。拟引进专业技术人员不少于3人。</p></td><td><p class="docx-paragraph">开展混合动力系统功率状态智能感知技术全流程研究，构建完成功率状态智能感知模型，编制形成相关技术文件，撰写混合动力系统功率状态智能感知技术阶段性研究报告，为后续智能调控技术研究奠定基础。</p></td><td><p class="docx-paragraph">开展 AI 驱动的混合动力系统智能调控技术研究，完成调控算法开发板的设计与制作，形成 AI 驱动的混合动力系统智能调控架构方案，编制相关技术文件；申请或授权发明专利 1 项，完成智能调控响应时间、感知精度的中期测试与优化。</p></td><td><p class="docx-paragraph">开展 AI 赋能的混合动力系统智能控制器研制，完成控制器样件的集成、台架测试验证，交付新一代 AI 驱动的混合动力域控制器样件 1 件；申报软件著作权 1 项；发表相关学术论文 1 篇；实现技术指标达标，即供能功率动态感知精度＞85%、智能调控响应时间＜100ms，控制器样件具备多模式切换与智能优化能力。</p></td></tr><tr><td rowspan="9"><p class="docx-paragraph">绩效</p><p class="docx-paragraph">指标</p></td><td><p class="docx-paragraph">指标名称</p></td><td><p class="docx-paragraph">指标值</p></td><td></td><td></td><td></td></tr><tr><td><p class="docx-paragraph">申请发明专利（件）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">发表科技论文（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">软件著作权（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">撰写科技报告、研究报告（篇）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">解决关键共性技术难题</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td></tr><tr><td><p class="docx-paragraph">组织和承担研发项目数量（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr><tr><td><p class="docx-paragraph">培养从事技术创新服务人员数量（人次）</p></td><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">2</p></td></tr><tr><td><p class="docx-paragraph">新装置（项）</p></td><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">0</p></td><td><p class="docx-paragraph">1</p></td></tr></table><p class="docx-paragraph"> <a id="rlyczyfyf"></a>               <a id="rlyczy"></a></p><p class="docx-paragraph"><strong>是否涉及人类遗传资源   </strong><a id="yes"></a><strong>□是   </strong><a id="no"></a><strong>R否  </strong></p><p class="docx-paragraph"><a id="title_0"></a><strong>人类遗传资源情况表</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">活动种类</p></td><td><p class="docx-paragraph">涉及内容</p></td><td><p class="docx-paragraph">具体项目名称</p></td><td><p class="docx-paragraph">申请单位</p></td><td><p class="docx-paragraph">批准/备案时间</p><p class="docx-paragraph">（取得批件或已备案，请上传附件，并填写时间）</p></td><td><p class="docx-paragraph">人类遗传资源来源机构</p></td><td><p class="docx-paragraph">备注</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">采集</p></td><td><p class="docx-paragraph"><a id="ycjx"></a>□重要遗传家系</p><p class="docx-paragraph"><a id="tqryzy"></a>□特定地区人类遗传资源</p><p class="docx-paragraph"><a id="gdrs"></a>□科技部规定数量的人类遗传资源（累积500人以上）</p><p class="docx-paragraph"><a id="hjb"></a>□罕见病</p><p class="docx-paragraph"><a id="tsqt"></a>□具有显著性差异的特殊体质或生理特征的人群</p><p class="docx-paragraph">拟采集种类    <a id="cjZl"></a>     </p><p class="docx-paragraph">拟采集数量    <a id="cjSl"></a>      </p></td><td><p class="docx-paragraph"><a id="cjXmmc"></a></p></td><td><p class="docx-paragraph"><a id="cjdwmc"></a></p></td><td><p class="docx-paragraph"><a id="cjPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="cjYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="cjBz"></a></p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">保藏</p></td><td><p class="docx-paragraph">材料保藏地点   <a id="bcDd"></a>    </p><p class="docx-paragraph">材料保藏设施（设备）   <a id="bcSs"></a>    </p><p class="docx-paragraph">信息保藏平台     <a id="bcPt"></a>    </p><p class="docx-paragraph">拟保藏种类   <a id="bcZl"></a>    </p><p class="docx-paragraph">拟保藏数量   <a id="bcSl"></a>    </p></td><td><p class="docx-paragraph"><a id="bcXmmc"></a></p></td><td><p class="docx-paragraph"><a id="bcDwmc"></a></p></td><td><p class="docx-paragraph"><a id="bcPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="bcYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="bcBz"></a></p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">利用</p></td><td><p class="docx-paragraph"><a id="kfhd2"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy2"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="lyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="lySl"></a>    </p></td><td><p class="docx-paragraph"><a id="lyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="lyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="lyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="lyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="lyBz"></a></p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">国际合作(行政许可)</p></td><td><p class="docx-paragraph"><a id="kfhd1"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy1"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzxzxkZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzxzxkSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzxzxkXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzxzxkBz"></a></p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">国际合作(备案)</p></td><td><p class="docx-paragraph"><a id="kfhd"></a>□生物技术研究开发活动</p><p class="docx-paragraph"><a id="lcsy"></a>□开展临床试验</p><p class="docx-paragraph">拟使用种类   <a id="gjhzbaZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="gjhzbaSl"></a>    </p></td><td><p class="docx-paragraph"><a id="gjhzbaXmmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaDwmc"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="gjhzbaBz"></a></p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">出境</p></td><td><p class="docx-paragraph">境外合作方   <a id="chujHzf"></a>    </p><p class="docx-paragraph">出境用途   <a id="chujYt"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="chujZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="chujSl"></a>    </p></td><td><p class="docx-paragraph"><a id="chujXmmc"></a></p></td><td><p class="docx-paragraph"><a id="chujDwmc"></a></p></td><td><p class="docx-paragraph"><a id="chujPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="chujYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="chujBz"></a></p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">信息对外提供或开放使用</p></td><td><p class="docx-paragraph">外方单位名称   <a id="xxsyWfdwmc"></a>    </p><p class="docx-paragraph">合作研究目的   <a id="xxsyYjmd"></a>    </p><p class="docx-paragraph">来源   <a id="xxsyLy"></a>    </p><p class="docx-paragraph">拟使用种类   <a id="xxsyZl"></a>    </p><p class="docx-paragraph">拟使用数量   <a id="xxsySl"></a>    </p></td><td><p class="docx-paragraph"><a id="xxsyXmmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyDwmc"></a></p></td><td><p class="docx-paragraph"><a id="xxsyPzbasj"></a></p></td><td><p class="docx-paragraph"><a id="xxsyYczyjg"></a></p></td><td><p class="docx-paragraph"><a id="xxsyBz"></a></p></td></tr></table><p class="docx-paragraph">注：1.本表格所涉及人类遗传资源包括人类遗传资源材料和人类遗传资源信息。</p><p class="docx-paragraph">    2.如涉及审批或备案，请将审批（备案）通知书扫描上传。</p><p class="docx-paragraph">    3.项目实施过程中如涉及采集、保藏、国际合作、出境、数据对外提供或开放使用，须按照《人类遗传资源管理条例》报中国人类遗传资源管理办公室审批或备案。</p><p class="docx-paragraph"><strong>六、推荐意见</strong></p><table class="docx-table"><tr><td><p class="docx-paragraph">（一）申报单位意见</p></td></tr><tr><td><p class="docx-paragraph">项目负责人（签字）</p><p class="docx-paragraph">法定代表人（签字） </p><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr><tr><td><p class="docx-paragraph">（二）归口推荐部门意见</p></td></tr><tr><td><p class="docx-paragraph">（公章）</p><p class="docx-paragraph">年     月     日</p></td></tr></table><p class="docx-paragraph"><strong>七、附件</strong></p><table class="docx-table"><tr><td colspan="3"><p class="docx-paragraph">附件材料：</p></td></tr><tr><td><p class="docx-paragraph">序号</p></td><td><p class="docx-paragraph">附件类型</p></td><td><p class="docx-paragraph">附件名称</p></td></tr><tr><td><p class="docx-paragraph">1</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">1-团队负责人身份、学历、学位、职称证明材料</p></td></tr><tr><td><p class="docx-paragraph">2</p></td><td><p class="docx-paragraph">负责人证明材料</p></td><td><p class="docx-paragraph">4-团队负责人担任国内外学术组织、重要学术期刊、学术科研机构职务情况证明材料</p></td></tr><tr><td><p class="docx-paragraph">3</p></td><td><p class="docx-paragraph">人才引进证明</p></td><td><p class="docx-paragraph">6-企业采取以股权、期权、分红等方式引进团队负责人及核心成员的证明材料</p></td></tr><tr><td><p class="docx-paragraph">4</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">5-团队负责人申请及获授权的发明专利和其他知识产权证明</p></td></tr><tr><td><p class="docx-paragraph">5</p></td><td><p class="docx-paragraph">知识产权证书（转让或授权应用证明）</p></td><td><p class="docx-paragraph">9-团队申请及获授权的专利和其他知识产权证明</p></td></tr><tr><td><p class="docx-paragraph">6</p></td><td><p class="docx-paragraph">主持项目批准通知书或合同书</p></td><td><p class="docx-paragraph">7-团队承担的科研项目</p></td></tr><tr><td><p class="docx-paragraph">7</p></td><td><p class="docx-paragraph">科技奖励证书</p></td><td><p class="docx-paragraph">8-团队重要获奖证书</p></td></tr><tr><td><p class="docx-paragraph">8</p></td><td><p class="docx-paragraph">企业资质</p></td><td><p class="docx-paragraph">10-企业资质</p></td></tr><tr><td><p class="docx-paragraph">9</p></td><td><p class="docx-paragraph">其他</p></td><td><p class="docx-paragraph">联合申报合作协议书</p></td></tr></table>
+</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span>来源文档</span><span>N/A</span></div>
+          <div id="source-panel" class="panel-body">
+            <div class="docx-content"><p class="empty">无内容</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    (function() {
+      const highlightMap = new Map();
+      
+      function initHighlights() {
+        document.querySelectorAll('.hit[data-match-id]').forEach(el => {
+          const matchId = el.dataset.matchId;
+          if (!highlightMap.has(matchId)) {
+            highlightMap.set(matchId, []);
+          }
+          highlightMap.get(matchId).push(el);
+        });
+      }
+      
+      let currentMatchId = null;
+
+      const activateMatch = (matchId) => {
+        document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
+        
+        const hits = highlightMap.get(matchId) || [];
+        hits.forEach(el => el.classList.add('active'));
+        
+        const navItem = document.querySelector(`.nav-item[data-match-id="${matchId}"]`);
+        if (navItem) navItem.classList.add('active');
+        currentMatchId = matchId;
+        
+        if (hits.length > 0) {
+          const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
+          const sourceHit = hits.find(el => el.dataset.side === 'source');
+
+          if (primaryHit) {
+            primaryHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+
+          if (sourceHit) {
+            sourceHit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+
+        refreshCounter();
+      };
+
+      function getVisibleNavItems() {
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }
+
+      function refreshCounter() {
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }
+        const text = total > 0 ? `${idx >= 0 ? idx + 1 : 0}/${total}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }
+
+      function applyNavFilter() {
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        });
+        const items = getVisibleNavItems();
+        if (items.length) {
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }
+        }
+        refreshCounter();
+      }
+      
+      initHighlights();
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {
+        activateMatch(first.dataset.matchId);
+      }
+      
+      document.addEventListener('click', (e) => {
+        const hit = e.target.closest('.hit');
+        const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
+        
+        if (hit) {
+          e.preventDefault();
+          activateMatch(hit.dataset.matchId);
+        } else if (navItem) {
+          e.preventDefault();
+          activateMatch(navItem.dataset.matchId);
+        } else if (chip) {
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        } else if (btnPrev || btnNext) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          } else {
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        } else if (btnTop) {
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({ top: 0, behavior: 'smooth' });
+          if (sp) sp.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+
+      const input = document.getElementById('nav-search');
+      if (input) {
+        input.addEventListener('input', () => applyNavFilter());
+      }
+    })();
+  </script>
+</body>
+</html>
