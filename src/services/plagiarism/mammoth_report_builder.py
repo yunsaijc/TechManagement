@@ -8,6 +8,8 @@ import html
 import json
 import re
 import sys
+from difflib import SequenceMatcher
+from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
@@ -21,6 +23,7 @@ from common.file_handler.mammoth_converter import (
     get_mammoth_styles
 )
 from src.services.plagiarism.coordinate_map import build_coordinate_map
+from src.services.plagiarism.text_repairs import repair_mammoth_html_artifacts
 
 
 class MammothPlagiarismReportBuilder:
@@ -130,17 +133,17 @@ class MammothPlagiarismReportBuilder:
             stats=stats,
             match_cards=match_cards,
             left_html=left_html,
-            right_html=right_html,
+            source_panel_html=source_panel_html,
             summary=data.get("summary", {}),
             matched_count=len(match_results),
-            unmatched_count=max(0, len(data.get("duplicate_segments", [])) - len(match_results)),
+            unmatched_count=max(0, len((data.get("match_groups") or data.get("duplicate_segments", []))) - len(match_results)),
         )
 
         # 写入文件
         output_html_path.write_text(html_page, encoding="utf-8")
         return output_html_path
 
-    def _apply_highlights_both_sides(
+    def _apply_highlights_primary(
         self,
         left_html: str,
         right_html_by_doc: Dict[str, str],
@@ -178,7 +181,7 @@ class MammothPlagiarismReportBuilder:
         )
 
         for seg_idx, segment in sorted_segments:
-            match_id = segment.get("match_id") or f"m{seg_idx+1:03d}"
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{seg_idx+1:03d}"
             is_template = segment.get("is_template", False)
             match_type = segment.get("match_type", "exact")
             # 仅在指定分支关闭模板高亮时跳过模板重复
@@ -296,6 +299,230 @@ class MammothPlagiarismReportBuilder:
             seen.add(key)
             filtered.append(key)
         return filtered
+
+    def _is_discardable_short_fragment(
+        self,
+        fragments: List[Tuple[int, int]],
+        idx: int,
+    ) -> bool:
+        start, end = fragments[idx]
+        length = end - start
+        if length >= 3:
+            return False
+
+        fragment_count = len(fragments)
+        if fragment_count <= 1:
+            return True
+
+        prev_exists = idx > 0
+        next_exists = idx + 1 < fragment_count
+
+        # 被 Word 内联格式切开的连续高亮片段，2 字碎片也要保留。
+        if length == 2 and prev_exists and next_exists:
+            return False
+        if length == 2 and (prev_exists or next_exists):
+            return False
+        return True
+
+    def _clean_fragments_for_side(
+        self,
+        fragments: List[Tuple[int, int]],
+        html_content: str,
+        side: str,
+    ) -> List[Tuple[int, int]]:
+        if len(fragments) <= 1:
+            return fragments
+
+        annotated = []
+        for start, end in fragments:
+            text = self._fragment_text(html_content[start:end])
+            annotated.append((start, end, text, self._looks_like_heading_text(text)))
+
+        if side == "source":
+            has_narrative = any((not is_heading) and len(text) >= 40 for _, _, text, is_heading in annotated)
+            if has_narrative:
+                cleaned = [
+                    (start, end)
+                    for start, end, text, is_heading in annotated
+                    if not (is_heading and len(text) <= 40)
+                ]
+                if cleaned:
+                    return cleaned
+
+        return [(start, end) for start, end, _, _ in annotated]
+
+    def _heading_alignment_mode(self, segment: Dict[str, Any]) -> str:
+        primary_text = segment.get("primary_text", "") or ""
+        sources = segment.get("sources", []) or []
+        source_text = sources[0].get("text", "") if sources else ""
+        primary_heading = self._extract_leading_heading(primary_text)
+        source_heading = self._extract_leading_heading(source_text)
+
+        if not primary_heading and not source_heading:
+            return "aligned"
+        if not primary_heading or not source_heading:
+            return "mismatch"
+        return "aligned" if self._normalize_heading(primary_heading) == self._normalize_heading(source_heading) else "mismatch"
+
+    def _extract_leading_heading(self, text: str) -> str:
+        cleaned = self._clean_nav_text(text)
+        if not cleaned:
+            return ""
+        patterns = [
+            r"^(项目简介|项目立项背景及意义)",
+            r"^(第[一二三四五六七八九十百]+部分[^\s]{0,20})",
+            r"^([一二三四五六七八九十]+[、\.．][^。！？；]{1,40})",
+            r"^(\d+[、\.．][^。！？；]{1,40})",
+        ]
+        for pattern in patterns:
+            match = re.match(pattern, cleaned)
+            if match:
+                return match.group(1).strip()
+        return ""
+
+    def _normalize_heading(self, text: str) -> str:
+        cleaned = re.sub(r"\s+", "", text or "")
+        cleaned = cleaned.replace(".", "．")
+        return cleaned
+
+    def _fragment_text(self, html_fragment: str) -> str:
+        text = re.sub(r"<[^>]+>", "", html_fragment or "")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _looks_like_heading_text(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text or "")
+        if not normalized:
+            return False
+        return bool(re.match(
+            r"^(项目简介|项目立项背景及意义|第[一二三四五六七八九十百]+部分|第一部分|第二部分|第三部分|第四部分|第五部分|第六部分|"
+            r"[一二三四五六七八九十]+[、\.．]|"
+            r"\d+[、\.．])",
+            normalized,
+        )) and len(normalized) <= 50
+
+    def _clip_primary_html_to_scope(self, html_content: str, canonical_text: str) -> str:
+        if not html_content or not canonical_text:
+            return html_content
+
+        coord_map = build_coordinate_map(canonical_text, html_content)
+        mapped_positions = sorted({pos for pos in coord_map.canonical_to_html if pos >= 0})
+        if not mapped_positions:
+            return html_content
+
+        wrapper_match = re.search(r'<div class="docx-content">', html_content)
+        if not wrapper_match:
+            return html_content
+
+        inner_start = wrapper_match.end()
+        inner_end = html_content.rfind("</div>")
+        if inner_end <= inner_start:
+            return html_content
+
+        prefix = html_content[:inner_start]
+        suffix = html_content[inner_end:]
+        inner_html = html_content[inner_start:inner_end]
+        clipped_inner = self._clip_docx_inner_html(inner_html, inner_start, mapped_positions)
+        if not clipped_inner.strip():
+            return html_content
+        return prefix + clipped_inner + suffix
+
+    def _clip_docx_inner_html(
+        self,
+        inner_html: str,
+        base_offset: int,
+        mapped_positions: List[int],
+    ) -> str:
+        kept_parts: List[str] = []
+        for kind, rel_start, rel_end, payload in self._extract_top_level_blocks(inner_html):
+            abs_start = base_offset + rel_start
+            abs_end = base_offset + rel_end
+            if kind == "table":
+                clipped_table = self._clip_table_block(str(payload), abs_start, mapped_positions)
+                if clipped_table:
+                    kept_parts.append(clipped_table)
+                continue
+            if self._has_mapped_position(mapped_positions, abs_start, abs_end):
+                kept_parts.append(str(payload))
+        return "".join(kept_parts)
+
+    def _extract_top_level_blocks(
+        self,
+        html_fragment: str,
+    ) -> List[Tuple[str, int, int, str]]:
+        blocks: List[Tuple[str, int, int, str]] = []
+        pos = 0
+        while pos < len(html_fragment):
+            if html_fragment[pos] != "<":
+                pos += 1
+                continue
+            if html_fragment.startswith("<p", pos):
+                end = self._find_tag_end(html_fragment, pos, "p")
+                if end != -1:
+                    blocks.append(("p", pos, end, html_fragment[pos:end]))
+                    pos = end
+                    continue
+            if html_fragment.startswith("<table", pos):
+                end = self._find_tag_end(html_fragment, pos, "table")
+                if end != -1:
+                    blocks.append(("table", pos, end, html_fragment[pos:end]))
+                    pos = end
+                    continue
+            pos += 1
+        return blocks
+
+    def _clip_table_block(
+        self,
+        table_html: str,
+        table_abs_start: int,
+        mapped_positions: List[int],
+    ) -> str:
+        open_end = table_html.find(">")
+        close_start = table_html.rfind("</table>")
+        if open_end == -1 or close_start == -1 or close_start <= open_end:
+            if self._has_mapped_position(mapped_positions, table_abs_start, table_abs_start + len(table_html)):
+                return table_html
+            return ""
+
+        open_tag = table_html[:open_end + 1]
+        close_tag = table_html[close_start:]
+        inner_html = table_html[open_end + 1:close_start]
+
+        kept_rows: List[str] = []
+        pos = 0
+        while pos < len(inner_html):
+            row_start = inner_html.find("<tr", pos)
+            if row_start == -1:
+                break
+            row_end = self._find_tag_end(inner_html, row_start, "tr")
+            if row_end == -1:
+                break
+            abs_start = table_abs_start + open_end + 1 + row_start
+            abs_end = table_abs_start + open_end + 1 + row_end
+            if self._has_mapped_position(mapped_positions, abs_start, abs_end):
+                kept_rows.append(inner_html[row_start:row_end])
+            pos = row_end
+
+        if not kept_rows:
+            return ""
+        return open_tag + "".join(kept_rows) + close_tag
+
+    def _find_tag_end(self, html_fragment: str, start: int, tag_name: str) -> int:
+        close_tag = f"</{tag_name}>"
+        close_idx = html_fragment.find(close_tag, start)
+        if close_idx == -1:
+            return -1
+        return close_idx + len(close_tag)
+
+    def _has_mapped_position(
+        self,
+        mapped_positions: List[int],
+        start: int,
+        end: int,
+    ) -> bool:
+        if end <= start or not mapped_positions:
+            return False
+        idx = bisect_left(mapped_positions, start)
+        return idx < len(mapped_positions) and mapped_positions[idx] < end
 
     def _normalize_text(self, text: str) -> str:
         if not text:
@@ -566,7 +793,7 @@ class MammothPlagiarismReportBuilder:
     def _inject_spans(
         self,
         html_content: str,
-        spans: List[Tuple[int, int, str, bool, str]],
+        spans: List[Tuple[int, int, str, bool, str, str]],
         side: str,
         source_doc: str = "",
     ) -> str:
@@ -720,6 +947,9 @@ class MammothPlagiarismReportBuilder:
                 f'<div class="source-doc-section{hidden_class}" data-source-doc="{source_doc_value}" data-source-name="{source_name}">{content}</div>'
             )
         return "".join(sections)
+
+    def _highlight_tone(self, similarity: float) -> str:
+        return "strong" if similarity >= 0.78 else "soft"
 
     def _apply_highlights(
         self,
@@ -904,11 +1134,13 @@ class MammothPlagiarismReportBuilder:
         documents = data.get("documents", {})
         
         if side == "primary":
-            text = documents.get("primary", "")
+            primary_doc = data.get("primary_doc", "")
+            text = documents.get(primary_doc, "")
             title = data.get("primary_doc", "主文档")
         else:
-            text = documents.get("source", "")
-            title = "来源文档"
+            source_doc = data.get("report_source_doc", "")
+            text = documents.get(source_doc, "")
+            title = source_doc or "来源文档"
         
         if not text:
             return f'<div class="docx-content"><p class="empty">无内容</p></div>'
@@ -926,21 +1158,19 @@ class MammothPlagiarismReportBuilder:
         """构建统计信息HTML"""
         summary = data.get("summary", {})
         text_lengths = data.get("text_lengths", {})
-        segments = data.get("duplicate_segments", [])
-        template_segments = data.get("template_segments", [])
         primary_doc = data.get("primary_doc", "")
         highlight_template_segments = bool(data.get("highlight_template_segments", True))
         
-        # 统计口径：统一按主文档字数计算，避免与普通HTML口径冲突
-        total_chars = int(text_lengths.get(primary_doc, 0)) if primary_doc else 0
+        # 统计口径：优先使用 MultiSourceAggregator 计算出的有效值
+        total_chars = int(summary.get("primary_scope_chars") or text_lengths.get(primary_doc, 0))
         if total_chars == 0:
             docs = data.get("documents", {})
             primary_text = docs.get(primary_doc, "") if primary_doc else ""
             if isinstance(primary_text, str) and primary_text:
                 total_chars = len(primary_text)
 
-        # 使用位置并集计算字符数，避免片段重叠导致重复计数
-        effective_chars = self._union_length([
+        # 优先使用归并后的值
+        effective_chars = int(summary.get("effective_duplicate_chars") or self._union_length([
             (int(s.get("primary_start", 0) or 0), int(s.get("primary_end", 0) or 0))
             for s in segments
         ])
@@ -956,11 +1186,12 @@ class MammothPlagiarismReportBuilder:
         duplicate_chars = effective_chars + template_chars
         
         # 计算重复率
-        total_rate = (duplicate_chars / total_chars * 100) if total_chars > 0 else 0
         effective_rate = (effective_chars / total_chars * 100) if total_chars > 0 else 0
-        template_rate = (template_chars / total_chars * 100) if total_chars > 0 else 0
+        # 总重复率按“有效段+模板段”的并集字符计算，避免重叠区间重复计数导致 >100%
+        total_rate = (duplicate_chars / total_chars * 100) if total_chars > 0 else 0
+        total_rate = min(total_rate, 100.0)
 
-        return f"""<div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">模板重复率</div><div class="stat-value">{template_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总字数</div><div class="stat-value">{total_chars:,}</div></div><div class="stat-card"><div class="stat-label">重复字数</div><div class="stat-value">{duplicate_chars:,}</div></div><div class="stat-card"><div class="stat-label">有效重复字数</div><div class="stat-value">{effective_chars:,}</div></div>"""
+        return f"""<div class="stat-card"><div class="stat-label">有效重复率</div><div class="stat-value" style="color: #dc2626;">{effective_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">总重复率</div><div class="stat-value">{total_rate:.2f}%</div></div><div class="stat-card"><div class="stat-label">有效/总字数</div><div class="stat-value" style="font-size: 16px;">{effective_chars:,} / {total_chars:,}</div></div>"""
 
     @staticmethod
     def _union_length(ranges: List[Tuple[int, int]]) -> int:
@@ -994,9 +1225,14 @@ class MammothPlagiarismReportBuilder:
         if not segments:
             return '<p class="empty">无重复片段</p>'
 
+        visible_ids = set((match_results or {}).keys())
         cards = []
-        for i, segment in enumerate(segments[:50], 1):  # 最多显示50个
-            match_id = segment.get("match_id") or f"m{i:03d}"
+        display_idx = 0
+        for i, segment in enumerate(segments[:100], 1):  # 增加显示数量
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{i:03d}"
+            if visible_ids and match_id not in visible_ids:
+                continue
+            display_idx += 1
             primary_text = self._clean_nav_text(segment.get("primary_text", ""))[:60]
             is_template = segment.get("is_template", False)
             similarity = segment.get("similarity_score", segment.get("similarity", 1.0))
@@ -1014,19 +1250,201 @@ class MammothPlagiarismReportBuilder:
                 source_doc = str(result.get("source_doc") or source_doc)
             
             template_badge = '<span class="template-badge">模板</span>' if is_template else ''
-            type_badge = '<span class="template-badge" style="background:#2563eb;">改写</span>' if match_type == "paraphrase" else ''
-            if result:
-                locate_badge = '<span class="locate-badge ok">完整</span>' if result.get("mode") == "full" else '<span class="locate-badge partial">核心</span>'
-            else:
-                locate_badge = '<span class="locate-badge miss">未定位</span>'
             
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}" data-source-doc="{html.escape(source_doc)}" data-template="{1 if is_template else 0}" data-type="{html.escape(match_type)}" data-locate="{html.escape(locate_mode or '')}">
                 <div class="nav-header">#{i} {template_badge} {type_badge} {locate_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
                 <small>相似度 {similarity:.2f} · {source_info}</small>
+                <small>相似度 {similarity:.2f} · {source_info}</small>
             </button>''')
 
         return "".join(cards) if cards else '<p class="empty">未定位到可高亮的重复片段</p>'
+
+    def _build_source_snippet_panel(
+        self,
+        data: Dict,
+        match_results: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> str:
+        segments = data.get("match_groups") or data.get("duplicate_segments", [])
+        if not segments:
+            return '<p class="empty">无来源片段</p>'
+
+        visible_ids = set((match_results or {}).keys())
+        cards: List[str] = []
+        for i, segment in enumerate(segments, 1):
+            match_id = segment.get("match_id") or segment.get("group_id") or f"m{i:03d}"
+            if visible_ids and match_id not in visible_ids:
+                continue
+
+            primary_full_text = self._clean_nav_text(segment.get("primary_text", ""))
+            primary_text = primary_full_text[:90]
+            sources = segment.get("sources", []) or []
+            if not sources:
+                continue
+            ordered_sources = sorted(
+                sources,
+                key=lambda source: (
+                    str(source.get("doc") or ""),
+                    int(source.get("start", 0) or 0),
+                    int(source.get("line", 0) or 0),
+                ),
+            )
+
+            source_items: List[str] = []
+            for source in ordered_sources[:8]:
+                source_doc = html.escape(str(source.get("doc") or "-"))
+                source_line = source.get("line")
+                source_text = self._resolve_source_display_text(data, source, primary_hint=primary_full_text)
+                source_similarity = self._display_similarity(primary_full_text, source_text)
+                line_info = f" L{int(source_line)}" if isinstance(source_line, int) or (isinstance(source_line, str) and source_line.isdigit()) else ""
+                source_items.append(
+                    f'''<div class="source-item">
+  <div class="source-meta">{source_doc}{line_info} · 相似度 {source_similarity:.2f}</div>
+  <div class="source-text"><span class="hit soft" data-side="source" data-match-id="{match_id}">{html.escape(source_text or "(无片段文本)")}</span></div>
+</div>'''
+                )
+
+            more = ""
+            if len(ordered_sources) > 8:
+                more = f'<div class="source-more">其余 {len(ordered_sources) - 8} 个来源已折叠</div>'
+
+            cards.append(
+                f'''<div class="source-card" data-match-id="{match_id}">
+  <div class="source-card-title">#{i} {html.escape(primary_text)}...</div>
+  <div class="source-list">
+    {"".join(source_items)}
+    {more}
+  </div>
+</div>'''
+            )
+
+        return "".join(cards) if cards else '<p class="empty">无来源片段</p>'
+
+    def _resolve_source_display_text(
+        self,
+        data: Dict,
+        source: Dict[str, Any],
+        primary_hint: str = "",
+        max_chars: int = 480,
+    ) -> str:
+        documents = data.get("documents", {}) or {}
+        doc_id = str(source.get("doc") or "")
+        doc_text = documents.get(doc_id, "")
+
+        start = int(source.get("start", 0) or 0)
+        end = int(source.get("end", 0) or 0)
+        text = ""
+        if isinstance(doc_text, str) and doc_text and end > start:
+            text_len = len(doc_text)
+            if 0 <= start < text_len and 0 < end <= text_len + 1:
+                # 轻量上下文，避免把不相关句子带进右侧证据片段。
+                clip_start = max(0, start - 12)
+                clip_end = min(text_len, end + 20)
+                if clip_end > clip_start:
+                    text = doc_text[clip_start:clip_end]
+
+        if not text:
+            text = str(source.get("text", "") or "")
+
+        cleaned = self._clean_nav_text(text)
+        if primary_hint:
+            return self._extract_overlap_excerpt(primary_hint, cleaned, max_chars=max_chars)
+        if len(cleaned) > max_chars:
+            return cleaned[:max_chars] + "..."
+        return cleaned
+
+    def _display_similarity(self, primary_text: str, source_text: str) -> float:
+        primary_compact = re.sub(r"\s+", "", primary_text or "")
+        source_compact = re.sub(r"\s+", "", source_text or "")
+        if len(primary_compact) < 12 or len(source_compact) < 12:
+            return 0.0
+        ratio = SequenceMatcher(
+            None,
+            primary_compact[:4000],
+            source_compact[:4000],
+            autojunk=False,
+        ).ratio()
+        return round(float(ratio), 4)
+
+    def _extract_overlap_excerpt(self, primary_text: str, source_text: str, max_chars: int = 480) -> str:
+        source_clean = self._clean_nav_text(source_text or "")
+        primary_clean = self._clean_nav_text(primary_text or "")
+        if not source_clean:
+            return ""
+        if not primary_clean:
+            return source_clean[:max_chars] + ("..." if len(source_clean) > max_chars else "")
+
+        source_compact, source_map = self._compact_with_map(source_clean)
+        primary_compact, _ = self._compact_with_map(primary_clean)
+        if len(source_compact) < 12 or len(primary_compact) < 12:
+            return source_clean[:max_chars] + ("..." if len(source_clean) > max_chars else "")
+
+        matcher = SequenceMatcher(None, primary_compact[:6000], source_compact[:12000], autojunk=False)
+        match = matcher.find_longest_match(0, min(len(primary_compact), 6000), 0, min(len(source_compact), 12000))
+
+        if match.size < 20:
+            target_chars = min(max_chars, 220)
+            excerpt = source_clean[:target_chars]
+            return excerpt + ("..." if len(source_clean) > target_chars else "")
+
+        # 以最长重叠为核心，窗口大小跟随实际重叠长度，避免“证据段”过长。
+        overlap_chars = max(match.size, 60)
+        side_context = min(80, max(24, overlap_chars // 3))
+        target_chars = min(max_chars, max(160, overlap_chars + side_context * 2))
+
+        start_compact = max(0, match.b - side_context)
+        end_compact = min(len(source_compact), match.b + match.size + side_context)
+        current_len = end_compact - start_compact
+        if current_len > target_chars:
+            center = match.b + (match.size // 2)
+            half = target_chars // 2
+            start_compact = max(0, center - half)
+            end_compact = min(len(source_compact), start_compact + target_chars)
+            if end_compact - start_compact < target_chars:
+                start_compact = max(0, end_compact - target_chars)
+            current_len = end_compact - start_compact
+        if current_len < target_chars:
+            extra = target_chars - current_len
+            left_extra = extra // 2
+            right_extra = extra - left_extra
+            start_compact = max(0, start_compact - left_extra)
+            end_compact = min(len(source_compact), end_compact + right_extra)
+
+        start_orig = source_map[start_compact] if source_map and start_compact < len(source_map) else 0
+        if source_map and end_compact > 0:
+            end_orig = source_map[end_compact - 1] + 1
+        else:
+            end_orig = len(source_clean)
+        start_orig = max(0, min(start_orig, len(source_clean)))
+        end_orig = max(start_orig, min(end_orig, len(source_clean)))
+        excerpt = source_clean[start_orig:end_orig].strip()
+        if not excerpt:
+            excerpt = source_clean[:target_chars]
+        if start_orig > 0:
+            excerpt = "..." + excerpt
+        if end_orig < len(source_clean):
+            excerpt = excerpt + "..."
+        return excerpt
+
+    def _compact_with_map(self, text: str) -> Tuple[str, List[int]]:
+        compact_chars: List[str] = []
+        index_map: List[int] = []
+        for idx, ch in enumerate(text):
+            if ch.isspace():
+                continue
+            compact_chars.append(ch)
+            index_map.append(idx)
+        return "".join(compact_chars), index_map
+
+    def _count_source_docs(self, data: Dict) -> int:
+        segments = data.get("match_groups") or data.get("duplicate_segments", [])
+        docs = set()
+        for segment in segments:
+            for source in segment.get("sources", []) or []:
+                doc = source.get("doc")
+                if doc:
+                    docs.add(str(doc))
+        return len(docs)
 
     def _clean_nav_text(self, text: str) -> str:
         cleaned = re.sub(r"\[表格行\d+\]", "", text or "")
@@ -1037,21 +1455,21 @@ class MammothPlagiarismReportBuilder:
     def _render_html_page(
         self,
         primary_doc: str,
-        source_doc: str,
+        source_doc_count: int,
         stats: str,
         match_cards: str,
         left_html: str,
-        right_html: str,
+        source_panel_html: str,
         summary: dict,
         matched_count: int = 0,
         unmatched_count: int = 0,
     ) -> str:
         """渲染完整HTML页面"""
         
-        # 计算摘要数据
-        effective_count = summary.get("total_effective_segments", 0)
-        template_count = summary.get("total_template_segments", 0)
-        effective_chars = summary.get("total_effective_chars", 0)
+        # 统一使用多源归并后的统计口径；旧 summary 仅作为兼容兜底。
+        effective_count = int(summary.get("group_count") or summary.get("total_effective_segments") or 0)
+        template_count = int(summary.get("total_template_segments") or 0)
+        effective_chars = int(summary.get("effective_duplicate_chars") or summary.get("total_effective_chars") or 0)
         
         mammoth_styles = get_mammoth_styles()
         
@@ -1080,7 +1498,26 @@ class MammothPlagiarismReportBuilder:
       --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
     }}
 
+    {mammoth_styles}
+
+    :root {{
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fafc;
+      --line: #e5e7eb;
+      --line-2: rgba(148, 163, 184, 0.22);
+      --ink: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --ok: #16a34a;
+      --radius: 12px;
+      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
+    }}
+
     * {{ box-sizing: border-box; }}
+    body {{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }}
     body {{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }}
     .page {{ height: 100vh; display: flex; flex-direction: column; }}
 
@@ -1223,6 +1660,18 @@ class MammothPlagiarismReportBuilder:
           <div class="pill muted">未定位：{unmatched_count}</div>
           <div class="pill">有效字数：{effective_chars}</div>
         </div>
+      <div>
+        <div class="toolbar-actions" id="toolbar-actions">
+          <button class="btn" id="btn-prev" type="button">上一处</button>
+          <button class="btn" id="btn-next" type="button">下一处</button>
+          <button class="btn" id="btn-top" type="button">回到顶部</button>
+        </div>
+        <div class="meta" style="margin-top: 10px;">
+          <div class="pill">有效片段：{effective_count}</div>
+          <div class="pill">模板片段：{template_count}</div>
+          <div class="pill muted">未定位：{unmatched_count}</div>
+          <div class="pill">有效字数：{effective_chars}</div>
+        </div>
       </div>
     </div>
     <div class="main">
@@ -1243,9 +1692,26 @@ class MammothPlagiarismReportBuilder:
         <div class="nav-list" id="nav-list">
           {match_cards}
         </div>
+        <div class="sidebar-top">
+          <div class="nav-title">
+            <span>重复片段导航</span>
+            <span class="nav-counter" id="nav-counter">0/0</span>
+          </div>
+          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
+          <div class="filters" id="nav-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="effective">有效</button>
+            <button class="chip" type="button" data-filter="template">模板</button>
+            <button class="chip" type="button" data-filter="paraphrase">改写</button>
+          </div>
+        </div>
+        <div class="nav-list" id="nav-list">
+          {match_cards}
+        </div>
       </aside>
       <section class="content">
         <div class="panel">
+          <div class="panel-header"><span>主文档</span><span>{html.escape(primary_doc)}</span></div>
           <div class="panel-header"><span>主文档</span><span>{html.escape(primary_doc)}</span></div>
           <div id="primary-panel" class="panel-body">
             {left_html}
@@ -1254,7 +1720,7 @@ class MammothPlagiarismReportBuilder:
         <div class="panel">
           <div class="panel-header"><span>来源文档</span><span id="source-doc-label">{html.escape(source_doc or 'N/A')}</span></div>
           <div id="source-panel" class="panel-body">
-            {right_html}
+            {source_panel_html}
           </div>
         </div>
       </section>
@@ -1308,6 +1774,7 @@ class MammothPlagiarismReportBuilder:
         const navItem = document.querySelector(`.nav-item[data-match-id="${{matchId}}"]`);
         if (navItem) navItem.classList.add('active');
         currentMatchId = matchId;
+        currentMatchId = matchId;
         
         if (hits.length > 0) {{
           const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
@@ -1327,7 +1794,59 @@ class MammothPlagiarismReportBuilder:
         }}
 
         refreshCounter();
+
+        refreshCounter();
       }};
+
+      function getVisibleNavItems() {{
+        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
+      }}
+
+      function refreshCounter() {{
+        const items = getVisibleNavItems();
+        const total = items.length;
+        let idx = -1;
+        if (currentMatchId) {{
+          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
+        }}
+        const text = total > 0 ? `${{idx >= 0 ? idx + 1 : 0}}/${{total}}` : '0/0';
+        const el = document.getElementById('nav-counter');
+        if (el) el.textContent = text;
+
+        const btnPrev = document.getElementById('btn-prev');
+        const btnNext = document.getElementById('btn-next');
+        if (btnPrev) btnPrev.disabled = total === 0;
+        if (btnNext) btnNext.disabled = total === 0;
+      }}
+
+      function applyNavFilter() {{
+        const input = document.getElementById('nav-search');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        const activeChip = document.querySelector('#nav-filters .chip.active');
+        const mode = activeChip ? activeChip.dataset.filter : 'all';
+
+        document.querySelectorAll('.nav-item').forEach(el => {{
+          const text = (el.innerText || '').toLowerCase();
+          const okText = !q || text.includes(q);
+          const isTemplate = el.dataset.template === '1';
+          const isParaphrase = el.dataset.type === 'paraphrase';
+          const okMode = mode === 'all'
+            || (mode === 'template' && isTemplate)
+            || (mode === 'effective' && !isTemplate)
+            || (mode === 'paraphrase' && isParaphrase);
+          el.classList.toggle('hidden', !(okText && okMode));
+        }});
+        const items = getVisibleNavItems();
+        if (items.length) {{
+          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
+          if (!stillVisible) {{
+            activateMatch(items[0].dataset.matchId);
+            return;
+          }}
+        }}
+        refreshCounter();
+      }}
+      
 
       function getVisibleNavItems() {{
         return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
@@ -1386,9 +1905,20 @@ class MammothPlagiarismReportBuilder:
         activateMatch(first.dataset.matchId);
       }}
       
+      applyNavFilter();
+
+      const first = getVisibleNavItems()[0];
+      if (first) {{
+        activateMatch(first.dataset.matchId);
+      }}
+      
       document.addEventListener('click', (e) => {{
         const hit = e.target.closest('.hit');
         const navItem = e.target.closest('.nav-item');
+        const chip = e.target.closest('#nav-filters .chip');
+        const btnPrev = e.target.closest('#btn-prev');
+        const btnNext = e.target.closest('#btn-next');
+        const btnTop = e.target.closest('#btn-top');
         const chip = e.target.closest('#nav-filters .chip');
         const btnPrev = e.target.closest('#btn-prev');
         const btnNext = e.target.closest('#btn-next');
@@ -1435,8 +1965,48 @@ class MammothPlagiarismReportBuilder:
           const sp = document.getElementById('source-panel');
           if (pp) pp.scrollTo({{ top: 0, behavior: 'smooth' }});
           if (sp) sp.scrollTo({{ top: 0, behavior: 'smooth' }});
+        }} else if (chip) {{
+          e.preventDefault();
+          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          applyNavFilter();
+        }} else if (btnPrev || btnNext) {{
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {{
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            (btnPrev || btnNext).classList.add('primary');
+          }}
+          const items = getVisibleNavItems();
+          if (!items.length) return;
+          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
+          let nextIdx = 0;
+          if (btnPrev) {{
+            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
+          }} else {{
+            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
+          }}
+          const target = items[nextIdx];
+          if (target) activateMatch(target.dataset.matchId);
+        }} else if (btnTop) {{
+          e.preventDefault();
+          const actions = document.getElementById('toolbar-actions');
+          if (actions) {{
+            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
+            btnTop.classList.add('primary');
+          }}
+          window.scrollTo({{ top: 0, behavior: 'smooth' }});
+          const pp = document.getElementById('primary-panel');
+          const sp = document.getElementById('source-panel');
+          if (pp) pp.scrollTo({{ top: 0, behavior: 'smooth' }});
+          if (sp) sp.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
       }});
+
+      const input = document.getElementById('nav-search');
+      if (input) {{
+        input.addEventListener('input', () => applyNavFilter());
+      }}
 
       const input = document.getElementById('nav-search');
       if (input) {{

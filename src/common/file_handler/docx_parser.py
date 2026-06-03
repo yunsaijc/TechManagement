@@ -226,6 +226,14 @@ class DOCXParser(BaseFileParser):
     def _row_to_text(self, row_cells: list[str], header: list[str]) -> str:
         cells = [str(c).strip() if c is not None else "" for c in row_cells]
 
+        # 合并单元格常导致相邻重复值，做轻量去重。
+        dedup_cells: list[str] = []
+        for c in cells:
+            if c and dedup_cells and dedup_cells[-1] == c:
+                continue
+            dedup_cells.append(c)
+        cells = dedup_cells
+
         non_empty = [c for c in cells if c]
         if not non_empty:
             return ""

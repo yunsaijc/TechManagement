@@ -158,6 +158,28 @@ def _compare_chunk_worker(payload: Dict[str, Any]):
     )
 
 
+def _compare_chunk_worker(payload: Dict[str, Any]):
+    """进程池 worker：对一个 primary + 多个 source 分块执行精比对。"""
+    engine_cfg = payload["engine_config"]
+    engine = ComparisonEngine(
+        min_continuous_match=engine_cfg["min_continuous_match"],
+        ngram_size=engine_cfg["ngram_size"],
+        winnowing_window=engine_cfg["winnowing_window"],
+        min_match_length=engine_cfg["min_match_length"],
+        max_fingerprint_frequency=engine_cfg["max_fingerprint_frequency"],
+    )
+    return engine.compare(
+        docs=payload["docs"],
+        excluded_ranges=payload["excluded_ranges"],
+        threshold_high=payload["threshold_high"],
+        threshold_medium=payload["threshold_medium"],
+        raw_texts=payload["raw_texts"],
+        search_windows=payload["search_windows"],
+        primary_doc_only=payload["primary_doc_id"],
+        light_mode_docs=payload.get("light_mode_docs"),
+    )
+
+
 class PlagiarismAgent:
     """查重 Agent"""
 

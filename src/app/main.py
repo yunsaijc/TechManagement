@@ -42,11 +42,7 @@ app.add_middleware(
         "http://127.0.0.1:8005",
         "http://192.168.0.200:8005",
     ],
-    allow_origin_regex=cors_allow_origin_regex,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+=======
 
 
 @app.middleware("http")
@@ -68,15 +64,12 @@ DEBUG_EVAL_DIR = Path(__file__).parent.parent.parent / "debug_eval"
 DEBUG_SANDBOX_DIR = Path(__file__).parent.parent.parent / "debug_sandbox"
 DEBUG_REVIEW_DIR = Path(__file__).parent.parent.parent / "debug_review"
 DEBUG_PLAGIARISM_DIR = Path(__file__).parent.parent.parent / "debug_plagiarism"
-DEBUG_LOGICON_DIR = Path(__file__).parent.parent.parent / "debug_logicon"
 DEBUG_EXPERT_DIR = Path(__file__).parent.parent.parent / "debug_expert"
 DEBUG_PERFCHECK_DIR = Path(__file__).parent.parent.parent / "debug_perfcheck"
 DEBUG_GROUPING_DIR = Path(__file__).parent.parent.parent / "debug_grouping"
 DEBUG_ACCEPT_DIR = Path(__file__).parent.parent.parent / "debug_accept"
 
 # 注册路由
-app.include_router(review.router, prefix="/api/v1/review", tags=["形式审查"])
-app.include_router(project_review.router, prefix="/api/v1/review", tags=["项目级形式审查"])
 app.include_router(grouping.router, prefix="/api/v1/grouping", tags=["智能分组"])
 app.include_router(plagiarism.router, prefix="/api/v1/plagiarism", tags=["查重"])
 app.include_router(plagiarism_image.router, prefix="/api/v1/plagiarism/image", tags=["图片查重"])
