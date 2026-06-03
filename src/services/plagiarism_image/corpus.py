@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import sqlite3
 import time
 import uuid
@@ -13,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 import fcntl
 import numpy as np
+import cv2
 
 from .config import (
     DEFAULT_FEATURE_DESCRIPTOR_ROWS,
@@ -41,6 +43,28 @@ from .config import (
 )
 from .embedding import BailianImageEmbeddingClient
 from .extractor import extract_images_from_file
+
+
+def _ensure_cv2_phash() -> None:
+    img_hash = getattr(cv2, "img_hash", None)
+    if img_hash is None or hasattr(img_hash, "pHash"):
+        return
+
+    def _phash(bgr: np.ndarray) -> np.ndarray:
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        resized = cv2.resize(gray, (32, 32), interpolation=cv2.INTER_AREA)
+        dct = cv2.dct(np.float32(resized))
+        low_freq = dct[:8, :8].flatten()
+        median = float(np.median(low_freq[1:])) if low_freq.size > 1 else float(low_freq[0])
+        bits = np.array([1 if float(v) > median else 0 for v in low_freq], dtype=np.uint8)
+        packed = np.packbits(bits, bitorder="big")
+        return packed.reshape(1, -1)
+
+    setattr(img_hash, "pHash", _phash)
+
+
+_ensure_cv2_phash()
+
 from .hashing import (
     ImageHasher,
     RuntimeImageFingerprint,
@@ -297,6 +321,10 @@ class ImageCorpusManager:
             "updated_at": state.get("updated_at"),
         }
 
+    @property
+    def index(self) -> Dict:
+        return self._load_index()
+
     def status(self) -> Dict:
         index = self._load_index()
         ckpt = self._load_checkpoint()
@@ -527,6 +555,12 @@ class ImageCorpusManager:
         corpus_dir = Path(corpus_path or IMAGE_PLAGIARISM_DEFAULT_CORPUS_PATH)
         if not corpus_dir.exists() or not corpus_dir.is_dir():
             raise FileNotFoundError(f"corpus_path 不存在或不是目录: {corpus_dir}")
+        import sys
+        print(
+            f"[image-corpus] 开始 batch: corpus={corpus_dir}, limit={limit}, reset_cursor={reset_cursor}",
+            file=sys.stderr,
+            flush=True,
+        )
         lock_fp = self._acquire_build_lock()
         try:
             conn = self._get_feature_conn()
@@ -567,8 +601,24 @@ class ImageCorpusManager:
                     throttle_events += 1
                 if self._is_doc_unchanged(conn, path):
                     skipped_docs += 1
+                    if processed % 10 == 0:
+                        print(
+                            f"[image-corpus] 已处理 {processed}/{len(selected)} 个文档，"
+                            f"当前文件 {path.name}，状态=跳过，待建库 {len(docs_to_process)} 个，"
+                            f"已跳过 {skipped_docs} 个，已失败 {len(failed)} 个。",
+                            file=sys.stderr,
+                            flush=True,
+                        )
                     continue
                 docs_to_process.append(path)
+                if processed % 10 == 0:
+                    print(
+                        f"[image-corpus] 已处理 {processed}/{len(selected)} 个文档，"
+                        f"当前文件 {path.name}，状态=待建库，待建库 {len(docs_to_process)} 个，"
+                        f"已跳过 {skipped_docs} 个，已失败 {len(failed)} 个。",
+                        file=sys.stderr,
+                        flush=True,
+                    )
 
             if docs_to_process:
                 max_workers = max(1, min(int(IMAGE_BUILD_FEATURE_WORKERS), 4, len(docs_to_process)))
@@ -622,6 +672,14 @@ class ImageCorpusManager:
             self._invalidate_fast_index()
 
             checkpoint = self._load_checkpoint(force_refresh=True)
+
+            print(
+                f"[image-corpus] 结束 batch: corpus={corpus_dir}, 已处理 {processed}/{len(selected)} 个文档，"
+                f"入库 {indexed_images} 张图片，跳过 {skipped_docs} 个，失败 {len(failed)} 个，"
+                f"剩余 {max(0, len(all_docs) - next_cursor)} 个，用时 {round(time.time() - t0, 2)} 秒。",
+                file=sys.stderr,
+                flush=True,
+            )
 
             return {
                 "phase": "build",
@@ -1113,6 +1171,7 @@ class ImageCorpusManager:
 
         # Fallback path for legacy indexes without persisted features.
         doc_path = Path(str(entry.get("doc_path", "")))
+        doc_path = self._resolve_legacy_stage_doc_path(doc_path)
         if not doc_path.exists() or not doc_path.is_file():
             return None
         file_mtime = float(entry.get("file_mtime") or 0.0)
@@ -1286,6 +1345,7 @@ class ImageCorpusManager:
 
     def _load_asset_bytes_from_doc(self, entry: Dict) -> Optional[bytes]:
         doc_path = Path(str(entry.get("doc_path", "")))
+        doc_path = self._resolve_legacy_stage_doc_path(doc_path)
         if not doc_path.exists() or not doc_path.is_file():
             return None
         try:
@@ -1464,6 +1524,7 @@ class ImageCorpusManager:
 
         for (doc_path_str, _), bucket in grouped.items():
             doc_path = Path(doc_path_str)
+            doc_path = self._resolve_legacy_stage_doc_path(doc_path)
             if not doc_path.exists() or not doc_path.is_file():
                 continue
             try:
@@ -1482,6 +1543,19 @@ class ImageCorpusManager:
                 if image_bytes:
                     out[str(entry.get("image_id", ""))] = image_bytes
         return out
+
+    @staticmethod
+    def _resolve_legacy_stage_doc_path(doc_path: Path) -> Path:
+        if doc_path.exists():
+            return doc_path
+        parts = doc_path.parts
+        if "_stage_absdocx" not in parts:
+            return doc_path
+        try:
+            original = "/" + doc_path.stem.replace("__", "/")
+        except Exception:
+            return doc_path
+        return Path(original)
 
     def _to_lightweight_fp(self, fp: RuntimeImageFingerprint) -> RuntimeImageFingerprint:
         return RuntimeImageFingerprint(

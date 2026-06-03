@@ -73,7 +73,9 @@
 - 九维 checker 读取 `sections`
 - 划重点模块优先读取 `sections`，缺失时回退 `page_chunks`
 - 指南贴合和技术摸底在生成结论时回填证据引用
-- 正式 HTML 工作台左侧正文区按 `page_chunks` 分页重建，并由右侧证据驱动跳转
+- `page_chunks` 仍是聊天索引与跳转锚点的基础数据
+- 正式 HTML 工作台左侧优先展示统一 `packet viewer`，并使用 `page_chunks + page_map` 驱动证据跳转
+- 当 packet 不可用时，左侧再回退到按 `page_chunks` 分页重建的正文视图
 
 ## 异常处理
 

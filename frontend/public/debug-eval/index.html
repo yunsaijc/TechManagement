@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>项目评审工作台</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      min-width: 0;
+    }
+    html, body {
+      height: 100%;
+    }
+    body {
+      margin: 0;
+      font-family: "Source Han Sans SC", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      background: #f3f5f7;
+      color: #1b2430;
+      overflow: hidden;
+    }
+    .workspace-shell {
+      height: 100dvh;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+      gap: 0;
+    }
+    .project-rail {
+      border-right: 1px solid #d7dfe8;
+      background: #fbfcfd;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+    }
+    .project-rail-head {
+      padding: 20px 18px 14px;
+      border-bottom: 1px solid #e6edf4;
+    }
+    .project-rail-head h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.4;
+    }
+    .project-list {
+      min-height: 0;
+      overflow: auto;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .project-item {
+      width: 100%;
+      border: 1px solid #d7dfe8;
+      border-radius: 12px;
+      background: #ffffff;
+      text-align: left;
+      padding: 10px 11px;
+      cursor: pointer;
+      display: grid;
+      gap: 0;
+      box-shadow: 0 4px 12px rgba(18, 31, 53, 0.035);
+    }
+    .project-item:hover,
+    .project-item.is-active {
+      border-color: #9eb6cf;
+      background: #eef4f9;
+    }
+    .project-item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .project-item-title {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+    .project-item-score {
+      flex-shrink: 0;
+      color: #1d3c61;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid #c8d6e5;
+      border-radius: 999px;
+      padding: 2px 7px;
+      background: #f5f8fb;
+    }
+    .workspace-main {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: #eef2f6;
+      overflow: hidden;
+    }
+    .workspace-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 20px;
+      background: #ffffff;
+      border-bottom: 1px solid #d7dfe8;
+    }
+    .workspace-title {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .workspace-score {
+      flex-shrink: 0;
+      color: #1d3c61;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid #c8d6e5;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: #f5f8fb;
+    }
+    .workspace-frame {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      display: block;
+      border: 0;
+      background: #eef2f6;
+    }
+    .empty-state {
+      display: grid;
+      place-items: center;
+      height: 100vh;
+      color: #66758a;
+      font-size: 16px;
+    }
+    @media (max-width: 1024px) {
+      body {
+        overflow: auto;
+      }
+      .workspace-shell {
+        height: auto;
+        min-height: 100vh;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 70vh;
+      }
+      .project-rail {
+        border-right: 0;
+        border-bottom: 1px solid #d7dfe8;
+      }
+      .workspace-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  
+            <div class="workspace-shell">
+              <aside class="project-rail">
+                <div class="project-rail-head">
+                  <h1>项目评审工作台</h1>
+                </div>
+                <div class="project-list">
+                  
+                <button
+                  type="button"
+                  class="project-item is-active"
+                  data-project-html="EVAL_c0a6828463cb4c1985c7fca26d5328d3.html"
+                  data-project-title="低空多源感知一体化病害检测和灾害监测装备研发与应用示范"
+                  data-project-score="7.01 / C"
+                >
+                  <div class="project-item-top">
+                    <div class="project-item-title">低空多源感知一体化病害检测和灾害监测装备研发与应用示范</div>
+                    <div class="project-item-score">7.01 / C</div>
+                  </div>
+                </button>
+                
+                <button
+                  type="button"
+                  class="project-item"
+                  data-project-html="EVAL_8170da049eae4caf88322ef03f410310.html"
+                  data-project-title="智能与数字化技术在骨科领域的应用及临床研究"
+                  data-project-score="6.74 / C"
+                >
+                  <div class="project-item-top">
+                    <div class="project-item-title">智能与数字化技术在骨科领域的应用及临床研究</div>
+                    <div class="project-item-score">6.74 / C</div>
+                  </div>
+                </button>
+                
+                <button
+                  type="button"
+                  class="project-item"
+                  data-project-html="EVAL_ffb75a4c639d4ebab2c33e21d75d7bac.html"
+                  data-project-title="生殖健康科普示范基地标准化建设与创新模式探索"
+                  data-project-score="6.5 / C"
+                >
+                  <div class="project-item-top">
+                    <div class="project-item-title">生殖健康科普示范基地标准化建设与创新模式探索</div>
+                    <div class="project-item-score">6.5 / C</div>
+                  </div>
+                </button>
+                
+                <button
+                  type="button"
+                  class="project-item"
+                  data-project-html="EVAL_manual-benchmark.html"
+                  data-project-title="demo.pdf"
+                  data-project-score="- / E"
+                >
+                  <div class="project-item-top">
+                    <div class="project-item-title">demo.pdf</div>
+                    <div class="project-item-score">- / E</div>
+                  </div>
+                </button>
+                
+                </div>
+              </aside>
+              <section class="workspace-main">
+                <div class="workspace-head">
+                  <div class="workspace-title" id="workspace-title">低空多源感知一体化病害检测和灾害监测装备研发与应用示范</div>
+                  <div class="workspace-score" id="workspace-score">7.01 / C</div>
+                </div>
+                <iframe
+                  id="evaluation-workspace-frame"
+                  class="workspace-frame"
+                  name="evaluation-workspace-frame"
+                  src="EVAL_c0a6828463cb4c1985c7fca26d5328d3.html"
+                  title="项目评审工作台"
+                ></iframe>
+              </section>
+            </div>
+            
+  <script>
+    (() => {
+      const items = Array.from(document.querySelectorAll(".project-item"));
+      const frame = document.getElementById("evaluation-workspace-frame");
+      const title = document.getElementById("workspace-title");
+      const score = document.getElementById("workspace-score");
+      if (!items.length || !frame) return;
+
+      const syncEmbeddedLayout = () => {
+        try {
+          const doc = frame.contentDocument;
+          if (!doc) return;
+          const rail = doc.getElementById("project-rail");
+          if (rail) {
+            const stack = rail.closest(".project-stack");
+            if (stack) stack.style.display = "none";
+          }
+          const styleId = "embedded-workspace-override";
+          let style = doc.getElementById(styleId);
+            if (!style) {
+              style = doc.createElement("style");
+              style.id = styleId;
+              style.textContent = `
+              html, body {
+                height: 100% !important;
+                overflow: hidden !important;
+              }
+              .workspace-layout {
+                grid-template-columns: minmax(0, 1.55fr) minmax(430px, 1.08fr) !important;
+                overflow: hidden !important;
+              }
+              .project-stack {
+                display: none !important;
+              }
+              .hero {
+                display: none !important;
+              }
+              .page {
+                padding-top: 0 !important;
+                height: 100% !important;
+                min-height: 0 !important;
+                overflow: hidden !important;
+              }
+              .page-stack {
+                grid-template-rows: minmax(0, 1fr) !important;
+                height: 100% !important;
+                min-height: 0 !important;
+              }
+              .main-stack,
+              .side-stack,
+              .doc-panel,
+              .result-shell,
+              .result-panels {
+                min-height: 0 !important;
+              }
+              .main-stack,
+              .side-stack,
+              .doc-panel,
+              .result-shell {
+                overflow: hidden !important;
+              }
+            `;
+            doc.head.appendChild(style);
+          }
+        } catch (error) {
+          console.warn("failed to sync embedded evaluation layout", error);
+        }
+      };
+
+      const activate = (item) => {
+        items.forEach((node) => node.classList.toggle("is-active", node === item));
+        frame.src = item.dataset.projectHtml || "";
+        if (title) {
+          title.textContent = item.dataset.projectTitle || "";
+        }
+        if (score) {
+          score.textContent = item.dataset.projectScore || "";
+        }
+      };
+
+      frame.addEventListener("load", syncEmbeddedLayout);
+      items.forEach((item) => {
+        item.addEventListener("click", (event) => {
+          const link = event.target.closest("a");
+          if (link) return;
+          activate(item);
+        });
+      });
+
+      syncEmbeddedLayout();
+    })();
+  </script>
+</body>
+</html>

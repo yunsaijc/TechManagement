@@ -5,7 +5,7 @@ import { useRequestStore } from './request';
 import { useUiStore } from './ui';
 
 const SANDBOX_ACTIONS = [
-  { id: 'leadership_forecast', title: '沙盘推演', method: 'POST', path: '/pipeline/leadership-forecast', timeout: 60000 },
+  { id: 'leadership_forecast', title: '沙盘推演', method: 'POST', path: '/pipeline/leadership-forecast/start', timeout: 15000 },
 ];
 
 const LEADERSHIP_SCENARIOS = [
@@ -53,6 +53,25 @@ export const useSandboxStore = defineStore('sandbox', () => {
   const forecastRunPreflight = ref(false);
   const forecastMode = ref('quick');
   const forecastForceRefresh = ref(false);
+  const forecastJobId = ref('');
+  const forecastJobRunning = ref(false);
+  const forecastJobProgress = ref(0);
+  const forecastJobStep = ref('');
+  const forecastJobMessage = ref('');
+  let forecastJobPollTimer = null;
+
+  /** 强制全量重算时的经验耗时区间（受 Neo4j 体量与 LLM 延迟影响较大） */
+  const forecastEtaHint = computed(() => {
+    const force = forecastForceRefresh.value;
+    const m = forecastMode.value || 'quick';
+    if (m === 'deep') {
+      return force ? '预估：约 15～45 分钟（深度 + 全量重算）' : '预估：约 15～45 分钟（深度）';
+    }
+    if (m === 'standard') {
+      return force ? '预估：约 5～20 分钟（标准 + 全量重算）' : '预估：约 5～20 分钟（标准）';
+    }
+    return force ? '预估：约 2～10 分钟（快速 + 全量重算）' : '预估：约 1～6 分钟（快速，命中缓存则更快）';
+  });
 
   const requestInProgress = computed(() => req.inProgressFor(moduleId));
   const progressText = computed(() => req.progressTextFor(moduleId));
@@ -74,13 +93,110 @@ export const useSandboxStore = defineStore('sandbox', () => {
     return actions.find((item) => item.id === actionId) || null;
   }
 
-  async function fetchLatestLeadershipReport() {
+  async function fetchLatestLeadershipReport(timeoutMs = 12000) {
     const latestUrl = endpoint('/pipeline/leadership-forecast/latest');
-    const latest = await req.fetchWithTimeout(latestUrl, { method: 'GET' }, 12000);
+    const latest = await req.fetchWithTimeout(latestUrl, { method: 'GET' }, timeoutMs);
     if (!latest || typeof latest !== 'object' || !latest.report || typeof latest.report !== 'object') {
       throw new Error('最新推演结果不可用');
     }
     return latest.report;
+  }
+
+  async function fetchLeadershipJobStatus(jobId, timeoutMs = 8000) {
+    const url = endpoint(`/pipeline/leadership-forecast/jobs/${jobId}`);
+    const data = await req.fetchWithTimeout(url, { method: 'GET' }, timeoutMs);
+    if (!data || typeof data !== 'object') {
+      throw new Error('任务状态不可用');
+    }
+    return data;
+  }
+
+  function clearJobPolling() {
+    if (forecastJobPollTimer) {
+      clearInterval(forecastJobPollTimer);
+      forecastJobPollTimer = null;
+    }
+  }
+
+  function applyJobStatus(statusData) {
+    forecastJobProgress.value = Number(statusData.progress || 0);
+    forecastJobStep.value = String(statusData.step || '');
+    const msg = String(statusData.message || '');
+    forecastJobMessage.value = msg;
+    const stepText = forecastJobStep.value ? ` · ${forecastJobStep.value}` : '';
+    requestMeta.value = `推演进度 ${forecastJobProgress.value}%${stepText}${msg ? `：${msg}` : ''}`;
+  }
+
+  function startJobPolling(jobId) {
+    clearJobPolling();
+    const pollMs = 1500;
+
+    async function tick() {
+      try {
+        const statusData = await fetchLeadershipJobStatus(jobId, 8000);
+        applyJobStatus(statusData);
+        const state = String(statusData.state || '').toLowerCase();
+        if (state === 'completed') {
+          clearJobPolling();
+          forecastJobRunning.value = false;
+          forecastJobMessage.value = '';
+          if (statusData.report && typeof statusData.report === 'object') {
+            lastResult.value = statusData.report;
+            resultText.value = JSON.stringify(statusData.report, null, 2);
+          }
+          requestMeta.value = '推演完成，已展示最新结果';
+          runs.value.unshift({
+            id: `${Date.now()}_leadership_forecast`,
+            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            title: '沙盘推演',
+            ok: true,
+          });
+          runs.value = runs.value.slice(0, 12);
+          hist.record({
+            title: '政策沙盘 - 领导推演',
+            method: 'POST',
+            url: endpoint('/pipeline/leadership-forecast/start'),
+            ok: true,
+          });
+          ui.toast('推演完成，结果已更新');
+        } else if (state === 'failed') {
+          clearJobPolling();
+          forecastJobRunning.value = false;
+          forecastJobMessage.value = '';
+          const errorText = String(statusData.error || statusData.message || '推演失败');
+          requestMeta.value = `推演失败：${errorText}`;
+          resultText.value = errorText;
+          runs.value.unshift({
+            id: `${Date.now()}_leadership_forecast`,
+            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            title: '沙盘推演',
+            ok: false,
+          });
+          runs.value = runs.value.slice(0, 12);
+          hist.record({
+            title: '政策沙盘 - 领导推演',
+            method: 'POST',
+            url: endpoint('/pipeline/leadership-forecast/start'),
+            ok: false,
+          });
+          ui.toast(errorText, 'error', 3000);
+        }
+      } catch {
+        // 网络抖动时保持轮询，不中断任务显示
+      }
+    }
+
+    tick();
+    forecastJobPollTimer = setInterval(tick, pollMs);
+  }
+
+  function reportVersionKey(report) {
+    if (!report || typeof report !== 'object') return '';
+    if (report.meta && typeof report.meta === 'object' && report.meta.generatedAt) {
+      return String(report.meta.generatedAt);
+    }
+    if (report.generatedAt) return String(report.generatedAt);
+    return '';
   }
 
   function formatValue(value) {
@@ -217,8 +333,25 @@ export const useSandboxStore = defineStore('sandbox', () => {
       : null;
 
     try {
-      requestMeta.value = '正在生成领导视角沙盘推演，请稍候...';
+      requestMeta.value = '正在提交推演任务...';
       latestActionId.value = action.id;
+      ui.setTab(moduleId, 'result');
+
+      if (action.id === 'leadership_forecast') {
+        if (forecastJobRunning.value) {
+          ui.toast('已有推演任务在执行中，请稍候');
+          return null;
+        }
+        try {
+          const warmReport = await fetchLatestLeadershipReport(3500);
+          lastResult.value = warmReport;
+          resultText.value = JSON.stringify(warmReport, null, 2);
+          requestMeta.value = '已先展示最近一次结果，正在提交新任务...';
+        } catch {
+          requestMeta.value = '正在提交并启动沙盘推演，请稍候...';
+        }
+      }
+
       const payload = await req.fetchWithTimeout(
         url,
         bodyPayload
@@ -232,58 +365,26 @@ export const useSandboxStore = defineStore('sandbox', () => {
         controller,
       );
 
-      lastResult.value = payload;
-      resultText.value = JSON.stringify(payload, null, 2);
-      requestMeta.value = '已生成最新领导推演结论';
-      ui.setTab(moduleId, 'result');
-      runs.value.unshift({
-        id: `${Date.now()}_${action.id}`,
-        time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-        title: '沙盘推演',
-        ok: true,
-      });
-      runs.value = runs.value.slice(0, 12);
-      hist.record({
-        title: '政策沙盘 - 领导推演',
-        method: action.method,
-        url,
-        ok: true,
-      });
-      ui.toast('推演完成，已生成领导简报');
+      const jobId = String(payload.jobId || '');
+      if (!jobId) {
+        throw new Error('任务提交失败：未返回任务ID');
+      }
+
+      forecastJobId.value = jobId;
+      forecastJobRunning.value = true;
+      forecastJobProgress.value = Number(payload.progress || 0);
+      forecastJobStep.value = 'queued';
+      forecastJobMessage.value = String(payload.message || '任务已提交');
+      requestMeta.value = `任务已提交，正在执行（job: ${jobId.slice(0, 8)}...）`;
+      startJobPolling(jobId);
+      ui.toast('推演任务已启动，正在持续更新进度');
       return payload;
     } catch (error) {
       const msg = String(error || '执行失败');
-      if (action.id === 'leadership_forecast' && msg.includes('请求超时')) {
-        try {
-          const latestReport = await fetchLatestLeadershipReport();
-          lastResult.value = latestReport;
-          resultText.value = JSON.stringify(latestReport, null, 2);
-          requestMeta.value = '请求超时，但已载入后端最新推演结果';
-          ui.setTab(moduleId, 'result');
-          runs.value.unshift({
-            id: `${Date.now()}_${action.id}`,
-            time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-            title: '沙盘推演（超时回填）',
-            ok: true,
-          });
-          runs.value = runs.value.slice(0, 12);
-          hist.record({
-            title: '政策沙盘 - 领导推演（超时回填）',
-            method: 'GET',
-            url: endpoint('/pipeline/leadership-forecast/latest'),
-            ok: true,
-          });
-          ui.toast('推演请求超时，但已加载最新结果');
-          return latestReport;
-        } catch (fallbackError) {
-          const fallbackMsg = String(fallbackError || '无法读取最新推演结果');
-          requestMeta.value = `推演失败：${msg}；回填失败：${fallbackMsg}`;
-          resultText.value = `请求错误：${msg}\n回填错误：${fallbackMsg}`;
-        }
-      } else {
-        requestMeta.value = `推演失败：${msg}`;
-        resultText.value = msg;
-      }
+      forecastJobRunning.value = false;
+      forecastJobMessage.value = '';
+      requestMeta.value = `推演失败：${msg}`;
+      resultText.value = msg;
 
       runs.value.unshift({
         id: `${Date.now()}_${action.id}`,
@@ -306,11 +407,14 @@ export const useSandboxStore = defineStore('sandbox', () => {
   }
 
   function stop() {
+    clearJobPolling();
+    forecastJobRunning.value = false;
+    forecastJobMessage.value = '';
     if (req.stop(moduleId)) {
       ui.toast('已停止当前请求');
       return;
     }
-    ui.toast('当前无进行中的请求');
+    ui.toast('已停止前端进度轮询');
   }
 
   function copyResult() {
@@ -343,6 +447,7 @@ export const useSandboxStore = defineStore('sandbox', () => {
   }
 
   function initialize() {
+    req.clearStale(moduleId);
     if (!latestActionId.value) {
       setActiveTab('form');
     }
@@ -356,6 +461,12 @@ export const useSandboxStore = defineStore('sandbox', () => {
     forecastRunPreflight,
     forecastMode,
     forecastForceRefresh,
+    forecastJobId,
+    forecastJobRunning,
+    forecastJobProgress,
+    forecastJobStep,
+    forecastJobMessage,
+    forecastEtaHint,
     forecastModes,
     selectedScenarioId,
     leadershipScenarios,

@@ -384,6 +384,8 @@ class ChatCitation(BaseModel):
     file: str = Field(default="", description="文件名")
     page: int = Field(default=0, ge=0, description="页码")
     snippet: str = Field(default="", description="引用片段")
+    packet_page: int = Field(default=0, ge=0, description="统一材料页码")
+    highlight_rects: List[Dict[str, float]] = Field(default_factory=list, description="统一材料高亮框")
 
 
 class EvaluationChatAskRequest(BaseModel):
@@ -396,6 +398,20 @@ class EvaluationChatAskResponse(BaseModel):
     """聊天问答响应"""
     answer: str = Field(..., description="回答")
     citations: List[ChatCitation] = Field(default_factory=list, description="引用")
+
+
+class EvaluationCitationHighlightRequest(BaseModel):
+    """聊天引用高亮请求"""
+    evaluation_id: str = Field(..., description="评审记录ID")
+    file: str = Field(default="", description="文件名")
+    page: int = Field(default=0, ge=0, description="页码")
+    snippet: str = Field(default="", description="引用片段")
+
+
+class EvaluationCitationHighlightResponse(BaseModel):
+    """聊天引用高亮响应"""
+    packet_page: int = Field(default=0, ge=0, description="统一材料页码")
+    highlight_rects: List[Dict[str, float]] = Field(default_factory=list, description="统一材料高亮框")
 
 
 # ============ 辅助函数 ============

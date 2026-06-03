@@ -17,7 +17,10 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   const backendStatus = ref('检测中');
   const backendOk = ref(false);
 
-  const navModules = computed(() => [...modules, HISTORY_MODULE]);
+  const navModules = computed(() => [
+    ...modules,
+    HISTORY_MODULE,
+  ]);
   const isHistoryModule = computed(() => selectedModuleId.value === HISTORY_MODULE.id);
   const activeModule = computed(() => modules.find((m) => m.id === selectedModuleId.value) || null);
   const currentModuleMeta = computed(() => (isHistoryModule.value ? HISTORY_MODULE : activeModule.value));
@@ -71,4 +74,3 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     selectModule,
   };
 });
-

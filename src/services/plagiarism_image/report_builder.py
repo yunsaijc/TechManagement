@@ -42,7 +42,7 @@ class ImageReportBuilder:
 
         level_counter = Counter(item.level for item in matches)
         reason_counter = Counter(item.reason for item in matches)
-        doc_order = sorted(grouped_docs.keys())
+        doc_order = sorted(set(grouped_docs.keys()) | set(primary_documents.keys()))
 
         nav_items: List[str] = []
         doc_views: List[str] = []
@@ -197,10 +197,10 @@ class ImageReportBuilder:
     <div class="main">
       <aside class="sidebar">
         <div class="nav-title">文档导航</div>
-        {''.join(nav_items) or '<div class="empty">暂无命中文档</div>'}
+                {''.join(nav_items) or ('<div class="empty">暂无命中文档</div>' if not primary_documents else '')}
       </aside>
       <section class="content">
-        {''.join(doc_views) or '<div class="empty">No matches.</div>'}
+                {''.join(doc_views) or ('<div class="empty">No matches.</div>' if not primary_documents else '')}
       </section>
     </div>
   </div>
@@ -338,8 +338,11 @@ class ImageReportBuilder:
             for source_doc in sorted(by_source_doc.keys()):
                 cards: List[str] = []
                 for match in by_source_doc[source_doc]:
+                    image_bytes = image_bytes_map.get(match.source_image_id)
+                    if not image_bytes:
+                        image_bytes = image_bytes_map.get(query_image_id)
                     img_uri = self._write_asset_file(
-                        image_bytes=image_bytes_map.get(match.source_image_id),
+                        image_bytes=image_bytes,
                         assets_dir=assets_dir,
                         cache=asset_url_cache,
                         max_side=180,

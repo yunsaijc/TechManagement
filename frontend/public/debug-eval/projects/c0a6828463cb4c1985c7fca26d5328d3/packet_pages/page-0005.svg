@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="595" height="842" viewBox="0 0 595 842">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <g fill="#182230" font-family="Source Han Sans SC, PingFang SC, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif" font-size="10">
+    <text x='44' y='64'>tion System[J].Drones (2504-446X), 2023, 7</text>
+    <text x='44' y='80'>(6).DOI:10.3390/drones7060386.</text>
+    <text x='44' y='112'>[3] Liu Y .Automatic remote sensing image </text>
+    <text x='44' y='128'>mosaic technology of small surveying and m</text>
+    <text x='44' y='144'>apping UAV based on edge computing[J].Inte</text>
+    <text x='44' y='160'>rnational journal of grid and utility comp</text>
+    <text x='44' y='176'>uting, 2024(3/4):15.</text>
+    <text x='44' y='208'>[4]Technologies F P ,Inc..Power module and</text>
+    <text x='44' y='224'> clutch mechanism for unmanned aircraft sy</text>
+    <text x='44' y='240'>stems:US202217742208[P].2025-03-04.</text>
+    <text x='44' y='272'>[5]CO. ( E I E ,LTD..3D-MAP-BASED FLIGHT C</text>
+    <text x='44' y='288'>ONTROL METHOD AND SYSTEM FOR UNMANNED AIRC</text>
+    <text x='44' y='304'>RAFT, AND MEDIUM:WO2023118878[P].2024-04-0</text>
+    <text x='44' y='320'>4.</text>
+    <text x='44' y='352'>二、国内研究现状及趋势</text>
+    <text x='44' y='384'>低空灾害监测技术是指利用低空飞行器，如无人机、轻型直升机等，在离地面几十米到几百米相</text>
+    <text x='44' y='400'>对较低的高度对特定区域或目标进行灾害监测的一种技术手段。与传统灾害监测技术相比，低空</text>
+    <text x='44' y='416'>巡检具有巡检效率高、安全性强、数据采集精度高、巡检机动灵活与巡检成本低等多种优势。近</text>
+    <text x='44' y='432'>两年,中国低空巡检市场迎来了前所未有的快速增长浪潮，成为推动低空经济快速发展的不可或</text>
+    <text x='44' y='448'>缺的关键力量。</text>
+    <text x='44' y='480'>在低空巡检领域，国家电网在低空巡检技术研究上处于行业领先水平，国网浙江电科院“红外大</text>
+    <text x='44' y='496'>脑”借助专业算法，利用AI算法提升缺陷识别精度，1小时可完成以往3名技术人员20天的</text>
+    <text x='44' y='512'>1.2万张红外图像分析，发热缺陷检出率超81%，国网湖北依托 PMS3.0搭建省级机</text>
+    <text x='44' y='528'>巡平台，通过构建平台实现业务流程自动化，打造“标准网格 + 智能接单”模式，通过自主</text>
+    <text x='44' y='544'>研发车载式移动机场，使巡检效率飙升3-6倍。2023 年国家电网 90% 输电线路的</text>
+    <text x='44' y='560'>监测由无人机监测，AI 算法精准度高达 99.7%；中国科学院地理资源所联合福建省高</text>
+    <text x='44' y='576'>速公路集团等开展 “高速公路无人机组网遥感智能巡检关键技术研究” 项目，攻克无人机组</text>
+    <text x='44' y='592'>网管控与航路规划等技术，研发智能巡检系统平台；陕西交控科技发展集团高速检测公司旗下飞</text>
+    <text x='44' y='608'>行技术有限公司自主研发 “空地一体化智慧巡检系统”，这些项目通过多技术融合与系统平台</text>
+    <text x='44' y='624'>构建，实现了对高速公路的高效巡检，部分成果经检测处于行业类领先水平。</text>
+    <text x='44' y='656'>在研究方法上，国外低空灾害监测研究注重多平台协同，如利用太空观测站、卫星、航天飞机、</text>
+    <text x='44' y='672'>中大型无人机、地面遥感车、海洋观测船等构建多传感器遥感平台，在数据处理中，人工智能、</text>
+    <text x='44' y='688'>机器学习等技术应用成熟，能快速准确地分析处理海量数据。 国内在无人机低空遥感技术应用</text>
+    <text x='44' y='704'>广泛，同时也在积极开展多源数据融合、组网观测等研究。例如，中国气象局利用风廓线雷达组</text>
+    <text x='44' y='720'>网进行大气动力参数反演，但在多平台协同的系统性和数据处理技术的成熟度上，与国外存在一</text>
+    <text x='44' y='736'>定差距。在研究进展上，国外构建了较为完善的低空灾害监测体系，能够实现对全球范围内各类</text>
+    <text x='44' y='752'>灾害的全方位实时动态监测，在无人机技术创新应用、高空气球监测系统发展等方面较为领先，</text>
+    <text x='44' y='768'>如斯坦福大学利用无人机监测地质灾害和森林火灾，近太空实验室部署高空气球网络获取高分辨</text>
+    <text x='44' y='784'>率图像，国内在低空灾害监测领域发展迅速，初步建立了应对重大自然灾害的遥感监测和预警系</text>
+  </g>
+</svg>

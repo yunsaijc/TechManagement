@@ -16,7 +16,7 @@
 1. 单元测试：解析器、检查器、评分器、工具网关适配层  
 2. 单元测试：项目画像识别与维度覆盖规则  
 3. 集成测试：`EvaluationAgent` 并发编排与结果合并  
-4. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`  
+4. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`、`/chat/ask-stream`  
 5. 前端报告测试：左右布局、正文跳转、高亮联动  
 6. 回归测试：与历史评审结果字段兼容
 
@@ -67,6 +67,8 @@ tests/services/evaluation/
 - 用例：`/chat/ask` 提问“验证数据有吗？”  
 - 断言：返回 `answer + citations[]`
 - 断言：每条 citation 包含 `file/page/snippet`
+- 用例：`/chat/citation-highlight` 请求单条引用  
+- 断言：返回 `packet_page/highlight_rects`，允许 `highlight_rects=[]` 但仍应支持页级跳转
 - 断言：无证据时不输出“确定性结论”
 - 断言：LLM 异常时，`ask()` 仍返回降级回答和 citations，而不是抛出内部错误
 - 断言：研究目标问题不会优先命中附件或纯表格噪声页
@@ -135,6 +137,7 @@ tests/services/evaluation/
   - 进展问题不会优先命中封面信息
 - `tests/services/evaluation/test_chat_agent.py`
   - 开启 `enable_chat_index` 后，`ask()` 可返回 citations
+  - `ask_stream()` 可返回 `delta/done` 流式事件
   - LLM 异常时，`ask()` 走降级回答
   - 未构建聊天索引时返回明确错误
   - 未构建索引时可自动重建并完成回答
@@ -160,10 +163,12 @@ tests/services/evaluation/
 - `tests/services/evaluation/test_api_evaluation.py`
   - `evaluate/file` 路由可解析表单参数并调用评审 Agent
   - `chat/ask` 路由可返回 `answer + citations`
+  - `chat/ask-stream` 路由可返回 SSE 事件流
   - `chat/ask` 会把“评审记录不存在”映射为 `404`
   - `chat/ask` 会把“未构建聊天索引”映射为 `422`
 - `tests/services/evaluation/test_report_generator.py`
-  - 正式报告 HTML 内包含交互式聊天面板与 `/chat/ask` 调用脚本
+  - 正式报告 HTML 内包含交互式聊天面板与 `/chat/ask-stream` 优先调用脚本
+  - 聊天面板包含进度时间线、流式骨架和结构化回答卡脚本
   - debug 报告不包含交互式聊天面板
   - `chat_ready=false` 时仍允许首问（由后端自动建索引）
   - 正式报告采用左正文、右结果布局

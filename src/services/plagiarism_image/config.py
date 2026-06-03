@@ -9,7 +9,8 @@ _env_path = Path(__file__).parent.parent.parent.parent / ".env"
 load_dotenv(_env_path)
 
 IMAGE_PLAGIARISM_DEBUG_ROOT = Path("debug_plagiarism/image")
-IMAGE_PLAGIARISM_DATA_ROOT = Path("data/plagiarism_image")
+# IMAGE_PLAGIARISM_DATA_ROOT = Path("data/plagiarism_image")
+IMAGE_PLAGIARISM_DATA_ROOT = Path("/home/tdkx/workspace/tech/data/plagiarism_image/xxnr")
 IMAGE_PLAGIARISM_INDEX_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_index.json"
 IMAGE_PLAGIARISM_CHECKPOINT_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_checkpoint.json"
 IMAGE_PLAGIARISM_MANIFEST_PATH = IMAGE_PLAGIARISM_DATA_ROOT / "index" / "image_manifest.json"

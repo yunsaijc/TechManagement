@@ -134,7 +134,10 @@ class CorpusManager:
             format_version=int(data.get("format_version") or 3),
         )
         self.shard_count = self.index.shard_count
-        print(f"[Corpus] 已加载索引: {len(self.index.documents)} 个文档 (路径锁定: {self.corpus_path})")
+        print(
+            f"[Corpus] 已加载已有索引: {len(self.index.documents)} 个文档 "
+            f"(这是本次启动前的历史数量, 路径锁定: {self.corpus_path})"
+        )
 
     def save_index(self):
         """将索引清单保存到磁盘。"""
@@ -167,8 +170,8 @@ class CorpusManager:
         last_seen_doc_id: Optional[str] = cursor_doc_id
         scan_truncated = False
         manifest = self._load_manifest()
-        all_docx_files = sorted(
-            self._iter_docx_files(self.corpus_path),
+        all_word_files = sorted(
+            self._iter_word_files(self.corpus_path),
             key=lambda path: self._doc_id_for_path(path),
         )
 
@@ -184,7 +187,7 @@ class CorpusManager:
                 }
             )
 
-        for file_path in all_docx_files:
+        for file_path in all_word_files:
             doc_id = self._doc_id_for_path(file_path)
             if cursor_doc_id and doc_id <= cursor_doc_id:
                 continue
@@ -242,12 +245,15 @@ class CorpusManager:
                 and float(manifest_existing.get("file_mtime") or 0.0) == file_mtime
                 and int(manifest_existing.get("file_size") or 0) == file_size
             ):
-                action = "failed"
-                stats["unchanged"] += 1
-                if max_scan and stats["scanned"] >= max_scan:
-                    scan_truncated = True
-                    break
-                continue
+            #   action = "failed"
+            #     stats["unchanged"] += 1
+            #     if max_scan and stats["scanned"] >= max_scan:
+            #         scan_truncated = True
+            #         break
+            #     continue
+                previous_error = str(manifest_existing.get("last_error") or "").strip()
+                print(f"[Corpus] 重试失败文档 {doc_id}: {previous_error or 'unknown error'}")
+                action = "update" if existing else "new"
 
             if action != "unchanged":
                 manifest[doc_id] = {
@@ -663,7 +669,7 @@ class CorpusManager:
                 }
             )
 
-        for file_path in self._iter_docx_files(self.corpus_path):
+        for file_path in self._iter_word_files(self.corpus_path):
             doc_id = self._doc_id_for_path(file_path)
             if cursor_doc_id and doc_id <= cursor_doc_id:
                 continue
@@ -805,7 +811,7 @@ class CorpusManager:
                 stats["deleted"] = len(removed_doc_ids)
 
         if not to_process and not removed_doc_ids:
-            print(f"[Corpus] {self.corpus_path} 下没有需要更新的 docx 文件")
+            print(f"[Corpus] {self.corpus_path} 下没有需要更新的 Word 文件")
             return {
                 **stats,
                 "cursor_doc_id": cursor_doc_id,
@@ -1969,14 +1975,14 @@ class CorpusManager:
                 break
             yield batch
 
-    def _iter_docx_files(self, root: Path) -> Iterator[Path]:
+    def _iter_word_files(self, root: Path) -> Iterator[Path]:
         try:
             with os.scandir(root) as entries:
                 for entry in entries:
                     try:
                         if entry.is_dir(follow_symlinks=False):
-                            yield from self._iter_docx_files(Path(entry.path))
-                        elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith(".docx"):
+                            yield from self._iter_word_files(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False) and entry.name.lower().endswith((".docx", ".doc")):
                             yield Path(entry.path)
                     except OSError as e:
                         print(f"[Corpus] 扫描目录项失败 {entry.path}: {e}")

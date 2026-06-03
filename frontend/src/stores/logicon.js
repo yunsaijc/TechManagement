@@ -298,6 +298,17 @@ export const useLogiconStore = defineStore('logicon', () => {
       ],
     });
 
+    if (source.agent_analysis && String(source.agent_analysis).trim()) {
+      const traceLen = Array.isArray(source.agent_tool_trace) ? source.agent_tool_trace.length : 0;
+      cards.push({
+        title: 'Agent 复核说明（工具调用）',
+        rows: [
+          { label: '分析', value: truncate(String(source.agent_analysis), 520) },
+          ...(traceLen ? [{ label: '工具步数', value: String(traceLen) }] : []),
+        ],
+      });
+    }
+
     if (conflicts.length) {
       conflicts.slice(0, 8).forEach((c, idx) => {
         const evidence = Array.isArray(c?.evidence) ? c.evidence : [];
@@ -356,7 +367,7 @@ export const useLogiconStore = defineStore('logicon', () => {
       });
     }
 
-    return cards.slice(0, 8);
+    return cards.slice(0, 12);
   });
 
   const isMarkdownReportPayload = computed(() => false);

@@ -486,6 +486,9 @@ const perfMetricsAllItems = computed(() => {
     rows: [
       { k: '风险等级', v: riskBadge(x.risk_level) },
       { k: '类型', v: x.type || '-' },
+      ...(typeof x.match_similarity === 'number'
+        ? [{ k: '对齐相似度', v: `${(x.match_similarity * 100).toFixed(1)}%` }]
+        : []),
       { k: '申报值', v: x.apply_display || x.apply_value || '-' },
       { k: '任务值', v: x.task_display || x.task_value || '-' },
       { k: '单位', v: x.unit || '-' },

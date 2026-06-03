@@ -23,10 +23,14 @@ except ModuleNotFoundError:
 
 try:
     from src.common.llm.config import llm_config
-    from src.common.llm.factory import get_llm_client
 except ModuleNotFoundError:
     llm_config = None  # type: ignore[assignment]
-    get_llm_client = None  # type: ignore[assignment]
+
+try:
+    from src.services.sandbox.sandbox_llm import build_sandbox_llm, sandbox_llm_meta
+except ModuleNotFoundError:
+    build_sandbox_llm = None  # type: ignore[assignment]
+    sandbox_llm_meta = None  # type: ignore[assignment]
 
 try:
     from langchain_core.prompts import ChatPromptTemplate
@@ -45,9 +49,9 @@ except ModuleNotFoundError:
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-DEFAULT_STEP2_PATH = "debug_sandbox/hotspot_migration_real_schema_2023_to_2024.json"
-DEFAULT_STEP3_PATH = "debug_sandbox/macro_insight_2023_2023_to_2024_2024.json"
-DEFAULT_OUTPUT_PATH = "debug_sandbox/leadership_brief_step4.json"
+DEFAULT_STEP2_PATH = "debug_sandbox/Q1/hotspot_migration_real_schema_2023_to_2024.json"
+DEFAULT_STEP3_PATH = "debug_sandbox/Q1/macro_insight_2023_2023_to_2024_2024.json"
+DEFAULT_OUTPUT_PATH = "debug_sandbox/Q1/leadership_brief_step4.json"
 DEFAULT_TOP_MOVEMENTS = 5
 
 
@@ -147,33 +151,13 @@ def build_rule_brief(step2: dict[str, Any], step3: dict[str, Any], cfg: Briefing
     }
 
 
-def _build_llm() -> Any | None:
-    if llm_config is None or get_llm_client is None:
-        return None
-
-    provider = llm_config.provider
-    model = llm_config.model
-    api_key = llm_config.api_key
-    if not provider or not api_key:
-        return None
-
-    try:
-        return get_llm_client(
-            provider=provider,
-            model=model,
-            api_key=api_key,
-            base_url=llm_config.base_url,
-            temperature=float(llm_config.temperature),
-            max_tokens=int(llm_config.max_tokens),
-            timeout=float(llm_config.timeout),
-            max_retries=int(llm_config.max_retries),
-        )
-    except Exception as exc:
-        print(f"[WARN] Step4 初始化 LLM 客户端失败: {exc}")
-        return None
-
-
 def _active_llm_meta() -> dict[str, str]:
+    if sandbox_llm_meta is not None:
+        m = sandbox_llm_meta("brief")
+        return {
+            "provider": str(m.get("provider", "unknown")),
+            "model": str(m.get("model", "unknown")),
+        }
     if llm_config is None:
         return {"provider": "unknown", "model": "unknown"}
     return {
@@ -203,7 +187,9 @@ def llm_enhance_brief(rule_brief: dict[str, Any], step2_meta: dict[str, Any], st
     if ChatPromptTemplate is None:
         return None
 
-    llm = _build_llm()
+    if build_sandbox_llm is None:
+        return None
+    llm = build_sandbox_llm("brief")
     if llm is None:
         return None
 
@@ -211,8 +197,9 @@ def llm_enhance_brief(rule_brief: dict[str, Any], step2_meta: dict[str, Any], st
         [
             (
                 "system",
-                "你是科技管理领导简报助手。请基于输入生成简洁、可执行的管理简报，"
-                "输出严格为 JSON，包含: headline, keyMessages, actions。",
+                "你是科技管理领导简报助手。请基于输入生成简洁、可执行的管理简报。"
+                "必须输出一个 JSON 对象（json object），包含键: headline, keyMessages, actions；"
+                "不要输出 markdown 代码块或多余说明。",
             ),
             (
                 "human",
@@ -266,6 +253,7 @@ def run(cfg: BriefingConfig) -> dict[str, Any]:
     llm_ready = _llm_config_ready()
     llm_dependency = _llm_dependency_ready()
 
+    sandbox_meta = sandbox_llm_meta("brief") if sandbox_llm_meta is not None else {}
     return {
         "meta": {
             "step2Path": cfg.step2_path,
@@ -275,6 +263,7 @@ def run(cfg: BriefingConfig) -> dict[str, Any]:
             "llmConfigured": llm_ready,
             "llmDependencyReady": llm_dependency,
             "llmEnhanced": isinstance(llm_brief, dict),
+            "sandboxLlm": sandbox_meta,
         },
         "brief": final_brief,
         "ruleBrief": rule_brief,

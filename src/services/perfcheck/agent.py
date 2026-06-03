@@ -35,8 +35,18 @@ class PerfCheckAgent:
         if on_progress:
             on_progress(0.05, "extract", "开始结构化抽取（申报书/任务书，并行）")
         apply_schema, task_schema = await asyncio.gather(
-            self.parser.extract_schema_from_text(declaration_text, source_file_type="text"),
-            self.parser.extract_schema_from_text(task_text, source_file_type="text"),
+            self.parser.extract_schema_from_text(
+                declaration_text,
+                source_file_type="text",
+                enable_llm=bool(enable_llm_enhancement),
+                doc_kind="declaration",
+            ),
+            self.parser.extract_schema_from_text(
+                task_text,
+                source_file_type="text",
+                enable_llm=bool(enable_llm_enhancement),
+                doc_kind="task",
+            ),
         )
         
         return await self._execute_detection(project_id, apply_schema, task_schema, on_progress=on_progress)
@@ -59,8 +69,20 @@ class PerfCheckAgent:
         if on_progress:
             on_progress(0.05, "parse", "解析申报书/任务书文件（并行）")
         apply_schema, task_schema = await asyncio.gather(
-            self.parser.parse_to_schema(declaration_file, declaration_file_type, enable_table_vision_extraction=enable_table_vision_extraction),
-            self.parser.parse_to_schema(task_file, task_file_type, enable_table_vision_extraction=enable_table_vision_extraction),
+            self.parser.parse_to_schema(
+                declaration_file,
+                declaration_file_type,
+                enable_table_vision_extraction=enable_table_vision_extraction,
+                enable_llm=bool(enable_llm_enhancement),
+                doc_kind="declaration",
+            ),
+            self.parser.parse_to_schema(
+                task_file,
+                task_file_type,
+                enable_table_vision_extraction=enable_table_vision_extraction,
+                enable_llm=bool(enable_llm_enhancement),
+                doc_kind="task",
+            ),
         )
         
         return await self._execute_detection(project_id, apply_schema, task_schema, on_progress=on_progress)
@@ -116,10 +138,15 @@ class PerfCheckAgent:
     def _generate_summary(self, m_risks, c_risks, b_risks) -> str:
         """生成核验结论概要"""
         content_level = ""
+        content_all_covered = False
         if c_risks:
+            # 研究内容整体判定以“覆盖条目数”为准；单条 YELLOW 只代表覆盖分数不满分，不代表缩水。
+            content_all_covered = all(bool(getattr(x, "is_covered", False)) for x in c_risks)
             levels = {str(getattr(x, "risk_level", "")).upper() for x in c_risks}
             if "RED" in levels:
                 content_level = "RED"
+            elif content_all_covered:
+                content_level = "GREEN"
             elif "YELLOW" in levels:
                 content_level = "YELLOW"
             elif "GREEN" in levels:
@@ -142,6 +169,9 @@ class PerfCheckAgent:
 
         if content_level == "YELLOW":
             return "研究内容判定为“部分缩水”，任务书仅覆盖申报书部分内容，建议逐条补齐。"
+        
+        if content_level == "GREEN" and c_risks:
+            return "项目研究内容判定为“内容一致或扩展”，核心绩效指标与预算变动整体在合理范围内。"
         
         if red_counts > 0:
             return f"检测到 {red_counts} 项重点差异，主要涉及绩效缩水或内容删减，建议重点核对。"

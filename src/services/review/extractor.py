@@ -5,6 +5,8 @@ OCR + LLM 混合方案：
 1. OCR 提取文字 → 正则解析结构化信息
 2. LLM 处理图像内容（印章、签字）
 """
+from __future__ import annotations
+
 import io
 import logging
 import os
@@ -19,7 +21,6 @@ os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
 os.environ.setdefault("PADDLE_PDX_USE_PIR_TRT", "False")
 os.environ.setdefault("FLAGS_enable_pir_api", "0")
-from paddleocr import PaddleOCR
 from PIL import Image
 
 from src.common.vision.multimodal import MultimodalLLM
@@ -27,15 +28,22 @@ from src.common.vision.multimodal import MultimodalLLM
 logger = logging.getLogger(__name__)
 
 # 全局 OCR 实例（避免重复加载模型）
-_ocr_instance: Optional[PaddleOCR] = None
+_ocr_instance: Optional[Any] = None
 
 
-def get_global_ocr() -> PaddleOCR:
+def _create_paddle_ocr() -> Any:
+    """按需导入 PaddleOCR，避免应用启动阶段触发 OCR 初始化。"""
+    from paddleocr import PaddleOCR
+
+    return PaddleOCR(use_angle_cls=True, lang="ch")
+
+
+def get_global_ocr() -> Any:
     """获取全局 OCR 实例（单例）"""
     global _ocr_instance
     if _ocr_instance is None:
         logger.info("[OCR] 初始化 PaddleOCR 模型（全局单例）")
-        _ocr_instance = PaddleOCR(use_angle_cls=True, lang='ch')
+        _ocr_instance = _create_paddle_ocr()
     return _ocr_instance
 
 
@@ -72,7 +80,7 @@ class DocumentExtractor:
         self._multi_llm = None
     
     @property
-    def ocr(self) -> PaddleOCR:
+    def ocr(self) -> Any:
         """获取 OCR 实例"""
         return get_global_ocr()
     

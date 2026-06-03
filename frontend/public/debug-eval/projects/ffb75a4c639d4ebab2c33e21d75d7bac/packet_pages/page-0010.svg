@@ -1,0 +1,180 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="595" height="842" viewBox="0 0 595 842">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <g fill="#182230" font-family="Source Han Sans SC, PingFang SC, Microsoft YaHei, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif" font-size="10">
+    <text x='44' y='64'>单位：万元</text>
+    <rect x='44' y='80' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='80' width='145' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='97'>序号</text>
+    <rect x='189' y='80' width='217' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='195' y='97'>预算科目名称</text>
+    <rect x='406' y='80' width='145' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='412' y='97'>金额</text>
+    <rect x='44' y='104' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='104' width='119' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='121'>1</text>
+    <rect x='163' y='104' width='239' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='169' y='121'>一、省级财政资金</text>
+    <rect x='402' y='104' width='149' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='408' y='121'>25.00</text>
+    <rect x='44' y='128' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='128' width='127' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='145'>2</text>
+    <rect x='171' y='128' width='222' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='177' y='145'>（一）直接费用</text>
+    <rect x='393' y='128' width='158' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='399' y='145'>22.75</text>
+    <rect x='44' y='152' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='152' width='145' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='169'>3</text>
+    <rect x='189' y='152' width='181' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='195' y='169'>1.设备费</text>
+    <rect x='370' y='152' width='181' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='376' y='169'>10.75</text>
+    <rect x='44' y='176' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='176' width='127' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='193'>4</text>
+    <rect x='171' y='176' width='254' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='177' y='193'>其中：购置设备费</text>
+    <rect x='425' y='176' width='126' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='431' y='193'>7.00</text>
+    <rect x='44' y='200' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='200' width='145' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='217'>5</text>
+    <rect x='189' y='200' width='181' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='195' y='217'>2.业务费</text>
+    <rect x='370' y='200' width='181' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='376' y='217'>10.00</text>
+    <rect x='44' y='224' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='224' width='156' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='241'>6</text>
+    <rect x='200' y='224' width='195' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='206' y='241'>3.劳务费</text>
+    <rect x='395' y='224' width='156' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='401' y='241'>2.00</text>
+    <rect x='44' y='248' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='248' width='135' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='265'>7</text>
+    <rect x='179' y='248' width='237' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='185' y='265'>（二）间接费用</text>
+    <rect x='416' y='248' width='135' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='422' y='265'>2.25</text>
+    <rect x='44' y='272' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='272' width='135' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='289'>8</text>
+    <rect x='179' y='272' width='237' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='185' y='289'>其中：绩效支出</text>
+    <rect x='416' y='272' width='135' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='422' y='289'>1.00</text>
+    <rect x='44' y='296' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='296' width='145' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='313'>9</text>
+    <rect x='189' y='296' width='217' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='195' y='313'>二、自筹资金</text>
+    <rect x='406' y='296' width='145' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='412' y='313'>0.00</text>
+    <rect x='44' y='320' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='320' width='156' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='337'>10</text>
+    <rect x='200' y='320' width='156' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='206' y='337'>合 计</text>
+    <rect x='356' y='320' width='195' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='362' y='337'>25.00</text>
+    <text x='44' y='360'>注：1.间接费用无需编制预算说明；2.绩效支出在间接费用中无比例限制。</text>
+    <rect x='44' y='376' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='376' width='507' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='393'>项目预算基本测算说明（不包含单价50万以上的设备详细说明）</text>
+    <rect x='44' y='400' width='507' height='60' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='400' width='507' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='417'>1. 项目预算用于科普设施建设、活动开展及人员劳务等，具体分配如下：设备费（10.75万元）：购置</text>
+    <text x='50' y='429'>互动触摸屏2台（单价0.5万元）、搭建AI智能问答平台（单价1万元），展览模型设计及制作（5万元）</text>
+    <text x='50' y='441'>，用于科普展示角建设及线上咨询平台完善，设备维护费（1.75万元），用于宣教设备保修期后运维、软件</text>
+    <text x='50' y='453'>升级。线上平台开发费（2万元），用于微信小程序“生殖健康问答”功能扩展及服务器维护。业务费（10万</text>
+    <rect x='44' y='460' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='460' width='507' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='477'>单价50万元以上的设备详细说明（无相关情况，本栏填“无”）</text>
+    <rect x='44' y='484' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='484' width='507' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='501'>无</text>
+    <rect x='44' y='508' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='508' width='507' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='525'>申报单位、合作单位经费预算明细表</text>
+    <rect x='44' y='532' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='549'>序号</text>
+    <rect x='102' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='108' y='549'>单位名称</text>
+    <rect x='160' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='166' y='549'>单位类型</text>
+    <rect x='218' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='224' y='549'>任务分工</text>
+    <rect x='276' y='532' width='101' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='282' y='549'>研究任务负责人</text>
+    <rect x='377' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='383' y='549'>合计</text>
+    <rect x='435' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='441' y='549'>专项经费</text>
+    <rect x='493' y='532' width='58' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='499' y='549'>自筹经费</text>
+    <rect x='44' y='556' width='507' height='24' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='556' width='184' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='573'>小计</text>
+    <rect x='228' y='556' width='323' height='24' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='234' y='573'>其中：间接费用</text>
+    <rect x='44' y='580' width='507' height='60' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='580' width='56' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='597'>1</text>
+    <rect x='100' y='580' width='79' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='106' y='597'>河北医科大学</text>
+    <text x='106' y='609'>第四医院</text>
+    <rect x='179' y='580' width='56' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='185' y='597'>申报单位</text>
+    <rect x='235' y='580' width='190' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='241' y='597'>1、基地负责人（张娜主任）负责基地</text>
+    <text x='241' y='609'>的建设、发展和规划，负责制定科普宣</text>
+    <text x='241' y='621'>传策略、科普文案、视频的审核。 2</text>
+    <text x='241' y='633'>、基地秘书负责科普文案的起草、视</text>
+    <rect x='425' y='580' width='56' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='431' y='597'>张娜</text>
+    <rect x='481' y='580' width='56' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='487' y='597'>25.0</text>
+    <text x='487' y='609'>0</text>
+    <rect x='537' y='580' width='56' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='543' y='597'>25.0</text>
+    <text x='543' y='609'>0</text>
+    <rect x='593' y='580' width='56' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='599' y='597'>2.25</text>
+    <rect x='649' y='580' width='-98' height='60' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='655' y='597'>0.00</text>
+    <text x='44' y='656'>是否涉及人类遗传资源 是 R否</text>
+    <text x='44' y='688'>人类遗传资源情况表</text>
+    <rect x='44' y='704' width='507' height='36' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='704' width='56' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='721'>序号</text>
+    <rect x='100' y='704' width='56' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='106' y='721'>活动种类</text>
+    <rect x='156' y='704' width='56' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='162' y='721'>涉及内容</text>
+    <rect x='212' y='704' width='56' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='218' y='721'>具体项目</text>
+    <text x='218' y='733'>名称</text>
+    <rect x='268' y='704' width='56' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='274' y='721'>申请单位</text>
+    <rect x='324' y='704' width='203' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='330' y='721'>批准/备案时间（取得批件或已备案，请上</text>
+    <text x='330' y='733'>传附件，并填写时间）</text>
+    <rect x='527' y='704' width='84' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='533' y='721'>人类遗传资源来</text>
+    <text x='533' y='733'>源机构</text>
+    <rect x='611' y='704' width='-60' height='36' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='617' y='721'>备注</text>
+    <rect x='44' y='740' width='507' height='48' fill='#f8fafc' stroke='#d8e1eb' stroke-width='1'/>
+    <rect x='44' y='740' width='63' height='48' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='50' y='757'>1</text>
+    <rect x='107' y='740' width='63' height='48' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='113' y='757'>采集</text>
+    <rect x='170' y='740' width='381' height='48' fill='transparent' stroke='#d8e1eb' stroke-width='1'/>
+    <text x='176' y='757'>重要遗传家系特定地区人类遗传资源科技部规定数量的人类遗传资源（累积500</text>
+    <text x='176' y='769'>人以上）罕见病具有显著性差异的特殊体质或生理特征的人群拟采集种类 拟采集</text>
+    <text x='176' y='781'>数量</text>
+  </g>
+</svg>

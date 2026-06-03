@@ -79,21 +79,43 @@ class ConflictItem(BaseModel):
     rule_id: str = ""
 
 
+class LogicOnDimensionSummary(BaseModel):
+    """按 R-TIME-01 / R-BUDGET-01 / R-METRIC-01 维度的结论与可读说明。"""
+
+    rule_id: str
+    name: str = ""
+    # consistent: 已核对且未发现矛盾；inconsistent: 已检出矛盾；insufficient: 抽取不足无法核对
+    outcome: str = "insufficient"
+    detail_lines: List[str] = []
+
+
 class LogicOnResult(BaseModel):
     doc_id: str
     doc_kind: str = "unknown"
+    # 从正文抽取并清洗后的展示名（与批量 debug 列表 display_name 同源逻辑）
+    project_name: str = ""
     partial: bool = False
     conflicts: List[ConflictItem] = []
     graph: Optional[DocumentGraph] = None
     rule_snapshot: RuleConfigSnapshot = RuleConfigSnapshot()
     warnings: List[str] = []
+    dimension_summaries: List[LogicOnDimensionSummary] = []
+    # 工具调用 Agent：在规则检出后生成的复核说明与轨迹（可选）
+    agent_analysis: Optional[str] = None
+    agent_tool_trace: Optional[List[Dict[str, Any]]] = None
 
 
 class LogicOnTextRequest(BaseModel):
     doc_kind: str = "auto"
     text: str
-    enable_llm: bool = False
+    enable_llm: bool = True
     return_graph: bool = False
+    enable_agent: bool = True
+    agent_max_turns: int = 8
+    enable_equivalence_probe: bool = True
+    amount_tolerance_wan: float = 0.01
+    date_tolerance_days: int = 30
+    metric_tolerance_ratio: float = 0.01
 
 
 class LogicOnTask(BaseModel):

@@ -1,10 +1,12 @@
 """聊天问答测试"""
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from src.common.models.evaluation import EvaluationRequest
 from src.services.evaluation.agent import EvaluationAgent
+from src.services.evaluation.chat import qa_agent as qa_agent_module
 from src.services.evaluation.chat.qa_agent import EvaluationQAAgent
 from src.services.evaluation.storage.storage import EvaluationStorage
 
@@ -14,6 +16,72 @@ class BrokenLLM:
 
     async def ainvoke(self, prompt):
         raise RuntimeError("Connection error")
+
+
+class StreamingChunk:
+    """最小流式 chunk 替身"""
+
+    def __init__(self, content: str):
+        self.content = content
+
+
+class StreamingLLM:
+    """支持流式输出的模型替身"""
+
+    async def ainvoke(self, prompt):
+        return StreamingChunk("结论：研究目标明确。\n依据：\n1. 建设智能化科普咨询平台。\n不足：量化指标仍需补充。")
+
+    async def astream(self, prompt):
+        for part in [
+            "结论：研究目标明确。\n",
+            "依据：\n1. 建设智能化科普咨询平台。\n",
+            "不足：量化指标仍需补充。",
+        ]:
+            yield StreamingChunk(part)
+
+
+class NativeCompatibleLLM:
+    """模拟默认 LangChain 模型，用于触发原生兼容客户端分支"""
+
+
+NativeCompatibleLLM.__module__ = "langchain_openai.chat_models.base"
+
+
+class FakeNativeCompletion:
+    """最小原生 completion 响应"""
+
+    def __init__(self, content: str):
+        self.choices = [SimpleNamespace(message=SimpleNamespace(content=content))]
+
+
+class FakeNativeStream:
+    """最小原生流式响应"""
+
+    def __init__(self, parts: list[str]):
+        self.parts = parts
+
+    def __aiter__(self):
+        async def generator():
+            for part in self.parts:
+                yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=part))])
+
+        return generator()
+
+
+class FakeNativeClient:
+    """最小原生兼容客户端"""
+
+    def __init__(self, content: str, stream_parts: list[str]):
+        self.content = content
+        self.stream_parts = stream_parts
+        self.calls = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs.get("stream"):
+            return FakeNativeStream(self.stream_parts)
+        return FakeNativeCompletion(self.content)
 
 
 @pytest.mark.asyncio
@@ -168,6 +236,276 @@ async def test_evaluation_agent_ask_auto_rebuilds_chat_index_from_debug_payload(
     refreshed_result = await agent.storage.get_by_evaluation_id(result.evaluation_id)
     assert refreshed_result is not None
     assert refreshed_result.chat_ready is True
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_resolve_chat_citation_highlight_supports_lazy_loading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """聊天引用高亮应支持独立懒加载，避免 ask 主链路同步补全"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    content = {
+        "sections": {"项目简介": "项目目标：建设智能化科普咨询平台。"},
+        "page_chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 6,
+                "section": "项目简介",
+                "text": "项目简介\n项目目标：建设智能化科普咨询平台。",
+            }
+        ],
+        "meta": {
+            "file_name": "demo.pdf",
+            "page_count": 1,
+            "parser_version": "test",
+            "page_estimated": False,
+        },
+    }
+
+    request = EvaluationRequest(
+        project_id="demo-chat-highlight",
+        dimensions=["team"],
+        enable_highlight=False,
+        enable_industry_fit=False,
+        enable_benchmark=False,
+        enable_chat_index=True,
+    )
+    result = await agent.evaluate(request=request, content=content, source_name="demo.pdf")
+
+    monkeypatch.setattr(
+        agent,
+        "_load_debug_payload",
+        lambda project_id: {
+            "packet_assets": {
+                "page_map": [
+                    {
+                        "source_name": "demo.pdf",
+                        "source_file": "/tmp/demo.pdf",
+                        "source_kind": "proposal",
+                        "start_page": 10,
+                        "end_page": 12,
+                    }
+                ]
+            }
+        },
+    )
+    monkeypatch.setattr(
+        agent.report_generator,
+        "_resolve_packet_jump_payload",
+        lambda packet_assets, source_file, page, snippet: {
+            "packet_page": 12,
+            "highlight_rects": [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05}],
+        },
+    )
+
+    answer = await agent.ask(result.evaluation_id, "这个项目的研究目标是什么？")
+
+    assert answer.citations
+    assert answer.citations[0].packet_page == 0
+    assert answer.citations[0].highlight_rects == []
+
+    highlight = await agent.resolve_chat_citation_highlight(
+        evaluation_id=result.evaluation_id,
+        file=answer.citations[0].file,
+        page=answer.citations[0].page,
+        snippet=answer.citations[0].snippet,
+    )
+
+    assert highlight.packet_page == 12
+    assert highlight.highlight_rects == [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05}]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_ask_reuses_in_memory_result_and_chat_index_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """同一进程内重复提问时，应优先复用内存缓存而不是重新读存储"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    content = {
+        "sections": {"项目简介": "项目目标：建设智能化科普咨询平台。"},
+        "page_chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 6,
+                "section": "项目简介",
+                "text": "项目简介\n项目目标：建设智能化科普咨询平台。",
+            }
+        ],
+        "meta": {
+            "file_name": "demo.pdf",
+            "page_count": 1,
+            "parser_version": "test",
+            "page_estimated": False,
+        },
+    }
+
+    request = EvaluationRequest(
+        project_id="demo-cache",
+        dimensions=["team"],
+        enable_highlight=False,
+        enable_industry_fit=False,
+        enable_benchmark=False,
+        enable_chat_index=True,
+    )
+    result = await agent.evaluate(request=request, content=content, source_name="demo.pdf")
+
+    async def fail_get_by_evaluation_id(evaluation_id: str):
+        raise AssertionError("不应重新扫描评审结果目录")
+
+    async def fail_load_chat_index(evaluation_id: str):
+        raise AssertionError("不应重新读取聊天索引 JSON")
+
+    monkeypatch.setattr(agent.storage, "get_by_evaluation_id", fail_get_by_evaluation_id)
+    monkeypatch.setattr(agent.storage, "load_chat_index", fail_load_chat_index)
+
+    answer = await agent.ask(result.evaluation_id, "这个项目的研究目标是什么？")
+
+    assert answer.answer
+    assert answer.citations
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_build_expert_qna_reuses_existing_chat_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """典型问答应复用已生成的聊天索引，避免重复 build"""
+    agent = EvaluationAgent(llm=BrokenLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+
+    page_chunks = [
+        {
+            "id": 1,
+            "file": "demo.pdf",
+            "page": 6,
+            "section": "项目简介",
+            "text": "项目简介\n项目目标：建设智能化科普咨询平台。",
+        }
+    ]
+
+    call_count = {"count": 0}
+    original_build = agent.chat_indexer.build
+
+    def counting_build(evaluation_id: str, page_chunks):
+        call_count["count"] += 1
+        return original_build(evaluation_id=evaluation_id, page_chunks=page_chunks)
+
+    monkeypatch.setattr(agent.chat_indexer, "build", counting_build)
+
+    await agent._run_chat_index("EVAL_CACHE_DEMO", page_chunks)
+    qna = await agent._build_expert_qna("EVAL_CACHE_DEMO", page_chunks)
+
+    assert qna
+    assert call_count["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_evaluation_agent_ask_stream_returns_delta_and_done_events(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """流式问答应先返回 delta，再返回 done 与 citations"""
+    agent = EvaluationAgent(llm=StreamingLLM())
+    agent.storage = EvaluationStorage(storage_dir=str(tmp_path / "evaluation"))
+    monkeypatch.setattr(agent, "_save_debug_artifacts", lambda **kwargs: None)
+
+    content = {
+        "sections": {"项目简介": "项目目标：建设智能化科普咨询平台。"},
+        "page_chunks": [
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 6,
+                "section": "项目简介",
+                "text": "项目简介\n项目目标：建设智能化科普咨询平台。",
+            }
+        ],
+        "meta": {
+            "file_name": "demo.pdf",
+            "page_count": 1,
+            "parser_version": "test",
+            "page_estimated": False,
+        },
+    }
+
+    request = EvaluationRequest(
+        project_id="demo-stream",
+        dimensions=["team"],
+        enable_highlight=False,
+        enable_industry_fit=False,
+        enable_benchmark=False,
+        enable_chat_index=True,
+    )
+    result = await agent.evaluate(request=request, content=content, source_name="demo.pdf")
+
+    events = [
+        event
+        async for event in agent.ask_stream(
+            evaluation_id=result.evaluation_id,
+            question="这个项目的研究目标是什么？",
+        )
+    ]
+
+    assert events
+    assert events[0]["event"] == "status"
+    assert any(event["event"] == "delta" for event in events)
+    assert events[-1]["event"] == "done"
+    assert "研究目标明确" in events[-1]["answer"]
+    assert events[-1]["citations"]
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_native_qwen_path_disables_thinking_and_returns_structured_answer(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """qwen 热路径应走原生兼容客户端，并显式关闭 thinking"""
+    monkeypatch.setattr(qa_agent_module.llm_config, "provider", "qwen")
+    monkeypatch.setattr(qa_agent_module.llm_config, "model", "qwen3.5-flash")
+    monkeypatch.setattr(qa_agent_module.llm_config, "base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    monkeypatch.setattr(qa_agent_module.llm_config, "api_key", "test-key")
+    monkeypatch.setattr(qa_agent_module.llm_config, "max_tokens", 4096)
+    monkeypatch.setattr(qa_agent_module.llm_config, "timeout", 30.0)
+
+    fake_client = FakeNativeClient(
+        content="结论：研究目标明确。\n依据：\n1. 建设智能化科普咨询平台。\n不足：量化指标仍需补充。",
+        stream_parts=[
+            "结论：研究目标明确。\n",
+            "依据：\n1. 建设智能化科普咨询平台。\n",
+            "不足：量化指标仍需补充。",
+        ],
+    )
+    monkeypatch.setattr(qa_agent_module.EvaluationQAAgent, "_build_native_client", lambda self, llm: fake_client)
+
+    agent = EvaluationQAAgent(llm=NativeCompatibleLLM())
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_NATIVE",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 5,
+                "section": "项目简介",
+                "text": "项目目标：建设智能化科普咨询平台。",
+            }
+        ],
+    )
+
+    answer = await agent.ask("这个项目的研究目标是什么？", index_payload=index_payload)
+
+    assert "结论：" in answer.answer
+    assert fake_client.calls
+    assert fake_client.calls[0]["extra_body"]["enable_thinking"] is False
+    assert fake_client.calls[0]["max_tokens"] == 220
 
 
 @pytest.mark.asyncio
@@ -514,3 +852,125 @@ def test_qa_agent_extract_outcome_points_avoids_goal_like_benefit_sentence():
     assert points
     assert all("人才培养基地" not in point for point in points)
     assert any("50,000" in point or "技术专利" in point for point in points)
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_ask_returns_structured_goal_answer():
+    """研究目标问答应输出结构化回答，而不是单句模板"""
+    agent = EvaluationQAAgent(llm=None)
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_TEST_GOAL",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 5,
+                "section": "项目目的和意义",
+                "text": "目的：建设智能化科普咨询平台，整合资源并提升基层传播能力。",
+            }
+        ],
+    )
+
+    answer = await agent.ask("这个项目的研究目标是什么？", index_payload=index_payload)
+
+    assert "结论：" in answer.answer
+    assert "依据：" in answer.answer
+    assert "不足：" in answer.answer
+    assert answer.citations
+    assert answer.citations[0].page == 5
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_ask_innovation_prefers_innovation_section():
+    """创新点问题应优先返回创新章节证据，而不是一般目标描述"""
+    agent = EvaluationQAAgent(llm=None)
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_TEST_INNOVATION",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 4,
+                "section": "项目简介",
+                "text": "建设目标：打造科普服务平台，完善基础能力。",
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 7,
+                "section": "创新点",
+                "text": "1、技术创新：通过AI智能问答和大数据推送实现个性化科普内容推荐。2、模式创新：将医疗服务流程与科普传播深度融合。",
+            },
+        ],
+    )
+
+    answer = await agent.ask("这个项目的创新点是什么？", index_payload=index_payload)
+
+    assert "结论：" in answer.answer
+    assert "AI智能问答" in answer.answer or "模式创新" in answer.answer
+    assert answer.citations
+    assert answer.citations[0].page == 7
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_ask_validation_distinguishes_completed_and_planned_evidence():
+    """验证数据问答应优先抓已完成验证证据，并保留谨慎语气"""
+    agent = EvaluationQAAgent(llm=None)
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_TEST_VALIDATION",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 12,
+                "section": "可行性分析",
+                "text": "已完成3轮性能测试，实测准确率达到92.4%，累计样本量120例。",
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 13,
+                "section": "研究计划",
+                "text": "后续拟继续扩大样本量，并开展多中心验证。",
+            },
+        ],
+    )
+
+    answer = await agent.ask("有验证数据吗？", index_payload=index_payload)
+
+    assert "结论：" in answer.answer
+    assert "验证" in answer.answer or "测试" in answer.answer
+    assert "92.4%" in answer.answer or "120例" in answer.answer
+    assert answer.citations
+    assert answer.citations[0].page == 12
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_ask_mass_production_stays_cautious_for_demo_only():
+    """只有示范推广证据时，不应直接给出可以量产的结论"""
+    agent = EvaluationQAAgent(llm=None)
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_TEST_PRODUCTION",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "demo.pdf",
+                "page": 15,
+                "section": "成果转化与应用示范",
+                "text": "项目拟联合医院和社区开展应用示范，推动成果转化与推广应用。",
+            },
+            {
+                "id": 2,
+                "file": "demo.pdf",
+                "page": 16,
+                "section": "项目效益",
+                "text": "预期形成较好的社会效益和示范效应。",
+            },
+        ],
+    )
+
+    answer = await agent.ask("这项技术有可能量产吗？", index_payload=index_payload)
+
+    assert "不足以支持“可以量产”的确定性判断" in answer.answer or "尚不能直接等同为已具备量产条件" in answer.answer
+    assert answer.citations
+    assert answer.citations[0].page == 15
