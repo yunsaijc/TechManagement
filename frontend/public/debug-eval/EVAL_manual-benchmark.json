@@ -1,0 +1,53 @@
+{
+  "evaluation_id": "EVAL_manual-benchmark_20260331101751202768",
+  "project_id": "manual-benchmark",
+  "project_name": "demo.pdf",
+  "source_name": "demo.pdf",
+  "meta": {
+    "file_name": "demo.pdf",
+    "page_count": 1,
+    "parser_version": "test",
+    "page_estimated": false
+  },
+  "section_names": [
+    "项目简介",
+    "研究目标"
+  ],
+  "sections": {
+    "项目简介": "拟建设科普智能问答平台。",
+    "研究目标": "形成可推广的智能问答服务能力。"
+  },
+  "result": {
+    "project_id": "manual-benchmark",
+    "project_name": "demo.pdf",
+    "overall_score": 0.0,
+    "grade": "E",
+    "dimension_scores": [],
+    "summary": "本项目综合评分0.0分，等级评定为E级（不合格）。",
+    "recommendations": [
+      "项目整体表现良好，建议进一步完善细节，提高各项指标的先进性。"
+    ],
+    "evaluation_id": "EVAL_manual-benchmark_20260331101751202768",
+    "highlights": null,
+    "industry_fit": null,
+    "benchmark": {
+      "novelty_level": "unknown",
+      "literature_position": "技术摸底工具不可用",
+      "patent_overlap": "技术摸底工具不可用",
+      "conclusion": "当前仅基于申报书内容，外部对比结论待补充",
+      "references": []
+    },
+    "evidence": [],
+    "chat_ready": false,
+    "partial": true,
+    "errors": [
+      {
+        "code": "TOOL_UNAVAILABLE",
+        "message": "tech_search 未配置",
+        "module": "benchmark"
+      }
+    ],
+    "created_at": "2026-03-31T10:17:51.202969",
+    "model_version": null
+  }
+}

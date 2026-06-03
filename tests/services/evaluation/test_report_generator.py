@@ -799,6 +799,36 @@ def test_report_generator_build_from_debug_file_backfills_missing_highlights(tmp
     assert "建设智能化服务平台" in html
 
 
+def test_report_generator_build_from_debug_file_backfills_packet_assets(tmp_path: Path):
+    """旧 debug JSON 缺少 packet 资产时，应自动回源生成统一材料 viewer"""
+    generator = ReportGenerator()
+
+    payload = _build_debug_payload()
+    pdf_path = tmp_path / "demo.pdf"
+    _write_pdf(pdf_path, "项目目标：建设智能化服务平台。")
+
+    payload["meta"] = {
+        "file_name": "demo.pdf",
+        "file_path": str(pdf_path),
+        "page_estimated": False,
+        "page_count": 1,
+    }
+
+    debug_json = tmp_path / "EVAL_demo-project.json"
+    output_html = tmp_path / "EVAL_demo-project.html"
+    debug_json.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    generator.build_from_debug_file(debug_json, output_html, debug_mode=False)
+
+    html = output_html.read_text(encoding="utf-8")
+    updated_json = debug_json.read_text(encoding="utf-8")
+
+    assert 'id="packet-viewer-frame"' in html
+    assert 'src="projects/demo-project/packet_viewer.html"' in html
+    assert '"packet_assets"' in updated_json
+    assert (tmp_path / "projects" / "demo-project" / "packet_viewer.html").exists()
+
+
 def test_report_generator_build_index_html_creates_multi_project_workspace():
     """索引页应升级为多项目工作台，而不是简单表格索引"""
     generator = ReportGenerator()

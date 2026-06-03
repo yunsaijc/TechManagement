@@ -21,11 +21,23 @@ try:
 except Exception:
     DOCXParser = None
 
+try:
+    from .doc_parser import DOCParser
+except Exception:
+    DOCParser = None
+
+try:
+    from .image_parser import ImageParser
+except Exception:
+    ImageParser = None
+
 __all__ = [
     "BaseFileParser",
     "ParseResult",
     "PDFParser",
     "DOCXParser",
+    "DOCParser",
+    "ImageParser",
     "OCRProcessor",
     "ImageProcessor",
     "get_parser",

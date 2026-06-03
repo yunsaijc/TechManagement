@@ -90,6 +90,10 @@ curl -X POST 'http://127.0.0.1:8888/api/v1/evaluation/by-guide' \
       "enable_chat_index": true,
       "concurrency": 3
     }'
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> upstream/main
 
 
 # 70-sandbox
@@ -152,3 +156,8 @@ curl -sS -X POST 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/compo
 curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/latest'
 curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/latest/compare'
 curl -sS 'http://127.0.0.1:8888/api/v1/sandbox/simulation/scenario/latest/explain'
+<<<<<<< HEAD
+=======
+>>>>>>> upstream/ljh
+=======
+>>>>>>> upstream/main

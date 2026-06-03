@@ -5,6 +5,7 @@ export const useRequestStore = defineStore('request', () => {
   const moduleBusyState = ref({});
   const clockMs = ref(Date.now());
   const API_BASE_STORAGE_KEY = 'tech_api_base';
+  const STALE_BUSY_MS = 3 * 60 * 1000;
 
   setInterval(() => {
     const anyBusy = Object.values(moduleBusyState.value).some((x) => x && x.inProgress);
@@ -27,11 +28,15 @@ export const useRequestStore = defineStore('request', () => {
 
     const { protocol, hostname, port } = window.location;
     const p = String(port || '').trim();
+    const origin = p ? `${protocol}//${hostname}:${p}` : `${protocol}//${hostname}`;
 
-    // Dev server ports normally proxy to a backend on 8000.
-    const devPorts = new Set(['5173', '5174', '4173', '3000']);
-    const backendPort = !p ? '8000' : (devPorts.has(p) ? '8000' : p);
-    return `${protocol}//${hostname}:${backendPort}/api/v1`;
+    // Vite 开发（任意端口如 Cursor 转发的 50952）：走当前页同源 /api/v1，由 vite server.proxy 转到本机后端。
+    if (import.meta.env.DEV) {
+      return `${origin}/api/v1`;
+    }
+
+    // 生产构建未配置 VITE_API_BASE：假定与静态资源同源（如 uvicorn 同时提供 /frontend 与 /api/v1）。
+    return `${origin}/api/v1`;
   }
 
   function apiBase() {
@@ -89,15 +94,36 @@ export const useRequestStore = defineStore('request', () => {
     }
   }
 
+  function isBusyStale(busy) {
+    if (!busy || !busy.inProgress) return false;
+    const startedAt = Number(busy.requestStartedAt || 0);
+    if (!startedAt) return false;
+    return (Date.now() - startedAt) > STALE_BUSY_MS;
+  }
+
+  function clearStale(moduleId) {
+    const busy = moduleBusyState.value[moduleId];
+    if (!isBusyStale(busy)) return false;
+    moduleBusyState.value[moduleId] = {
+      inProgress: false,
+      requestStartedAt: 0,
+      progressText: '',
+    };
+    return true;
+  }
+
   function inProgressFor(moduleId) {
+    clearStale(moduleId);
     return Boolean(moduleBusyState.value[moduleId]?.inProgress);
   }
 
   function progressTextFor(moduleId) {
+    clearStale(moduleId);
     return moduleBusyState.value[moduleId]?.progressText || '';
   }
 
   function startedAtFor(moduleId) {
+    clearStale(moduleId);
     return moduleBusyState.value[moduleId]?.requestStartedAt || 0;
   }
 
@@ -110,19 +136,10 @@ export const useRequestStore = defineStore('request', () => {
   }
 
   function begin(moduleId, actionTitle) {
+    clearStale(moduleId);
     const busy = moduleBusyState.value[moduleId];
     if (busy && busy.inProgress) {
-      const staleMs = 3 * 60 * 1000;
-      const startedAt = Number(busy.requestStartedAt || 0);
-      if (startedAt > 0 && (Date.now() - startedAt) > staleMs) {
-        moduleBusyState.value[moduleId] = {
-          inProgress: false,
-          requestStartedAt: 0,
-          progressText: '',
-        };
-      } else {
-        return false;
-      }
+      return false;
     }
     moduleBusyState.value[moduleId] = {
       inProgress: true,
@@ -213,6 +230,7 @@ export const useRequestStore = defineStore('request', () => {
     end,
     attachController,
     stop,
+    clearStale,
     fetchWithTimeout,
   };
 });

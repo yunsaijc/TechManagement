@@ -9,6 +9,50 @@ from src.services.review.doc_types import DOC_TYPE_REGISTRY, get_doc_type_config
 
 
 DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
+<<<<<<< HEAD
+    "retrieval_report": {
+        "labels": ["检索报告"],
+        "rules": ["stamp", "signature", "prerequisite", "retrieval_report_completeness"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "paper": {
+        "labels": ["论文"],
+        "rules": ["title_check", "author_check"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "acceptance_report": {
+        "labels": ["验收报告"],
+        "rules": ["stamp", "signature", "prerequisite"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "patent_certificate": {
+        "labels": ["专利证书"],
+        "rules": ["signature", "stamp"],
+        "llm_rules": [],
+        "llm_extract_fields": ["专利号", "发明人", "专利权人"],
+    },
+    "award_certificate": {
+        "labels": ["奖励证书"],
+        "rules": ["signature", "stamp"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+    "award_contributor": {
+        "labels": ["奖励-主要完成人情况表", "主要完成人情况表"],
+        "rules": ["signature", "stamp", "work_unit_consistency"],
+        "llm_rules": ["signature_name_consistency"],
+        "llm_extract_fields": ["姓名", "工作单位", "完成单位", "技术职称", "学历"],
+    },
+    "unknown": {
+        "labels": ["未知"],
+        "rules": ["signature", "stamp"],
+        "llm_rules": [],
+        "llm_extract_fields": [],
+    },
+=======
     doc_type: {
         "labels": [config["zh_label"], *config.get("aliases", [])],
         "rules": list(config.get("rules", [])),
@@ -20,6 +64,7 @@ DOCUMENT_CONFIG: Dict[str, Dict[str, Any]] = {
         "remarks": config.get("remarks", ""),
     }
     for doc_type, config in DOC_TYPE_REGISTRY.items()
+>>>>>>> upstream/main
 }
 
 

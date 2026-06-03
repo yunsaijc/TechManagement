@@ -1,0 +1,1793 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>正文评审报告 - 生殖健康科普示范基地标准化建设与创新模式探索</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --panel: #ffffff;
+      --panel-soft: #f7f9fb;
+      --panel-deep: #eef3f8;
+      --ink: #1b2430;
+      --muted: #66758a;
+      --line: #d7dfe8;
+      --brand: #1d3c61;
+      --brand-soft: #e8eff6;
+      --ok: #1f7a4d;
+      --warn: #a56a1f;
+      --risk: #b42318;
+      --shadow: 0 8px 24px rgba(18, 31, 53, 0.05);
+    }
+    * {
+      box-sizing: border-box;
+      min-width: 0;
+    }
+    html {
+      scroll-behavior: smooth;
+      height: 100%;
+    }
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    a {
+      color: inherit;
+    }
+    .page {
+      max-width: 1760px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-stack {
+      display: grid;
+      gap: 20px;
+      height: 100%;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 14px 18px;
+      background: linear-gradient(180deg, #fbfcfd 0%, #f4f7fa 100%);
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: nowrap;
+    }
+    .report-title {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.3;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .report-subtitle {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .score-card {
+      min-width: 132px;
+      padding: 8px 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      flex-shrink: 0;
+    }
+    .score-good {
+      border-color: rgba(31, 122, 77, 0.28);
+    }
+    .score-mid {
+      border-color: rgba(165, 106, 31, 0.28);
+    }
+    .score-bad {
+      border-color: rgba(180, 35, 24, 0.28);
+    }
+    .score-label {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .score-main {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .score-value {
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 800;
+    }
+    .score-grade {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--brand);
+    }
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .nav-link:hover {
+      border-color: #bfd0e3;
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+    .content-grid {
+      display: grid;
+      gap: 20px;
+      align-items: stretch;
+      min-height: 0;
+      height: 100%;
+    }
+    .workspace-layout {
+      grid-template-columns: 150px minmax(0, 1.55fr) minmax(430px, 1.08fr);
+      overflow: hidden;
+    }
+    .debug-layout {
+      grid-template-columns: minmax(0, 1fr) 360px;
+      overflow: hidden;
+    }
+    .project-stack,
+    .nav-stack,
+    .main-stack,
+    .side-stack {
+      display: grid;
+      gap: 18px;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      padding-right: 6px;
+      max-height: 100%;
+    }
+    .side-stack {
+      padding-right: 2px;
+    }
+    .project-stack {
+      padding-right: 0;
+    }
+    .nav-stack {
+      padding-right: 0;
+    }
+    .project-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .project-panel-inner {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+    }
+    .project-panel-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .project-list {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .project-link {
+      display: grid;
+      gap: 6px;
+      padding: 10px 11px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+    }
+    .project-link:hover,
+    .project-link.is-active {
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }
+    .project-link-title {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.55;
+      word-break: break-word;
+    }
+    .project-link-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+      word-break: break-all;
+    }
+    .project-link-score {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .rail-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .rail-inner {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+    }
+    .rail-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .rail-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .rail-group {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .rail-group-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .rail-scroll {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .rail-links {
+      display: grid;
+      gap: 8px;
+    }
+    .rail-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: inherit;
+      text-decoration: none;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .rail-link:hover,
+    .rail-link.is-active {
+      border-color: #9eb6cf;
+      background: #edf3f8;
+      color: var(--brand);
+    }
+    .rail-link-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .rail-link-meta {
+      color: var(--muted);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .doc-panel {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .doc-panel-inner {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr);
+    }
+    .doc-viewer {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 2px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .packet-frame {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border: 0;
+      border-radius: 14px;
+      background: #dfe5ec;
+    }
+    .doc-toast {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translate(-50%, -10px);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(24, 34, 48, 0.88);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 3;
+      white-space: nowrap;
+      max-width: calc(100% - 32px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doc-toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .doc-page {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #fbfcfe 100%);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      scroll-margin-top: 18px;
+    }
+    .doc-page.is-active {
+      border-color: #88a4c3;
+      box-shadow: 0 0 0 3px rgba(29, 60, 97, 0.12);
+    }
+    .doc-page-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .doc-page-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .doc-page-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .doc-chunk-list {
+      display: grid;
+      gap: 10px;
+    }
+    .doc-chunk {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #e3e9f0;
+      background: #fdfefe;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.85;
+      font-size: 14px;
+    }
+    .doc-chunk.is-match {
+      border-color: #e2b562;
+      background: #fff8e7;
+      box-shadow: inset 0 0 0 1px rgba(229, 164, 43, 0.28);
+    }
+    .jump-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid #c8d6e5;
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .jump-link:hover {
+      background: #eaf1f7;
+      border-color: #9eb6cf;
+    }
+    .jump-link-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .panel-inner {
+      padding: 22px;
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .panel h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.4;
+    }
+    .panel-note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .workspace-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .summary {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.9;
+    }
+    .summary-block {
+      padding: 14px 16px;
+      border: 1px solid #d9e4ef;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fb 100%);
+    }
+    .highlight-grid {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .highlight-card {
+      padding: 14px 0 0;
+      border-top: 1px solid var(--line);
+    }
+    .highlight-grid .highlight-card:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .highlight-label {
+      margin-bottom: 10px;
+      color: var(--brand);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .highlight-list {
+      display: grid;
+      gap: 10px;
+    }
+    .highlight-item {
+      display: grid;
+      gap: 8px;
+      padding: 12px 14px;
+      border: 1px solid #dfe8f1;
+      border-radius: 14px;
+      background: #fbfcfe;
+    }
+    .highlight-item-text {
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }
+    .highlight-item-evidence {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.75;
+      word-break: break-word;
+      padding-top: 6px;
+      border-top: 1px dashed #d7e0ea;
+    }
+    .list {
+      margin: 0;
+      padding-left: 20px;
+      line-height: 1.9;
+    }
+    .list li + li {
+      margin-top: 8px;
+    }
+    .score-list {
+      display: grid;
+      gap: 16px;
+    }
+    .dimension-dashboard {
+      display: grid;
+      gap: 16px;
+    }
+    .dimension-radar-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+    }
+    .dimension-radar-wrap {
+      display: grid;
+      gap: 14px;
+    }
+    .dimension-radar-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .dimension-radar-sector {
+      opacity: 0.96;
+    }
+    .dimension-radar-ring {
+      fill: none;
+      stroke: #aebfd2;
+      stroke-width: 1.2;
+    }
+    .dimension-radar-axis {
+      stroke: #b4c4d5;
+      stroke-width: 1.2;
+    }
+    .dimension-radar-area {
+      fill: rgba(29, 60, 97, 0.14);
+      stroke: #1d3c61;
+      stroke-width: 2;
+    }
+    .dimension-radar-point {
+      stroke: #fff;
+      stroke-width: 2;
+      cursor: pointer;
+      transition: transform 0.16s ease;
+    }
+    .dimension-radar-point.is-active {
+      stroke: #111827;
+      stroke-width: 3;
+    }
+    .dimension-radar-label {
+      fill: var(--ink);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .dimension-radar-label.is-active {
+      font-weight: 700;
+      fill: var(--brand);
+    }
+    .dimension-sector-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dimension-sector-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--sector-accent) 12%, #ffffff);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .dimension-sector-chip::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--sector-accent);
+      flex-shrink: 0;
+    }
+    .dimension-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+      min-height: 0;
+    }
+    .dimension-detail-stage {
+      min-height: 0;
+      margin-top: 16px;
+    }
+    .dimension-detail-item {
+      display: none;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      padding: 18px;
+    }
+    .dimension-detail-item.is-active {
+      display: grid;
+      border-color: var(--sector-accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--sector-accent) 16%, transparent);
+    }
+    .dimension-detail-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+    .dimension-detail-meter {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin: 12px 0 14px;
+    }
+    .dimension-detail-meter-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e8eef5;
+      overflow: hidden;
+    }
+    .dimension-detail-meter-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--sector-accent) 46%, #ffffff) 0%, var(--sector-accent) 100%);
+    }
+    .dimension-detail-meter-value {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .dimension-empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+    .dimension-detail-blocks {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .dimension-detail-block {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .dimension-detail-block:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .dimension-detail-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .dimension-detail-summary {
+      font-size: 15px;
+      line-height: 1.8;
+      color: var(--ink);
+    }
+    .dimension-detail-list {
+      display: grid;
+      gap: 6px;
+    }
+    .dimension-detail-list-item {
+      font-size: 14px;
+      line-height: 1.8;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .dimension-detail-list-item::before {
+      content: "• ";
+      color: var(--sector-accent);
+    }
+    .score-card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: baseline;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .score-card-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+    .score-card-meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .tag-row {
+      display: grid;
+      gap: 6px;
+    }
+    .tag {
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--ink);
+    }
+    .tag-strong {
+      color: var(--brand);
+      font-weight: 700;
+    }
+    .subtle {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .qa-list,
+    .support-list,
+    .report-block,
+    .section-preview,
+    .citation-list {
+      display: grid;
+      gap: 12px;
+    }
+    .qa-card,
+    .support-item,
+    .support-box {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-soft);
+    }
+    .qa-question {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      line-height: 1.6;
+    }
+    .qa-answer {
+      font-size: 14px;
+      line-height: 1.8;
+      margin-bottom: 12px;
+    }
+    .support-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .citation {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f5f8fb;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .flat-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .flat-section {
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .flat-stack .flat-section:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+    .flat-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .flat-value {
+      font-size: 14px;
+      line-height: 1.85;
+      word-break: break-word;
+    }
+    .flat-list {
+      display: grid;
+      gap: 6px;
+    }
+    .flat-item {
+      font-size: 14px;
+      line-height: 1.8;
+      word-break: break-word;
+    }
+    .flat-item::before {
+      content: "• ";
+      color: var(--brand);
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 14px 16px;
+      list-style: none;
+      background: var(--panel-soft);
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    .fold-body {
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 10px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #374151;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .facts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .mini-card {
+      padding: 14px;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    .mini-card .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .mini-card .value {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .chat-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .chat-progress {
+      padding: 0 0 12px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+    .chat-progress-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .chat-progress-title {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .chat-progress-status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .chat-progress-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .chat-progress-step {
+      position: relative;
+      display: grid;
+      gap: 4px;
+      padding: 8px 8px 8px 12px;
+      border-radius: 10px;
+      background: #f8fbfe;
+      color: var(--muted);
+      transition: all 160ms ease;
+    }
+    .chat-progress-step::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      border-radius: 12px 0 0 12px;
+      background: transparent;
+    }
+    .chat-progress-step.is-active {
+      color: var(--ink);
+      box-shadow: inset 0 0 0 1px #c8d7e6;
+    }
+    .chat-progress-step.is-active::before {
+      background: var(--brand);
+    }
+    .chat-progress-step.is-done {
+      color: var(--ink);
+      background: #fbfcfe;
+    }
+    .chat-progress-step.is-done::before {
+      background: #4c7f58;
+    }
+    .chat-progress-step-label {
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .chat-progress-step-detail {
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .chat-toolbar {
+      display: grid;
+      gap: 8px;
+    }
+    .chat-toolbar label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .chat-input,
+    .chat-textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      color: var(--ink);
+      padding: 12px 14px;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-thread {
+      display: grid;
+      gap: 10px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .chat-empty {
+      padding: 14px 0;
+      border-top: 1px dashed var(--line);
+      border-bottom: 1px dashed var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+    }
+    .chat-msg {
+      padding: 0;
+      background: transparent;
+    }
+    .chat-msg + .chat-msg {
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+    .chat-msg-user {
+      padding: 14px;
+      border: 1px solid #c9d9ea;
+      border-radius: 14px;
+      background: var(--brand-soft);
+    }
+    .chat-role {
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .chat-body {
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-answer {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-answer-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }
+    .chat-answer-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e8eff7;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .chat-answer-summary {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-answer-block {
+      padding-left: 12px;
+      border-left: 2px solid #d7e1eb;
+    }
+    .chat-answer-block-primary {
+      border-left-color: #9eb6cf;
+    }
+    .chat-answer-head {
+      margin-bottom: 6px;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .chat-answer-text {
+      font-size: 14px;
+      line-height: 1.85;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-answer-block-primary .chat-answer-text {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.9;
+    }
+    .chat-answer-list {
+      margin: 0;
+      padding: 12px 16px 12px 30px;
+      display: grid;
+      gap: 8px;
+      font-size: 14px;
+      line-height: 1.85;
+    }
+    .chat-followups {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .chat-citations {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chat-citation {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f8fbfe;
+      border: 1px solid #dde7f0;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .chat-citation-head {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .chat-citation-page {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #e8eef5;
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .chat-citation-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .chat-citation-actions {
+      display: inline-flex;
+      align-items: center;
+    }
+    .chat-form {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+    .chat-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .chat-suggestions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chat-suggestion,
+    .chat-followup,
+    .chat-submit {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 9px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chat-submit {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+      font-weight: 700;
+    }
+    .chat-submit[disabled],
+    .chat-suggestion[disabled],
+    .chat-followup[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .chat-status {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .chat-live {
+      display: grid;
+      gap: 10px;
+    }
+    .chat-live-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .chat-live-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--brand);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chat-live-phase {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chat-live-text {
+      min-height: 48px;
+      font-size: 14px;
+      line-height: 1.85;
+      color: var(--ink);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .chat-live-skeleton {
+      display: grid;
+      gap: 8px;
+    }
+    .chat-live-line {
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #edf3f9 0%, #dfe9f3 45%, #edf3f9 100%);
+      background-size: 200% 100%;
+      animation: chat-shimmer 1.4s linear infinite;
+    }
+    .chat-live-line.is-short {
+      width: 56%;
+    }
+    .chat-live-line.is-mid {
+      width: 78%;
+    }
+    @keyframes chat-shimmer {
+      0% {
+        background-position: 200% 0;
+      }
+      100% {
+        background-position: -200% 0;
+      }
+    }
+    .result-shell {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      padding: 18px 18px 16px;
+      gap: 14px;
+    }
+    .result-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .result-tab {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .result-tab.is-active {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }
+    .result-panels {
+      min-height: 0;
+      height: 100%;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .result-panel {
+      display: none;
+      padding-right: 2px;
+    }
+    .result-panel.is-active {
+      display: grid;
+      gap: 16px;
+    }
+    @media (max-width: 1320px) {
+      body {
+        overflow: auto;
+      }
+      .content-grid {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+      .page {
+        height: auto;
+        min-height: 100vh;
+      }
+      .page-stack {
+        height: auto;
+        grid-template-rows: auto auto;
+      }
+      .project-stack,
+      .nav-stack,
+      .main-stack,
+      .side-stack {
+        overflow: visible;
+        padding-right: 0;
+      }
+    }
+    @media (max-width: 1120px) {
+      .facts-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 760px) {
+      .page {
+        padding: 12px;
+        height: auto;
+      }
+      .hero,
+      .panel-inner {
+        padding: 18px;
+      }
+      .hero-top {
+        flex-wrap: wrap;
+      }
+      .result-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 4px;
+      }
+      .facts-grid {
+        grid-template-columns: 1fr;
+      }
+      .chat-progress-steps {
+        grid-template-columns: 1fr 1fr;
+      }
+      .report-title {
+        font-size: 18px;
+      }
+      .score-trigger,
+      .score-card-head {
+        display: grid;
+      }
+      .dimension-radar-card,
+      .dimension-detail-item {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-stack">
+      <header class="panel hero">
+        <div class="hero-top">
+          <h1 class="report-title">生殖健康科普示范基地标准化建设与创新模式探索</h1>
+          <div class="score-card score-mid">
+            <div class="score-label">综合评分 / 等级</div>
+            <div class="score-main">
+              <div class="score-value">6.5</div>
+              <div class="score-grade">C</div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="content-grid debug-layout">
+        
+        <main class="main-stack">
+          
+          
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>解析章节预览</h2>
+            <div class="section-preview">
+              <details><summary>概述</summary><pre>河北省创新能力提升计划项目申报书
+专项名称 ：科学普及专项
+指南代码 ：3070201-科普示范基地能力提升建设项目名称 ：生殖健康科普示范基地标准化建设与创新模式探索
+承担单位 ：河北医科大学第四医院
+合作单位 ：无
+项目负责人：张娜
+归口管理部门：省卫生健康委员会
+科技厅分管处室：省科技厅政策法规处
+申报预算年度 ：2025年
+起止年月 ：2025-08 至 2028-07
+填报日期 ：2025-07-18
+河北省科学技术厅制</pre></details><details><summary>项目简介</summary><pre>背景与意义
+为响应《全民科学素质行动计划纲要》和健康中国战略，本项目依托河北医科大学第四医院河北省生殖健康科普示范基地，针对公众对生殖健康知识需求激增的现状，通过设施升级、技术创新和活动优化，提升科普服务能力，助力科学备孕、优生优育及生育力保护理念普及。</pre></details><details><summary>研究目标</summary><pre>1、活动创新：开展线上线下结合的科普活动（如生殖健康科普宣讲、青少年性教育专场）。
+2、技术赋能：开发公众号线上知识库、AI智能问答，实现精准化传播。
+3、资源共享：构建生殖健康科普资源包（手册、视频、工具包），辐射基层医疗机构。
+实施内容
+1、硬件升级：建设多媒体科普展示屏，制作各类实体模型等。
+2、活动策划：举办科技活动周专题讲座、社区义诊、生殖健康进校园活动等。
+3、资源开发：制作科普动画、助孕指南手册，上线微信小程序“生殖健康问答”。
+4、协同推广：与基层医疗卫生机构、社区、学校合作，开展生育力保护、辅助生殖技术解读、青春期性教育等主题宣传。
+创新亮点
+1、技术融合：人工+AI智能解答常见问题，提供精准化咨询服务。
+2、精准分层：针对青少年、育龄夫妇、特殊人群如年轻肿瘤患者等群体设计差异化内容。
+3、模式可推广：形成“医疗+科普”深度融合模式，为其他基地提供示范经验。
+预期效益
+预计每年举办的科普活动覆盖公众10万人次，产出原创科普作品60项以上（视频、手册等），推动生殖健康知识普及率提升20%，成为河北省乃至全国生殖健康科普的标杆基地。</pre></details><details><summary>项目目的和意义</summary><pre>目的：
+1、解决现有科普载体单一、互动性弱等问题，建设智能化科普咨询平台；
+2、整合碎片化科普资源，建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；
+3、突破地域限制，走进省内基层医疗机构、走进乡镇，实现生殖健康科普基层传播；
+4、强化生殖健康、优生优育、生殖伦理等宣教能力，依托河北省生物医学伦理审查协会生殖医学分会、河北省优生优育协会助孕和生育力保护专业委员会深化公众对生殖健康方面的认知。
+意义：
+1、社会价值：应对生育率下降挑战，通过权威科普消除生殖技术认知误区，提升育龄群体科学备孕能力；
+2、行业引领：依托省内首批ART技术资质及两大专委会平台（河北省优生优育协会、河北省生物医学伦理审查协会），建立可复制的生殖健康科普“河北模式”；
+3、政策支撑：直接服务河北省“三孩”政策落地，降低因生殖知识匮乏导致的不孕不育诊疗延误；
+4、健康扶贫：通过远程培训提升基层医疗机构生殖健康服务能力，助力乡村振兴战略中的健康保障。</pre></details><details><summary>科普载体智能化升级</summary><pre>- 科普宣传区域改造：设置生殖健康模型展览角，摆放模型展品，结合循环播放视频动画讲解、胚胎动态发育过程录像等，生动化、形象化进行生殖健康科普宣教；定期开放医护人员参与的情景剧，打造沉浸式科普体验。</pre></details><details><summary>数字化资源库建设</summary><pre>- 整合现有500+部视频/图文素材，针对不同疾病、不同人群精细化科普宣传；
+- 制作标准化课件包（含生育指导、不孕与不育、辅助生殖技术、月经病、卵巢功能衰退、生育力保存等专题），覆盖90%常见生殖健康问题；
+- 搭建AI智能问答平台，实现7×24小时在线科普咨询。</pre></details><details><summary>基层能力辐射工程</summary><pre>- 针对省内基层医疗卫生机构，每月定期开展有针对性的技术培训；
+- 组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；
+- 开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。
+实施地点：
+1、主基地：河北省生殖健康科普示范基地现有场所。</pre></details><details><summary>辐射网络</summary><pre>- 线上：微信公众号/视频号、快手、抖音、小红书、线上会议；
+- 线下：河北省优生优育协会、河北省生物医学伦理审查协会生殖医学分会合作机构、社区科普站及省内基层医疗机构覆盖区域。</pre></details><details><summary>科普基础设施建设</summary><pre>① 建成标准化生殖健康科普展览角（含实体模型、多媒体互动设备等），覆盖全部就诊人群超2万人次。
+② 开发线上科普平台（如科室公众号、抖音号等），实现科普内容数字化覆盖，用户活跃度达60%。</pre></details><details><summary>科普内容产出</summary><pre>① 制作并发布原创生殖健康科普作品（视频、图文、动画等）180项，涵盖生育指导、不孕不育、辅助生殖技术、月经病、卵巢功能衰退、生育力保护等主题。
+② 出版生殖健康科普宣传图册5000册，发放至社区、学校、乡镇医疗机构等场所。</pre></details><details><summary>科普活动开展</summary><pre>① 举办线下大型科普活动3场，覆盖人群5000人次。
+② 开展线上直播、互动问答活动15次/月，参与人数1万人次。</pre></details><details><summary>人才培养与团队建设</summary><pre>① 组建专业化的生殖医学科普团队（含医生、护士、实验室技术人员、科普专员等），团队成员接受科普技能培训20人次。
+②培养科普讲师6名，形成可持续的科普人才梯队。</pre></details><details><summary>合作网络构建</summary><pre>① 与社区、学校、省内基层医疗机构、媒体等建立5个科普合作点，形成区域联动的生殖健康科普网络。
+② 联合省内其他医疗机构或高校，共同开展生殖健康科普活动。
+项目效益：
+① 社会效益：提升公众生殖健康素养，优化生育政策推广，实现区域示范效应。
+② 医疗效益：患者服务优化，达到生殖疾病早期干预与预防，制定精细化、个体化诊疗方案。
+③ 经济效益：通过科普品牌建设，提升医院社会影响力，间接推动生殖健康相关医疗服务的发展，同时降低因生殖健康问题导致的家庭经济负担。</pre></details><details><summary>内容创新</summary><pre>① 精准化科普：针对不同人群（如青少年、育龄夫妇、肿瘤患者等）设计差异化的科普内容，例如：青少年：性教育、生殖健康、月经病；育龄夫妇：生育和优生指导、不孕与不育、月经病、卵巢功能保护、辅助生殖技术解读；肿瘤患者：生育力保护和保存技术、生育时机指导。
+② 形式多样化：利用短视频平台传播短平快知识、线上直播问答活动、线下生殖科普讲座、义诊等。</pre></details><details><summary>模式创新</summary><pre>① “医疗+科普”深度融合：将科普纳入生殖医学诊疗流程，例如在门诊候诊区播放科普视频、为就诊患者提供定制化科普手册。
+② 多学科协作机制：联合妇科、产科、内分泌科、中医科、肿瘤科等专家组建科普团队，提供全方位的生殖健康知识。</pre></details><details><summary>创新点</summary><pre>① 智能化科普平台：通过AI智能问答、大数据推送技术，实现个性化科普内容推荐。</pre></details>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-inner">
+            <h2>调试元信息</h2>
+            <table class="kv-table">
+              <tr><th>项目ID</th><td>ffb75a4c639d4ebab2c33e21d75d7bac</td></tr>
+              <tr><th>评审ID</th><td>EVAL_ffb75a4c639d4ebab2c33e21d75d7bac_20260422183018049567</td></tr>
+              <tr><th>源文件</th><td>ffb75a4c639d4ebab2c33e21d75d7bac.docx</td></tr>
+              <tr><th>生成时间</th><td>2026-04-22T18:31:14.866067</td></tr>
+            </table>
+          </div>
+        </section>
+            
+        </main>
+
+        <aside class="side-stack">
+          <section class="panel result-shell" id="result-shell">
+            <div class="workspace-head">
+              <h2>项目评审调试报告</h2>
+              
+            </div>
+            <div class="result-panels">
+              <section class="result-panel is-active" id="report-overview">
+                <div class="summary-block">
+                  <p class="summary">本项目综合评分6.5分，等级评定为C级（中等）。项目在团队能力等方面表现突出。在技术可行性、创新性、预期成果、社会效益、经济效益、风险控制、进度合理性、合规性等方面表现一般，有改进空间。</p>
+                </div>
+                <div class="highlight-grid">
+                  <div class="highlight-card">
+                    <div class="highlight-label">研究目标</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">解决现有科普载体单一、互动性弱等问题，建设智能化科普咨询平台</div>
+                  <div class="highlight-item-evidence">证据：三、项目目的和意义目的：1、解决现有科普载体单一、互动性弱等问题，建设智能化科普咨询平台；2、整合碎片化科普资源，建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；3、突破地域限制，走进省内基层医疗机构、走进乡镇...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="三项目目的和意义目的1解决现有科普载体单一互动性弱等问题建设智能化科普咨询平台2整合碎片化科普资源建立分类化视频宣教实现针对不同疾病不同人群精细化科普宣传3突破地域限制走进省内基层医疗机构走进乡镇" data-highlight-text="三、项目目的和意义目的：1、解决现有科普载体单一、互动性弱等问题，建设智能化科普咨询平台；2、整合碎片化科普资源，建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；3、突破地域限制，走进省内基层医疗机构、走进乡镇..." data-packet-page="5" data-highlight-rects='[{&quot;x&quot;: 0.123562, &quot;y&quot;: 0.131556, &quot;w&quot;: 0.417079, &quot;h&quot;: 0.030253}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">整合碎片化科普资源，建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传</div>
+                  <div class="highlight-item-evidence">证据：...性弱等问题，建设智能化科普咨询平台；2、整合碎片化科普资源，建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；3、突破地域限制，走进省内基层医疗机构、走进乡镇，实现生殖健康科普基层传播；4、强化生殖健康、优生优育、生殖伦理等宣教能力，依托河北省生物医学伦理审查协会生殖...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="性弱等问题建设智能化科普咨询平台2整合碎片化科普资源建立分类化视频宣教实现针对不同疾病不同人群精细化科普宣传3突破地域限制走进省内基层医疗机构走进乡镇实现生殖健康科普基层传播4强化生殖健康优生优育生殖伦理等宣教能力依托河北省生物医学伦理审查协会生殖" data-highlight-text="...性弱等问题，建设智能化科普咨询平台；2、整合碎片化科普资源，建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；3、突破地域限制，走进省内基层医疗机构、走进乡镇，实现生殖健康科普基层传播；4、强化生殖健康、优生优育、生殖伦理等宣教能力，依托河北省生物医学伦理审查协会生殖..." data-packet-page="5" data-highlight-rects='[{&quot;x&quot;: 0.123562, &quot;y&quot;: 0.236081, &quot;w&quot;: 0.472392, &quot;h&quot;: 0.030253}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">突破地域限制，走进省内基层医疗机构、走进乡镇，实现生殖健康科普基层传播</div>
+                  <div class="highlight-item-evidence">证据：...建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；3、突破地域限制，走进省内基层医疗机构、走进乡镇，实现生殖健康科普基层传播；4、强化生殖健康、优生优育、生殖伦理等宣教能力，依托河北省生物医学伦理审查协会生殖医学分会、河北省优生优育协会助孕和生育力保护专业委...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="建立分类化视频宣教实现针对不同疾病不同人群精细化科普宣传3突破地域限制走进省内基层医疗机构走进乡镇实现生殖健康科普基层传播4强化生殖健康优生优育生殖伦理等宣教能力依托河北省生物医学伦理审查协会生殖医学分会河北省优生优育协会助孕和生育力保护专业委" data-highlight-text="...建立分类化视频宣教，实现针对不同疾病、不同人群精细化科普宣传；3、突破地域限制，走进省内基层医疗机构、走进乡镇，实现生殖健康科普基层传播；4、强化生殖健康、优生优育、生殖伦理等宣教能力，依托河北省生物医学伦理审查协会生殖医学分会、河北省优生优育协会助孕和生育力保护专业委..." data-packet-page="5" data-highlight-rects='[{&quot;x&quot;: 0.123562, &quot;y&quot;: 0.236081, &quot;w&quot;: 0.472392, &quot;h&quot;: 0.030253}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                </div>
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">创新点</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">智能化科普平台</div>
+                  <div class="highlight-item-evidence">证据：3、技术创新①智能化科普平台：通过AI智能问答、大数据推送技术，实现个性化科普内容推荐。</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-4" data-doc-jump="true" data-page="4" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="3技术创新①智能化科普平台通过AI智能问答大数据推送技术实现个性化科普内容推荐" data-highlight-text="3、技术创新①智能化科普平台：通过AI智能问答、大数据推送技术，实现个性化科普内容推荐。" data-packet-page="7" data-highlight-rects='[{&quot;x&quot;: 0.647667, &quot;y&quot;: 0.832945, &quot;w&quot;: 0.245737, &quot;h&quot;: 0.030253}]'>查看原文 · 第 4 页</a></div>
+                </div>
+                </div>
+                  </div>
+                  <div class="highlight-card">
+                    <div class="highlight-label">技术路线</div>
+                    <div class="highlight-list">
+                <div class="highlight-item">
+                  <div class="highlight-item-text">组建“生殖医学专家团队”走进乡村帮扶义诊</div>
+                  <div class="highlight-item-evidence">证据：...、基层能力辐射工程-针对省内基层医疗卫生机构，每月定期开展有针对性的技术培训；-组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；-开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。实施地点：1、主基地：河北省生殖健康科普示范基地现有场所。</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="基层能力辐射工程针对省内基层医疗卫生机构每月定期开展有针对性的技术培训组建生殖医学专家团队走进乡村帮扶义诊年覆盖10个乡镇开展社区生殖健康科普培训生殖科学进校园等活动年覆盖超1万人次实施地点1主基地河北省生殖健康科普示范基地现有场所" data-highlight-text="...、基层能力辐射工程-针对省内基层医疗卫生机构，每月定期开展有针对性的技术培训；-组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；-开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。实施地点：1、主基地：河北省生殖健康科普示范基地现有场所。" data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.173957, &quot;y&quot;: 0.146403, &quot;w&quot;: 0.487632, &quot;h&quot;: 0.030253}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">搭建AI智能问答平台，实现7×24小时在线科普咨询</div>
+                  <div class="highlight-item-evidence">证据：...能衰退、生育力保存等专题），覆盖90%常见生殖健康问题；-搭建AI智能问答平台，实现7×24小时在线科普咨询。</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="能衰退生育力保存等专题覆盖90%常见生殖健康问题搭建AI智能问答平台实现7×24小时在线科普咨询" data-highlight-text="...能衰退、生育力保存等专题），覆盖90%常见生殖健康问题；-搭建AI智能问答平台，实现7×24小时在线科普咨询。" data-packet-page="5" data-highlight-rects='[{&quot;x&quot;: 0.345299, &quot;y&quot;: 0.848387, &quot;w&quot;: 0.260855, &quot;h&quot;: 0.030253}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">针对省内基层医疗卫生机构，每月定期开展有针对性的技术培训</div>
+                  <div class="highlight-item-evidence">证据：3、基层能力辐射工程-针对省内基层医疗卫生机构，每月定期开展有针对性的技术培训；-组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；-开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。实施地点：1、主基地：河北省...</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="3基层能力辐射工程针对省内基层医疗卫生机构每月定期开展有针对性的技术培训组建生殖医学专家团队走进乡村帮扶义诊年覆盖10个乡镇开展社区生殖健康科普培训生殖科学进校园等活动年覆盖超1万人次实施地点1主基地河北省" data-highlight-text="3、基层能力辐射工程-针对省内基层医疗卫生机构，每月定期开展有针对性的技术培训；-组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；-开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。实施地点：1、主基地：河北省..." data-packet-page="6" data-highlight-rects='[{&quot;x&quot;: 0.173957, &quot;y&quot;: 0.146403, &quot;w&quot;: 0.487632, &quot;h&quot;: 0.030253}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                
+                <div class="highlight-item">
+                  <div class="highlight-item-text">开展社区生殖健康科普培训、生殖科学进校园等活动</div>
+                  <div class="highlight-item-evidence">证据：...对性的技术培训；-组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；-开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。实施地点：1、主基地：河北省生殖健康科普示范基地现有场所。</div><div class="jump-link-row"><a class="jump-link" href="#doc-page-3" data-doc-jump="true" data-page="3" data-file="ffb75a4c639d4ebab2c33e21d75d7bac.docx" data-snippet="对性的技术培训组建生殖医学专家团队走进乡村帮扶义诊年覆盖10个乡镇开展社区生殖健康科普培训生殖科学进校园等活动年覆盖超1万人次实施地点1主基地河北省生殖健康科普示范基地现有场所" data-highlight-text="...对性的技术培训；-组建“生殖医学专家团队”走进乡村帮扶义诊，年覆盖10个乡镇；-开展社区生殖健康科普培训、生殖科学进校园等活动，年覆盖超1万人次。实施地点：1、主基地：河北省生殖健康科普示范基地现有场所。" data-packet-page="4" data-highlight-rects='[{&quot;x&quot;: 0.083246, &quot;y&quot;: 0.181433, &quot;w&quot;: 0.265895, &quot;h&quot;: 0.034815}]'>查看原文 · 第 3 页</a></div>
+                </div>
+                </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="result-panel" id="report-dimensions">
+                <div class="score-list">
+                  <div class="dimension-dashboard" id="dimension-accordion" data-default-index="4"><section class="dimension-radar-card"><div class="dimension-radar-wrap"><svg class="dimension-radar-svg" id="dimension-radar-svg" viewBox="0 0 480 380" role="img" aria-label="维度评分雷达图"><path class="dimension-radar-sector" d="M 240.0 190.0 L 199.6 79.1 A 118.0 118.0 0 0 1 315.8 280.4 Z" fill="#c8defd"></path><path class="dimension-radar-sector" d="M 240.0 190.0 L 315.8 280.4 A 118.0 118.0 0 0 1 123.8 210.5 Z" fill="#cfe8d9"></path><path class="dimension-radar-sector" d="M 240.0 190.0 L 123.8 210.5 A 118.0 118.0 0 0 1 199.6 79.1 Z" fill="#ffd8bb"></path><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="23.6"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="47.2"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="70.8"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="94.4"></circle><circle class="dimension-radar-ring" cx="240.0" cy="190.0" r="118.0"></circle><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="240.0" y2="72.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="315.8" y2="99.6"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="356.2" y2="169.5"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="342.2" y2="249.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="280.4" y2="300.9"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="199.6" y2="300.9"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="137.8" y2="249.0"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="123.8" y2="169.5"></line><line class="dimension-radar-axis" x1="240.0" y1="190.0" x2="164.2" y2="99.6"></line><polygon class="dimension-radar-area" points="240.0,115.7 292.0,128.1 317.9,176.3 306.4,228.3 264.2,256.5 207.1,280.4 178.7,225.4 170.3,177.7 193.0,134.0"></polygon><circle class="dimension-radar-point" data-dimension-index="0" cx="240.0" cy="115.7" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="1" cx="292.0" cy="128.1" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="2" cx="317.9" cy="176.3" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point" data-dimension-index="3" cx="306.4" cy="228.3" r="5.8" fill="#2563a6"></circle><circle class="dimension-radar-point is-active" data-dimension-index="4" cx="264.2" cy="256.5" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="5" cx="207.1" cy="280.4" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="6" cx="178.7" cy="225.4" r="5.8" fill="#2d7a4f"></circle><circle class="dimension-radar-point" data-dimension-index="7" cx="170.3" cy="177.7" r="5.8" fill="#b8631b"></circle><circle class="dimension-radar-point" data-dimension-index="8" cx="193.0" cy="134.0" r="5.8" fill="#b8631b"></circle><text class="dimension-radar-label" data-dimension-index="0" x="240.0" y="32.0" text-anchor="middle" dominant-baseline="middle">创新性</text><text class="dimension-radar-label" data-dimension-index="1" x="341.6" y="69.0" text-anchor="start" dominant-baseline="middle">预期成果</text><text class="dimension-radar-label" data-dimension-index="2" x="395.6" y="162.6" text-anchor="start" dominant-baseline="middle">社会效益</text><text class="dimension-radar-label" data-dimension-index="3" x="376.8" y="269.0" text-anchor="start" dominant-baseline="middle">经济效益</text><text class="dimension-radar-label is-active" data-dimension-index="4" x="294.0" y="338.5" text-anchor="start" dominant-baseline="middle">技术可行性</text><text class="dimension-radar-label" data-dimension-index="5" x="186.0" y="338.5" text-anchor="end" dominant-baseline="middle">团队能力</text><text class="dimension-radar-label" data-dimension-index="6" x="103.2" y="269.0" text-anchor="end" dominant-baseline="middle">进度合理性</text><text class="dimension-radar-label" data-dimension-index="7" x="84.4" y="162.6" text-anchor="end" dominant-baseline="middle">风险控制</text><text class="dimension-radar-label" data-dimension-index="8" x="138.4" y="69.0" text-anchor="end" dominant-baseline="middle">合规性</text></svg><div class="dimension-sector-row"><div class="dimension-sector-chip" style="--sector-accent:#2563a6">项目价值</div><div class="dimension-sector-chip" style="--sector-accent:#2d7a4f">实施基础</div><div class="dimension-sector-chip" style="--sector-accent:#b8631b">风险规范</div></div></div></section><div class="dimension-body"><section class="dimension-detail-stage">
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="0"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">创新性</div>
+                    <div class="score-card-meta">得分 6.3 / 权重 0.15</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:63.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.3 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目是一个典型的&#x27;技术 + 场景&#x27;应用型项目。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">虽然在核心理论与底层技术上缺乏显著突破，但在科普传播方式的优化上具有实用价值。</div><div class="dimension-detail-list-item">整体创新性处于中等偏下水平，主要优势在于可行性和用户体验的改善，建议后续加强内容垂直领域的深度定制以形成差异化竞争力。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">实现了从被动接收向主动交互的科普模式转变</div><div class="dimension-detail-list-item">利用大数据实现资源精准匹配，提升科普效率</div><div class="dimension-detail-list-item">技术架构成熟，易于快速部署与迭代</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">核心技术依赖第三方开源模型或平台，存在自主可控风险</div><div class="dimension-detail-list-item">科普内容的准确性与 AI 生成幻觉问题需重点管控</div><div class="dimension-detail-list-item">用户数据隐私保护机制未在描述中体现</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确核心技术依赖第三方开源模型或平台，存在自主可控风险</div><div class="dimension-detail-list-item">明确科普内容的准确性与 AI 生成幻觉问题需重点管控</div><div class="dimension-detail-list-item">明确用户数据隐私保护机制未在描述中体现</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="1"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">预期成果</div>
+                    <div class="score-card-meta">得分 6.85 / 权重 0.12</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:68.5%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.85 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目预期成果定位清晰，聚焦生殖健康科普，指标体系较为完善，特别是量化考核指标明确，有利于后续验收。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">项目具有较强的社会公益属性和应用价值。</div><div class="dimension-detail-list-item">然而，申报材料存在文本逻辑重复问题，且缺失关键技术参数支撑，若能在科普内容的质量审核标准及数字化平台的技术稳定性上补充具体指标，将更具竞争力。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">科普主题全面覆盖生育指导、辅助生殖、卵巢功能等关键痛点，针对性强。</div><div class="dimension-detail-list-item">构建了‘线下展览 + 线上平台 + 直播互动’的立体化传播矩阵，覆盖面广。</div><div class="dimension-detail-list-item">考核指标具体明确，包含实物（图册）、数字内容（视频）及服务量（人次），易于验收。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">申报材料中‘主要指标’、‘考核指标’、‘成果形式’三者内容高度重复，建议精简整合。</div><div class="dimension-detail-list-item">&#x27;技术指标&#x27;栏目完全空白，未提供科普数字化相关的技术标准或创新点。</div><div class="dimension-detail-list-item">&#x27;用户活跃度达 60%&#x27;等定性定量混合指标缺乏明确的计算口径或基准定义。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确申报材料中‘主要指标’、‘考核指标’、‘成果形式’三者内容高度重复，建议精简整合</div><div class="dimension-detail-list-item">明确&#x27;技术指标&#x27;栏目完全空白，未提供科普数字化相关的技术标准或创新点</div><div class="dimension-detail-list-item">补充&#x27;用户活跃度达 60%&#x27;等定性定量混合指标缺乏明确的计算口径或基准定义</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="2"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">社会效益</div>
+                    <div class="score-card-meta">得分 6.7 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:67.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.7 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目精准对接国家战略需求，社会意义显著，但需补充人才培育体系和跨学科合作机制以提升综合效益</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">契合三孩政策与老龄化社会需求</div><div class="dimension-detail-list-item">响应健康中国2030规划纲要</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">人才培养计划缺失</div><div class="dimension-detail-list-item">学科交叉融合路径不清晰</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确人才培养计划缺失</div><div class="dimension-detail-list-item">完善学科交叉融合路径不清晰</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="3"
+                  style="--sector-accent:#2563a6;"
+                >
+                  <div class="dimension-detail-kicker">项目价值</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">经济效益</div>
+                    <div class="score-card-meta">得分 6.5 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:65.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.5 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目高度契合国家‘健康中国’战略及人口发展政策，社会效益显著，市场需求基础扎实。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">但在经济效益评估方面，目前内容偏重社会价值阐述，缺乏硬核的财务数据支撑和明确的商业模式设计。</div><div class="dimension-detail-list-item">建议申报方补充详细的财务测算模型、盈亏平衡分析及具体的获客成本预估，以增强经济可行性的说服力。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">精准对接国家战略与民生迫切需求</div><div class="dimension-detail-list-item">政策红利明显，宏观环境优越</div><div class="dimension-detail-list-item">涵盖生殖健康全生命周期，应用场景广泛</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">缺少具体的财务收益预测数据</div><div class="dimension-detail-list-item">盈利模式及商业闭环描述不够清晰</div><div class="dimension-detail-list-item">未提及潜在的市场竞争风险应对策略</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">补充具体的财务收益预测数据</div><div class="dimension-detail-list-item">完善盈利模式及商业闭环描述不够清晰</div><div class="dimension-detail-list-item">补充潜在的市场竞争风险应对策略</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item is-active"
+                  data-dimension-index="4"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">技术可行性</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.15</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目更偏平台建设或科普实施类，当前未命中独立技术路线章节，已基于科普基础设施建设、科普内容产出、科普活动开展等替代材料进行基础可行性判断，不再强制要求独立技术路线章节。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖科普基础设施建设、科普内容产出、科普活动开展等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="5"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">团队能力</div>
+                    <div class="score-card-meta">得分 8.15 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:81.5%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">8.15 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目团队在科普执行层面能力突出，拥有丰富的新媒体运营经验和成熟的传播矩阵，过往业绩数据亮眼，能够保障项目的高效落地。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">团队结构合理，分工明确且有质量把控。</div><div class="dimension-detail-list-item">主要短板在于负责人的具体学术科研背景描述不够详尽，建议补充核心人员的学历、论文及课题等硬性指标以增强竞争力。</div><div class="dimension-detail-list-item">总体而言，是一支执行力强、经验丰富的科普推广团队。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">科普传播数据扎实，全网播放量近五百万，受众精准（30-40 岁生育期人群占比高）</div><div class="dimension-detail-list-item">建立了‘专职 + 兼职 + 高级职称审核’的立体化团队架构，质量风控意识强</div><div class="dimension-detail-list-item">全媒体矩阵布局完善，涵盖图文、视频、直播及线下义诊，传播渠道多元化</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">负责人具体的学术背景（如学位、具体职称全称）及科研论文成果未在文本中体现</div><div class="dimension-detail-list-item">项目申请书存在明显的段落重复问题（人员分工部分与现有工作基础内容完全一致），显示撰写不够严谨</div><div class="dimension-detail-list-item">缺乏对科普效果转化的量化评估指标（如转化率、满意度调查等）</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确负责人具体的学术背景（如学位、具体职称全称）及科研论文成果未在文本中体现</div><div class="dimension-detail-list-item">完善项目申请书存在明显的段落重复问题（人员分工部分与现有工作基础内容完全一致），显示撰写不够严谨</div><div class="dimension-detail-list-item">补充对科普效果转化的量化评估指标（如转化率、满意度调查等）</div></div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="6"
+                  style="--sector-accent:#2d7a4f;"
+                >
+                  <div class="dimension-detail-kicker">实施基础</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">进度合理性</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目更偏平台建设或科普实施类，当前未命中独立进度章节，已基于科普活动开展、科普内容产出、项目简介等替代材料进行基础进度判断，不再强制要求独立进度章节。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖科普活动开展、科普内容产出、项目简介等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-empty">暂无明显短板</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-empty">暂无明确建议动作</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="7"
+                  style="--sector-accent:#b8631b;"
+                >
+                  <div class="dimension-detail-kicker">风险规范</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">风险控制</div>
+                    <div class="score-card-meta">得分 6.0 / 权重 0.08</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:60.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.0 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">该项目更偏平台建设、科普实施或示范应用类，当前未命中独立风险章节，已基于项目绩效评价考核目标及指标、项目简介、主要内容及实施地点等替代材料进行基础风险判断，不再强制要求独立风险章节。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-detail-summary">已覆盖项目绩效评价考核目标及指标、项目简介、主要内容及实施地点等实施内容</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-summary">未设置独立风险章节，已按项目绩效评价考核目标及指标、项目简介等替代内容评估</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-summary">明确未设置独立风险章节</div></section>
+                  </div>
+                </section>
+                
+                <section
+                  class="dimension-detail-item"
+                  data-dimension-index="8"
+                  style="--sector-accent:#b8631b;"
+                >
+                  <div class="dimension-detail-kicker">风险规范</div>
+                  <div class="score-card-head">
+                    <div class="score-card-title">合规性</div>
+                    <div class="score-card-meta">得分 6.2 / 权重 0.1</div>
+                  </div>
+                  <div class="dimension-detail-meter">
+                    <div class="dimension-detail-meter-track">
+                      <div class="dimension-detail-meter-fill" style="width:62.0%"></div>
+                    </div>
+                    <div class="dimension-detail-meter-value">6.2 / 10</div>
+                  </div>
+                  <div class="dimension-detail-blocks">
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">一句话判断</div><div class="dimension-detail-summary">项目合规性基础基本具备，但仍有部分内容需要补充或细化。</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">主要依据</div><div class="dimension-empty">暂无明确依据</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">优势</div><div class="dimension-empty">暂无明显优势</div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">短板 / 待补充</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">文中未见明确政策依据或指南条款对应说明。</div><div class="dimension-detail-list-item">文中提到伦理相关内容较少，未见明确审批或隐私保护安排。</div></div></section>
+                    <section class="dimension-detail-block"><div class="dimension-detail-label">建议动作</div><div class="dimension-detail-list"><div class="dimension-detail-list-item">明确文中未见明确政策依据或指南条款对应说明</div><div class="dimension-detail-list-item">明确文中提到伦理相关内容较少，未见明确审批或隐私保护安排</div></div></section>
+                  </div>
+                </section>
+                </section></div></div>
+        <script>
+          (() => {
+            const root = document.getElementById("dimension-accordion");
+            if (!root) return;
+            const points = Array.from(root.querySelectorAll("[data-dimension-index]"));
+            const detailItems = Array.from(root.querySelectorAll(".dimension-detail-item"));
+            const activate = (index) => {
+              points.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+              });
+              detailItems.forEach((node) => {
+                node.classList.toggle("is-active", node.dataset.dimensionIndex === index);
+                if (node.dataset.dimensionIndex === index) {
+                  node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+              });
+            };
+            points.forEach((node) => {
+              node.addEventListener("click", () => {
+                activate(node.dataset.dimensionIndex);
+              });
+            });
+            activate(root.dataset.defaultIndex || "0");
+          })();
+        </script>
+        
+                </div>
+              </section>
+
+              
+
+              
+              <section class="result-panel" id="report-benchmark">
+                <div class="empty">未执行技术摸底</div>
+              </section>
+
+
+              
+        <section class="panel" id="report-debug">
+          <div class="panel-inner">
+            <h2>错误与调试信息</h2>
+            <table class="kv-table"><tr><th>错误列表</th><td><div class="empty">无错误</div></td></tr><tr><th>文件名</th><td>ffb75a4c639d4ebab2c33e21d75d7bac.docx</td></tr><tr><th>页数</th><td>8</td></tr><tr><th>解析版本</th><td>v2</td></tr><tr><th>近似分页</th><td>是</td></tr></table>
+          </div>
+        </section>
+            
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </div>
+  
+</body>
+</html>

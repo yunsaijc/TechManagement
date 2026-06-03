@@ -5,6 +5,8 @@
 import asyncio
 import inspect
 import json
+import inspect
+import json
 import os
 import re
 from datetime import datetime
@@ -18,6 +20,8 @@ from src.common.models.evaluation import (
     EvaluationChatAskResponse,
     EvaluationCitationHighlightResponse,
     EvaluationError,
+    GuideEvaluationRequest,
+    GuideEvaluationResult,
     GuideEvaluationRequest,
     GuideEvaluationResult,
     EvaluationRequest,
@@ -91,6 +95,7 @@ class EvaluationAgent:
         self.parser = DocumentParser()
         self.scorer = EvaluationScorer()
         self.report_generator = ReportGenerator()
+        self.report_generator = ReportGenerator()
         self.storage = EvaluationStorage()
         self.project_repo = EvaluationProjectRepository()
         self.packet_builder = EvaluationPacketBuilder()
@@ -129,6 +134,17 @@ class EvaluationAgent:
         if not checker_class:
             return None
 
+        overrides = {}
+        project_profile = PROFILE_GENERIC
+        if profile_result:
+            project_profile = profile_result.project_profile
+            overrides = profile_result.dimension_overrides.get(dimension, {})
+
+        return checker_class(
+            llm=self.llm,
+            project_profile=project_profile,
+            dimension_overrides=overrides,
+        )
         overrides = {}
         project_profile = PROFILE_GENERIC
         if profile_result:
@@ -240,8 +256,10 @@ class EvaluationAgent:
         file_path = self.project_repo.get_primary_document_path(request.project_id)
         if not file_path:
             expected_path = self.project_repo.get_expected_document_path(request.project_id)
+            expected_path = self.project_repo.get_expected_document_path(request.project_id)
             raise ValueError(
                 f"未找到项目申报文档: {request.project_id}。"
+                f"当前按真实路径规则查找: {expected_path or '无法根据 year 推断路径'}"
                 f"当前按真实路径规则查找: {expected_path or '无法根据 year 推断路径'}"
             )
 
@@ -625,6 +643,13 @@ class EvaluationAgent:
         profile_result: ProjectProfileResult,
         dimension_contexts: Dict[str, Dict[str, Any]],
     ) -> List[CheckResult]:
+    async def _run_checks(
+        self,
+        sections: Dict[str, str],
+        dimensions: List[str],
+        profile_result: ProjectProfileResult,
+        dimension_contexts: Dict[str, Dict[str, Any]],
+    ) -> List[CheckResult]:
         """并行执行维度检查"""
         task_specs: List[tuple[str, asyncio.Task]] = []
         results: List[CheckResult] = []
@@ -864,7 +889,21 @@ class EvaluationAgent:
             if self._should_degrade_check_result(result):
                 return checker.build_degraded_result(content, result.opinion)
             return result
+            result = await checker.check(content)
+            if self._should_degrade_check_result(result):
+                return checker.build_degraded_result(content, result.opinion)
+            return result
         except Exception as e:
+            return checker.build_degraded_result(content, str(e))
+
+    def _should_degrade_check_result(self, result: CheckResult) -> bool:
+        """识别需要降级替换的检查结果"""
+        opinion = result.opinion or ""
+        issue_text = " ".join(result.issues or [])
+        return any(
+            marker in opinion or marker in issue_text
+            for marker in ("检查异常", "评审解析失败", "Request timed out", "Connection error")
+        )
             return checker.build_degraded_result(content, str(e))
 
     def _should_degrade_check_result(self, result: CheckResult) -> bool:

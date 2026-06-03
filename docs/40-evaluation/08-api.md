@@ -311,7 +311,11 @@ Content-Type: application/json
 - `chat/ask` 主链路只返回 `answer + citations(file/page/snippet)`，以降低响应延迟
 - 正文高亮通过 `/chat/citation-highlight` 懒加载补全，前端在用户点击具体证据时再请求 `packet_page/highlight_rects`
 
+<<<<<<< HEAD
+## 6. 专家流式问答
+=======
 ## 7. 专家流式问答
+>>>>>>> upstream/main
 
 ### 请求
 
@@ -356,7 +360,11 @@ Accept: text/event-stream
 - 为避免主链路再次变慢，流式阶段也不补齐 `highlight_rects`
 - 建议前端优先使用 `ask-stream`，仅在浏览器或代理不支持 SSE 时回退到 `chat/ask`
 
+<<<<<<< HEAD
+## 7. 聊天引用高亮
+=======
 ## 8. 聊天引用高亮
+>>>>>>> upstream/main
 
 ### 请求
 
@@ -390,7 +398,11 @@ Content-Type: application/json
 - 该接口用于正式 HTML 工作台中的“查看原文”懒加载高亮
 - 若无法精确定位，允许返回 `packet_page>0` 且 `highlight_rects=[]`，前端至少完成页级跳转
 
+<<<<<<< HEAD
+## 8. 权重与维度接口
+=======
 ## 9. 权重与维度接口
+>>>>>>> upstream/main
 
 - `GET /api/v1/evaluation/dimensions`
 - `POST /api/v1/evaluation/weights/validate`

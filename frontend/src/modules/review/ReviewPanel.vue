@@ -1,19 +1,20 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 const loading = ref(true);
 const errorText = ref('');
 const payload = ref(null);
-const keyword = ref('');
-const selectedProjectId = ref('');
 const API_BASE_STORAGE_KEY = 'tech_api_base';
+
+const state = reactive({
+  projectIndex: 0,
+  ruleId: '',
+  evidenceIndex: 0,
+});
 
 function runtimeApiBase() {
   const envBase = String(import.meta.env.VITE_API_BASE || '').trim();
-  if (envBase) {
-    return envBase.replace(/\/+$/, '');
-  }
-
+  if (envBase) return envBase.replace(/\/+$/, '');
   const { protocol, hostname, port } = window.location;
   const p = String(port || '').trim();
   const backendPort = p === '8006' ? '8005' : (p || '8000');
@@ -21,11 +22,8 @@ function runtimeApiBase() {
 }
 
 function apiBase() {
-  const saved = localStorage.getItem('tech_api_base');
-  if (saved && saved.trim()) {
-    return saved.trim().replace(/\/+$/, '');
-  }
-
+  const saved = localStorage.getItem(API_BASE_STORAGE_KEY);
+  if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
   return runtimeApiBase();
 }
 
@@ -34,7 +32,6 @@ async function fetchJsonWithTimeout(url, timeout = 12000) {
   const timer = setTimeout(() => {
     try { controller.abort(); } catch {}
   }, timeout);
-
   try {
     const resp = await fetch(url, { signal: controller.signal });
     const text = await resp.text();
@@ -74,6 +71,9 @@ async function loadDebugBatch() {
       }
     }
     payload.value = data?.data || data;
+    initializeState();
+    await nextTick();
+    renderAll();
   } catch (error) {
     errorText.value = String(error?.message || error || '加载失败');
   } finally {
@@ -81,1368 +81,1313 @@ async function loadDebugBatch() {
   }
 }
 
-onMounted(() => {
-  loadDebugBatch();
+const STATUS_LABELS = {
+  failed: '不通过',
+  warning: '警告',
+  passed: '通过',
+  manual: '需人工处理',
+  requires_data: '待补数据',
+  not_applicable: '不适用',
+  skipped: '跳过',
+  system_managed: '系统已限制',
+};
+
+const PROJECT_TYPE_LABELS = {
+  regional_innovation: '区域创新体系建设项目',
+  basic_research: '基础研究项目',
+  innovation_base: '科技创新基地建设项目',
+  transfer_transformation: '科技成果转移转化项目',
+};
+
+const reportData = computed(() => {
+  if (!payload.value || typeof payload.value !== 'object') return { projects: [] };
+  if (payload.value.reportData && typeof payload.value.reportData === 'object') return payload.value.reportData;
+  return payload.value;
 });
 
-const guideline = computed(() => payload.value?.guideline || { file_name: '', paragraphs: [], full_text: '' });
-const guidelineTables = computed(() => Array.isArray(guideline.value?.tables) ? guideline.value.tables : []);
-const guidelineTitle = computed(() => {
-  const fileName = String(guideline.value?.file_name || '').trim();
-  if (!fileName) return '形式审查要点';
-  return fileName.replace(/\.docx$/i, '');
-});
-const projects = computed(() => payload.value?.projects || []);
-
-function normalizeText(text) {
-  return String(text || '').toLowerCase().replace(/\s+/g, '');
-}
-
-function collectProjectKeywords(project) {
-  if (!project) return [];
-  const keywords = new Set();
-  const add = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return;
-    const normalized = normalizeText(raw);
-    if (normalized.length < 2) return;
-    keywords.add(normalized);
-  };
-
-  add(project.project_id);
-  add(project.project_name);
-  add(project.project_meta?.applicant_unit);
-  add(project.project_meta?.guide_name);
-  add(project.project_meta?.project_leader);
-  add(project.project_type);
-
-  (Array.isArray(project.results) ? project.results : []).forEach((item) => {
-    add(item.item);
-    add(item.message);
-    add(item.status);
-    Object.entries(item?.evidence || {}).forEach(([key, value]) => {
-      add(evidenceKeyLabel(key));
-      if (Array.isArray(value)) {
-        value.forEach((entry) => {
-          if (typeof entry === 'object' && entry) {
-            Object.values(entry).forEach(add);
-          } else {
-            add(entry);
-          }
-        });
-      } else if (value && typeof value === 'object') {
-        Object.values(value).forEach(add);
-      } else {
-        add(value);
-      }
-    });
-  });
-
-  (Array.isArray(project.missing_attachments) ? project.missing_attachments : []).forEach((item) => {
-    add(item.doc_label);
-    add(item.doc_kind);
-    add(item.reason);
-  });
-
-  (Array.isArray(project.manual_review_items) ? project.manual_review_items : []).forEach((item) => {
-    add(item.item);
-    add(item.code);
-    add(item.message);
-    add(item.reason);
-  });
-
-  (Array.isArray(project.suggestions) ? project.suggestions : []).forEach(add);
-  add(project.summary);
-  return Array.from(keywords);
-}
-
-function rowMatchesProject(row, keywords) {
-  const text = normalizeText(row?.content || row?.text || row?.requirement || row?.title || '');
-  if (!text || !keywords.length) return false;
-  return keywords.some((keyword) => text.includes(keyword) || keyword.includes(text));
-}
-
-const projectGuidelineTables = computed(() => {
-  if (!selectedProject.value) return [];
-  const keywords = collectProjectKeywords(selectedProject.value);
-  return guidelineTables.value
-    .map((table) => {
-      const rows = Array.isArray(table.rows) ? table.rows.filter((row) => rowMatchesProject(row, keywords)) : [];
-      return rows.length ? { ...table, rows } : null;
-    })
-    .filter(Boolean);
-});
-
-const filteredProjects = computed(() => {
-  const q = String(keyword.value || '').trim().toLowerCase();
-  return projects.value.filter((project) => {
-    const pid = String(project.project_id || '').toLowerCase();
-    const pname = String(project.project_name || '').toLowerCase();
-    return !q || pid.includes(q) || pname.includes(q);
-  });
-});
-
-watch(filteredProjects, (list) => {
-  if (!list.length) {
-    selectedProjectId.value = '';
-    return;
-  }
-  const exists = list.some((p) => p.project_id === selectedProjectId.value);
-  if (!exists) selectedProjectId.value = list[0].project_id;
-}, { immediate: true });
-
-const selectedProject = computed(() => {
-  if (!filteredProjects.value.length) return null;
-  return filteredProjects.value.find((p) => p.project_id === selectedProjectId.value) || filteredProjects.value[0];
-});
-
-function hasAny(row) {
-  return Array.isArray(row) && row.length > 0;
-}
-
-function statusLabel(status) {
-  const s = String(status || '').toLowerCase();
-  if (s === 'passed') return '通过';
-  if (s === 'failed') return '未通过';
-  if (s === 'warning') return '警示';
-  if (s === 'requires_data') return '待补数据';
-  if (s === 'manual') return '人工复核';
-  if (s === 'not_applicable') return '不适用';
-  return s || '-';
-}
-
-function resultStatusClass(status) {
-  const s = String(status || '').toLowerCase();
-  if (s === 'passed') return 'st-passed';
-  if (s === 'failed') return 'st-failed';
-  if (s === 'warning') return 'st-warning';
-  return 'st-default';
-}
-
-function resultStatusLabel(status) {
-  return statusLabel(status);
-}
-
-function projectFieldLabel(fieldKey) {
-  const map = {
-    project_id: '项目编号',
-    project_type: '项目类型',
-    project_name: '项目名称',
-    applicant_unit: '申报单位',
-    execution_period_years: '执行期(年)',
-    year: '年度',
-  };
-  return map[String(fieldKey || '').trim()] || String(fieldKey || '-');
-}
-
-function projectFieldValue(project, fieldKey) {
-  if (!project) return '-';
-  const key = String(fieldKey || '').trim();
-  if (key === 'project_id') return project.project_id || '-';
-  if (key === 'project_type') return zhProjectType(project.project_type);
-  if (key === 'project_name') return project.project_name || '-';
-  if (key === 'applicant_unit') return project.project_meta?.applicant_unit || '-';
-  if (key === 'execution_period_years') return project.project_meta?.execution_period_years ?? '-';
-  if (key === 'year') return project.project_meta?.year || '-';
-  return '-';
-}
-
-function zhProjectType(value) {
-  const v = String(value || '').trim();
-  if (v === 'basic_research') return '基础研究项目';
-  if (v === 'regional_innovation') return '区域科技创新体系项目';
-  return zhText(v || '-');
-}
-
-function evidenceKeyLabel(key) {
-  const map = {
-    required_fields: '必填字段',
-    registered_date: '注册时间',
-    registered_after: '时间阈值',
-    execution_period_years: '执行期(年)',
-    max_execution_period_years: '执行期上限(年)',
-    missing_doc_kinds: '缺失材料',
-    missing_conditional_attachments: '缺失条件材料',
-    pending_review_points: '待补数据/人工复核要点',
-    duplicate_submission_status: '重复申报状态',
-    reason: '原因',
-    requirement: '要点',
-    code: '规则',
-    doc_kind: '材料类型',
-    automation: '处理方式',
-    condition_field: '触发条件字段',
-    condition_value: '触发条件值',
-  };
-  return map[String(key || '').trim()] || String(key || '-');
-}
-
-function formatEvidencePrimitive(key, value) {
-  const k = String(key || '').trim();
-  if (k === 'doc_kind') return zhDocKind(value);
-  if (k === 'automation') return statusLabel(value);
-  if (k === 'code') return zhRule(value);
-  if (k === 'project_type') return zhProjectType(value);
-  if (k === 'condition_value') return String(value) === 'true' ? '是' : (String(value) === 'false' ? '否' : String(value));
-  return zhText(String(value));
-}
-
-function formatEvidenceValue(value, project) {
-  if (value === null || value === undefined || value === '') return '-';
-  return formatEvidenceValueByKey('', value, project);
-}
-
-function formatEvidenceValueByKey(key, value, project) {
-  const k = String(key || '').trim();
-  if (value === null || value === undefined || value === '') return '-';
-  if (Array.isArray(value)) {
-    if (!value.length) return '-';
-    if (k === 'required_fields') {
-      return value
-        .map((item) => {
-          const fieldKey = String(item || '').trim();
-          return `${projectFieldLabel(fieldKey)}：${projectFieldValue(project, fieldKey)}`;
-        })
-        .join('；');
-    }
-    if (k === 'missing_doc_kinds') return value.map((item) => zhDocKind(item)).join('；');
-    return value
-      .map((item) => {
-        if (item === null || item === undefined || item === '') return '';
-        if (typeof item !== 'object') return formatEvidencePrimitive(k, item);
-        return Object.entries(item)
-          .map(([innerKey, innerVal]) => `${evidenceKeyLabel(innerKey)}：${formatEvidenceValueByKey(innerKey, innerVal, project)}`)
-          .join('，');
-      })
-      .filter(Boolean)
-      .join('；');
-  }
-  if (typeof value !== 'object') return formatEvidencePrimitive(k, value);
-
-  const preferredKeys = [
-    'code',
-    'requirement',
-    'reason',
-    'automation',
-    'doc_kind',
-    'item',
-    'message',
-    'registered_date',
-    'registered_after',
-    'execution_period_years',
-    'max_execution_period_years',
-    'duplicate_submission_status',
-    'condition_field',
-    'condition_value',
-  ];
-  const entries = [];
-  preferredKeys.forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(value, key)) {
-      entries.push(`${evidenceKeyLabel(key)}：${formatEvidenceValueByKey(key, value[key], project)}`);
-    }
-  });
-  Object.entries(value).forEach(([key, val]) => {
-    if (preferredKeys.includes(key)) return;
-    entries.push(`${evidenceKeyLabel(key)}：${formatEvidenceValueByKey(key, val, project)}`);
-  });
-  return entries.length ? entries.join('；') : JSON.stringify(value);
-}
-
-function evidenceRows(evidence, project) {
-  const source = evidence && typeof evidence === 'object' ? evidence : null;
-  if (!source || !Object.keys(source).length) return [];
-
-  const preferredKeys = [
-    'required_fields',
-    'missing_doc_kinds',
-    'missing_conditional_attachments',
-    'pending_review_points',
-    'registered_date',
-    'registered_after',
-    'execution_period_years',
-    'max_execution_period_years',
-    'duplicate_submission_status',
-    'condition_field',
-    'condition_value',
-    'automation',
-    'reason',
-    'requirement',
-    'code',
-    'doc_kind',
-  ];
-
-  const orderedKeys = [
-    ...preferredKeys.filter((key) => Object.prototype.hasOwnProperty.call(source, key)),
-    ...Object.keys(source).filter((key) => !preferredKeys.includes(key)),
-  ];
-
-  return orderedKeys.map((key) => ({
-    key,
-    label: evidenceKeyLabel(key),
-    value: formatEvidenceValueByKey(key, source[key], project),
+function normalizeEvidenceTargets(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((target, idx) => ({
+    target_id: String(target?.target_id || `target_${idx + 1}`),
+    tab_label: String(target?.tab_label || target?.label || `证据 ${idx + 1}`),
+    source_file: String(target?.source_file || '-'),
+    location_label: String(target?.location_label || target?.position || '规则说明'),
+    clip: String(target?.clip || target?.text || target?.summary || ''),
+    open_uri: String(target?.open_uri || ''),
+    preview_uri: String(target?.preview_uri || ''),
+    preview_mode: String(target?.preview_mode || 'none'),
+    viewer_mode: String(target?.viewer_mode || 'explanation'),
+    anchor_id: String(target?.anchor_id || ''),
+    packet_uri: String(target?.packet_uri || ''),
+    packet_page: Number(target?.packet_page || 0),
+    highlight_mode: String(target?.highlight_mode || 'none'),
+    highlight_text: String(target?.highlight_text || ''),
+    highlight_rects: Array.isArray(target?.highlight_rects) ? target.highlight_rects : [],
   }));
 }
 
-function structuredEvidenceSections(evidence, project) {
-  const source = evidence && typeof evidence === 'object' ? evidence : null;
-  if (!source) return [];
-  const sections = [];
-
-  const requiredFields = Array.isArray(source.required_fields) ? source.required_fields : [];
-  if (requiredFields.length) {
-    sections.push({
-      key: 'required_fields',
-      title: '必填字段',
-      items: requiredFields.map((fieldKey, idx) => ({
-        key: `required_${idx}`,
-        title: projectFieldLabel(fieldKey),
-        lines: [String(projectFieldValue(project, fieldKey) ?? '-')],
-      })),
-    });
-  }
-
-  const missingDocKinds = Array.isArray(source.missing_doc_kinds) ? source.missing_doc_kinds : [];
-  if (missingDocKinds.length) {
-    sections.push({
-      key: 'missing_doc_kinds',
-      title: '缺失材料',
-      items: missingDocKinds.map((kind, idx) => ({
-        key: `missing_doc_${idx}`,
-        title: zhDocKind(kind),
-        lines: [],
-      })),
-    });
-  }
-
-  const missingConditional = Array.isArray(source.missing_conditional_attachments) ? source.missing_conditional_attachments : [];
-  if (missingConditional.length) {
-    sections.push({
-      key: 'missing_conditional_attachments',
-      title: '缺失条件材料',
-      items: missingConditional.map((item, idx) => ({
-        key: `missing_conditional_${idx}`,
-        title: zhDocKind(item?.doc_kind),
-        lines: [
-          `原因：${zhText(item?.reason || '-')}`,
-        ],
-      })),
-    });
-  }
-
-  const pendingPoints = Array.isArray(source.pending_review_points) ? source.pending_review_points : [];
-  if (pendingPoints.length) {
-    sections.push({
-      key: 'pending_review_points',
-      title: '待补数据/人工复核要点',
-      items: pendingPoints.map((item, idx) => ({
-        key: `pending_${idx}`,
-        title: zhRule(item?.code),
-        lines: [
-          `要点：${zhText(item?.requirement || '-')}`,
-          `处理方式：${statusLabel(item?.automation)}`,
-          `原因：${zhText(item?.reason || '-')}`,
-        ],
-      })),
-    });
-  }
-
-  return sections;
+function buildRuleItemFromCheck(check, index) {
+  const status = String(check?.status || '').toLowerCase() || 'not_applicable';
+  const code = String(check?.code || '').trim();
+  const title = String(check?.label || code || `规则 ${index + 1}`);
+  const requirement = String(check?.requirement || check?.summary || '').trim();
+  const summary = String(check?.reason || check?.summary || '').trim() || '无';
+  return {
+    id: `policy:${code || index + 1}`,
+    title,
+    requirement,
+    status,
+    status_label: STATUS_LABELS[status] || status,
+    source_rule_label: title,
+    summary,
+    group: status,
+    evidence_targets: normalizeEvidenceTargets(check?.evidence_targets),
+  };
 }
 
-function evidenceRowsForDisplay(evidence, project) {
-  const rows = evidenceRows(evidence, project);
-  const hiddenKeys = [
-    'required_fields',
-    'missing_doc_kinds',
-    'missing_conditional_attachments',
-    'pending_review_points',
-  ];
-  const shouldHide = hiddenKeys.filter((key) => Array.isArray(evidence?.[key]) && evidence[key].length > 0);
-  if (!shouldHide.length) return rows;
-  return rows.filter((row) => !shouldHide.includes(row.key));
+function normalizeProject(project) {
+  if (Array.isArray(project?.policy_sections)) {
+    return {
+      ...project,
+      project_type_label: project.project_type_label || PROJECT_TYPE_LABELS[String(project.project_type || '')] || String(project.project_type || ''),
+      counts: project.counts || project.status_counts || {},
+      extra_sections: Array.isArray(project.extra_sections) ? project.extra_sections : [],
+    };
+  }
+
+  const checks = Array.isArray(project?.policy_rule_checks) ? project.policy_rule_checks : [];
+  const checkItems = checks.map(buildRuleItemFromCheck);
+
+  const missingItems = (project?.missing_attachments || []).map((item, idx) => ({
+    id: `missing:${idx + 1}`,
+    title: `缺失附件：${String(item?.doc_label || item?.doc_kind || `附件${idx + 1}`)}`,
+    requirement: String(item?.reason || '未提交必需附件'),
+    status: 'failed',
+    status_label: STATUS_LABELS.failed,
+    source_rule_label: '缺失附件检查',
+    summary: String(item?.reason || '缺失附件'),
+    group: 'failed',
+    evidence_targets: [],
+  }));
+
+  const manualItems = (project?.manual_review_items || []).map((item, idx) => ({
+    id: `manual:${String(item?.code || idx + 1)}`,
+    title: String(item?.label || item?.code || `人工复核 ${idx + 1}`),
+    requirement: String(item?.message || item?.reason || '需人工复核'),
+    status: 'manual',
+    status_label: STATUS_LABELS.manual,
+    source_rule_label: String(item?.automation || '人工复核'),
+    summary: String(item?.reason || item?.message || '需人工复核'),
+    group: 'manual',
+    evidence_targets: [],
+  }));
+
+  const groupsOrder = ['failed', 'warning', 'manual', 'requires_data', 'passed', 'not_applicable', 'system_managed', 'skipped'];
+  const grouped = groupsOrder
+    .map((status) => ({
+      status,
+      label: STATUS_LABELS[status] || status,
+      items: checkItems.filter((x) => x.status === status),
+      folded: status === 'not_applicable' || status === 'system_managed' || status === 'skipped',
+    }))
+    .filter((g) => g.items.length > 0);
+
+  const extraGroups = [];
+  if (missingItems.length) {
+    extraGroups.push({ status: 'failed', label: STATUS_LABELS.failed, items: missingItems, folded: false });
+  }
+  if (manualItems.length) {
+    extraGroups.push({ status: 'manual', label: STATUS_LABELS.manual, items: manualItems, folded: false });
+  }
+
+  const statusCounts = project?.status_counts || {};
+  const failedCount = Number(statusCounts.failed || 0) + missingItems.length;
+  const manualCount = Number(statusCounts.manual || 0) + manualItems.length;
+
+  return {
+    ...project,
+    project_type_label: project.project_type_label || PROJECT_TYPE_LABELS[String(project.project_type || '')] || String(project.project_type || ''),
+    counts: {
+      failed: failedCount,
+      manual: manualCount,
+      passed: Number(statusCounts.passed || 0),
+      warning: Number(statusCounts.warning || 0),
+      skipped: Number(statusCounts.skipped || 0),
+    },
+    policy_sections: [{ title: '形式审查要点对照', groups: grouped }],
+    extra_sections: extraGroups.length ? [{ title: '额外检查项', groups: extraGroups }] : [],
+  };
 }
 
-function groupedResults(project) {
-  const rows = Array.isArray(project?.results) ? project.results : [];
-  const groups = [
-    { key: 'passed', title: '通过', items: [] },
-    { key: 'warning', title: '警示', items: [] },
-    { key: 'failed', title: '未通过', items: [] },
-  ];
-  rows.forEach((item) => {
-    const status = String(item?.status || '').toLowerCase();
-    const target = groups.find((group) => group.key === status);
-    if (target) target.items.push(item);
+const projects = computed(() => {
+  const list = Array.isArray(reportData.value?.projects) ? reportData.value.projects : [];
+  return list.map(normalizeProject);
+});
+
+const reportAssetsBase = computed(() => String(payload.value?.reportAssetsBase || '').trim().replace(/\/+$/, ''));
+
+function resolveAssetUri(uri) {
+  const raw = String(uri || '').trim();
+  if (!raw) return '';
+  if (/^(https?:|file:|data:|blob:)/i.test(raw)) return raw;
+  if (raw.startsWith('/')) return raw;
+  if (reportAssetsBase.value) {
+    return `${reportAssetsBase.value}/${raw.replace(/^\/+/, '')}`;
+  }
+  return raw;
+}
+
+const attentionCount = computed(() => {
+  return projects.value.filter((p) => Number(p?.counts?.failed || 0) > 0 || Number(p?.counts?.manual || 0) > 0).length;
+});
+
+const batchLabel = computed(() => {
+  const fileName = String(payload.value?.guideline?.file_name || '').trim();
+  if (fileName) return fileName.replace(/\.docx$/i, '');
+  return 'batch_review_db832d940a2843e6b3c33970336d0e9e';
+});
+
+const batchNote = computed(() => {
+  const p = projects.value[state.projectIndex];
+  return String(p?.summary || '存在附件类型识别不确定的项目，建议优先人工复核材料类型');
+});
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function statusBadge(status, label) {
+  const safeStatus = String(status || 'not_applicable');
+  const safeLabel = String(label || safeStatus);
+  return `<span class="badge status-${escapeHtml(safeStatus)}">${escapeHtml(safeLabel)}</span>`;
+}
+
+function initializeState() {
+  if (!projects.value.length) {
+    state.projectIndex = 0;
+    state.ruleId = '';
+    state.evidenceIndex = 0;
+    return;
+  }
+  state.projectIndex = Math.max(0, Math.min(state.projectIndex, projects.value.length - 1));
+  const project = projects.value[state.projectIndex];
+  state.ruleId = findPreferredRuleId(project) || project.default_rule_id || findFirstRuleId(project) || '';
+  state.evidenceIndex = 0;
+}
+
+function findFirstRuleId(project) {
+  const sections = [...(project?.policy_sections || []), ...(project?.extra_sections || [])];
+  for (const section of sections) {
+    for (const group of (section.groups || [])) {
+      if (group.items && group.items.length) {
+        return group.items[0].id;
+      }
+    }
+  }
+  return '';
+}
+
+function hasNavigableEvidence(item) {
+  const targets = item?.evidence_targets || [];
+  return targets.some((target) => Number(target?.packet_page || 0) > 0);
+}
+
+function findPreferredRuleId(project) {
+  const sections = [...(project?.policy_sections || []), ...(project?.extra_sections || [])];
+  for (const preferredStatus of ['failed', 'manual', 'passed']) {
+    for (const section of sections) {
+      for (const group of (section.groups || [])) {
+        for (const item of (group.items || [])) {
+          if (String(item.status || '') === preferredStatus && hasNavigableEvidence(item)) {
+            return item.id;
+          }
+        }
+      }
+    }
+  }
+  for (const section of sections) {
+    for (const group of (section.groups || [])) {
+      for (const item of (group.items || [])) {
+        if (hasNavigableEvidence(item)) return item.id;
+      }
+    }
+  }
+  return '';
+}
+
+function selectProject(index) {
+  state.projectIndex = index;
+  const project = projects.value[index];
+  state.ruleId = findPreferredRuleId(project) || project.default_rule_id || findFirstRuleId(project) || '';
+  state.evidenceIndex = 0;
+  renderAll();
+}
+
+function selectRule(ruleId, cycleEvidence = true) {
+  const project = projects.value[state.projectIndex];
+  if (state.ruleId === ruleId) {
+    if (cycleEvidence && project) {
+      const rule = getActiveRule(project);
+      if (rule) {
+        const navTargets = (rule.evidence_targets || []).filter(t => Number(t?.packet_page || 0) > 0);
+        if (navTargets.length > 1) {
+          const currentTarget = (rule.evidence_targets || [])[state.evidenceIndex];
+          let navIdx = navTargets.indexOf(currentTarget);
+          navIdx = (navIdx + 1) % navTargets.length;
+          state.evidenceIndex = (rule.evidence_targets || []).indexOf(navTargets[navIdx]);
+        }
+      }
+    }
+  } else {
+    state.ruleId = ruleId;
+    state.evidenceIndex = 0;
+    if (project) {
+      const rule = [...(project?.policy_sections||[]), ...(project?.extra_sections||[])]
+        .flatMap(s => s.groups||[])
+        .flatMap(g => g.items||[])
+        .find(i => i.id === ruleId);
+      if (rule) {
+        const firstNav = (rule.evidence_targets || []).findIndex(t => Number(t?.packet_page || 0) > 0);
+        if (firstNav >= 0) {
+          state.evidenceIndex = firstNav;
+        }
+      }
+    }
+  }
+  renderRulesPanel();
+  renderPdfPanel();
+}
+
+function renderProjectList() {
+  const container = document.getElementById('projectList');
+  if (!container) return;
+  if (!projects.value.length) {
+    container.innerHTML = '<div class="empty">无项目结果</div>';
+    return;
+  }
+  container.innerHTML = projects.value.map((project, index) => `
+    <button class="project-item ${index === state.projectIndex ? 'active' : ''}" data-project-index="${index}">
+      <div class="project-item-title">${escapeHtml(project.project_name || project.project_id)}</div>
+      <div class="project-item-meta">${escapeHtml(project.project_id)} · ${escapeHtml(project.project_type_label || project.project_type)}</div>
+      <div class="project-item-stats">
+        ${statusBadge('failed', `失败 ${Number(project?.counts?.failed || 0)}`)}
+        ${statusBadge('manual', `需人工 ${Number(project?.counts?.manual || 0)}`)}
+      </div>
+    </button>
+  `).join('');
+
+  container.querySelectorAll('.project-item').forEach((node) => {
+    node.addEventListener('click', () => {
+      const index = Number(node.dataset.projectIndex || 0);
+      selectProject(index);
+    });
   });
-  return groups;
 }
 
-function resultGroupClass(key) {
-  const k = String(key || '').toLowerCase();
-  if (k === 'passed') return 'group-pass';
-  if (k === 'warning') return 'group-warn';
-  if (k === 'failed') return 'group-fail';
-  return 'group-default';
+function getActiveRule(project) {
+  const sections = [...(project?.policy_sections || []), ...(project?.extra_sections || [])];
+  for (const section of sections) {
+    for (const group of (section.groups || [])) {
+      const item = (group.items || []).find((entry) => entry.id === state.ruleId);
+      if (item) return item;
+    }
+  }
+  return null;
 }
 
-function zhRule(code) {
-  const map = {
-    registered_date_limit: '注册时间',
-    funding_ratio_check: '财政/自筹比例',
-    external_status_check: '科研/社会失信',
-    ethics_approval_required: '伦理审查意见',
-    industry_permit_required: '行业准入许可',
-    biosafety_commitment_required: '生物安全承诺',
-    commitment_letter_required: '承诺书',
-    cooperation_agreement_required: '合作协议',
-    cooperation_region_check: '合作地区',
-    recommendation_letter_required: '管理部门推荐函',
-    execution_period_limit: '执行期限',
-    duplicate_submission_check: '重复/多头申报',
-    other_policy_compliance: '其他政策条款',
-  };
-  return map[String(code || '').trim()] || '审查要点';
+function renderSections(sections, fallbackTitle) {
+  if (!sections || !sections.length) {
+    return `<section class="result-section"><div class="section-head"><div class="section-head-title">${escapeHtml(fallbackTitle)}</div></div><div class="empty">无</div></section>`;
+  }
+  return sections.map((section) => `
+    <section class="result-section">
+      <div class="section-head">
+        <div class="section-head-title">${escapeHtml(section.title)}</div>
+      </div>
+      <div class="section-subgroups">
+        ${renderGroups((section.groups || []).filter((group) => !group.folded))}
+        ${renderFoldedGroups((section.groups || []).filter((group) => group.folded))}
+      </div>
+    </section>
+  `).join('');
 }
 
-function zhDocKind(kind) {
-  const map = {
-    commitment_letter: '承诺书',
-    ethics_approval: '伦理审查意见',
-    biosafety_commitment: '生物安全承诺书',
-    cooperation_agreement: '合作协议',
-    recommendation_letter: '管理部门推荐函',
-    industry_permit: '行业准入许可材料',
-  };
-  return map[String(kind || '').trim()] || '附件材料';
+function renderGroups(groups) {
+  if (!groups.length) return '<div class="empty">无</div>';
+  return groups.map((group) => `
+    <section class="status-group">
+      <div class="status-group-head">
+        ${statusBadge(group.status, group.label)}
+        <span class="status-group-count">${(group.items || []).length} 项</span>
+      </div>
+      <div class="rule-list">
+        ${(group.items || []).map((item) => renderRuleCard(item)).join('')}
+      </div>
+    </section>
+  `).join('');
 }
 
-function zhText(text) {
-  let out = String(text || '');
-  const tokenMap = {
-    commitment_letter: '承诺书',
-    ethics_approval: '伦理审查意见',
-    biosafety_commitment: '生物安全承诺书',
-    cooperation_agreement: '合作协议',
-    recommendation_letter: '管理部门推荐函',
-    industry_permit: '行业准入许可材料',
-    regional_innovation: '区域科技创新体系项目',
-    basic_research: '基础研究项目',
-    warning: '警示',
-    failed: '未通过',
-    passed: '通过',
-  };
-  Object.entries(tokenMap).forEach(([en, zh]) => {
-    out = out.replaceAll(en, zh);
+function renderFoldedGroups(groups) {
+  if (!groups.length) return '';
+  const total = groups.reduce((sum, group) => sum + (group.items || []).length, 0);
+  return `
+    <details class="folded-toggle">
+      <summary>系统前置限制 / 不适用（${total} 项）</summary>
+      <div class="folded-body">${renderGroups(groups)}</div>
+    </details>
+  `;
+}
+
+function renderRuleCard(item) {
+  const navigableTargets = (item?.evidence_targets || []).filter(t => Number(t?.packet_page || 0) > 0);
+  const evidenceCount = navigableTargets.length;
+  const isSelected = item.id === state.ruleId;
+  
+  let evidenceHtml = '<div>无可跳转证据</div>';
+  if (evidenceCount > 0) {
+    if (evidenceCount === 1) {
+      evidenceHtml = `<div class="evidence-locator">1 个命中</div>`;
+    } else {
+      let currentNavIndex = 0;
+      if (isSelected) {
+        const currentTarget = (item.evidence_targets || [])[state.evidenceIndex];
+        currentNavIndex = navigableTargets.indexOf(currentTarget);
+        if (currentNavIndex === -1) currentNavIndex = 0;
+      }
+      const text = isSelected ? `${evidenceCount} 个命中 (第 ${currentNavIndex + 1} 个)` : `${evidenceCount} 个命中`;
+      evidenceHtml = `<div class="evidence-locator">${text}</div>`;
+    }
+  }
+
+  return `
+    <button class="rule-card ${isSelected ? 'active' : ''}" data-rule-id="${escapeHtml(item.id)}">
+      <div class="rule-card-top">
+        <div class="rule-card-title">${escapeHtml(item.title)}</div>
+        <div>${statusBadge(item.status, item.status_label)}</div>
+      </div>
+      <div class="rule-card-requirement">${escapeHtml(item.requirement || item.summary)}</div>
+      <div class="rule-card-meta">
+        <div class="rule-card-meta-label">核验来源</div><div>${escapeHtml(item.source_rule_label || '-')}</div>
+        <div class="rule-card-meta-label">结果说明</div><div>${escapeHtml(item.summary || '-')}</div>
+        <div class="rule-card-meta-label">证据定位</div>${evidenceHtml}
+      </div>
+    </button>
+  `;
+}
+
+function renderRulesPanel() {
+  const panel = document.getElementById('rulesPanel');
+  if (!panel) return;
+  const project = projects.value[state.projectIndex];
+  if (!project) {
+    panel.innerHTML = '<div class="empty">无项目</div>';
+    return;
+  }
+  panel.innerHTML = `
+    <div class="panel-head">
+      <h2>${escapeHtml(project.project_name || project.project_id)}</h2>
+      <div class="project-summary">${escapeHtml(project.project_type_label || project.project_type)} · ${statusBadge('failed', `失败 ${Number(project?.counts?.failed || 0)}`)} ${statusBadge('manual', `需人工 ${Number(project?.counts?.manual || 0)}`)}</div>
+    </div>
+    <div class="result-sections">
+      ${renderSections(project.policy_sections || [], '审查要点对照')}
+      ${renderSections(project.extra_sections || [], '额外检查项')}
+    </div>
+  `;
+
+  panel.querySelectorAll('.rule-card').forEach((node) => {
+    node.addEventListener('click', (e) => {
+      const isLocator = !!e.target.closest('.evidence-locator');
+      selectRule(String(node.dataset.ruleId || ''), isLocator);
+    });
   });
-  return out;
 }
 
+function ensurePdfShell() {
+  const viewer = document.getElementById('pdfPanel');
+  if (!viewer) return null;
+  if (!viewer.dataset.initialized) {
+    viewer.innerHTML = `
+      <div class="pdf-only">
+        <div class="pdf-toast" id="pdfToast"></div>
+        <div class="viewer-preview hidden" id="viewerPreview">
+          <iframe class="packet-frame" id="packetFrame" title="review packet viewer"></iframe>
+        </div>
+        <div class="viewer-fallback" id="viewerFallback">选择一条规则后，在这里查看对应材料。</div>
+      </div>
+    `;
+    viewer.dataset.initialized = '1';
+  }
+  return viewer;
+}
+
+function showPdfToast(message) {
+  const toast = document.getElementById('pdfToast');
+  if (!toast) return;
+  if (toast.dataset.timerId) clearTimeout(Number(toast.dataset.timerId));
+  toast.textContent = String(message || '');
+  toast.classList.add('show');
+  const timerId = window.setTimeout(() => {
+    toast.classList.remove('show');
+    toast.textContent = '';
+    toast.dataset.timerId = '';
+  }, 1800);
+  toast.dataset.timerId = String(timerId);
+}
+
+function buildViewerPayload(target, packetPage) {
+  return {
+    type: 'gotoPacketTarget',
+    page: Number(packetPage || 0),
+    location_label: String(target.location_label || ''),
+    highlight_mode: String(target.highlight_mode || 'none'),
+    highlight_text: String(target.highlight_text || target.clip || ''),
+    highlight_rects: Array.isArray(target.highlight_rects) ? target.highlight_rects : [],
+  };
+}
+
+function postViewerPayload(frame, payload) {
+  const pageNumber = Number(payload?.page || 0);
+  if (!frame || !pageNumber) return;
+  const send = () => {
+    try {
+      frame.contentWindow?.postMessage(payload, '*');
+    } catch {}
+  };
+  window.setTimeout(send, 0);
+  window.setTimeout(send, 120);
+  window.setTimeout(send, 320);
+}
+
+function setViewerPacket(viewerUri, payload) {
+  const frame = document.getElementById('packetFrame');
+  if (!frame) return;
+  const nextUri = String(viewerUri || '');
+  const pageNumber = Number(payload?.page || 0);
+
+  if (!nextUri) {
+    frame.removeAttribute('src');
+    frame.dataset.viewerUri = '';
+    frame.dataset.pendingPayload = '';
+    return;
+  }
+
+  if (frame.dataset.viewerUri !== nextUri) {
+    frame.dataset.viewerUri = nextUri;
+    frame.dataset.pendingPayload = JSON.stringify(payload || {});
+    frame.onload = () => {
+      const pending = frame.dataset.pendingPayload ? JSON.parse(frame.dataset.pendingPayload) : null;
+      if (pending && Number(pending.page || 0) > 0) postViewerPayload(frame, pending);
+    };
+    frame.src = nextUri;
+    return;
+  }
+
+  if (pageNumber > 0) {
+    frame.dataset.pendingPayload = JSON.stringify(payload || {});
+    postViewerPayload(frame, payload);
+  }
+}
+
+function renderEvidenceTarget(target, project) {
+  const packet = project.packet || {};
+  const packetPage = target.packet_page ? Number(target.packet_page) : 0;
+  const viewerUri = resolveAssetUri(packet.viewer_file ? String(packet.viewer_file) : '');
+  const previewNode = document.getElementById('viewerPreview');
+  const fallbackNode = document.getElementById('viewerFallback');
+  renderPreview(target, viewerUri, buildViewerPayload(target, packetPage), previewNode, fallbackNode);
+}
+
+function renderPreview(target, viewerUri, viewerPayload, previewNode, fallbackNode) {
+  if (viewerUri && Number(viewerPayload?.page || 0) > 0) {
+    if (previewNode) previewNode.classList.remove('hidden');
+    if (fallbackNode) fallbackNode.classList.add('hidden');
+    setViewerPacket(viewerUri, viewerPayload);
+    return;
+  }
+  if (!fallbackNode) return;
+
+  if (String(target.viewer_mode || '') === 'explanation') {
+    const hasOpenPacket = Boolean(document.getElementById('packetFrame')?.dataset.viewerUri);
+    if (hasOpenPacket) {
+      if (previewNode) previewNode.classList.remove('hidden');
+      fallbackNode.classList.add('hidden');
+      showPdfToast('这条规则没有对应的可定位原文页面。');
+      return;
+    }
+    if (previewNode) previewNode.classList.add('hidden');
+    setViewerPacket('', null);
+    fallbackNode.textContent = '这条规则没有对应的可定位原文页面。';
+    fallbackNode.classList.remove('hidden');
+    return;
+  }
+
+  if (target.open_uri) {
+    if (previewNode) previewNode.classList.add('hidden');
+    setViewerPacket('', null);
+    fallbackNode.textContent = '当前材料暂不可在右侧预览。';
+    fallbackNode.classList.remove('hidden');
+    return;
+  }
+
+  if (previewNode && document.getElementById('packetFrame')?.dataset.viewerUri) {
+    previewNode.classList.remove('hidden');
+    fallbackNode.classList.add('hidden');
+    return;
+  }
+
+  if (previewNode) previewNode.classList.add('hidden');
+  setViewerPacket('', null);
+  fallbackNode.textContent = '当前证据没有可用预览资产。';
+  fallbackNode.classList.remove('hidden');
+}
+
+function renderPdfPanel() {
+  const project = projects.value[state.projectIndex];
+  const viewer = ensurePdfShell();
+  if (!project) {
+    if (viewer) {
+      viewer.innerHTML = '<div class="viewer-empty">无项目。</div>';
+      delete viewer.dataset.initialized;
+    }
+    return;
+  }
+
+  const previewNode = document.getElementById('viewerPreview');
+  const fallbackNode = document.getElementById('viewerFallback');
+  const rule = getActiveRule(project);
+  const packet = project.packet || {};
+
+  if (!rule) {
+    if (previewNode) previewNode.classList.add('hidden');
+    if (fallbackNode) {
+      fallbackNode.textContent = '选择一条规则后，在这里查看对应材料。';
+      fallbackNode.classList.remove('hidden');
+    }
+    const viewerUri = resolveAssetUri(packet.viewer_file ? String(packet.viewer_file) : '');
+    const defaultPage = Number(packet.default_page || 1);
+    if (viewerUri && defaultPage > 0) {
+      if (previewNode) previewNode.classList.remove('hidden');
+      if (fallbackNode) fallbackNode.classList.add('hidden');
+      setViewerPacket(viewerUri, {
+        type: 'gotoPacketTarget',
+        page: defaultPage,
+        location_label: '项目材料',
+        highlight_mode: 'none',
+        highlight_text: '',
+        highlight_rects: [],
+      });
+      return;
+    }
+    setViewerPacket('', null);
+    return;
+  }
+
+  const targets = rule.evidence_targets || [];
+  const activeIndex = Math.max(0, Math.min(state.evidenceIndex, targets.length - 1));
+  const target = targets[activeIndex] || null;
+  if (!target) {
+    const viewerUri = resolveAssetUri(packet.viewer_file ? String(packet.viewer_file) : '');
+    const defaultPage = Number(packet.default_page || 1);
+    if (viewerUri && defaultPage > 0) {
+      if (previewNode) previewNode.classList.remove('hidden');
+      if (fallbackNode) fallbackNode.classList.add('hidden');
+      setViewerPacket(viewerUri, {
+        type: 'gotoPacketTarget',
+        page: defaultPage,
+        location_label: '项目材料',
+        highlight_mode: 'none',
+        highlight_text: '',
+        highlight_rects: [],
+      });
+      showPdfToast('当前规则暂无可定位材料，已切到该项目材料首页。');
+    } else {
+      if (previewNode) previewNode.classList.add('hidden');
+      if (fallbackNode) {
+        fallbackNode.textContent = '当前规则暂无可定位材料。';
+        fallbackNode.classList.remove('hidden');
+      }
+      setViewerPacket('', null);
+    }
+    return;
+  }
+
+  renderEvidenceTarget(target, project);
+}
+
+function renderAll() {
+  renderProjectList();
+  renderRulesPanel();
+  renderPdfPanel();
+}
+
+watch(projects, async () => {
+  initializeState();
+  if (!loading.value && !errorText.value) {
+    await nextTick();
+    renderAll();
+  }
+});
+
+watch(loading, async (isLoading) => {
+  if (!isLoading && !errorText.value) {
+    await nextTick();
+    renderAll();
+  }
+});
+
+onMounted(() => {
+  loadDebugBatch();
+});
 </script>
 
 <template>
-  <div class="content-scroll review-debug-page">
-    <section class="panel-shell panel-shell-stretch review-debug-shell">
-      <div v-if="loading" class="state-block">正在加载小批量测试结果...</div>
-      <div v-else-if="errorText" class="state-block state-error">{{ errorText }}</div>
+  <div class="content-scroll">
+    <div v-if="loading" class="page-loading">正在加载批次审查结果...</div>
+    <div v-else-if="errorText" class="page-loading page-error">{{ errorText }}</div>
 
-      <div v-else class="review-layout">
-        <div class="top-filter-bar">
-          <div class="top-filter-title">形式审查结果</div>
-          <input
-            v-model="keyword"
-            class="search-input"
-            placeholder="按项目编号/名称过滤"
-          >
-          <select v-model="selectedProjectId" class="project-select-dropdown">
-            <option
-              v-for="project in filteredProjects"
-              :key="project.project_id"
-              :value="project.project_id"
-            >
-              {{ project.project_name || '未命名项目' }}（{{ project.project_id }}）
-            </option>
-          </select>
+    <div v-else class="page">
+      <section class="hero">
+        <div class="hero-main">
+          <h1>批次审查工作台</h1>
+          <div class="hero-meta">
+            <p>批次：<span class="mono">{{ batchLabel }}</span></p>
+          </div>
         </div>
-
-        <div class="split-grid split-grid-2">
-
-          <section class="middle-pane">
-            <div class="pane-title">{{ guidelineTitle }} </div>
-            <div v-if="selectedProject" class="middle-subtitle">{{ selectedProject.project_name || selectedProject.project_id }}</div>
-            <div v-if="hasAny(projectGuidelineTables)" class="middle-clause-list">
-              <article v-for="(table, idx) in projectGuidelineTables" :key="`${table.table_index}_${idx}`" class="middle-clause-card">
-                <div class="middle-clause-head">
-                  <span class="middle-table-tag">{{ table.title || '未命名表格' }}</span>
-                  <span class="middle-seq">第 {{ table.table_index }} 表</span>
-                </div>
-                <div v-if="hasAny(table.rows)" class="table-row-list">
-                  <div v-for="(row, rowIdx) in table.rows" :key="`${table.table_index}_${row.seq}_${rowIdx}`" class="table-row-item">
-                    <span class="table-row-seq">{{ row.seq || '—' }}</span>
-                    <span class="table-row-content">{{ row.content || '-' }}</span>
-                  </div>
-                </div>
-                <div v-else class="sub-empty">该表暂无内容</div>
-              </article>
-            </div>
-            <div v-else class="sub-empty">当前项目未命中文档表格内容</div>
-          </section>
-
-          <section class="right-pane">
-            <div class="pane-title">项目审查详情</div>
-            <article v-if="selectedProject" class="project-card project-card-full">
-            <div class="project-top">
-              <div class="project-id">{{ selectedProject.project_id }}</div>
-              <div class="project-name">{{ selectedProject.project_name || '未命名项目' }}</div>
-            </div>
-
-            <div v-if="selectedProject.summary" class="project-summary">{{ selectedProject.summary }}</div>
-
-            <div class="meta-grid">
-              <div class="meta-item"><span>年度</span><strong>{{ selectedProject.project_meta?.year || '-' }}</strong></div>
-              <div class="meta-item"><span>指南</span><strong>{{ selectedProject.project_meta?.guide_name || '-' }}</strong></div>
-              <div class="meta-item"><span>申报单位</span><strong>{{ selectedProject.project_meta?.applicant_unit || '-' }}</strong></div>
-              <div class="meta-item"><span>负责人</span><strong>{{ selectedProject.project_meta?.project_leader || '-' }}</strong></div>
-            </div>
-
-            <div class="section-title">结果明细</div>
-            <div v-if="hasAny(selectedProject.results)" class="overview-stack">
-              <section v-for="section in groupedResults(selectedProject)" :key="section.key" class="overview-block" :class="resultGroupClass(section.key)">
-                <div class="overview-head">
-                  <span>{{ section.title }}</span>
-                  <span class="overview-count">{{ section.items.length }}</span>
-                </div>
-                <div v-if="hasAny(section.items)" class="result-list">
-                  <details v-for="(item, idx) in section.items" :key="`${selectedProject.project_id}_result_${section.key}_${item.item}_${idx}`" class="accordion-card result-row">
-                    <summary class="accordion-summary">
-                      <div class="accordion-summary-main">
-                        <span class="result-item">{{ zhText(item.message || item.item) }}</span>
-                        <span class="accordion-summary-sub">{{ zhRule(item.item) }}</span>
-                      </div>
-                    </summary>
-                    <div class="accordion-body">
-                      <div v-if="item.evidence && structuredEvidenceSections(item.evidence, selectedProject).length" class="review-point-grid">
-                        <div v-for="section in structuredEvidenceSections(item.evidence, selectedProject)" :key="section.key" class="review-section-card">
-                          <div class="review-section-title">{{ section.title }}</div>
-                          <div class="review-section-items">
-                            <div v-for="entry in section.items" :key="entry.key" class="review-point-card">
-                              <div class="review-point-head">{{ entry.title }}</div>
-                              <div v-for="(line, lineIdx) in entry.lines" :key="`${entry.key}_${lineIdx}`" class="review-point-line">{{ line }}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div class="result-desc" v-if="item.evidence && Object.keys(item.evidence).length">
-                        <div v-for="entry in evidenceRowsForDisplay(item.evidence, selectedProject)" :key="entry.key" class="result-evidence">
-                          <span class="result-evidence-label">{{ entry.label }}</span>
-                          <span class="result-evidence-value">{{ entry.value }}</span>
-                        </div>
-                      </div>
-                      <div v-else class="sub-empty">暂无详细证据</div>
-                    </div>
-                  </details>
-                </div>
-                <div v-else class="sub-empty">该状态无结果项</div>
-              </section>
-            </div>
-            <div v-else class="sub-empty">当前无结果明细</div>
-
-            <div class="section-title">缺失附件</div>
-            <div v-if="hasAny(selectedProject.missing_attachments)" class="manual-list">
-              <div v-for="item in selectedProject.missing_attachments" :key="`${selectedProject.project_id}_${item.doc_kind}`" class="manual-row">
-                <div class="manual-head">{{ zhText(item.doc_label || zhDocKind(item.doc_kind)) }}</div>
-                <div class="manual-desc manual-desc-strong">缺失原因：{{ zhText(item.reason) || '-' }}</div>
-              </div>
-            </div>
-            <div v-else class="sub-empty">未发现缺失附件</div>
-
-            <div class="section-title">人工复核项</div>
-            <div v-if="hasAny(selectedProject.manual_review_items)" class="manual-list">
-              <div v-for="item in selectedProject.manual_review_items" :key="`${selectedProject.project_id}_${item.code}`" class="manual-row">
-                <div class="manual-head">{{ zhText(item.message) || zhRule(item.code) }}</div>
-                <div class="manual-desc manual-desc-strong">复核原因：{{ zhText(item.reason) || '-' }}</div>
-              </div>
-            </div>
-            <div v-else class="sub-empty">无人工复核项</div>
-
-            <div class="section-title">建议</div>
-            <div v-if="hasAny(selectedProject.suggestions)" class="manual-list">
-              <div v-for="(item, idx) in selectedProject.suggestions" :key="`${selectedProject.project_id}_suggestion_${idx}`" class="manual-row">
-                <div class="manual-desc suggestion-text">{{ zhText(item) || '-' }}</div>
-              </div>
-            </div>
-            <div v-else class="sub-empty">暂无建议</div>
-            </article>
-            <div v-else class="sub-empty">当前无项目数据</div>
-          </section>
+        <div class="hero-stats">
+          <span class="badge status-failed">需关注 {{ attentionCount }}</span>
+          <span class="badge status-passed">项目数 {{ projects.length }}</span>
         </div>
-      </div>
-    </section>
+        <div class="batch-notes">
+          <span class="batch-note">{{ batchNote }}</span>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <h2 class="sidebar-title">项目列表</h2>
+          </div>
+          <div class="project-list" id="projectList"></div>
+        </aside>
+
+        <main class="center-panel">
+          <div id="pdfPanel"></div>
+        </main>
+
+        <aside class="viewer-panel">
+          <div id="rulesPanel"></div>
+        </aside>
+      </section>
+    </div>
   </div>
 </template>
 
-<style scoped>
-.review-debug-shell {
-  padding: 14px;
-  background:
-    radial-gradient(circle at 15% 0%, #f3f8ff 0%, transparent 40%),
-    radial-gradient(circle at 100% 100%, #fff6ef 0%, transparent 34%);
+<style>
+.content-scroll {
+  --bg: #eef2f7;
+  --card: #ffffff;
+  --line: #d4dbe7;
+  --line-strong: #b6c2d4;
+  --text: #162033;
+  --muted: #61708a;
+  --accent: #0f766e;
+  --accent-soft: #dff6f1;
+  --passed: #067647;
+  --failed: #b42318;
+  --warning: #9a3412;
+  --manual: #7c3aed;
+  --na: #344054;
+  --system: #2b6cb0;
+  --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
 }
 
-.state-block {
-  padding: 20px;
-  border: 1px solid #dce4ef;
-  border-radius: 10px;
-  background: #f8fbff;
-}
-
-.state-error {
-  color: #b42318;
-  background: #fff5f6;
-  border-color: #f0c6cc;
-}
-
-.split-grid {
+.page-loading {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  min-height: 70vh;
+  place-items: center;
+  min-height: 60vh;
+  color: var(--muted);
+  font-size: 16px;
 }
 
-.split-grid-3 {
-  grid-template-columns: 160px minmax(0, 1.24fr) minmax(0, 1.36fr);
+.page-error {
+  color: var(--failed);
 }
 
-.split-grid-2 {
-  grid-template-columns: minmax(0, 1.14fr) minmax(0, 1.36fr);
+.page {
+  width: min(1960px, 100%);
+  height: calc(100vh - 56px);
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.1), transparent 26%),
+    linear-gradient(180deg, #f7fafc 0%, var(--bg) 180px);
 }
 
-.review-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.hero,
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
 }
 
-.top-filter-bar {
+.hero {
+  padding: 14px 18px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 1px solid #dce4ef;
-  border-radius: 12px;
-  padding: 10px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-.top-filter-title {
+.hero h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.hero p {
+  margin: 0;
+  color: var(--muted);
   font-size: 13px;
-  font-weight: 700;
-  color: #0b1220;
-  white-space: nowrap;
 }
 
-.project-pane {
-  width: 160px;
-  max-width: 160px;
-  padding: 10px 10px 8px;
-}
-
-.left-pane,
-.right-pane {
-  border: 1px solid #dce4ef;
-  border-radius: 12px;
-  padding: 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+.hero-main {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  min-height: 0;
+  gap: 6px;
 }
 
-.middle-pane {
-  border: 1px solid #dce4ef;
-  border-radius: 12px;
-  padding: 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.pane-title {
-  font-size: 15px;
-  font-weight: 700;
-  margin-bottom: 10px;
-  color: #0b1220;
-}
-
-.pane-title-tight {
-  margin-bottom: 8px;
-}
-
-.search-input {
-  width: 100%;
-  border: 1px solid #bfd0e8;
-  border-radius: 10px;
-  padding: 9px 12px;
-  margin-bottom: 8px;
-  font-size: 13px;
-  color: #0f172a;
-  background: #ffffff;
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-.top-filter-bar .search-input {
-  margin-left: auto;
-  margin-bottom: 0;
-  width: 250px;
-}
-
-.project-select-dropdown {
-  width: 100%;
-  border: 1px solid #bfd0e8;
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 13px;
-  line-height: 1.35;
-  color: #0f172a;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-}
-
-.top-filter-bar .project-select-dropdown {
-  width: 320px;
-  max-width: 45vw;
-}
-
-.project-select-dropdown:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-}
-
-.left-pane {
-  position: relative;
-}
-
-.project-select-item {
-  border: 1px solid #dbe3ef;
-  border-radius: 10px;
-  background: #fff;
-  padding: 8px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.project-select-item.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-}
-
-.project-select-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.project-select-id {
-  margin-top: 3px;
-  font-size: 11px;
-  color: #64748b;
-  word-break: break-all;
-}
-
-.middle-subtitle {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: #475467;
-}
-
-.middle-clause-list {
-  overflow: auto;
-  display: grid;
-  gap: 8px;
-}
-
-.middle-clause-card {
-  border: 1px solid #dbe4f2;
-  border-radius: 10px;
-  padding: 10px;
-  background: #ffffff;
-}
-
-.middle-clause-head {
+.hero-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 6px;
 }
 
-.middle-table-tag,
-.middle-seq {
-  background: #f2f4f7;
-  color: #344054;
+.hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.batch-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.batch-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
-}
-
-.middle-clause-content {
-  font-size: 13px;
-  color: #1f2937;
-  line-height: 1.45;
-}
-
-.middle-clause-reason {
-  margin-top: 5px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--muted);
   font-size: 12px;
-  color: #64748b;
 }
 
-.table-row-list {
+.workspace {
   display: grid;
-  gap: 6px;
+  grid-template-columns: 260px minmax(0, 1.9fr) minmax(320px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
-.table-row-item {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  padding: 6px 0;
-  border-top: 1px dashed #e2e8f0;
+.sidebar,
+.center-panel,
+.viewer-panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.table-row-item:first-child {
-  border-top: 0;
+.sidebar {
+  padding: 18px 14px;
 }
 
-.table-row-seq {
-  font-size: 12px;
-  color: #475467;
-  font-weight: 700;
-}
-
-.table-row-content {
-  font-size: 13px;
-  color: #1f2937;
-  line-height: 1.5;
-}
-
-.point-list {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.point-chip {
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 6px 8px;
-  font-size: 11px;
-  background: #fff;
-  cursor: pointer;
-  width: 100%;
-  text-align: center;
-}
-
-.point-chip.active {
-  border-color: #2563eb;
-  color: #1d4ed8;
-  background: #eff6ff;
-}
-
-.doc-scroll {
-  overflow: auto;
-  border-top: 1px dashed #dbe3ef;
-  padding-top: 8px;
-}
-
-.guideline-section {
+.sidebar-head {
+  padding: 0 8px 12px;
+  border-bottom: 1px solid var(--line);
   margin-bottom: 12px;
 }
 
-.guideline-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 6px;
-  text-align: center;
-}
-
-.guideline-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #fff;
-  border: 1px solid #dbe3ef;
-}
-
-.guideline-table th,
-.guideline-table td {
-  border: 1px solid #dbe3ef;
-  padding: 8px 10px;
-  vertical-align: middle;
-  text-align: center;
-}
-
-.guideline-table thead th {
-  background: #f8fafc;
-  font-size: 13px;
-  text-align: center;
-}
-
-.guideline-table .seq-col {
-  width: 64px;
-  text-align: center;
-  font-weight: 700;
-}
-
-.guideline-table tbody tr.related {
-  background: #fffbeb;
-}
-
-.row-requirement {
-  font-size: 13px;
-  color: #334155;
-  line-height: 1.5;
-}
-
-.doc-pre {
-  margin: 8px 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #1f2937;
-  font-family: inherit;
-}
-
-.search-input {
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 10px;
+.sidebar-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
 }
 
 .project-list {
-  overflow: auto;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-}
-
-.project-card {
-  border: 1px solid #d7e3f3;
-  border-radius: 10px;
-  padding: 16px;
-  background: #ffffff;
-}
-
-.project-card-full {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
+  padding-right: 2px;
+}
+
+.project-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfcfe;
+  padding: 14px 12px;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.project-item:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.project-item.active {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, #ffffff 0%, #eefcf8 100%);
+  box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.12);
+}
+
+.project-item-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+  margin-bottom: 6px;
+}
+
+.project-item-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.project-item-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.center-panel,
+.viewer-panel {
+  padding: 18px 18px 20px;
+}
+
+.panel-head {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+.panel-head h2,
+.panel-head h3 {
+  margin: 0;
 }
 
 .project-summary {
   margin-top: 10px;
-  color: #334155;
-  background: #f7faff;
-  border: 1px solid #dbe7f7;
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 13px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-.meta-grid {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.meta-item {
-  border: 1px solid #e3eaf6;
-  border-radius: 8px;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: #fcfdff;
-}
-
-.meta-item span {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.meta-item strong {
-  font-size: 13px;
-  color: #0f172a;
-}
-
-.project-id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  font-size: 12px;
-  color: #334155;
-}
-
-.project-name {
-  margin-top: 6px;
-  font-weight: 700;
-  font-size: 16px;
-  line-height: 1.45;
-}
-
-.result-list {
-  display: grid;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.result-row {
-  border: 1px solid #dae5f5;
-  border-radius: 12px;
-  background: #ffffff;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
-}
-
-.accordion-card {
-  overflow: hidden;
-  border: 1px solid #dae5f5;
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
-}
-
-.accordion-card[open] {
-  border-color: #c9d9f1;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-}
-
-.accordion-summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 9px 7px;
-}
-
-.accordion-summary::-webkit-details-marker {
-  display: none;
-}
-
-.accordion-summary::marker {
-  display: none;
-}
-
-.accordion-summary-main {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.accordion-summary-sub {
-  font-size: 11px;
-  color: #667085;
-  line-height: 1.15;
-}
-
-.accordion-card .accordion-body {
-  padding: 0 9px 9px;
-}
-
-.accordion-card .result-desc,
-.accordion-card .manual-desc {
-  margin-top: 0;
-}
-
-.accordion-card .result-evidence:last-child,
-.accordion-card .manual-desc:last-child {
-  margin-bottom: 0;
-}
-
-.accordion-card .manual-head {
-  margin-bottom: 0;
-}
-
-.accordion-card summary .rule-status {
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.result-head {
-  display: grid;
-  gap: 10px;
-}
-
-.result-item {
-  font-size: 12px;
-  font-weight: 700;
-  color: #111827;
-  line-height: 1.18;
-}
-
-.result-desc {
-  margin-top: 8px;
-  display: grid;
-  gap: 6px;
-}
-
-.result-evidence {
-  display: grid;
-  gap: 3px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #f8fbff;
-  border: 1px solid #dbe7f7;
-  word-break: break-word;
-}
-
-.result-evidence-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: #475467;
-}
-
-.result-evidence-value {
-  font-size: 12px;
-  line-height: 1.25;
-  color: #1f2937;
-}
-
-.review-point-grid {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.review-section-card {
-  border: 1px solid #dce6f4;
-  border-radius: 10px;
-  background: #f8fbff;
-  padding: 8px;
-}
-
-.review-section-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #334155;
-  margin-bottom: 6px;
-}
-
-.review-section-items {
-  display: grid;
-  gap: 6px;
-}
-
-.review-point-card {
-  border: 1px solid #dbe5f3;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: #ffffff;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
-}
-
-.review-point-head {
-  font-size: 12px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 4px;
-  line-height: 1.2;
-}
-
-.review-point-line {
-  font-size: 12px;
-  line-height: 1.22;
-  color: #334155;
-  margin-top: 1px;
-}
-
-.overview-stack {
-  display: grid;
-  gap: 12px;
-}
-
-.overview-block {
-  border: 1px solid #dbe5f3;
-  border-radius: 12px;
-  background: #ffffff;
-  padding: 8px;
-}
-
-.overview-block.group-pass {
-  border-color: rgba(6, 118, 71, 0.18);
-}
-
-.overview-block.group-warn {
-  border-color: rgba(181, 71, 8, 0.18);
-}
-
-.overview-block.group-fail {
-  border-color: rgba(180, 35, 24, 0.18);
-}
-
-.overview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 5px;
-  padding: 6px 8px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #0f172a;
-  background: linear-gradient(90deg, #f2f6fd 0%, #f8fbff 100%);
-}
-
-.overview-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  min-width: 0;
-  height: auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.overview-block.group-pass .overview-head,
-.overview-block.group-pass .overview-count {
-  color: #067647;
-}
-
-.overview-block.group-warn .overview-head,
-.overview-block.group-warn .overview-count {
-  color: #b54708;
-}
-
-.overview-block.group-fail .overview-head,
-.overview-block.group-fail .overview-count {
-  color: #b42318;
-}
-
-.rule-status {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3px 10px;
+.badge {
   border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  border: 1px solid transparent;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 0;
+  background: #f1f5f9;
   white-space: nowrap;
 }
 
-.rule-status.st-passed {
-  color: #05603a;
-  border-color: #9ad7b4;
-  background: linear-gradient(180deg, #f1fcf5 0%, #e6f9ee 100%);
+.status-passed {
+  color: var(--passed);
+  background: #ecfdf3;
 }
 
-.rule-status.st-warning {
-  color: #9a3412;
-  border-color: #f2bf8a;
-  background: linear-gradient(180deg, #fff8eb 0%, #fff1d8 100%);
+.status-failed {
+  color: var(--failed);
+  background: #fff1f2;
 }
 
-.rule-status.st-failed {
-  color: #991b1b;
-  border-color: #efb4b4;
-  background: linear-gradient(180deg, #fff3f2 0%, #fee8e7 100%);
+.status-warning,
+.status-manual,
+.status-requires_data {
+  color: var(--manual);
+  background: #f5f3ff;
 }
 
-.rule-status.st-default {
-  color: #334155;
-  border-color: #d3dce8;
-  background: #f8fafc;
+.status-not_applicable,
+.status-skipped {
+  color: var(--na);
+  background: #f2f4f7;
 }
 
-.section-title {
-  margin-top: 18px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-  padding: 10px 12px;
-  border-left: 3px solid #4f46e5;
-  border-radius: 10px;
-  background: linear-gradient(90deg, #f5f7ff 0%, #ffffff 100%);
+.status-system_managed {
+  color: var(--system);
+  background: #eff6ff;
 }
 
-.manual-list {
-  display: grid;
+.result-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.result-section {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+  padding: 14px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
-.manual-row {
-  border: 1px solid #d9e5f3;
-  border-radius: 14px;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+.section-head-title {
+  font-size: 15px;
+  font-weight: 800;
 }
 
-.manual-head {
-  font-weight: 700;
-  font-size: 14px;
-  margin-bottom: 4px;
-  color: #0f172a;
-  line-height: 1.25;
+.section-subgroups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.manual-desc {
-  font-size: 13px;
-  color: #334155;
-  line-height: 1.3;
+.status-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.manual-desc-strong {
-  font-size: 14px;
-  line-height: 1.3;
-}
-
-.suggestion-text {
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.sub-empty {
-  color: #667085;
+.status-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
   font-size: 12px;
+  font-weight: 600;
 }
 
-@media (max-width: 900px) {
-  .top-filter-bar {
-    flex-wrap: wrap;
+.status-group-count {
+  opacity: 0.85;
+}
+
+.rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule-card {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 14px;
+  cursor: pointer;
+  transition: 0.18s ease;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rule-card:hover {
+  border-color: var(--line-strong);
+}
+
+.rule-card.active {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdfa 100%);
+  box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.14);
+}
+
+.rule-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.rule-card-title {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.5;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rule-card-requirement {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.rule-card-meta {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 6px 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.rule-card-meta-label {
+  color: var(--muted);
+}
+
+.rule-card-meta > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.center-panel {
+  padding: 18px 18px 16px;
+  overflow: hidden;
+}
+
+.viewer-panel {
+  padding: 18px 18px 20px;
+}
+
+#pdfPanel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#rulesPanel {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.viewer-empty {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+  padding: 24px 4px 8px;
+}
+
+.viewer-preview {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.viewer-preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.viewer-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.8;
+}
+
+.pdf-only {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.viewer-preview.hidden,
+.viewer-fallback.hidden {
+  display: none;
+}
+
+.packet-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.pdf-toast {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  max-width: min(520px, calc(100% - 48px));
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 118, 110, 0.28);
+  background: rgba(240, 253, 250, 0.96);
+  color: #115e59;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.pdf-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(4px);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.folded-toggle {
+  margin-top: 6px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: #fbfcff;
+}
+
+.folded-toggle summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.folded-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.folded-body {
+  padding: 0 12px 12px;
+}
+
+@media (max-width: 1320px) {
+  .workspace {
+    grid-template-columns: 240px minmax(0, 1.45fr) minmax(320px, 0.9fr);
+  }
+}
+
+@media (max-width: 1080px) {
+  .page {
+    height: auto;
+    overflow: visible;
   }
 
-  .top-filter-bar .search-input,
-  .top-filter-bar .project-select-dropdown {
-    width: 100%;
-    max-width: none;
-  }
-
-  .top-filter-title {
-    width: 100%;
-  }
-
-  .split-grid {
+  .workspace {
     grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
   }
 
-  .project-pane {
-    width: auto;
-    max-width: none;
+  .sidebar,
+  .center-panel,
+  .viewer-panel {
+    height: auto;
+    min-height: auto;
+    overflow: visible;
   }
+
+  .project-list {
+    flex: initial;
+    min-height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  #rulesPanel {
+    overflow: visible;
+    min-height: auto;
+  }
+
+  #pdfPanel {
+    height: auto;
+    min-height: 480px;
+    overflow: visible;
+  }
+
+  .pdf-only,
+  .viewer-preview {
+    height: auto;
+    min-height: 480px;
+  }
+}
+
+.evidence-locator {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.evidence-locator:hover {
+  opacity: 0.8;
 }
 </style>

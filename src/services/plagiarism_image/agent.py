@@ -239,6 +239,7 @@ class ImagePlagiarismAgent:
         files: List[Tuple[str, str, bytes]],
         corpus_manager: ImageCorpusManager,
         debug: bool = False,
+        include_report: bool = False,
         debug_output_dir: Path | None = None,
         debug_output_html: Path | None = None,
         hash_hamming_max: int = 18,
@@ -412,7 +413,7 @@ class ImagePlagiarismAgent:
             level_count[m.level] += 1
 
         report_path = None
-        if debug:
+        if debug or include_report:
             out_dir = debug_output_dir or IMAGE_PLAGIARISM_DEBUG_ROOT
             output_html = debug_output_html or (out_dir / "plagiarism_image_report.html")
             image_bytes_map: Dict[str, bytes] = {}

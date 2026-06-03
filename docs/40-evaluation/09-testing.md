@@ -16,11 +16,18 @@
 
 1. 单元测试：解析器、检查器、评分器、工具网关适配层  
 2. 单元测试：项目画像识别与维度覆盖规则  
+<<<<<<< HEAD
+3. 集成测试：`EvaluationAgent` 并发编排与结果合并  
+4. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`、`/chat/ask-stream`  
+5. 前端报告测试：左右布局、正文跳转、高亮联动  
+6. 回归测试：与历史评审结果字段兼容
+=======
 3. 单元测试：`rubric` 选择与 `evidence pack` 构建
 4. 集成测试：`EvaluationAgent` 并发编排与结果合并  
 5. API 测试：`/evaluate`、`/evaluate/file`、`/chat/ask`、`/chat/ask-stream`  
 6. 前端报告测试：左右布局、正文跳转、高亮联动  
 7. 回归测试：与历史评审结果字段兼容
+>>>>>>> upstream/main
 
 ## 目录建议
 

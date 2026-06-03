@@ -17,9 +17,6 @@ from typing import Any, Dict, List
 import fitz
 
 from src.services.evaluation.parsers import DocumentParser
-from src.services.evaluation.highlight.extractor import HighlightExtractor
-from src.services.evaluation.packet_builder import EvaluationPacketBuilder
-from src.services.evaluation.storage.project_repo import EvaluationProjectRepository
 
 
 class ReportGenerator:
@@ -142,26 +139,6 @@ class ReportGenerator:
         output_html = Path(output_html_path)
         data = json.loads(debug_json.read_text(encoding="utf-8"))
         updated = self._ensure_page_chunks(data)
-        updated = self._ensure_highlight_payload(data) or updated
-        updated = self._ensure_packet_assets(data, debug_json.parent) or updated
-        if updated:
-            debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
-        return output_html
-
-    async def build_from_debug_file_async(
-        self,
-        debug_json_path: Path | str,
-        output_html_path: Path | str,
-        debug_mode: bool = False,
-    ) -> Path:
-        """根据 debug JSON 生成 HTML 报告，供异步评审链路调用"""
-        debug_json = Path(debug_json_path)
-        output_html = Path(output_html_path)
-        data = json.loads(debug_json.read_text(encoding="utf-8"))
-        updated = await self._ensure_page_chunks_async(data)
-        updated = await self._ensure_highlight_payload_async(data) or updated
-        updated = self._ensure_packet_assets(data, debug_json.parent) or updated
         if updated:
             debug_json.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         output_html.write_text(self.build_html(data, debug_mode=debug_mode), encoding="utf-8")
@@ -228,212 +205,6 @@ class ReportGenerator:
             data["meta"] = merged_meta
         return True
 
-    async def _ensure_page_chunks_async(self, data: Dict[str, Any]) -> bool:
-        """兼容旧 debug JSON，缺少 page_chunks 时尝试回源补齐"""
-        page_chunks = data.get("page_chunks")
-        if isinstance(page_chunks, list) and page_chunks:
-            return False
-
-        meta = data.get("meta") or {}
-        if not isinstance(meta, dict):
-            return False
-
-        file_path = str(meta.get("file_path") or "").strip()
-        if not file_path or not os.path.exists(file_path):
-            return False
-
-        source_name = str(data.get("source_name") or meta.get("file_name") or os.path.basename(file_path))
-        parser = DocumentParser()
-        parsed = await parser.parse(file_path, source_name=source_name)
-        recovered_chunks = parsed.get("page_chunks") or []
-        if not recovered_chunks:
-            return False
-
-        data["page_chunks"] = recovered_chunks
-        recovered_meta = parsed.get("meta") or {}
-        if isinstance(recovered_meta, dict):
-            merged_meta = dict(meta)
-            merged_meta.update(recovered_meta)
-            data["meta"] = merged_meta
-        return True
-
-    def _ensure_packet_assets(self, data: Dict[str, Any], debug_dir: Path) -> bool:
-        """兼容旧 debug JSON，缺少 packet 资产时尝试回源补齐"""
-        packet_assets = data.get("packet_assets")
-        if isinstance(packet_assets, dict):
-            viewer_file = str(packet_assets.get("viewer_file") or "").strip()
-            packet_file = str(packet_assets.get("packet_file") or "").strip()
-            if viewer_file and packet_file and (debug_dir / viewer_file).exists() and (debug_dir / packet_file).exists():
-                return False
-
-        meta = data.get("meta") or {}
-        if not isinstance(meta, dict):
-            return False
-        source_file = str(meta.get("file_path") or "").strip()
-        if not source_file or not os.path.exists(source_file):
-            return False
-
-        attachments = data.get("attachments")
-        if not isinstance(attachments, list):
-            attachments = []
-        result = data.get("result") or {}
-        if not isinstance(result, dict):
-            result = {}
-        project_id = str(data.get("project_id") or result.get("project_id") or "").strip()
-        if not attachments:
-            attachment_files = meta.get("attachment_files") or []
-            if isinstance(attachment_files, list) and attachment_files:
-                attachments = [
-                    {
-                        "file_ref": str(path),
-                        "file_name": Path(str(path)).name,
-                        "doc_kind": "",
-                    }
-                    for path in attachment_files
-                    if str(path).strip()
-                ]
-            elif project_id:
-                try:
-                    repo = EvaluationProjectRepository()
-                    attachment_files = repo.get_attachment_file_paths(project_id)
-                except Exception:
-                    attachment_files = []
-                attachments = [
-                    {
-                        "file_ref": str(path),
-                        "file_name": Path(str(path)).name,
-                        "doc_kind": "",
-                    }
-                    for path in attachment_files
-                    if str(path).strip()
-                ]
-            if attachments:
-                data["attachments"] = attachments
-
-        packet_builder = EvaluationPacketBuilder()
-        packet_assets = packet_builder.build(
-            output_dir=debug_dir,
-            project_id=project_id or "manual",
-            source_file=source_file,
-            source_name=str(data.get("source_name") or meta.get("file_name") or Path(source_file).name),
-            attachments=attachments,
-        )
-        if not packet_assets:
-            return False
-        data["packet_assets"] = packet_assets
-        return True
-
-    def _ensure_highlight_payload(self, data: Dict[str, Any]) -> bool:
-        """兼容旧 debug JSON，缺少结构化摘要时按当前提取器回填"""
-        async def _extract_highlights():
-            sections, page_chunks, file_name = self._get_highlight_input(data)
-            if sections is None:
-                return None
-            extractor = HighlightExtractor()
-            return await extractor.extract(
-                sections=sections,
-                page_chunks=page_chunks,
-                file_name=file_name,
-            )
-
-        extracted_payload = asyncio.run(_extract_highlights())
-        if extracted_payload is None:
-            return False
-        highlights, evidence = extracted_payload
-        return self._merge_highlight_payload(data, highlights.model_dump(mode="json"), evidence)
-
-    async def _ensure_highlight_payload_async(self, data: Dict[str, Any]) -> bool:
-        """兼容旧 debug JSON，缺少结构化摘要时按当前提取器回填"""
-        highlight_input = self._get_highlight_input(data)
-        if highlight_input[0] is None:
-            return False
-
-        sections, page_chunks, file_name = highlight_input
-        extractor = HighlightExtractor()
-        highlights, evidence = await extractor.extract(
-            sections=sections,
-            page_chunks=page_chunks,
-            file_name=file_name,
-        )
-        return self._merge_highlight_payload(data, highlights.model_dump(mode="json"), evidence)
-
-    def _get_highlight_input(self, data: Dict[str, Any]) -> tuple[Dict[str, str] | None, List[Dict[str, Any]], str]:
-        """读取结构化摘要补齐所需输入"""
-        result = data.get("result")
-        if not isinstance(result, dict):
-            return None, [], ""
-
-        existing_highlights = result.get("highlights") or {}
-        if not isinstance(existing_highlights, dict):
-            existing_highlights = {}
-        has_goal = bool(existing_highlights.get("research_goals"))
-        has_innovation = bool(existing_highlights.get("innovations"))
-        has_route = bool(existing_highlights.get("technical_route"))
-        if has_goal and has_innovation and has_route:
-            return None, [], ""
-
-        sections = data.get("sections") or {}
-        page_chunks = data.get("page_chunks") or []
-        if not isinstance(sections, dict) or not sections or not isinstance(page_chunks, list) or not page_chunks:
-            return None, [], ""
-
-        return sections, page_chunks, str(data.get("source_name") or data.get("meta", {}).get("file_name") or "")
-
-    def _merge_highlight_payload(self, data: Dict[str, Any], extracted: Dict[str, Any], evidence: List[Any]) -> bool:
-        result = data.get("result")
-        if not isinstance(result, dict):
-            return False
-
-        existing_highlights = result.get("highlights") or {}
-        if not isinstance(existing_highlights, dict):
-            existing_highlights = {}
-        changed = False
-        merged_highlights = {
-            "research_goals": list(existing_highlights.get("research_goals") or []),
-            "innovations": list(existing_highlights.get("innovations") or []),
-            "technical_route": list(existing_highlights.get("technical_route") or []),
-        }
-        for key in ("research_goals", "innovations", "technical_route"):
-            if not merged_highlights[key] and extracted.get(key):
-                merged_highlights[key] = list(extracted.get(key) or [])
-                changed = True
-
-        if changed:
-            result["highlights"] = merged_highlights
-
-        if evidence:
-            existing_evidence = result.get("evidence") or []
-            if not isinstance(existing_evidence, list):
-                existing_evidence = []
-            existing_keys = {
-                (
-                    str(item.get("category") or ""),
-                    str(item.get("target") or ""),
-                    str(item.get("file") or ""),
-                    int(item.get("page") or 0),
-                )
-                for item in existing_evidence
-                if isinstance(item, dict)
-            }
-            for item in evidence:
-                payload = item.model_dump(mode="json")
-                key = (
-                    str(payload.get("category") or ""),
-                    str(payload.get("target") or ""),
-                    str(payload.get("file") or ""),
-                    int(payload.get("page") or 0),
-                )
-                if key in existing_keys:
-                    continue
-                existing_keys.add(key)
-                existing_evidence.append(payload)
-                changed = True
-            if changed:
-                result["evidence"] = existing_evidence
-
-        data["result"] = result
-        return changed
-
     def build_html(self, data: Dict[str, Any], debug_mode: bool = False) -> str:
         """构建 HTML 页面"""
         result = data.get("result", {})
@@ -462,46 +233,10 @@ class ReportGenerator:
         right_tail = ""
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
         project_nav = self._render_project_nav(workspace_projects, debug_mode)
-        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode)
-        layout_class = "content-grid debug-layout" if debug_mode else "content-grid evaluation-layout"
-        result_tabs = [
-            ("report-overview", "评审结论"),
-            ("report-dimensions", "维度评分"),
-            ("report-chat", "专家聊天"),
-            ("report-benchmark", "技术摸底"),
-        ]
-        if industry_fit:
-            result_tabs.append(("report-fit", "指南贴合"))
-        result_tabs_html = ""
-        if not debug_mode:
-            result_tabs_html = (
-                '<div class="result-tabs" id="result-tabs">'
-                + "".join(
-                    (
-                        f'<button type="button" class="result-tab{" is-active" if index == 0 else ""}" '
-                        f'data-tab-target="{tab_id}">{label}</button>'
-                    )
-                    for index, (tab_id, label) in enumerate(result_tabs)
-                )
-                + "</div>"
-            )
-        optional_panels = ""
-        optional_panels += f"""
-              <section class="result-panel" id="report-benchmark">
-                {self._render_benchmark(benchmark)}
-              </section>
-"""
-        if industry_fit:
-            optional_panels += f"""
-              <section class="result-panel" id="report-fit">
-                {self._render_industry_fit(industry_fit)}
-              </section>
-"""
-        overview_html = (
-            self._render_reward_overview(sections, result)
-            if platform == "reward"
-            else self._render_project_overview(highlights, evidence_map, packet_assets, result)
-        )
+        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, debug_mode)
+        document_nav = self._render_document_nav(page_chunks, sections, debug_mode)
+        layout_class = "content-grid debug-layout" if debug_mode else "content-grid workspace-layout"
+
         if debug_mode:
             left_tail = f"""
         <section class="panel">
@@ -688,12 +423,7 @@ class ReportGenerator:
       height: 100%;
     }}
     .workspace-layout {{
-      grid-template-columns: 150px minmax(0, 2.05fr) minmax(360px, 0.92fr);
-      overflow: hidden;
-    }}
-    .evaluation-layout {{
-      grid-template-columns: minmax(0, 2.05fr) minmax(360px, 0.92fr);
-      overflow: hidden;
+      grid-template-columns: 190px 220px minmax(0, 1.2fr) minmax(400px, 0.92fr);
     }}
     .debug-layout {{
       grid-template-columns: minmax(0, 1fr) 360px;
@@ -859,15 +589,13 @@ class ReportGenerator:
       flex-shrink: 0;
     }}
     .doc-panel {{
-      height: 100%;
-      min-height: 68vh;
+      min-height: 0;
       overflow: hidden;
       display: grid;
       grid-template-rows: minmax(0, 1fr);
     }}
     .doc-panel-inner {{
-      height: 100%;
-      min-height: 68vh;
+      min-height: 0;
       display: grid;
       grid-template-rows: minmax(0, 1fr);
     }}
@@ -883,6 +611,39 @@ class ReportGenerator:
       width: 100%;
       height: 74vh;
       min-height: 68vh;
+      border: 0;
+      border-radius: 14px;
+      background: #dfe5ec;
+    }}
+    .doc-toast {{
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translate(-50%, -10px);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(24, 34, 48, 0.88);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.2);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 3;
+      white-space: nowrap;
+      max-width: calc(100% - 32px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }}
+    .doc-toast.show {{
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }}
+    .packet-frame {{
+      width: 100%;
+      height: 100%;
+      min-height: 0;
       border: 0;
       border-radius: 14px;
       background: #dfe5ec;
@@ -1460,76 +1221,6 @@ class ReportGenerator:
       display: grid;
       gap: 14px;
     }}
-    .chat-progress {{
-      padding: 0 0 12px;
-      border-bottom: 1px solid var(--line);
-      display: grid;
-      gap: 10px;
-    }}
-    .chat-progress-head {{
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-    }}
-    .chat-progress-title {{
-      color: var(--ink);
-      font-size: 13px;
-      font-weight: 700;
-    }}
-    .chat-progress-status {{
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.6;
-    }}
-    .chat-progress-steps {{
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-    }}
-    .chat-progress-step {{
-      position: relative;
-      display: grid;
-      gap: 4px;
-      padding: 8px 8px 8px 12px;
-      border-radius: 10px;
-      background: #f8fbfe;
-      color: var(--muted);
-      transition: all 160ms ease;
-    }}
-    .chat-progress-step::before {{
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 3px;
-      border-radius: 12px 0 0 12px;
-      background: transparent;
-    }}
-    .chat-progress-step.is-active {{
-      color: var(--ink);
-      box-shadow: inset 0 0 0 1px #c8d7e6;
-    }}
-    .chat-progress-step.is-active::before {{
-      background: var(--brand);
-    }}
-    .chat-progress-step.is-done {{
-      color: var(--ink);
-      background: #fbfcfe;
-    }}
-    .chat-progress-step.is-done::before {{
-      background: #4c7f58;
-    }}
-    .chat-progress-step-label {{
-      font-size: 12px;
-      font-weight: 700;
-    }}
-    .chat-progress-step-detail {{
-      font-size: 11px;
-      line-height: 1.5;
-    }}
     .chat-toolbar {{
       display: grid;
       gap: 8px;
@@ -1556,14 +1247,6 @@ class ReportGenerator:
       max-height: 420px;
       overflow: auto;
       padding-right: 4px;
-    }}
-    .chat-empty {{
-      padding: 14px 0;
-      border-top: 1px dashed var(--line);
-      border-bottom: 1px dashed var(--line);
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.8;
     }}
     .chat-msg {{
       padding: 0;
@@ -1593,61 +1276,7 @@ class ReportGenerator:
       white-space: pre-wrap;
       word-break: break-word;
     }}
-    .chat-answer {{
-      display: grid;
-      gap: 10px;
-    }}
-    .chat-answer-meta {{
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 2px;
-    }}
-    .chat-answer-tag {{
-      display: inline-flex;
-      align-items: center;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: #e8eff7;
-      color: var(--brand);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-    }}
-    .chat-answer-summary {{
-      color: var(--muted);
-      font-size: 12px;
-    }}
-    .chat-answer-block {{
-      padding-left: 12px;
-      border-left: 2px solid #d7e1eb;
-    }}
-    .chat-answer-block-primary {{
-      border-left-color: #9eb6cf;
-    }}
-    .chat-answer-head {{
-      margin-bottom: 6px;
-      color: var(--brand);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-    }}
-    .chat-answer-text {{
-      font-size: 14px;
-      line-height: 1.85;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }}
-    .chat-answer-block-primary .chat-answer-text {{
-      font-size: 15px;
-      font-weight: 600;
-      line-height: 1.9;
-    }}
-    .chat-answer-list {{
-      margin: 0;
-      padding: 12px 16px 12px 30px;
+    .chat-citations {{
       display: grid;
       gap: 8px;
       font-size: 14px;
@@ -1666,38 +1295,12 @@ class ReportGenerator:
       margin-top: 10px;
     }}
     .chat-citation {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #f8fbfe;
-      border: 1px solid #dde7f0;
-      font-size: 12px;
-      line-height: 1;
-    }}
-    .chat-citation-head {{
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-    }}
-    .chat-citation-page {{
-      flex-shrink: 0;
-      padding: 3px 8px;
-      border-radius: 999px;
-      background: #e8eef5;
-      color: var(--brand);
-      font-size: 11px;
-      font-weight: 700;
-    }}
-    .chat-citation-label {{
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 600;
-    }}
-    .chat-citation-actions {{
-      display: inline-flex;
-      align-items: center;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f5f8fb;
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.7;
     }}
     .chat-form {{
       display: grid;
@@ -1806,6 +1409,10 @@ class ReportGenerator:
       height: 100%;
       min-height: 0;
       overflow: hidden;
+    }}
+    .result-shell > .panel-inner {{
+      height: 100%;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
       padding: 18px 18px 16px;
@@ -1937,14 +1544,69 @@ class ReportGenerator:
 
         <aside class="side-stack">
           <section class="panel result-shell" id="result-shell">
-            <div class="workspace-head">
-              <h2>{report_title}</h2>
-              {result_tabs_html}
-            </div>
-            <div class="result-panels">
-              <section class="result-panel is-active" id="report-overview">
-                {overview_html}
-              </section>
+            <div class="panel-inner">
+              <div class="workspace-head">
+                <h2>{report_title}</h2>
+                {"" if debug_mode else """
+                <div class="result-tabs" id="result-tabs">
+                  <button type="button" class="result-tab is-active" data-tab-target="report-overview">评审结论</button>
+                  <button type="button" class="result-tab" data-tab-target="report-dimensions">维度评分</button>
+                  <button type="button" class="result-tab" data-tab-target="report-chat">专家聊天</button>
+                  <button type="button" class="result-tab" data-tab-target="report-qna">典型问答</button>
+                  <button type="button" class="result-tab" data-tab-target="report-fit">指南贴合</button>
+                  <button type="button" class="result-tab" data-tab-target="report-benchmark">技术摸底</button>
+                  <button type="button" class="result-tab" data-tab-target="report-evidence">证据链</button>
+                </div>
+                """}
+              </div>
+              <div class="result-panels">
+                <section class="result-panel is-active" id="report-overview">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
+                      <div class="facts-grid">
+                        <div class="mini-card">
+                          <div class="label">结构化摘要</div>
+                          <div class="value">{"已生成" if highlights else "未生成"}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">专家问答</div>
+                          <div class="value">{"已生成" if expert_qna else "未生成"}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">聊天索引</div>
+                          <div class="value">{"已构建" if result.get("chat_ready") else "未构建"}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">建议条数</div>
+                          <div class="value">{len(recommendations)}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">证据总数</div>
+                          <div class="value">{len(evidence)}</div>
+                        </div>
+                        <div class="mini-card">
+                          <div class="label">模型版本</div>
+                          <div class="value">{html.escape(str(result.get("model_version") or "-"))}</div>
+                        </div>
+                      </div>
+                      <div class="highlight-grid">
+                        <div class="highlight-card">
+                          <div class="highlight-label">研究目标</div>
+                          {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, "暂无提取结果")}
+                        </div>
+                        <div class="highlight-card">
+                          <div class="highlight-label">创新点</div>
+                          {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, "暂无提取结果")}
+                        </div>
+                        <div class="highlight-card">
+                          <div class="highlight-label">技术路线</div>
+                          {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, "暂无提取结果")}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </section>
 
               <section class="result-panel" id="report-dimensions">
                 <div class="score-list">
@@ -1952,15 +1614,44 @@ class ReportGenerator:
                 </div>
               </section>
 
-              {self._render_chat_panel(
-                  evaluation_id=evaluation_id,
-                  chat_ready=bool(result.get("chat_ready")),
-                  expert_qna=expert_qna,
-                  debug_mode=debug_mode,
-                  platform=platform,
-              )}
+                {self._render_chat_panel(
+                    evaluation_id=evaluation_id,
+                    chat_ready=bool(result.get("chat_ready")),
+                    expert_qna=expert_qna,
+                    debug_mode=debug_mode,
+                )}
 
-              {optional_panels}
+                <section class="result-panel" id="report-qna">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_expert_qna(expert_qna)}
+                    </div>
+                  </section>
+                </section>
+
+                <section class="result-panel" id="report-fit">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_industry_fit(industry_fit)}
+                    </div>
+                  </section>
+                </section>
+
+                <section class="result-panel" id="report-benchmark">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_benchmark(benchmark)}
+                    </div>
+                  </section>
+                </section>
+
+                <section class="result-panel" id="report-evidence">
+                  <section class="panel">
+                    <div class="panel-inner">
+                      {self._render_evidence(evidence)}
+                    </div>
+                  </section>
+                </section>
 
               {right_tail}
             </div>
@@ -2227,49 +1918,7 @@ class ReportGenerator:
                 overflow: hidden !important;
               }}
               .workspace-layout {{
-                grid-template-columns: minmax(0, 1.55fr) minmax(430px, 1.08fr) !important;
-                overflow: hidden !important;
-              }}
-              .project-stack {{
-                display: none !important;
-              }}
-              .hero {{
-                display: none !important;
-              }}
-              .page {{
-                padding-top: 0 !important;
-                height: 100% !important;
-                min-height: 0 !important;
-                overflow: hidden !important;
-              }}
-              .page-stack {{
-                grid-template-rows: minmax(0, 1fr) !important;
-                height: 100% !important;
-                min-height: 0 !important;
-              }}
-              .main-stack,
-              .side-stack,
-              .doc-panel,
-              .result-shell,
-              .result-panels {{
-                min-height: 0 !important;
-              }}
-              .main-stack,
-              .side-stack,
-              .doc-panel,
-              .result-shell {{
-                overflow: hidden !important;
-              }}
-              .doc-panel {{
-                min-height: 68vh !important;
-              }}
-              .doc-panel-inner,
-              .doc-viewer {{
-                min-height: 68vh !important;
-              }}
-              .packet-frame {{
-                height: 74vh !important;
-                min-height: 68vh !important;
+                grid-template-columns: 220px minmax(0, 1.2fr) minmax(400px, 0.92fr) !important;
               }}
             `;
             doc.head.appendChild(style);
@@ -3161,23 +2810,8 @@ class ReportGenerator:
             return ""
 
         default_port = os.getenv("APP_PORT", "8888")
-        configured_api_base = str(os.getenv("EVALUATION_REPORT_API_BASE", "")).strip().rstrip("/")
-        default_api_base = configured_api_base or f"http://127.0.0.1:{default_port}"
-        if platform == "reward":
-            suggestions = [
-                "这个奖励项目的主要科学发现是什么？",
-                "项目简介里体现了哪些核心贡献？",
-                "客观评价材料主要支撑什么结论？",
-                "代表性论文支撑了哪些发现点？",
-                "这个项目的主要短板是什么？",
-                "这些材料能否支撑当前奖种评价？",
-            ]
-            empty_text = "围绕项目简介、重要科学发现、客观评价和代表性成果直接提问。回答会附证据并支持联动原文。"
-            placeholder = "输入专家问题，例如：代表性论文支撑了哪些发现点？"
-        else:
-            suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
-            empty_text = "围绕研究目标、创新点、验证数据、进展与量产可行性直接提问。回答会附证据并支持联动原文。"
-            placeholder = "输入专家问题，例如：这项技术有可能量产吗？"
+        default_api_base = f"http://127.0.0.1:{default_port}"
+        suggestions = [str(item.get("question") or "").strip() for item in expert_qna if str(item.get("question") or "").strip()]
         suggestion_html = "".join(
             f'<button type="button" class="chat-suggestion" data-question="{html.escape(question)}">{html.escape(question)}</button>'
             for question in suggestions[:6]
@@ -3193,43 +2827,28 @@ class ReportGenerator:
 
         return f"""
         <section class="result-panel" id="report-chat">
-          <div
-            class="chat-shell"
-            id="chat-shell"
-            data-evaluation-id="{escaped_eval_id}"
-            data-chat-ready="{str(chat_ready).lower()}"
-            data-default-api-base="{escaped_default_api_base}"
-            data-default-port="{escaped_default_port}"
-          >
-              <div class="chat-progress" id="chat-progress">
-                <div class="chat-progress-head">
-                  <div class="chat-progress-title">问答生成过程</div>
-                  <div class="chat-progress-status" id="chat-progress-status">等待提问</div>
-                </div>
-                <div class="chat-progress-steps" id="chat-progress-steps">
-                  <div class="chat-progress-step" data-step="context">
-                    <div class="chat-progress-step-label">上下文</div>
-                    <div class="chat-progress-step-detail">读取评审记录与索引</div>
-                  </div>
-                  <div class="chat-progress-step" data-step="retrieve">
-                    <div class="chat-progress-step-label">检索</div>
-                    <div class="chat-progress-step-detail">定位正文证据</div>
-                  </div>
-                  <div class="chat-progress-step" data-step="evidence">
-                    <div class="chat-progress-step-label">整理</div>
-                    <div class="chat-progress-step-detail">收敛依据与不足</div>
-                  </div>
-                  <div class="chat-progress-step" data-step="answer">
-                    <div class="chat-progress-step-label">回答</div>
-                    <div class="chat-progress-step-detail">生成专家结论</div>
-                  </div>
-                </div>
+          <section class="panel">
+            <div class="panel-inner">
+            <div
+              class="chat-shell"
+              id="chat-shell"
+              data-evaluation-id="{escaped_eval_id}"
+              data-chat-ready="{str(chat_ready).lower()}"
+            >
+              <div class="chat-toolbar">
+                <label for="chat-api-base">API 地址</label>
+                <input id="chat-api-base" class="chat-input" type="text" value="{escaped_default_api_base}" placeholder="{escaped_default_api_base}" />
+                <div class="chat-status">{html.escape(toolbar_note)}</div>
               </div>
+              <div class="chat-status">{html.escape(ready_text)}</div>
               <div class="chat-suggestions" id="chat-suggestions">
                 {suggestions_block}
               </div>
               <div class="chat-thread" id="chat-thread">
-                <div class="chat-empty" id="chat-empty">{html.escape(empty_text)}</div>
+                <div class="chat-msg chat-msg-assistant">
+                  <div class="chat-role">assistant</div>
+                  <div class="chat-body">直接问具体问题，例如：这个项目的研究目标是什么？这项工作目前进展到什么程度了？这项技术有可能落地或量产吗？我会返回页码证据。</div>
+                </div>
               </div>
               <form class="chat-form" id="chat-form">
                 <textarea
@@ -4351,204 +3970,12 @@ class ReportGenerator:
                 page = evidence.get("page")
                 snippet = evidence.get("snippet") or ""
                 meta_html = (
-                    f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
-                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet, str(evidence.get("file") or ""), packet_assets)}</div>'
+                    f'<div class="subtle">证据页：第 {html.escape(str(page))} 页</div>'
+                    f'<div class="subtle">证据：{html.escape(str(snippet))}</div>'
+                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet)}</div>'
                 )
-            rows.append(
-                f"""
-                <div class="highlight-item">
-                  <div class="highlight-item-text">{html.escape(text)}</div>
-                  {meta_html}
-                </div>
-                """
-            )
-        return '<div class="highlight-list">' + "".join(rows) + "</div>"
-
-    def _render_project_overview(
-        self,
-        highlights: Dict[str, Any],
-        evidence_map: Dict[tuple[str, str], Dict[str, Any]],
-        packet_assets: Dict[str, Any],
-        result: Dict[str, Any],
-    ) -> str:
-        """渲染项目申报书口径的首页概览"""
-        return f"""
-                <div class="summary-block">
-                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-                </div>
-                <div class="highlight-grid">
-                  <div class="highlight-card">
-                    <div class="highlight-label">研究目标</div>
-                    {self._render_highlight_list(highlights.get("research_goals") or [], "goal", evidence_map, packet_assets, "暂无提取结果")}
-                  </div>
-                  <div class="highlight-card">
-                    <div class="highlight-label">创新点</div>
-                    {self._render_highlight_list(highlights.get("innovations") or [], "innovation", evidence_map, packet_assets, "暂无提取结果")}
-                  </div>
-                  <div class="highlight-card">
-                    <div class="highlight-label">技术路线</div>
-                    {self._render_highlight_list(highlights.get("technical_route") or [], "route", evidence_map, packet_assets, "暂无提取结果")}
-                  </div>
-                </div>
-        """
-
-    def _render_reward_overview(self, sections: Dict[str, str], result: Dict[str, Any]) -> str:
-        """渲染奖励提名书口径的首页概览"""
-        cards = [
-            ("项目简介", self._first_section_text(sections, ["项目简介（限1200字）", "项目简介"])),
-            ("重要科学发现", self._first_section_text(sections, ["重要科学发现"])),
-            ("客观评价", self._first_section_text(sections, ["客观评价（不超过2页）", "客观评价"])),
-            ("代表性论文", self._first_section_text(sections, ["代表性论文(专著)目录（不超过6篇）", "代表性论文(专著)目录"])),
-        ]
-        card_html = "".join(
-            f"""
-                  <div class="highlight-card">
-                    <div class="highlight-label">{html.escape(label)}</div>
-                    {self._render_reward_section_preview(label, text)}
-                  </div>
-            """
-            for label, text in cards
-        )
-        return f"""
-                <div class="summary-block">
-                  <p class="summary">{html.escape(str(result.get("summary") or "暂无"))}</p>
-                </div>
-                <div class="highlight-grid">
-                  {card_html}
-                </div>
-        """
-
-    def _first_section_text(self, sections: Dict[str, str], names: List[str]) -> str:
-        for name in names:
-            text = str(sections.get(name) or "").strip()
-            if text:
-                return text
-        return ""
-
-    def _render_reward_section_preview(self, label: str, text: str) -> str:
-        if label == "重要科学发现":
-            rows = self._parse_reward_table_rows(text)
-            items = [
-                self._format_reward_table_item(
-                    row,
-                    ["序号", "主要发现点", "证明材料", "所属学科"],
-                    "主要发现点",
-                )
-                for row in rows
-            ]
-            items = [item for item in items if item]
-            if items:
-                return self._render_reward_preview_items(items)
-        if label == "代表性论文":
-            rows = self._parse_reward_table_rows(text)
-            items = [
-                self._format_reward_table_item(
-                    row,
-                    ["序号", "论文（专著） 名称", "论文（专著）名称", "发表刊物 (出版社)", "发表刊物(出版社)", "发表（出版）时间（年月日）", "他引总次数", "检索数据库", "所支持发现点"],
-                    "论文（专著）名称",
-                )
-                for row in rows
-            ]
-            items = [item for item in items if item]
-            if items:
-                return self._render_reward_preview_items(items)
-
-        cleaned = self._clean_reward_preview_text(text)
-        if not cleaned:
-            return '<div class="empty">暂无提取结果</div>'
-        preview = cleaned[:520]
-        if len(cleaned) > len(preview):
-            preview += "..."
-        return self._render_reward_preview_items([preview])
-
-    def _clean_reward_preview_text(self, text: str) -> str:
-        """清理奖励提名书展示层的表格标记，不影响底层解析结果。"""
-        cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
-        cleaned = self.REWARD_TABLE_MARKER_RE.sub("\n", cleaned)
-        cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[ \t]+(?=[\u4e00-\u9fff])", "", cleaned)
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        return cleaned
-
-    def _parse_reward_table_rows(self, text: str) -> List[str]:
-        """提取奖励提名书表格行，过滤表头，供首页摘要展示。"""
-        raw = str(text or "")
-        rows = [match.group(1).strip() for match in self.REWARD_TABLE_ROW_RE.finditer(raw)]
-        if not rows:
-            return []
-        return [self._clean_reward_preview_text(row) for row in rows if row.strip()]
-
-    def _format_reward_table_item(self, row: str, field_order: List[str], primary_field: str) -> str:
-        values = self._parse_reward_key_values(row)
-        if not values:
-            return self._clean_reward_preview_text(row)[:260]
-
-        primary_value = self._first_reward_value(values, [primary_field])
-        if not primary_value and primary_field == "论文（专著）名称":
-            primary_value = self._first_reward_value(values, ["论文（专著） 名称"])
-        if not primary_value:
-            primary_value = self._first_reward_value(values, ["主要发现点", "论文（专著） 名称", "论文（专著）名称"])
-
-        prefix = self._first_reward_value(values, ["序号"])
-        if prefix and not re.fullmatch(r"\d+", prefix):
-            return ""
-        head = f"{prefix}. {primary_value}" if prefix and primary_value else (primary_value or "")
-        detail_parts = []
-        emitted_values: set[str] = set()
-        for field in field_order:
-            if field in {"序号", primary_field, "论文（专著） 名称", "论文（专著）名称"}:
-                continue
-            value = self._first_reward_value(values, [field])
-            if not value or value in emitted_values:
-                continue
-            emitted_values.add(value)
-            if value:
-                detail_parts.append(f"{field.replace('（年月日）', '')}：{value}")
-        detail = "；".join(detail_parts)
-        item = "；".join(part for part in [head, detail] if part).strip()
-        return item[:360] + ("..." if len(item) > 360 else "")
-
-    def _parse_reward_key_values(self, row: str) -> Dict[str, str]:
-        values: Dict[str, str] = {}
-        for part in re.split(r"\s*[;；]\s*", row):
-            if not part or not re.search(r"[:：]", part):
-                continue
-            key, value = re.split(r"[:：]", part, maxsplit=1)
-            key = re.sub(r"\s+", " ", key).strip(" ;|")
-            value = re.sub(r"\s+", " ", value).strip()
-            if key and value:
-                values[key] = value
-        return values
-
-    def _first_reward_value(self, values: Dict[str, str], names: List[str]) -> str:
-        for name in names:
-            if values.get(name):
-                return values[name]
-        normalized = {re.sub(r"\s+", "", key): value for key, value in values.items()}
-        for name in names:
-            value = normalized.get(re.sub(r"\s+", "", name))
-            if value:
-                return value
-        return ""
-
-    def _render_reward_preview_items(self, items: List[str]) -> str:
-        rows = [
-            f'<div class="highlight-item"><div class="highlight-item-text">{html.escape(item)}</div></div>'
-            for item in items
-            if item
-        ]
-        if not rows:
-            return '<div class="empty">暂无提取结果</div>'
-        return '<div class="highlight-list">' + "".join(rows) + "</div>"
-
-    def _render_flat_list(self, items: List[Any], empty_text: str) -> str:
-        """渲染扁平条目列表"""
-        if not items:
-            return f'<div class="empty">{html.escape(empty_text)}</div>'
-
-        rows = [f'<div class="flat-item">{html.escape(str(item))}</div>' for item in items if str(item).strip()]
-        if not rows:
-            return f'<div class="empty">{html.escape(empty_text)}</div>'
-        return '<div class="flat-list">' + "".join(rows) + "</div>"
+            rows.append(f"<li>{html.escape(text)}{meta_html}</li>")
+        return "<ol class=\"list\">" + "".join(rows) + "</ol>"
 
     def _render_industry_fit(self, industry_fit: Dict[str, Any] | None) -> str:
         if not industry_fit:

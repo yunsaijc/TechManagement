@@ -23,11 +23,11 @@ class DatabaseSettings(BaseSettings):
     )
     
     # 奖励评审数据库 (MySQL)
-    reward_host: str = ""
+    reward_host: str = "192.168.0.211"
     reward_port: int = 3306
-    reward_user: str = ""
-    reward_password: str = ""
-    
+    reward_user: str = "hbkjjl"
+    reward_password: str = "hbkjjl"
+
     # 项目评审数据库 (SQL Server)
     project_host: str = ""
     project_port: int = 1433

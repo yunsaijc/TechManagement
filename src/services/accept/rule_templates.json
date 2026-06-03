@@ -1,0 +1,326 @@
+[
+  {
+    "metric_name": "实验系统",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["形成", "完成", "建立"]
+  },
+  {
+    "metric_name": "技术方案",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["形成", "完成", "建立", "实现"]
+  },
+  {
+    "metric_name": "工程样机",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["完成", "研制", "建成"]
+  },
+  {
+    "metric_name": "示范基地",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["建成", "完成", "形成"]
+  },
+  {
+    "metric_name": "检测范围",
+    "metric_category": "质量指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "检测报告"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "检测报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["达到", "实现", "完成"]
+  },
+  {
+    "metric_name": "检测频率",
+    "metric_category": "质量指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "检测报告"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "检测报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["达到", "实现", "完成"]
+  },
+  {
+    "metric_name": "检测标准偏差",
+    "metric_category": "质量指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "检测报告"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "检测报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["达到", "实现", "完成"]
+  },
+  {
+    "metric_name": "最大测量误差",
+    "metric_category": "质量指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "检测报告"],
+    "allowed_doc_kinds": ["验收申请", "科技报告", "检测报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["达到", "实现", "完成"]
+  },
+  {
+    "metric_name": "发明专利",
+    "metric_category": "知识产权",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": true,
+    "primary_doc_kinds": ["专利证书"],
+    "allowed_doc_kinds": ["专利证书", "验收申请", "其他材料", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["申请", "授权"],
+    "variant_alias_groups": {
+      "申请发明专利": ["申请发明专利", "发明专利", "专利申请"],
+      "授权发明专利": ["授权发明专利", "发明专利授权", "发明专利"]
+    }
+  },
+  {
+    "metric_name": "实用新型专利",
+    "metric_category": "知识产权",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": true,
+    "primary_doc_kinds": ["专利证书"],
+    "allowed_doc_kinds": ["专利证书", "验收申请", "其他材料", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["申请", "授权"]
+  },
+  {
+    "metric_name": "软件著作权",
+    "metric_category": "知识产权",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": true,
+    "primary_doc_kinds": ["软件著作权"],
+    "allowed_doc_kinds": ["软件著作权", "验收申请", "其他材料", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["登记"]
+  },
+  {
+    "metric_name": "科技论文",
+    "metric_category": "成果产出",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": false,
+    "primary_doc_kinds": ["论文", "科技报告", "其他材料"],
+    "allowed_doc_kinds": ["论文", "科技报告", "验收申请", "其他材料", "图片扫描件"],
+    "summary_fallback": "none",
+    "allowed_actions": ["发表"],
+    "variant_alias_groups": {
+      "论文": ["科技论文", "核心期刊以上论文", "高水平研究论文", "发表学术论文", "发表相关论文", "学术论文", "相关论文", "发表论文", "发表文章", "论文"]
+    }
+  },
+  {
+    "metric_name": "科技报告",
+    "metric_category": "成果产出",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告"],
+    "allowed_doc_kinds": ["科技报告", "验收申请", "其他材料"],
+    "summary_fallback": "none",
+    "allowed_actions": ["形成", "提交"]
+  },
+  {
+    "metric_name": "研究报告",
+    "metric_category": "成果产出",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "其他材料"],
+    "allowed_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "summary_fallback": "none",
+    "allowed_actions": ["形成", "提交", "制定", "实现", "完成"]
+  },
+  {
+    "metric_name": "决策咨询报告",
+    "metric_category": "成果产出",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "其他材料"],
+    "allowed_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "summary_fallback": "none",
+    "allowed_actions": ["形成", "提交", "制定", "实现", "完成"]
+  },
+  {
+    "metric_name": "技术标准",
+    "metric_category": "成果产出",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": false,
+    "primary_doc_kinds": ["其他材料", "科技报告"],
+    "allowed_doc_kinds": ["其他材料", "科技报告", "验收申请"],
+    "summary_fallback": "none",
+    "allowed_actions": ["制定", "形成"],
+    "variant_alias_groups": {
+      "企业标准": ["企业标准", "技术标准", "地方标准", "行业标准", "国家标准"]
+    }
+  },
+  {
+    "metric_name": "培养研究生",
+    "metric_category": "人才培养",
+    "itemized": true,
+    "aggregation": "count",
+    "require_primary": false,
+    "primary_doc_kinds": ["学位论文", "科技报告", "验收申请", "其他材料"],
+    "allowed_doc_kinds": ["学位论文", "验收申请", "科技报告", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["培养"]
+  },
+  {
+    "metric_name": "高效杀虫功能微生物",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "allowed_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "summary_fallback": "max",
+    "allowed_actions": ["筛选"]
+  },
+  {
+    "metric_name": "杀蚜虫新型生物制剂",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "allowed_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "summary_fallback": "max",
+    "allowed_actions": ["研制"]
+  },
+  {
+    "metric_name": "水分散粒剂制备技术",
+    "metric_category": "技术指标",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "allowed_doc_kinds": ["科技报告", "其他材料", "验收申请"],
+    "summary_fallback": "max",
+    "allowed_actions": ["研制"]
+  },
+  {
+    "metric_name": "新增销售收入",
+    "metric_category": "产业效益",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": true,
+    "primary_doc_kinds": ["审计报告"],
+    "allowed_doc_kinds": ["审计报告", "技术合同", "发票", "验收申请", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["实现", "新增"],
+    "variant_alias_groups": {
+      "销售收入": ["销售收入", "营业收入", "主营业务收入", "新增销售收入"]
+    }
+  },
+  {
+    "metric_name": "新增利税",
+    "metric_category": "产业效益",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": true,
+    "primary_doc_kinds": ["审计报告"],
+    "allowed_doc_kinds": ["审计报告", "发票", "验收申请", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["实现", "新增"],
+    "variant_alias_groups": {
+      "利税": ["新增利税", "新增利润", "利润总额", "净利润", "税收"]
+    }
+  },
+  {
+    "metric_name": "开展科普活动",
+    "metric_category": "社会效益",
+    "itemized": false,
+    "aggregation": "sum",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "其他材料", "科技报告"],
+    "allowed_doc_kinds": ["验收申请", "其他材料", "科技报告", "图片扫描件"],
+    "summary_fallback": "sum",
+    "allowed_actions": ["推广", "举办", "开展", "完成", "实现"]
+  },
+  {
+    "metric_name": "服务公众人次",
+    "metric_category": "社会效益",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "其他材料"],
+    "allowed_doc_kinds": ["验收申请", "其他材料"],
+    "summary_fallback": "max",
+    "allowed_actions": ["推广", "服务"]
+  },
+  {
+    "metric_name": "科普动画部数",
+    "metric_category": "科普产出",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "其他材料", "科技报告"],
+    "allowed_doc_kinds": ["验收申请", "其他材料", "科技报告", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["完成", "制作", "推广", "实现"]
+  },
+  {
+    "metric_name": "公益推广科普作品",
+    "metric_category": "科普产出",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "其他材料", "科技报告"],
+    "allowed_doc_kinds": ["验收申请", "其他材料", "科技报告", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["完成", "制作", "推广", "实现"]
+  },
+  {
+    "metric_name": "提供资助方科普作品",
+    "metric_category": "科普产出",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "其他材料", "科技报告"],
+    "allowed_doc_kinds": ["验收申请", "其他材料", "科技报告", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["完成", "提供", "推广", "实现"]
+  },
+  {
+    "metric_name": "科普推广点击量",
+    "metric_category": "社会效益",
+    "itemized": false,
+    "aggregation": "max",
+    "require_primary": false,
+    "primary_doc_kinds": ["验收申请", "其他材料", "科技报告"],
+    "allowed_doc_kinds": ["验收申请", "其他材料", "科技报告", "图片扫描件"],
+    "summary_fallback": "max",
+    "allowed_actions": ["完成", "推广", "服务", "实现"]
+  }
+]

@@ -4,7 +4,7 @@
 对齐业界最佳实践（知网、Turnitin）。
 
 核心流程:
-1. 文本提取 (PDF/DOCX → 结构化文本)
+1. 文本提取 (PDF/DOCX/DOC → 结构化文本)
 2. 语义分句 (按标点分句，而非按行)
 3. 模板过滤 (白名单 + 标题检测 + 短句过滤)
 4. N-gram 切分 (滑动窗口)
@@ -35,6 +35,127 @@ from src.services.plagiarism.text_repairs import repair_extracted_text_artifacts
 from src.services.plagiarism.template_filter import TemplateFilter
 from src.services.plagiarism.template_prefilter import TemplatePreFilter
 from src.services.plagiarism.tokenizer import SentenceTokenizer
+from src.services.plagiarism.config import PLAGIARISM_REWARD_FILE_LOCAL_INGEST_DIR
+
+
+def _resolve_reward_file_local_docx(doc_id: str) -> Optional[str]:
+    """将库 doc_id（相对路径，如 zmcl2020/104-410/104-410.docx）解析为本地镜像绝对路径，供 Mammoth 报告渲染。"""
+    cleaned = str(doc_id or "").strip()
+    if not cleaned.lower().endswith(".docx"):
+        return None
+    rel = Path(cleaned.replace("\\", "/"))
+    if rel.is_absolute():
+        try:
+            return str(rel.resolve()) if rel.is_file() else None
+        except OSError:
+            return None
+    p = Path(PLAGIARISM_REWARD_FILE_LOCAL_INGEST_DIR) / rel
+    try:
+        return str(p.resolve()) if p.is_file() else None
+    except OSError:
+        return None
+
+
+def _union_length_from_segments(segments: List[dict]) -> int:
+    ranges = []
+    for seg in segments:
+        try:
+            s = int(seg.get("primary_start", 0) or 0)
+            e = int(seg.get("primary_end", 0) or 0)
+        except Exception:
+            continue
+        if e > s:
+            ranges.append((max(0, s), max(0, e)))
+    if not ranges:
+        return 0
+    ranges.sort()
+    total = 0
+    cur_s, cur_e = ranges[0]
+    for s, e in ranges[1:]:
+        if s <= cur_e:
+            cur_e = max(cur_e, e)
+            continue
+        total += cur_e - cur_s
+        cur_s, cur_e = s, e
+    total += cur_e - cur_s
+    return total
+
+
+def _looks_like_reward_upload_template(seg: dict) -> bool:
+    text = str(seg.get("primary_text", "") or "")
+    norm = re.sub(r"\s+", "", text)
+    if not norm:
+        return False
+    # 覆盖“项目详细内容（不超过6页）/说明括号/立项背景”这组固定模板头
+    if "项目详细内容" in norm and "不超过6页" in norm and "总页数不超过6页" in norm:
+        return True
+    if "立项背景、主要科技创新" in norm and "知识产权及标准规范等情况" in norm and "总页数不超过6页" in norm:
+        return True
+    return False
+
+
+def _reclassify_upload_template_segments(output: Dict[str, Any]) -> None:
+    """将 by-file 分支中命中固定模板头的片段强制转为模板段。"""
+    duplicate_segments = list(output.get("duplicate_segments", []) or [])
+    if not duplicate_segments:
+        return
+    kept: List[dict] = []
+    moved: List[dict] = []
+    for seg in duplicate_segments:
+        if _looks_like_reward_upload_template(seg):
+            moved_seg = dict(seg)
+            moved_seg["is_template"] = True
+            moved_seg["template_reason"] = "whitelist"
+            moved.append(moved_seg)
+        else:
+            kept.append(seg)
+    if not moved:
+        return
+    template_segments = list(output.get("template_segments", []) or [])
+    output["duplicate_segments"] = kept
+    output["template_segments"] = template_segments + moved
+
+    summary = dict(output.get("summary", {}) or {})
+    total_chars = int(summary.get("total_chars", 0) or 0)
+    effective_chars = _union_length_from_segments(kept)
+    template_chars = _union_length_from_segments(output["template_segments"])
+    duplicate_chars = _union_length_from_segments(kept + output["template_segments"])
+    summary.update(
+        {
+            "total_effective_segments": len(kept),
+            "total_template_segments": len(output["template_segments"]),
+            "total_effective_chars": effective_chars,
+            "total_template_chars": template_chars,
+            "total_duplicate_segments": len(kept) + len(output["template_segments"]),
+            "total_duplicate_chars": duplicate_chars,
+            "effective_duplicate_chars": effective_chars,
+            "effective_duplicate_rate": (effective_chars / total_chars) if total_chars > 0 else 0.0,
+            "duplicate_rate": (duplicate_chars / total_chars) if total_chars > 0 else 0.0,
+        }
+    )
+    output["summary"] = summary
+
+
+def _compare_chunk_worker(payload: Dict[str, Any]):
+    """进程池 worker：对一个 primary + 多个 source 分块执行精比对。"""
+    engine_cfg = payload["engine_config"]
+    engine = ComparisonEngine(
+        min_continuous_match=engine_cfg["min_continuous_match"],
+        ngram_size=engine_cfg["ngram_size"],
+        winnowing_window=engine_cfg["winnowing_window"],
+        min_match_length=engine_cfg["min_match_length"],
+        max_fingerprint_frequency=engine_cfg["max_fingerprint_frequency"],
+    )
+    return engine.compare(
+        docs=payload["docs"],
+        excluded_ranges=payload["excluded_ranges"],
+        threshold_high=payload["threshold_high"],
+        threshold_medium=payload["threshold_medium"],
+        raw_texts=payload["raw_texts"],
+        search_windows=payload["search_windows"],
+        primary_doc_only=payload["primary_doc_id"],
+        light_mode_docs=payload.get("light_mode_docs"),
+    )
 
 
 def _compare_chunk_worker(payload: Dict[str, Any]):
@@ -70,6 +191,8 @@ class PlagiarismAgent:
         section_config: Optional[Dict] = None,
         debug: bool = False,
         capture_debug_output: bool = False,
+        enable_plain_text_report: bool = False,
+        highlight_template_segments: bool = True,
     ):
         """
         初始化查重 Agent
@@ -80,11 +203,17 @@ class PlagiarismAgent:
             threshold_medium: 中相似度阈值
             section_config: Section 配置
             debug: 是否保存 debug 信息
+            capture_debug_output: 是否在非 debug 模式下仍收集 primary_scope 等调试信息（如生成报告）
+            enable_plain_text_report: 是否额外生成纯文本报告分支（不影响 mammoth 报告）
+            highlight_template_segments: Mammoth 报告中是否高亮模板重复
         """
         self.threshold = threshold
         self.threshold_high = threshold_high
         self.threshold_medium = threshold_medium
         self.debug = debug
+        self.capture_debug_output = capture_debug_output
+        self.enable_plain_text_report = enable_plain_text_report
+        self.highlight_template_segments = highlight_template_segments
         self.debug_save_parse_artifacts = False
         self.debug_dir = Path("debug_plagiarism")
 
@@ -96,7 +225,10 @@ class PlagiarismAgent:
 
         # 初始化 Layer 5 组件
         self.tokenizer = SentenceTokenizer()
-        self.template_filter = TemplateFilter()
+        whitelist_patterns = []
+        if isinstance(section_config, dict):
+            whitelist_patterns = list(section_config.get("whitelist_patterns") or [])
+        self.template_filter = TemplateFilter(whitelist_patterns=whitelist_patterns)
         self.template_prefilter = TemplatePreFilter(template_filter=self.template_filter)
         self.report_builder = PlagiarismHtmlReportBuilder()
         self.mammoth_report_builder = MammothPlagiarismReportBuilder()
@@ -147,7 +279,11 @@ class PlagiarismAgent:
         for idx, (doc_id, file_data) in enumerate(files):
             try:
                 # 检测文件类型
-                file_type = self._detect_type_from_bytes(file_data)
+                file_type = self._resolve_file_type(
+                    doc_id=doc_id,
+                    file_data=file_data,
+                    file_path=file_paths_map.get(doc_id),
+                )
                 parser = get_parser(file_type)
                 result = await parser.parse(file_data)
 
@@ -500,18 +636,18 @@ class PlagiarismAgent:
                 template_filter=self.template_filter,
             )
             output["documents"] = processed_texts
-            if self.primary_scope_info:
-                output["primary_scope"] = self.primary_scope_info
+            if primary_scope_info:
+                output["primary_scope"] = primary_scope_info
             if excluded_ranges:
                 output["excluded_ranges"] = {
                     doc_id: [{"start": r.start, "end": r.end, "reason": r.reason} for r in ranges]
                     for doc_id, ranges in excluded_ranges.items()
                 }
             self.last_debug_output = output
-            self.last_debug_doc_ids = list(doc_ids)
+            self.last_debug_doc_ids = list(processed_texts.keys())
             self.last_primary_doc_id = primary_doc_id
 
-        if self.debug and primary_doc_id:
+        if (self.debug or self.capture_debug_output) and primary_doc_id:
             # 合并上传的 doc_ids 和召回的 doc_ids 用于保存
             all_involved_doc_ids = list(uploaded_doc_ids)
             for cid in candidate_doc_ids:
@@ -627,8 +763,24 @@ class PlagiarismAgent:
             return 'pdf'
         elif file_data[:4] == b'PK\x03\x04':  # docx 是 zip 格式
             return 'docx'
+        elif file_data[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':  # legacy doc OLE
+            return 'doc'
         else:
             return 'unknown'
+
+    def _resolve_file_type(self, doc_id: str, file_data: bytes, file_path: Optional[str] = None) -> str:
+        detected = self._detect_type_from_bytes(file_data)
+        if detected != "unknown":
+            return detected
+
+        for raw in (file_path, doc_id):
+            if not raw:
+                continue
+            suffix = Path(str(raw)).suffix.lower()
+            if suffix in {".pdf", ".docx", ".doc"}:
+                return suffix[1:]
+
+        return "unknown"
 
     def _save_debug(self, doc_id: str, result, full_text: str = "", debug_dir: Optional[Path] = None):
         """
@@ -705,6 +857,10 @@ class PlagiarismAgent:
                 "source_count": multi_summary.get("source_count", 0),
             })
 
+        # 仅在关闭模板高亮（上传路径 by-file 分支）时，强制把固定模板头从有效重复迁移到模板重复
+        if not self.highlight_template_segments:
+            _reclassify_upload_template_segments(output)
+
         if retrieval_result:
             selected_source_docs = list(retrieval_result.selected_source_docs or [])
             compared_source_docs = [similarity.doc_b for similarity in similarities if similarity.doc_a == primary_doc_id]
@@ -744,14 +900,23 @@ class PlagiarismAgent:
 
         # 生成 mammoth 版报告（保留Word格式，包括表格）
         mammoth_html_filename = debug_dir / "plagiarism_report_mammoth.html"
+        plain_html_filename = debug_dir / "plagiarism_report_upload_plain.html"
         temp_debug_filename = debug_dir / f".plagiarism_debug.{int(time.time() * 1000)}.{os.getpid()}.tmp.json"
         def _is_docx(doc_id: str) -> bool:
             return doc_id.lower().endswith(".docx")
 
         primary_path = None
         if _is_docx(primary_doc_id):
-            primary_path = file_paths.get(primary_doc_id)
+            primary_path = file_paths.get(primary_doc_id) or _resolve_reward_file_local_docx(primary_doc_id)
         selected_source_docs = list(getattr(retrieval_result, "selected_source_docs", []) or [])
+        segment_source_docs = []
+        for segment in output.get("duplicate_segments", []) or []:
+            sources = segment.get("sources", [])
+            if not sources:
+                continue
+            source_doc_id = str(sources[0].get("doc", "") or "").strip()
+            if source_doc_id and source_doc_id not in segment_source_docs:
+                segment_source_docs.append(source_doc_id)
         top_source_doc_id = selected_source_docs[0] if selected_source_docs else None
         if not top_source_doc_id:
             for doc_id in doc_ids:
@@ -760,16 +925,33 @@ class PlagiarismAgent:
                     break
         source_path = None
         if top_source_doc_id and _is_docx(top_source_doc_id):
-            source_path = file_paths.get(top_source_doc_id)
+            source_path = file_paths.get(top_source_doc_id) or _resolve_reward_file_local_docx(
+                top_source_doc_id
+            )
+        source_paths = {}
+        for doc_id in selected_source_docs + segment_source_docs:
+            if not doc_id or not _is_docx(doc_id):
+                continue
+            doc_path = file_paths.get(doc_id) or _resolve_reward_file_local_docx(doc_id)
+            if doc_path:
+                source_paths[doc_id] = doc_path
         
         try:
             with open(temp_debug_filename, "w", encoding="utf-8") as f:
                 json.dump(output, f, ensure_ascii=False, indent=2)
+            if self.enable_plain_text_report:
+                self.report_builder.build_from_debug_file(
+                    temp_debug_filename,
+                    plain_html_filename,
+                )
+                print(f"[Plagiarism] Debug: 保存纯文本报告到 {plain_html_filename}")
             self.mammoth_report_builder.build_from_debug_file(
                 temp_debug_filename,
                 mammoth_html_filename,
                 primary_docx_path=primary_path,
                 source_docx_path=source_path,
+                source_docx_paths=source_paths or None,
+                highlight_template_segments=self.highlight_template_segments,
             )
             print(f"[Plagiarism] Debug: 保存Mammoth格式报告到 {mammoth_html_filename}")
         except Exception as e:

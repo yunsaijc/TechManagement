@@ -1,7 +1,9 @@
 import json
 import logging
+import os
 import re
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 from typing import List, Dict, Any, Tuple, Optional
 
 from src.common.llm import get_llm_client, llm_config, get_embedding_client
@@ -75,19 +77,24 @@ class PerfCheckDetector:
     """绩效核验差异检测器"""
 
     def __init__(self, model_name: Optional[str] = None):
+        self.disable_external_model = str(os.getenv("PERFCHECK_DISABLE_EXTERNAL_MODEL", "")).strip().lower() in {"1", "true", "yes", "on"}
         timeout = max(float(getattr(llm_config, "timeout", 30.0) or 30.0), 60.0)
         max_retries = int(getattr(llm_config, "max_retries", 2) or 2)
-        self.llm = get_llm_client(
-            provider=llm_config.provider or "openai",
-            model=(model_name or llm_config.model or None),
-            api_key=llm_config.api_key or None,
-            base_url=llm_config.base_url or None,
-            temperature=llm_config.temperature,
-            max_tokens=llm_config.max_tokens,
-            timeout=timeout,
-            max_retries=max_retries,
-        )
-        self.embedding_client = get_embedding_client()
+        if self.disable_external_model:
+            self.llm = None
+            self.embedding_client = None
+        else:
+            self.llm = get_llm_client(
+                provider=llm_config.provider or "openai",
+                model=(model_name or llm_config.model or None),
+                api_key=llm_config.api_key or None,
+                base_url=llm_config.base_url or None,
+                temperature=llm_config.temperature,
+                max_tokens=llm_config.max_tokens,
+                timeout=timeout,
+                max_retries=max_retries,
+            )
+            self.embedding_client = get_embedding_client()
 
     async def detect_differences(
         self, 
@@ -297,6 +304,27 @@ class PerfCheckDetector:
             sub = f"（{x.subtype}）" if x.subtype else ""
             return f"{head}{core}{sub} {tail}".strip()
 
+        def _norm_unit(u: Any) -> str:
+            s = str(u or "").strip()
+            if not s:
+                return ""
+            if s == "％":
+                return "%"
+            aliases = {
+                "万元人民币": "万元",
+                "人民币万元": "万元",
+                "万": "万元",
+                "次": "人次",
+            }
+            return aliases.get(s, s)
+
+        def _unit_compatible(a: PerformanceTarget, t: PerformanceTarget) -> bool:
+            ua = _norm_unit(getattr(a, "unit", ""))
+            ut = _norm_unit(getattr(t, "unit", ""))
+            if (not ua) or (not ut):
+                return True
+            return ua == ut
+
         apply_final_targets = [a for a in apply_targets if is_final_metric(a)]
         task_final_targets = [t for t in task_targets if is_final_metric(t)]
 
@@ -312,6 +340,37 @@ class PerfCheckDetector:
         # 申报书“五、项目实施的预期绩效目标” vs 任务书“七、项目实施的绩效目标”。
         effective_apply_targets = [a for a in apply_final_targets if self._is_declaration_core_source(getattr(a, "source", ""))]
         effective_task_targets = [t for t in task_final_targets if self._is_task_core_source(getattr(t, "source", ""))]
+        if (not effective_apply_targets) and apply_final_targets:
+            # 模板漂移兜底：来源标题不规范时，回退到所有“最终指标”而非直接判空。
+            effective_apply_targets = list(apply_final_targets)
+        if (not effective_task_targets) and task_final_targets:
+            effective_task_targets = list(task_final_targets)
+
+        direct_matched_apply_ids: set[str] = set()
+
+        def _append_metric_pair(
+            a: PerformanceTarget,
+            t: PerformanceTarget,
+            *,
+            risk_level: str,
+            reason: str,
+            match_similarity: Optional[float] = None,
+        ) -> None:
+            comparisons.append(MetricComparison(
+                apply_id=a.id,
+                task_id=t.id,
+                apply_value=_value_for_compare(a.value),
+                task_value=_value_for_compare(t.value),
+                apply_display=_display_value(a),
+                task_display=_display_value(t),
+                apply_subtype=a.subtype,
+                task_subtype=t.subtype,
+                unit=a.unit,
+                type=metric_label(a),
+                risk_level=risk_level,
+                reason=reason,
+                match_similarity=match_similarity,
+            ))
 
         for a in effective_apply_targets:
             a_key = _hard_norm_metric_name(a)
@@ -327,6 +386,7 @@ class PerfCheckDetector:
                         key=lambda t: abs(_value_for_compare(getattr(t, "value", 0.0)) - _value_for_compare(getattr(a, "value", 0.0))),
                     )
                     matched_task_ids.add(best_direct.id)
+                    direct_matched_apply_ids.add(a.id)
                     risk_level, reason = self._judge_metric_risk(a, best_direct)
                     src_risk, src_reason = self._judge_metric_source_alignment(a, best_direct)
                     if src_risk == "RED":
@@ -335,68 +395,145 @@ class PerfCheckDetector:
                     elif src_risk == "YELLOW" and risk_level == "GREEN":
                         risk_level = "YELLOW"
                         reason = f"{reason}；{src_reason}" if reason else src_reason
-                    comparisons.append(MetricComparison(
-                        apply_id=a.id,
-                        task_id=best_direct.id,
-                        apply_value=_value_for_compare(a.value),
-                        task_value=_value_for_compare(best_direct.value),
-                        apply_display=_display_value(a),
-                        task_display=_display_value(best_direct),
-                        apply_subtype=a.subtype,
-                        task_subtype=best_direct.subtype,
-                        unit=a.unit,
-                        type=metric_label(a),
-                        risk_level=risk_level,
-                        reason=reason or "指标保持一致",
-                    ))
+                    _append_metric_pair(a, best_direct, risk_level=risk_level, reason=reason or "指标保持一致", match_similarity=None)
                     continue
 
+        # 语义阶段：先全局最优一对一（Hungarian），再 LLM 确认；失败则回退贪心，减少“争用同一任务条目”的误配
+        Ua = [a for a in effective_apply_targets if a.id not in direct_matched_apply_ids]
+        Ut = [t for t in effective_task_targets if t.id not in matched_task_ids]
+
+        SIM_FLOOR = 0.45
+        UNMATCH_COST = 1.22
+        REFINE_MIN_SIM = 0.58
+        REFINE_ACCEPT_SIM = 0.90
+        residual_apply: List[PerformanceTarget] = []
+
+        if Ua and Ut:
+            n_a = len(Ua)
+            n_t = len(Ut)
+            INF = 99.0
+            n_cols = n_t + n_a
+            cost = np.full((n_a, n_cols), INF, dtype=float)
+            sims = np.zeros((n_a, n_t), dtype=float)
+            for i, a in enumerate(Ua):
+                ka = key_for_match(a)
+                for j, t in enumerate(Ut):
+                    sims[i, j] = self._calculate_similarity(ka, key_for_match(t))
+                    c = 1.0 - float(sims[i, j])
+                    if not _unit_compatible(a, t):
+                        # 单位不一致时提高匹配成本，避免“亩↔个/万元↔%”的语义误配。
+                        c += 0.35
+                    if sims[i, j] < SIM_FLOOR:
+                        c = 2.0
+                    cost[i, j] = c
+                cost[i, n_t + i] = UNMATCH_COST
+
+            row_ind, col_ind = linear_sum_assignment(cost)
+            hungarian_pairs: List[Tuple[PerformanceTarget, PerformanceTarget, float]] = []
+            dummy_apply: List[PerformanceTarget] = []
+            for row_i, col_k in zip(row_ind, col_ind):
+                a = Ua[row_i]
+                if col_k < n_t:
+                    hungarian_pairs.append((a, Ut[col_k], float(sims[row_i, col_k])))
+                else:
+                    dummy_apply.append(a)
+
+            hungarian_pairs.sort(key=lambda x: -x[2])
+
+            for a, t, sim in hungarian_pairs:
+                if t.id in matched_task_ids:
+                    residual_apply.append(a)
+                    continue
+                if sim >= REFINE_ACCEPT_SIM:
+                    refinement = {"is_match": True, "similarity": sim, "reason": "高相似度规则直连"}
+                elif sim < REFINE_MIN_SIM:
+                    residual_apply.append(a)
+                    continue
+                else:
+                    refinement = await self._refine_alignment(key_for_refine(a), key_for_refine(t))
+                    if not refinement.get("is_match"):
+                        residual_apply.append(a)
+                        continue
+                matched_task_ids.add(t.id)
+                llm_sim = float(refinement.get("similarity", sim) or sim)
+                blend = max(sim, llm_sim, 0.0)
+                blend = min(1.0, blend)
+                risk_level, reason = self._judge_metric_risk(a, t)
+                src_risk, src_reason = self._judge_metric_source_alignment(a, t)
+                if src_risk == "RED":
+                    risk_level = "RED"
+                    reason = f"{reason}；{src_reason}" if reason else src_reason
+                elif src_risk == "YELLOW" and risk_level == "GREEN":
+                    risk_level = "YELLOW"
+                    reason = f"{reason}；{src_reason}" if reason else src_reason
+                _append_metric_pair(
+                    a,
+                    t,
+                    risk_level=risk_level,
+                    reason=reason or str(refinement.get("reason", "") or "指标保持一致"),
+                    match_similarity=blend,
+                )
+
+            residual_apply.extend(dummy_apply)
+        elif Ua and not Ut:
+            residual_apply.extend(Ua)
+
+        apply_pos = {a.id: i for i, a in enumerate(effective_apply_targets)}
+        residual_apply.sort(key=lambda x: apply_pos.get(x.id, 999))
+        _seen_residual: set[str] = set()
+        _deduped: List[PerformanceTarget] = []
+        for a in residual_apply:
+            if a.id in _seen_residual:
+                continue
+            _seen_residual.add(a.id)
+            _deduped.append(a)
+        residual_apply = _deduped
+
+        for a in residual_apply:
+            if a.id in direct_matched_apply_ids:
+                continue
             best_match = None
             max_sim = -1.0
-            
-            # 1. 语义初步匹配
             for t in effective_task_targets:
                 if t.id in matched_task_ids:
                     continue
                 sim = self._calculate_similarity(key_for_match(a), key_for_match(t))
+                if (not _unit_compatible(a, t)) and sim < 0.9:
+                    continue
                 if sim > max_sim:
                     max_sim = sim
                     best_match = t
-            
-            if best_match and max_sim > 0.65:
-                # 2. LLM 精排确认
+
+            if best_match and max_sim >= REFINE_ACCEPT_SIM:
+                refinement = {"is_match": True, "similarity": max_sim, "reason": "高相似度规则直连"}
+            elif best_match and max_sim >= REFINE_MIN_SIM:
                 refinement = await self._refine_alignment(
                     key_for_refine(a),
                     key_for_refine(best_match)
                 )
-                
-                if refinement.get("is_match"):
-                    matched_task_ids.add(best_match.id)
-                    risk_level, reason = self._judge_metric_risk(a, best_match)
-                    src_risk, src_reason = self._judge_metric_source_alignment(a, best_match)
-                    if src_risk == "RED":
-                        risk_level = "RED"
-                        reason = f"{reason}；{src_reason}" if reason else src_reason
-                    elif src_risk == "YELLOW" and risk_level == "GREEN":
-                        risk_level = "YELLOW"
-                        reason = f"{reason}；{src_reason}" if reason else src_reason
-                    comparisons.append(MetricComparison(
-                        apply_id=a.id,
-                        task_id=best_match.id,
-                        apply_value=_value_for_compare(a.value),
-                        task_value=_value_for_compare(best_match.value),
-                        apply_display=_display_value(a),
-                        task_display=_display_value(best_match),
-                        apply_subtype=a.subtype,
-                        task_subtype=best_match.subtype,
-                        unit=a.unit,
-                        type=metric_label(a),
-                        risk_level=risk_level,
-                        reason=reason or refinement.get("reason", "")
-                    ))
-                    continue
+            else:
+                refinement = {"is_match": False}
+            if best_match and refinement.get("is_match"):
+                matched_task_ids.add(best_match.id)
+                llm_sim = float(refinement.get("similarity", max_sim) or max_sim)
+                blend = min(1.0, max(max_sim, llm_sim))
+                risk_level, reason = self._judge_metric_risk(a, best_match)
+                src_risk, src_reason = self._judge_metric_source_alignment(a, best_match)
+                if src_risk == "RED":
+                    risk_level = "RED"
+                    reason = f"{reason}；{src_reason}" if reason else src_reason
+                elif src_risk == "YELLOW" and risk_level == "GREEN":
+                    risk_level = "YELLOW"
+                    reason = f"{reason}；{src_reason}" if reason else src_reason
+                _append_metric_pair(
+                    a,
+                    best_match,
+                    risk_level=risk_level,
+                    reason=reason or str(refinement.get("reason", "") or "指标保持一致"),
+                    match_similarity=blend,
+                )
+                continue
 
-            # 未找到匹配：指标消失
             src = (getattr(a, "source", "") or "").strip()
             src_text = f"（来源: {src}）" if src else ""
             comparisons.append(MetricComparison(
@@ -411,7 +548,8 @@ class PerfCheckDetector:
                 unit=a.unit,
                 type=metric_label(a),
                 risk_level="RED",
-                reason=f"指标 '{metric_label(a)}' 在任务书中缺失{src_text}"
+                reason=f"指标 '{metric_label(a)}' 在任务书中缺失{src_text}",
+                match_similarity=max_sim if max_sim >= 0 else None,
             ))
 
         if not effective_apply_targets and apply_targets:
@@ -564,29 +702,174 @@ class PerfCheckDetector:
             if not text:
                 return []
             text = re.sub(r"^\s*(?:（?\d+）?|\d+[.、)]|[一二三四五六七八九十]+[、.．)])\s*", "", text)
-            parts = re.split(r"[；;。\n]", text)
+            parts = re.split(r"[；;。!\n]", text)
             out: List[str] = []
             seen: set[str] = set()
             for p in parts:
                 seg = str(p or "").strip(" ，,。；;:")
-                if len(seg) < 6:
+                if not seg:
                     continue
-                key = _normalize_content_text(seg)
-                if not key or key in seen:
-                    continue
-                seen.add(key)
-                out.append(seg)
+                # 长句再按逗号/顿号切分，提升“概括句 vs 细节句”的覆盖识别。
+                subs = [x.strip(" ，,。；;:") for x in re.split(r"[，,、：:]", seg) if x.strip(" ，,。；;:")]
+                if not subs:
+                    subs = [seg]
+                for sub in subs:
+                    if len(sub) < 6:
+                        continue
+                    key = _normalize_content_text(sub)
+                    if len(key) < 6 or key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(sub)
+                    if len(out) >= max_items:
+                        break
                 if len(out) >= max_items:
                     break
             return out
 
+        def _norm_segments(val: str, *, max_items: int = 12) -> List[str]:
+            segs = _extract_key_phrases(val, max_items=max_items * 2)
+            out: List[str] = []
+            seen: set[str] = set()
+            for seg in segs:
+                n = _normalize_content_text(seg)
+                if len(n) < 6 or n in seen:
+                    continue
+                seen.add(n)
+                out.append(n)
+                if len(out) >= max_items:
+                    break
+            return out
+
+        def _soft_match(seg_a: str, seg_b: str) -> bool:
+            if not seg_a or not seg_b:
+                return False
+            if seg_a in seg_b or seg_b in seg_a:
+                return True
+            # 双字片段重叠，兼容“详细描述 vs 概括表达”。
+            b1 = {seg_a[i:i + 2] for i in range(len(seg_a) - 1)} if len(seg_a) >= 2 else {seg_a}
+            b2 = {seg_b[i:i + 2] for i in range(len(seg_b) - 1)} if len(seg_b) >= 2 else {seg_b}
+            if not b1 or not b2:
+                return False
+            jac = len(b1 & b2) / len(b1 | b2)
+            return jac >= 0.42
+
+        DOMAIN_TOPICS = [
+            "数据",
+            "数据库",
+            "平台",
+            "证候",
+            "动态",
+            "模型",
+            "量化",
+            "指标",
+            "并发症",
+            "预警",
+            "分型",
+            "阈值",
+            "标准",
+            "工具",
+            "路径",
+            "图谱",
+            "诊断",
+            "风险",
+        ]
+
+        def _topic_overlap_score(a_text: str, b_text: str) -> float:
+            a = str(a_text or "")
+            b = str(b_text or "")
+            a_hits = {k for k in DOMAIN_TOPICS if k in a}
+            b_hits = {k for k in DOMAIN_TOPICS if k in b}
+            if not a_hits:
+                return 0.0
+            return len(a_hits & b_hits) / len(a_hits)
+
+        def _key_topic_bonus(a_text: str, b_text: str) -> float:
+            a = str(a_text or "")
+            b = str(b_text or "")
+            bonus = 0.0
+            for tok, w in [
+                ("数据", 0.06),
+                ("数据库", 0.10),
+                ("动态", 0.06),
+                ("量化", 0.10),
+                ("指标", 0.10),
+                ("并发症", 0.12),
+                ("预警", 0.12),
+                ("分型", 0.14),
+                ("图谱", 0.14),
+                ("阈值", 0.12),
+                ("标准", 0.10),
+            ]:
+                if tok in a and tok in b:
+                    bonus += w
+            return bonus
+
+        def _key_topic_penalty(a_text: str, b_text: str) -> float:
+            a = str(a_text or "")
+            b = str(b_text or "")
+            penalty = 0.0
+            for tok, w in [
+                ("并发症", 0.12),
+                ("预警", 0.12),
+                ("分型", 0.14),
+                ("图谱", 0.10),
+                ("指标", 0.08),
+            ]:
+                if tok in a and tok not in b:
+                    penalty += w
+            return penalty
+
         def _missing_key_phrases(apply_text: str, task_text: str) -> List[str]:
             task_norm = _normalize_content_text(task_text)
+            task_segs = _norm_segments(task_text, max_items=16)
             misses: List[str] = []
             for ph in _extract_key_phrases(apply_text):
-                if _normalize_content_text(ph) not in task_norm:
-                    misses.append(ph)
+                ph_norm = _normalize_content_text(ph)
+                if not ph_norm:
+                    continue
+                if ph_norm in task_norm:
+                    continue
+                if any(_soft_match(ph_norm, ts) for ts in task_segs):
+                    continue
+                misses.append(ph)
             return misses[:4]
+
+        def _leading_index(text: str) -> Optional[int]:
+            s = str(text or "").strip()
+            if not s:
+                return None
+            m = re.match(r"^\s*(\d+)\s*[、.．)]", s)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    return None
+            m = re.match(r"^\s*[（(]\s*(\d+)\s*[）)]", s)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    return None
+            return None
+
+        def _lead_topic_norm(text: str) -> str:
+            s = str(text or "").strip()
+            if not s:
+                return ""
+            s = re.sub(r"^\s*(?:（?\d+）?|\d+[.、)]|[一二三四五六七八九十]+[、.．)])\s*", "", s)
+            s = s.lstrip(" 、,.，。．:：;；-—_")
+            # 截取“主题标题段”：遇到方法描述词就截断，避免细节拖低匹配。
+            cut_tokens = ["基于", "通过", "采用", "运用", "结合", "围绕", "针对", "选择"]
+            cut_pos = len(s)
+            for tok in cut_tokens:
+                p = s.find(tok)
+                if p > 0:
+                    cut_pos = min(cut_pos, p)
+            s = s[:cut_pos]
+            s = re.split(r"[，,。；;：:（）()\\s]", s)[0]
+            s = re.sub(r"[\s\t\r\n\u3000·•，,。；;:：()（）\\[\\]【】<>《》\\-_/\\\\]+", "", s.lower())
+            return s[:28] if len(s) >= 2 else ""
 
         if not apply_contents and not task_contents:
             return [
@@ -628,38 +911,35 @@ class PerfCheckDetector:
             ]
 
         item_results: List[Dict[str, Any]] = []
-        # 结合关键短语覆盖与文本相似度进行对齐；若数量接近，优先按序对齐
-        def _phrase_overlap_score(a_text: str, b_text: str) -> float:
-            a_ph = set(_extract_key_phrases(a_text))
-            if not a_ph:
-                return 0.0
-            b_norm = _normalize_content_text(b_text)
-            hit = sum(1 for ph in a_ph if _normalize_content_text(ph) in b_norm)
-            return hit / max(1, len(a_ph))
-
-        by_index_initial = (len(apply_contents) >= 2 and len(task_contents) >= 2 and abs(len(apply_contents) - len(task_contents)) <= 2)
-
-        for idx, a in enumerate(apply_contents):
-            a_norm = _normalize_content_text(a.text)
-            max_score = -1.0
+        for a in apply_contents:
+            max_sim = 0.0
             best_task_text = ""
+            a_norm = _normalize_content_text(a.text)
 
-            # 初始候选：按序对齐，避免完全依赖相似度误配
-            if by_index_initial and idx < len(task_contents):
-                cand_text = task_contents[idx].text
-                max_score = max(self._calculate_similarity(a.text, cand_text), _phrase_overlap_score(a.text, cand_text))
-                best_task_text = cand_text
-
-            # 遍历寻找更优候选：综合“相似度 + 关键短语覆盖”
             for t in task_contents:
                 sim_score = self._calculate_similarity(a.text, t.text)
-                cov_score = _phrase_overlap_score(a.text, t.text)
-                score = max(sim_score, cov_score)
-                if cov_score >= 0.6:
-                    score = max(score, (cov_score * 0.75) + (sim_score * 0.25))
-                if score > max_score:
-                    max_score = score
+                if sim_score > max_sim:
+                    max_sim = sim_score
                     best_task_text = t.text
+                    best_task_i = ti
+
+                if score > best_any_score:
+                    best_any_score = score
+                    best_any_text = t.text
+                    best_any_i = ti
+                if (ti not in used_task_idx) and (score > best_unused_score):
+                    best_unused_score = score
+                    best_unused_text = t.text
+                    best_unused_i = ti
+
+            # 在“分数接近”时优先选择未使用的任务书条目，减少重复复用
+            if best_unused_i is not None and best_any_i is not None:
+                if best_unused_score >= (best_any_score - 0.05):
+                    best_task_text = best_unused_text
+                    best_task_i = best_unused_i
+
+            if best_task_i is not None:
+                used_task_idx.add(best_task_i)
 
             # 完全一致优先：避免 LLM 给出 0.9 这类“保守分”。
             exact_hit = False
@@ -685,24 +965,16 @@ class PerfCheckDetector:
             # LLM 辅助覆盖率判断
             refinement = await self._refine_alignment(a.text, best_task_text)
             is_covered = refinement.get("is_match", False)
-            # 使用综合得分作为下限，避免覆盖率因文本很长被低估
-            combined_baseline = max_score if max_score >= 0 else 0.0
-            coverage_score = float(refinement.get("similarity", combined_baseline) or 0.0)
+            coverage_score = float(refinement.get("similarity", max_sim) or 0.0)
             coverage_score = max(0.0, min(1.0, coverage_score))
             if is_covered:
                 # 已覆盖时不低于规则相似度，避免 LLM 低估造成“已覆盖但仅 90%”的观感偏差。
-                coverage_score = max(coverage_score, float(combined_baseline))
+                coverage_score = max(coverage_score, float(max_sim))
 
             b_norm = _normalize_content_text(best_task_text)
             if a_norm and b_norm and a_norm == b_norm:
                 is_covered = True
                 coverage_score = 1.0
-
-            # 若关键短语覆盖很高，则直接认定覆盖并抬升得分
-            phrase_cov = _phrase_overlap_score(a.text, best_task_text)
-            if phrase_cov >= 0.8 and not is_covered:
-                is_covered = True
-                coverage_score = max(coverage_score, phrase_cov)
 
             if is_covered:
                 reason = "任务书为申报书具体化"
@@ -1254,6 +1526,9 @@ class PerfCheckDetector:
 
     async def _refine_alignment(self, item_a: str, item_b: str) -> Dict[str, Any]:
         """LLM 精排与语义判断"""
+        if not self.llm:
+            sim = self._calculate_similarity(item_a, item_b)
+            return {"is_match": sim >= 0.75, "similarity": sim, "reason": "外部模型已关闭，使用本地相似度判定"}
         prompt = ALIGNMENT_REFINEMENT_PROMPT.format(item_a=item_a, item_b=item_b)
         try:
             response = await self.llm.ainvoke(prompt)

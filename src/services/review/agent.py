@@ -168,10 +168,9 @@ class ReviewAgent:
             suggestions = self._generate_suggestions(all_results)
 
         result = ReviewResult(
-            id=review_id or f"review_{int(time.time() * 1000)}",
-            status="done",
-            doc_type=normalized_doc_type,
-            doc_type_raw=self._last_raw_type,
+            id=f"review_{int(time.time() * 1000)}",
+            document_type=document_type,
+            document_type_raw=self._last_raw_type,
             results=all_results,
             ocr_text=extracted.get("text", ""),
             extracted_data={

@@ -78,6 +78,10 @@ from src.common.models.logicon import (
     RuleInfo,
     RuleConfigSnapshot,
     LogicOnResult,
+<<<<<<< HEAD
+    LogicOnDimensionSummary,
+=======
+>>>>>>> upstream/main
     LogicOnTextRequest,
     LogicOnTask,
 )
@@ -185,6 +189,7 @@ __all__ = [
     "RuleInfo",
     "RuleConfigSnapshot",
     "LogicOnResult",
+    "LogicOnDimensionSummary",
     "LogicOnTextRequest",
     "LogicOnTask",
     # 沙盘推演模型

@@ -58,6 +58,8 @@ simulation 使用的 baseline 应来自两部分：
 
 simulation 不负责重新发明 baseline，但必须把 baseline 固化成可复算对象。
 
+<<<<<<< HEAD
+=======
 ### 3. 当前政策 regime 的正式文本边界
 
 baseline 虽然主要由历史状态和 baseline forecast 组成，但它始终处在“当前政策 regime 不变”的条件下。
@@ -74,6 +76,7 @@ baseline 虽然主要由历史状态和 baseline forecast 组成，但它始终�
 - 当前预算、配额、资助强度边界
 - 哪些变化属于 baseline 自然延续，哪些已经需要新场景动作
 
+>>>>>>> upstream/main
 ## 四、baseline 必须包含什么
 
 一个可用 baseline 至少应覆盖以下状态。
@@ -148,7 +151,10 @@ baseline 虽然主要由历史状态和 baseline forecast 组成，但它始终�
 {
   "baseline_id": "baseline_2025_2027_default",
   "scenario_name": "压缩过热低效主题并向重点方向倾斜",
+<<<<<<< HEAD
+=======
   "basis_documents": [],
+>>>>>>> upstream/main
   "policy_package": [],
   "constraints": [],
   "evaluation_goals": [],
@@ -157,6 +163,9 @@ baseline 虽然主要由历史状态和 baseline forecast 组成，但它始终�
 }
 ```
 
+<<<<<<< HEAD
+这里的核心是 `policy_package`，不是零散的临时参数。
+=======
 这里的核心仍然是 `policy_package`，不是零散的临时参数。
 
 但 `basis_documents` 也必须存在，用来回答：
@@ -164,6 +173,7 @@ baseline 虽然主要由历史状态和 baseline forecast 组成，但它始终�
 - 这次场景依据了哪些正式指南或管理办法
 - 哪些约束来自正式规则，不是系统自行假设
 - 当前哪些结论只能算代理支持
+>>>>>>> upstream/main
 
 ## 八、policy package 的组织方式
 
@@ -200,12 +210,15 @@ baseline 虽然主要由历史状态和 baseline forecast 组成，但它始终�
 
 如果没有这些约束，场景比较会退化成“谁改得更大谁更好看”。
 
+<<<<<<< HEAD
+=======
 而且约束最好能追回到正式文本来源，例如：
 
 - 哪条管理办法规定了资助强度上限
 - 哪份指南限定了适用主题或申报范围
 - 哪份规则界定了本轮场景不能突破的预算边界
 
+>>>>>>> upstream/main
 ## 十、evaluation goals 决定方案优劣
 
 不同领导问题下，评估目标会不同。
@@ -276,7 +289,10 @@ baseline 是参考世界，一旦冻结就不能被场景动作回写污染。
 以下任一条件不满足时，系统应限制输出，而不是硬算：
 
 - baseline 无法追溯到真实数据版本
+<<<<<<< HEAD
+=======
 - 当前政策 regime 无法追溯到正式文本依据
+>>>>>>> upstream/main
 - scenario 无法结构化为正式政策包
 - 关键约束缺失
 - evaluation goals 未定义
