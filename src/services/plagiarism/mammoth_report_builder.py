@@ -1254,8 +1254,7 @@ class MammothPlagiarismReportBuilder:
             cards.append(f'''<button class="nav-item" data-match-id="{match_id}" data-source-doc="{html.escape(source_doc)}" data-template="{1 if is_template else 0}" data-type="{html.escape(match_type)}" data-locate="{html.escape(locate_mode or '')}">
                 <div class="nav-header">#{i} {template_badge} {type_badge} {locate_badge}</div>
                 <div class="nav-text">{html.escape(primary_text)}...</div>
-                <small>相似度 {similarity:.2f} · {source_info}</small>
-                <small>相似度 {similarity:.2f} · {source_info}</small>
+                <small>相似度: {similarity:.2f} | {source_info}</small>
             </button>''')
 
         return "".join(cards) if cards else '<p class="empty">未定位到可高亮的重复片段</p>'
@@ -1480,164 +1479,52 @@ class MammothPlagiarismReportBuilder:
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>查重可视化报告 - {html.escape(primary_doc)}</title>
   <style>
-    {mammoth_styles}
-
-    :root {{
-      --bg: #f5f7fb;
-      --panel: #ffffff;
-      --panel-2: #f8fafc;
-      --line: #e5e7eb;
-      --line-2: rgba(148, 163, 184, 0.22);
-      --ink: #0f172a;
-      --muted: #64748b;
-      --accent: #2563eb;
-      --danger: #ef4444;
-      --warn: #f59e0b;
-      --ok: #16a34a;
-      --radius: 12px;
-      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
-    }}
-
-    {mammoth_styles}
-
-    :root {{
-      --bg: #f5f7fb;
-      --panel: #ffffff;
-      --panel-2: #f8fafc;
-      --line: #e5e7eb;
-      --line-2: rgba(148, 163, 184, 0.22);
-      --ink: #0f172a;
-      --muted: #64748b;
-      --accent: #2563eb;
-      --danger: #ef4444;
-      --warn: #f59e0b;
-      --ok: #16a34a;
-      --radius: 12px;
-      --shadow: 0 10px 28px rgba(15, 23, 42, 0.10);
-    }}
-
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }}
-    body {{ margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--ink); }}
+    body {{ margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f5f7fb; color: #1f2937; }}
     .page {{ height: 100vh; display: flex; flex-direction: column; }}
-
-    .toolbar {{
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      background: rgba(255, 255, 255, 0.92);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--line);
-      padding: 12px 14px;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 12px;
-      align-items: start;
+    .toolbar {{ position: sticky; top: 0; z-index: 20; background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 14px 18px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
+    .title {{ font-size: 18px; font-weight: 700; }}
+    .meta {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+    .pill {{ background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 6px 10px; font-size: 12px; }}
+    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; }}
+    .sidebar {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; overflow: auto; }}
+    .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }}
+    .panel {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }}
+    .panel-header {{ padding: 12px 14px; border-bottom: 1px solid #e5e7eb; font-weight: 700; display: flex; justify-content: space-between; gap: 8px; background: #f8fafc; }}
+    .panel-body {{ padding: 16px; overflow: auto; scroll-behavior: smooth; }}
+    .nav-title {{ font-weight: 700; margin-bottom: 10px; font-size: 14px; }}
+    .nav-item {{ width: 100%; text-align: left; border: 1px solid #e5e7eb; background: #fff; border-radius: 10px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; }}
+    .nav-item:hover {{ border-color: #fca5a5; background: #fff5f5; }}
+    .nav-item.active {{ border-color: #ef4444; background: #fef2f2; }}
+    .nav-header {{ font-weight: 600; margin-bottom: 4px; }}
+    .nav-text {{ color: #374151; margin-bottom: 4px; }}
+    .nav-item small {{ display: block; color: #6b7280; font-size: 11px; }}
+    .template-badge {{ background: #f59e0b; color: white; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }}
+    .source-card {{ border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #ffffff; }}
+    .source-card-title {{ font-size: 12px; color: #0f172a; font-weight: 600; margin-bottom: 8px; }}
+    .source-item {{ border-top: 1px dashed #e2e8f0; padding-top: 8px; margin-top: 8px; }}
+    .source-item:first-child {{ border-top: 0; padding-top: 0; margin-top: 0; }}
+    .source-meta {{ font-size: 11px; color: #475569; margin-bottom: 4px; }}
+    .source-text {{ font-size: 13px; line-height: 1.6; color: #1f2937; }}
+    .source-more {{ margin-top: 8px; font-size: 11px; color: #64748b; }}
+    .hit {{ color: inherit !important; border-radius: 3px; padding: 0 1px; transition: background .12s ease; }}
+    .hit.strong {{ background: rgba(220, 38, 38, 0.34) !important; }}
+    .hit.strong:hover {{ background: rgba(220, 38, 38, 0.42) !important; }}
+    .hit.soft {{ background: rgba(248, 113, 113, 0.20) !important; }}
+    .hit.soft:hover {{ background: rgba(248, 113, 113, 0.28) !important; }}
+    .hit.active {{
+      box-shadow: 0 0 0 2px rgba(153, 27, 27, 0.35) !important;
+      outline: 1px solid rgba(127, 29, 29, 0.65);
+      background-image: linear-gradient(rgba(253, 224, 71, 0.72), rgba(253, 224, 71, 0.72)) !important;
+      background-blend-mode: multiply;
     }}
-
-    .title {{ font-size: 16px; font-weight: 900; letter-spacing: 0.2px; }}
-    .sub {{ margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.4; }}
-    .toolbar-actions {{ display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }}
-
-    .btn {{
-      border: 1px solid var(--line);
-      background: #ffffff;
-      color: var(--ink);
-      border-radius: 10px;
-      padding: 8px 10px;
-      font-size: 13px;
-      font-weight: 800;
-      cursor: pointer;
-      transition: all 160ms ease;
-      white-space: nowrap;
-    }}
-    .btn:hover {{ border-color: rgba(37, 99, 235, 0.35); box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06); }}
-    .btn.primary {{ background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }}
-    .btn.danger {{ background: rgba(239, 68, 68, 0.10); border-color: rgba(239, 68, 68, 0.35); color: #991b1b; }}
-    .btn:disabled {{ opacity: 0.55; cursor: not-allowed; }}
-    .btn:focus {{ outline: none; }}
-
-    .meta {{ display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }}
-    .pill {{ background: rgba(37, 99, 235, 0.10); color: #1e3a8a; border: 1px solid rgba(37, 99, 235, 0.22); border-radius: 999px; padding: 6px 10px; font-size: 12px; font-weight: 800; }}
-    .pill.warn {{ background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.22); color: #92400e; }}
-    .pill.muted {{ background: rgba(148, 163, 184, 0.12); border-color: rgba(148, 163, 184, 0.22); color: #334155; }}
-
-    .stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; width: 100%; }}
-    .stat-card {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05); }}
-    .stat-label {{ font-size: 12px; color: var(--muted); font-weight: 800; }}
-    .stat-value {{ margin-top: 6px; font-size: 18px; font-weight: 900; color: var(--ink); }}
-
-    .main {{ flex: 1; min-height: 0; display: grid; grid-template-columns: 320px 1fr; gap: 12px; padding: 12px; align-items: stretch; }}
-    .sidebar {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; }}
-    .sidebar-top {{ padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); background: var(--panel-2); }}
-    .nav-title {{ font-weight: 900; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }}
-    .nav-counter {{ font-size: 12px; font-weight: 900; color: #334155; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.22); padding: 2px 8px; border-radius: 999px; }}
-    .nav-search {{ width: 100%; margin-top: 10px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 10px; padding: 9px 10px; font-size: 13px; outline: none; }}
-    .nav-search:focus {{ border-color: rgba(37, 99, 235, 0.45); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }}
-    .filters {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }}
-    .chip {{ border: 1px solid rgba(148, 163, 184, 0.28); background: #ffffff; color: #334155; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 900; cursor: pointer; }}
-    .chip.active {{ background: rgba(37, 99, 235, 0.10); border-color: rgba(37, 99, 235, 0.35); color: #1e3a8a; }}
-
-    .nav-list {{ padding: 10px; overflow: auto; min-height: 0; }}
-    .nav-item {{ width: 100%; text-align: left; border: 1px solid rgba(148, 163, 184, 0.22); background: #fff; border-radius: 12px; padding: 10px; margin-bottom: 8px; cursor: pointer; font-size: 13px; transition: all 160ms ease; }}
-    .nav-item:hover {{ border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.04); }}
-    .nav-item.active {{ border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }}
-    .nav-item.hidden {{ display: none; }}
-    .nav-header {{ font-weight: 900; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
-    .nav-text {{ color: #334155; line-height: 1.55; margin-bottom: 6px; }}
-    .nav-item small {{ display: block; color: var(--muted); font-size: 12px; line-height: 1.35; }}
-
-    .template-badge {{ background: var(--warn); color: white; font-size: 10px; padding: 2px 6px; border-radius: 6px; }}
-    .locate-badge {{ font-size: 10px; padding: 2px 6px; border-radius: 6px; }}
-    .locate-badge.ok {{ background: var(--ok); color: #fff; }}
-    .locate-badge.partial {{ background: var(--accent); color: #fff; }}
-    .locate-badge.miss {{ background: #94a3b8; color: #fff; }}
-
-    .content {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; height: 100%; align-items: stretch; }}
-    .panel {{ background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; box-shadow: var(--shadow); }}
-    .panel-header {{ padding: 12px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.18); font-weight: 900; font-size: 16px; display: flex; justify-content: space-between; gap: 8px; background: var(--panel-2); }}
-    .panel-header span:last-child {{ font-size: 14px; color: var(--muted); word-break: break-all; text-align: right; }}
-    .panel-body {{ padding: 20px 18px 32px; overflow: auto; scroll-behavior: smooth; flex: 1; min-height: 420px; background: #fff; }}
-    .panel-body .docx-content {{ font-size: 16px !important; line-height: 1.9 !important; color: #111827; }}
-    .panel-body .docx-content p,
-    .panel-body .docx-content li,
-    .panel-body .docx-content td,
-    .panel-body .docx-content th,
-    .panel-body .docx-content div,
-    .panel-body .docx-content span {{ font-size: 16px; line-height: 1.9; overflow-wrap: anywhere; word-break: break-word; }}
-    .panel-body .docx-content h1,
-    .panel-body .docx-content h2,
-    .panel-body .docx-content h3,
-    .panel-body .docx-content h4,
-    .panel-body .docx-content h5,
-    .panel-body .docx-content h6 {{ line-height: 1.6; overflow-wrap: anywhere; word-break: break-word; }}
-    .panel-body .docx-content table {{ display: block; width: 100%; overflow-x: auto; border-collapse: collapse; }}
-    .panel-body .docx-content img {{ max-width: 100%; height: auto; }}
-    .source-doc-section.hidden {{ display: none; }}
-
-    .empty {{ color: #94a3b8; font-size: 13px; padding: 20px; text-align: center; }}
-    .hit {{
-      background: rgba(239, 68, 68, 0.18) !important;
-      color: #991b1b !important;
-      border-radius: 6px;
-      padding: 0 2px;
-      cursor: pointer;
-      transition: all 160ms ease;
-    }}
-    .hit.template {{ background: rgba(245, 158, 11, 0.18) !important; color: #92400e !important; }}
-    .hit.paraphrase {{ background: rgba(37, 99, 235, 0.18) !important; color: #1e3a8a !important; }}
-    .hit.active {{ box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); background: rgba(239, 68, 68, 0.28) !important; }}
-
-    @media (min-width: 1400px) {{
-      .content {{ grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr); }}
-      .panel-body {{ min-height: 520px; }}
-    }}
-
-    @media (max-width: 1100px) {{
-      .main {{ grid-template-columns: 1fr; }}
-      .content {{ grid-template-columns: 1fr; }}
-      .panel-body {{ min-height: 320px; }}
-    }}
+    .empty {{ color: #9ca3af; font-size: 13px; padding: 20px; text-align: center; }}
+    .stats {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; width: 100%; }}
+    .stat-card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }}
+    .stat-label {{ font-size: 12px; color: #64748b; }}
+    .stat-value {{ margin-top: 4px; font-size: 20px; font-weight: 700; color: #0f172a; }}
+    
+    {mammoth_styles}
   </style>
 </head>
 <body>
@@ -1648,71 +1535,22 @@ class MammothPlagiarismReportBuilder:
         <div class="sub">主文档：{html.escape(primary_doc)} ｜ 来源文档：{html.escape(source_doc or 'N/A')}</div>
         <div class="stats">{stats}</div>
       </div>
-      <div>
-        <div class="toolbar-actions" id="toolbar-actions">
-          <button class="btn" id="btn-prev" type="button">上一处</button>
-          <button class="btn" id="btn-next" type="button">下一处</button>
-          <button class="btn" id="btn-top" type="button">回到顶部</button>
-        </div>
-        <div class="meta" style="margin-top: 10px;">
-          <div class="pill">有效片段：{effective_count}</div>
-          <div class="pill">模板片段：{template_count}</div>
-          <div class="pill muted">未定位：{unmatched_count}</div>
-          <div class="pill">有效字数：{effective_chars}</div>
-        </div>
-      <div>
-        <div class="toolbar-actions" id="toolbar-actions">
-          <button class="btn" id="btn-prev" type="button">上一处</button>
-          <button class="btn" id="btn-next" type="button">下一处</button>
-          <button class="btn" id="btn-top" type="button">回到顶部</button>
-        </div>
-        <div class="meta" style="margin-top: 10px;">
-          <div class="pill">有效片段：{effective_count}</div>
-          <div class="pill">模板片段：{template_count}</div>
-          <div class="pill muted">未定位：{unmatched_count}</div>
-          <div class="pill">有效字数：{effective_chars}</div>
-        </div>
+      <div class="meta">
+        <div class="pill">有效重复段：{effective_count}</div>
+        <div class="pill">已高亮：{matched_count}</div>
+        <div class="pill">未定位：{unmatched_count}</div>
+        <div class="pill">模板段：{template_count}</div>
+        <div class="pill">有效字符：{effective_chars}</div>
       </div>
     </div>
     <div class="main">
       <aside class="sidebar">
-        <div class="sidebar-top">
-          <div class="nav-title">
-            <span>重复片段导航</span>
-            <span class="nav-counter" id="nav-counter">0/0</span>
-          </div>
-          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
-          <div class="filters" id="nav-filters">
-            <button class="chip active" type="button" data-filter="all">全部</button>
-            <button class="chip" type="button" data-filter="effective">有效</button>
-            <button class="chip" type="button" data-filter="template">模板</button>
-            <button class="chip" type="button" data-filter="paraphrase">改写</button>
-          </div>
-        </div>
-        <div class="nav-list" id="nav-list">
-          {match_cards}
-        </div>
-        <div class="sidebar-top">
-          <div class="nav-title">
-            <span>重复片段导航</span>
-            <span class="nav-counter" id="nav-counter">0/0</span>
-          </div>
-          <input id="nav-search" class="nav-search" placeholder="搜索片段关键词（支持模糊匹配）" />
-          <div class="filters" id="nav-filters">
-            <button class="chip active" type="button" data-filter="all">全部</button>
-            <button class="chip" type="button" data-filter="effective">有效</button>
-            <button class="chip" type="button" data-filter="template">模板</button>
-            <button class="chip" type="button" data-filter="paraphrase">改写</button>
-          </div>
-        </div>
-        <div class="nav-list" id="nav-list">
-          {match_cards}
-        </div>
+        <div class="nav-title">重复片段导航</div>
+        {match_cards}
       </aside>
       <section class="content">
         <div class="panel">
-          <div class="panel-header"><span>主文档</span><span>{html.escape(primary_doc)}</span></div>
-          <div class="panel-header"><span>主文档</span><span>{html.escape(primary_doc)}</span></div>
+          <div class="panel-header"><span>Primary</span><span>{html.escape(primary_doc)}</span></div>
           <div id="primary-panel" class="panel-body">
             {left_html}
           </div>
@@ -1729,15 +1567,8 @@ class MammothPlagiarismReportBuilder:
   <script>
     (function() {{
       const highlightMap = new Map();
-      const sourceLabel = document.getElementById('source-doc-label');
-
-      function getMatchIds(el) {{
-        return String(el.dataset.matchIds || el.dataset.matchId || '')
-          .split(',')
-          .map(item => item.trim())
-          .filter(Boolean);
-      }}
       
+      // 初始化：收集所有高亮元素的位置
       function initHighlights() {{
         document.querySelectorAll('.hit[data-match-id]').forEach(el => {{
           getMatchIds(el).forEach(matchId => {{
@@ -1748,22 +1579,7 @@ class MammothPlagiarismReportBuilder:
           }});
         }});
       }}
-
-      function switchSourceDoc(sourceDoc) {{
-        const sections = Array.from(document.querySelectorAll('#source-panel .source-doc-section[data-source-doc]'));
-        if (!sections.length) {{
-          return null;
-        }}
-        const target = sections.find(el => el.dataset.sourceDoc === sourceDoc) || sections[0];
-        sections.forEach(el => el.classList.toggle('hidden', el !== target));
-        if (sourceLabel) {{
-          sourceLabel.textContent = target.dataset.sourceName || target.dataset.sourceDoc || 'N/A';
-        }}
-        return target;
-      }}
       
-      let currentMatchId = null;
-
       const activateMatch = (matchId) => {{
         document.querySelectorAll('.hit.active').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.nav-item.active').forEach(el => el.classList.remove('active'));
@@ -1773,8 +1589,6 @@ class MammothPlagiarismReportBuilder:
         
         const navItem = document.querySelector(`.nav-item[data-match-id="${{matchId}}"]`);
         if (navItem) navItem.classList.add('active');
-        currentMatchId = matchId;
-        currentMatchId = matchId;
         
         if (hits.length > 0) {{
           const primaryHit = hits.find(el => el.dataset.side === 'primary') || hits[0];
@@ -1792,137 +1606,15 @@ class MammothPlagiarismReportBuilder:
             sourceHit.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
           }}
         }}
-
-        refreshCounter();
-
-        refreshCounter();
       }};
-
-      function getVisibleNavItems() {{
-        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
-      }}
-
-      function refreshCounter() {{
-        const items = getVisibleNavItems();
-        const total = items.length;
-        let idx = -1;
-        if (currentMatchId) {{
-          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
-        }}
-        const text = total > 0 ? `${{idx >= 0 ? idx + 1 : 0}}/${{total}}` : '0/0';
-        const el = document.getElementById('nav-counter');
-        if (el) el.textContent = text;
-
-        const btnPrev = document.getElementById('btn-prev');
-        const btnNext = document.getElementById('btn-next');
-        if (btnPrev) btnPrev.disabled = total === 0;
-        if (btnNext) btnNext.disabled = total === 0;
-      }}
-
-      function applyNavFilter() {{
-        const input = document.getElementById('nav-search');
-        const q = (input ? input.value : '').trim().toLowerCase();
-        const activeChip = document.querySelector('#nav-filters .chip.active');
-        const mode = activeChip ? activeChip.dataset.filter : 'all';
-
-        document.querySelectorAll('.nav-item').forEach(el => {{
-          const text = (el.innerText || '').toLowerCase();
-          const okText = !q || text.includes(q);
-          const isTemplate = el.dataset.template === '1';
-          const isParaphrase = el.dataset.type === 'paraphrase';
-          const okMode = mode === 'all'
-            || (mode === 'template' && isTemplate)
-            || (mode === 'effective' && !isTemplate)
-            || (mode === 'paraphrase' && isParaphrase);
-          el.classList.toggle('hidden', !(okText && okMode));
-        }});
-        const items = getVisibleNavItems();
-        if (items.length) {{
-          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
-          if (!stillVisible) {{
-            activateMatch(items[0].dataset.matchId);
-            return;
-          }}
-        }}
-        refreshCounter();
-      }}
       
-
-      function getVisibleNavItems() {{
-        return Array.from(document.querySelectorAll('.nav-item')).filter(el => !el.classList.contains('hidden'));
-      }}
-
-      function refreshCounter() {{
-        const items = getVisibleNavItems();
-        const total = items.length;
-        let idx = -1;
-        if (currentMatchId) {{
-          idx = items.findIndex(el => el.dataset.matchId === currentMatchId);
-        }}
-        const text = total > 0 ? `${{idx >= 0 ? idx + 1 : 0}}/${{total}}` : '0/0';
-        const el = document.getElementById('nav-counter');
-        if (el) el.textContent = text;
-
-        const btnPrev = document.getElementById('btn-prev');
-        const btnNext = document.getElementById('btn-next');
-        if (btnPrev) btnPrev.disabled = total === 0;
-        if (btnNext) btnNext.disabled = total === 0;
-      }}
-
-      function applyNavFilter() {{
-        const input = document.getElementById('nav-search');
-        const q = (input ? input.value : '').trim().toLowerCase();
-        const activeChip = document.querySelector('#nav-filters .chip.active');
-        const mode = activeChip ? activeChip.dataset.filter : 'all';
-
-        document.querySelectorAll('.nav-item').forEach(el => {{
-          const text = (el.innerText || '').toLowerCase();
-          const okText = !q || text.includes(q);
-          const isTemplate = el.dataset.template === '1';
-          const isParaphrase = el.dataset.type === 'paraphrase';
-          const okMode = mode === 'all'
-            || (mode === 'template' && isTemplate)
-            || (mode === 'effective' && !isTemplate)
-            || (mode === 'paraphrase' && isParaphrase);
-          el.classList.toggle('hidden', !(okText && okMode));
-        }});
-        const items = getVisibleNavItems();
-        if (items.length) {{
-          const stillVisible = currentMatchId && items.some(el => el.dataset.matchId === currentMatchId);
-          if (!stillVisible) {{
-            activateMatch(items[0].dataset.matchId);
-            return;
-          }}
-        }}
-        refreshCounter();
-      }}
-      
+      // 初始化
       initHighlights();
-      applyNavFilter();
-
-      const first = getVisibleNavItems()[0];
-      if (first) {{
-        activateMatch(first.dataset.matchId);
-      }}
       
-      applyNavFilter();
-
-      const first = getVisibleNavItems()[0];
-      if (first) {{
-        activateMatch(first.dataset.matchId);
-      }}
-      
+      // 绑定点击事件 - 使用事件委托
       document.addEventListener('click', (e) => {{
         const hit = e.target.closest('.hit');
         const navItem = e.target.closest('.nav-item');
-        const chip = e.target.closest('#nav-filters .chip');
-        const btnPrev = e.target.closest('#btn-prev');
-        const btnNext = e.target.closest('#btn-next');
-        const btnTop = e.target.closest('#btn-top');
-        const chip = e.target.closest('#nav-filters .chip');
-        const btnPrev = e.target.closest('#btn-prev');
-        const btnNext = e.target.closest('#btn-next');
-        const btnTop = e.target.closest('#btn-top');
         
         if (hit) {{
           e.preventDefault();
@@ -1930,88 +1622,8 @@ class MammothPlagiarismReportBuilder:
         }} else if (navItem) {{
           e.preventDefault();
           activateMatch(navItem.dataset.matchId);
-        }} else if (chip) {{
-          e.preventDefault();
-          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
-          chip.classList.add('active');
-          applyNavFilter();
-        }} else if (btnPrev || btnNext) {{
-          e.preventDefault();
-          const actions = document.getElementById('toolbar-actions');
-          if (actions) {{
-            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
-            (btnPrev || btnNext).classList.add('primary');
-          }}
-          const items = getVisibleNavItems();
-          if (!items.length) return;
-          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
-          let nextIdx = 0;
-          if (btnPrev) {{
-            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
-          }} else {{
-            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
-          }}
-          const target = items[nextIdx];
-          if (target) activateMatch(target.dataset.matchId);
-        }} else if (btnTop) {{
-          e.preventDefault();
-          const actions = document.getElementById('toolbar-actions');
-          if (actions) {{
-            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
-            btnTop.classList.add('primary');
-          }}
-          window.scrollTo({{ top: 0, behavior: 'smooth' }});
-          const pp = document.getElementById('primary-panel');
-          const sp = document.getElementById('source-panel');
-          if (pp) pp.scrollTo({{ top: 0, behavior: 'smooth' }});
-          if (sp) sp.scrollTo({{ top: 0, behavior: 'smooth' }});
-        }} else if (chip) {{
-          e.preventDefault();
-          document.querySelectorAll('#nav-filters .chip').forEach(x => x.classList.remove('active'));
-          chip.classList.add('active');
-          applyNavFilter();
-        }} else if (btnPrev || btnNext) {{
-          e.preventDefault();
-          const actions = document.getElementById('toolbar-actions');
-          if (actions) {{
-            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
-            (btnPrev || btnNext).classList.add('primary');
-          }}
-          const items = getVisibleNavItems();
-          if (!items.length) return;
-          const idx = currentMatchId ? items.findIndex(el => el.dataset.matchId === currentMatchId) : -1;
-          let nextIdx = 0;
-          if (btnPrev) {{
-            nextIdx = idx <= 0 ? items.length - 1 : idx - 1;
-          }} else {{
-            nextIdx = idx < 0 ? 0 : (idx >= items.length - 1 ? 0 : idx + 1);
-          }}
-          const target = items[nextIdx];
-          if (target) activateMatch(target.dataset.matchId);
-        }} else if (btnTop) {{
-          e.preventDefault();
-          const actions = document.getElementById('toolbar-actions');
-          if (actions) {{
-            actions.querySelectorAll('.btn').forEach(b => b.classList.remove('primary'));
-            btnTop.classList.add('primary');
-          }}
-          window.scrollTo({{ top: 0, behavior: 'smooth' }});
-          const pp = document.getElementById('primary-panel');
-          const sp = document.getElementById('source-panel');
-          if (pp) pp.scrollTo({{ top: 0, behavior: 'smooth' }});
-          if (sp) sp.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
       }});
-
-      const input = document.getElementById('nav-search');
-      if (input) {{
-        input.addEventListener('input', () => applyNavFilter());
-      }}
-
-      const input = document.getElementById('nav-search');
-      if (input) {{
-        input.addEventListener('input', () => applyNavFilter());
-      }}
     }})();
   </script>
 </body>

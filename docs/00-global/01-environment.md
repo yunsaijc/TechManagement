@@ -27,7 +27,7 @@ dependencies = [
     "paddlepaddle>=2.6.0",
     
     # 视觉模型
-    "transformers>=5.3.0",
+    "transformers>=4.57.3,<5.0.0",
     "torch>=2.2.0",
     "torchvision>=0.17.0",
     "ultralytics>=8.1.0",  # YOLO

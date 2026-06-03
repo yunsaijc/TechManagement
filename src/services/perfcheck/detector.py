@@ -911,79 +911,15 @@ class PerfCheckDetector:
             ]
 
         item_results: List[Dict[str, Any]] = []
-        # 结合关键短语覆盖与文本相似度进行对齐；若数量接近，优先按序对齐
-        def _phrase_overlap_score(a_text: str, b_text: str) -> float:
-            a_ph = _norm_segments(a_text, max_items=16)
-            if not a_ph:
-                return 0.0
-            b_norm = _normalize_content_text(b_text)
-            b_ph = _norm_segments(b_text, max_items=16)
-            hit = 0
-            for ph in a_ph:
-                if ph in b_norm:
-                    hit += 1
-                    continue
-                if any(_soft_match(ph, bp) for bp in b_ph):
-                    hit += 1
-            return hit / max(1, len(a_ph))
-
-        by_index_initial = (len(apply_contents) >= 2 and len(task_contents) >= 2 and abs(len(apply_contents) - len(task_contents)) <= 2)
-        used_task_idx: set[int] = set()
-
-        for idx, a in enumerate(apply_contents):
-            a_norm = _normalize_content_text(a.text)
-            a_idx = _leading_index(a.text)
-            max_score = -1.0
+        for a in apply_contents:
+            max_sim = 0.0
             best_task_text = ""
-            best_task_i: int | None = None
+            a_norm = _normalize_content_text(a.text)
 
-            best_any_score = -1.0
-            best_any_text = ""
-            best_any_i: int | None = None
-            best_unused_score = -1.0
-            best_unused_text = ""
-            best_unused_i: int | None = None
-
-            # 初始候选：按序对齐，避免完全依赖相似度误配
-            if by_index_initial and idx < len(task_contents):
-                cand_text = task_contents[idx].text
-                max_score = max(self._calculate_similarity(a.text, cand_text), _phrase_overlap_score(a.text, cand_text))
-                best_task_text = cand_text
-                best_task_i = idx
-
-            # 遍历寻找更优候选：综合“相似度 + 关键短语覆盖”
-            for ti, t in enumerate(task_contents):
+            for t in task_contents:
                 sim_score = self._calculate_similarity(a.text, t.text)
-                cov_score = _phrase_overlap_score(a.text, t.text)
-                topic_score = _topic_overlap_score(a.text, t.text)
-                score = max(sim_score, cov_score, topic_score * 0.92)
-                score += _key_topic_bonus(a.text, t.text)
-                score -= _key_topic_penalty(a.text, t.text)
-
-                # 强主题约束：避免“预警模型”被“决策工具”误抢。
-                a_txt = str(a.text or "")
-                t_txt = str(t.text or "")
-                if any(k in a_txt for k in ["预警模型", "风险预测模型", "风险预警模型", "风险预警"]):
-                    if any(k in t_txt for k in ["预警模型", "风险预测模型", "风险预测", "预测模型"]):
-                        score += 0.14
-                    if ("模型" in a_txt) and ("模型" not in t_txt):
-                        score -= 0.10
-                if any(k in a_txt for k in ["图谱", "分型标准", "指标阈值", "证候分型", "临床决策"]):
-                    if any(k in t_txt for k in ["分型标准", "指标阈值", "阈值", "一体化工具", "决策工具", "临床决策工具"]):
-                        score += 0.10
-                    if ("图谱" in a_txt) and (("图谱" not in t_txt) and ("路径" not in t_txt)):
-                        score -= 0.04
-                t_idx = _leading_index(t.text)
-                # 编号优先：同编号条目优先匹配，减少“1 对 4”这类跨项误配。
-                if (a_idx is not None) and (t_idx is not None):
-                    if a_idx == t_idx:
-                        score += 0.10
-                    else:
-                        score -= 0.04
-                if cov_score >= 0.6:
-                    score = max(score, (cov_score * 0.75) + (sim_score * 0.25))
-                if score > max_score:
-                    max_score = score
+                if sim_score > max_sim:
+                    max_sim = sim_score
                     best_task_text = t.text
                     best_task_i = ti
 
@@ -1026,78 +962,19 @@ class PerfCheckDetector:
                 })
                 continue
 
-            # 使用综合得分作为下限，避免覆盖率因文本很长被低估
-            combined_baseline = max_score if max_score >= 0 else 0.0
-            phrase_cov = _phrase_overlap_score(a.text, best_task_text)
-            best_idx = _leading_index(best_task_text)
-            lead_a = _lead_topic_norm(a.text)
-            lead_b = _lead_topic_norm(best_task_text)
-            lead_topic_hit = bool(lead_a and lead_b and (lead_a in lead_b or lead_b in lead_a or _soft_match(lead_a, lead_b)))
-            topic_cov = _topic_overlap_score(a.text, best_task_text)
-            if combined_baseline >= 0.90 or phrase_cov >= 0.85:
-                # 高置信规则直判覆盖，减少高相似样本的 LLM 开销。
-                is_covered = True
-                coverage_score = min(1.0, max(float(combined_baseline), float(phrase_cov)))
-            else:
-                refinement = await self._refine_alignment(a.text, best_task_text)
-                is_covered = refinement.get("is_match", False)
-                coverage_score = float(refinement.get("similarity", combined_baseline) or 0.0)
-                coverage_score = max(0.0, min(1.0, coverage_score))
-                if is_covered:
-                    # 已覆盖时不低于规则相似度，避免 LLM 低估造成“已覆盖但仅 90%”的观感偏差。
-                    coverage_score = max(coverage_score, float(combined_baseline))
-
-            # 同编号项允许“概括覆盖”：详细申报项在任务书中被压缩表达时，不应一律判红。
-            if (not is_covered) and (a_idx is not None) and (best_idx is not None) and (a_idx == best_idx):
-                if phrase_cov >= 0.16 and combined_baseline >= 0.10:
-                    is_covered = True
-                    coverage_score = max(coverage_score, min(0.82, max(float(phrase_cov), float(combined_baseline))))
-                elif topic_cov >= 0.45:
-                    is_covered = True
-                    coverage_score = max(coverage_score, 0.82)
-                elif lead_topic_hit:
-                    # 同编号且主题标题一致时，任务书常以“概括句”替代申报书“细化条目”，判定为覆盖。
-                    is_covered = True
-                    coverage_score = max(coverage_score, 0.88)
-
-            # 模板专用：任务书用“证候量化”概括申报书的“指标体系/诊断模型”
-            if (not is_covered) and ("证候量化" in best_task_text):
-                if any(k in a.text for k in ["指标体系", "诊断模型", "判别模型", "支持向量机", "SVM", "AHP", "PCA", "权重", "交叉验证", "定量评估"]):
-                    is_covered = True
-                    coverage_score = max(coverage_score, 0.80)
-
-            # 模板专用：任务书用“分型标准（含阈值）/工具”概括申报书的“分型+阈值+图谱”
-            if (not is_covered) and any(k in a.text for k in ["证候分型", "分型", "阈值", "图谱", "路径图谱"]):
-                if any(k in best_task_text for k in ["分型标准", "指标阈值", "阈值", "一体化工具", "决策工具", "临床决策工具"]):
-                    if (a_idx is not None) and (best_idx is not None) and abs(a_idx - best_idx) <= 1:
-                        is_covered = True
-                        coverage_score = max(coverage_score, 0.82)
-
-            # 模板专用：任务书概括“并发症风险预警模型/风险预测模型”
-            if (not is_covered) and any(k in a.text for k in ["风险预警模型", "风险预测模型", "并发症风险预警", "风险分层", "风险预测"]):
-                if any(k in best_task_text for k in ["风险预警模型", "风险预测模型", "风险预测", "预警模型构建", "预测模型"]):
-                    if any(k in a.text for k in ["关联规则", "数据挖掘", "Apriori", "Logistic", "ROC"]) and any(k in best_task_text for k in ["关联规则", "数据挖掘"]):
-                        is_covered = True
-                        coverage_score = max(coverage_score, 0.82)
-
-            if (not is_covered) and topic_cov >= 0.72 and (
-                lead_topic_hit
-                or phrase_cov >= 0.08
-                or ((a_idx is not None) and (best_idx is not None) and abs(a_idx - best_idx) <= 1)
-            ):
-                # 主题高重合时，允许“概括覆盖”作为中等风险通过。
-                is_covered = True
-                coverage_score = max(coverage_score, 0.79)
+            # LLM 辅助覆盖率判断
+            refinement = await self._refine_alignment(a.text, best_task_text)
+            is_covered = refinement.get("is_match", False)
+            coverage_score = float(refinement.get("similarity", max_sim) or 0.0)
+            coverage_score = max(0.0, min(1.0, coverage_score))
+            if is_covered:
+                # 已覆盖时不低于规则相似度，避免 LLM 低估造成“已覆盖但仅 90%”的观感偏差。
+                coverage_score = max(coverage_score, float(max_sim))
 
             b_norm = _normalize_content_text(best_task_text)
             if a_norm and b_norm and a_norm == b_norm:
                 is_covered = True
                 coverage_score = 1.0
-
-            # 若关键短语覆盖很高，则直接认定覆盖并抬升得分
-            if phrase_cov >= 0.8 and not is_covered:
-                is_covered = True
-                coverage_score = max(coverage_score, phrase_cov)
 
             if is_covered:
                 reason = "任务书为申报书具体化"

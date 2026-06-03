@@ -32,9 +32,9 @@ def run_graph_rag_step5() -> None:
 
 
 def run_leadership_sandbox() -> None:
-    from .leadership_sandbox_orchestrator import run_leadership_sandbox
+    from .leadership_sandbox_orchestrator import run_leadership_sandbox as main
 
-    run_leadership_sandbox()
+    main()
 
 
 __all__ = [

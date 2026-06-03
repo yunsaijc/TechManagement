@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Dict
 
 from src.common.models.review import CheckResult, CheckStatus
+from src.services.review.doc_types import normalize_doc_type
 
 if TYPE_CHECKING:
     from src.common.models.document import DocumentContent
@@ -19,17 +20,22 @@ class ReviewContext:
         self,
         file_data: bytes,
         file_type: str,
-        document_type: str,
+        doc_type: str,
         content: "DocumentContent" = None,  # type: ignore[assignment]
         extracted: "ExtractedContent" = None,  # 预提取的内容
         metadata: Dict[str, Any] = None,  # type: ignore[assignment]
     ):
         self.file_data = file_data
         self.file_type = file_type
-        self.document_type = document_type
+        self.doc_type = normalize_doc_type(doc_type)
         self.content = content  # 原始文档内容（保留兼容）
         self.extracted = extracted  # 预提取的内容
         self.metadata = metadata or {}
+
+    @property
+    def document_type(self) -> str:
+        """兼容旧字段访问。"""
+        return self.doc_type
 
 
 class BaseRule(ABC):

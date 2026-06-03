@@ -4,6 +4,7 @@
 包含9个评审维度的检查器实现。
 """
 from .base import BaseChecker
+from .evidence_pack import EvidencePackBuilder
 from .feasibility_checker import FeasibilityChecker
 from .innovation_checker import InnovationChecker
 from .team_checker import TeamChecker
@@ -16,6 +17,7 @@ from .compliance_checker import ComplianceChecker
 
 __all__ = [
     "BaseChecker",
+    "EvidencePackBuilder",
     "FeasibilityChecker",
     "InnovationChecker",
     "TeamChecker",

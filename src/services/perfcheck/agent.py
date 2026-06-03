@@ -28,6 +28,9 @@ class PerfCheckAgent:
         strict_mode: bool = True,
         enable_llm_enhancement: bool = False,
         enable_llm_entailment: bool = True,
+        strict_mode: bool = True,
+        enable_llm_enhancement: bool = False,
+        enable_llm_entailment: bool = True,
         on_progress: Optional[Callable[[float, str, str], None]] = None,
         **kwargs
     ) -> PerfCheckResult:
@@ -58,6 +61,10 @@ class PerfCheckAgent:
         declaration_file_type: str,
         task_file: bytes,
         task_file_type: str,
+        strict_mode: bool = True,
+        enable_llm_enhancement: bool = False,
+        enable_table_vision_extraction: bool = True,
+        enable_llm_entailment: bool = True,
         strict_mode: bool = True,
         enable_llm_enhancement: bool = False,
         enable_table_vision_extraction: bool = True,
@@ -108,6 +115,18 @@ class PerfCheckAgent:
         if 0 < len(task_targets) <= 2:
             warnings.append(f"任务书解析到的绩效指标数量较少（{len(task_targets)} 条），建议优先上传可复制的 DOCX 或开启表格识别")
 
+        warnings: list[str] = []
+        apply_targets = apply_schema.performance_targets or []
+        task_targets = task_schema.performance_targets or []
+        if len(apply_targets) == 0:
+            warnings.append("申报书未解析到绩效指标（可能为表格未识别/扫描件质量较差/章节标题不规范）")
+        if len(task_targets) == 0:
+            warnings.append("任务书未解析到绩效指标（可能为表格未识别/扫描件质量较差/章节标题不规范）")
+        if 0 < len(apply_targets) <= 2:
+            warnings.append(f"申报书解析到的绩效指标数量较少（{len(apply_targets)} 条），建议优先上传可复制的 DOCX 或开启表格识别")
+        if 0 < len(task_targets) <= 2:
+            warnings.append(f"任务书解析到的绩效指标数量较少（{len(task_targets)} 条），建议优先上传可复制的 DOCX 或开启表格识别")
+
         if on_progress:
             on_progress(0.40, "detect", "开始差异检测（指标/内容/预算）")
         
@@ -132,6 +151,7 @@ class PerfCheckAgent:
             other_risks=other_risks,
             unit_budget_risks=unit_budget_risks,
             summary=summary,
+            warnings=warnings
             warnings=warnings
         )
 

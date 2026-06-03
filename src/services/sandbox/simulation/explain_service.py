@@ -216,7 +216,7 @@ def _dedupe_impacts_by_topic_label(items: list) -> list:
     selected = []
     seen: set[str] = set()
     for item in items:
-        key = _normalize_topic_label(_topic_label(item))
+        key = str(getattr(item, "topic_id", "") or "").strip() or _normalize_topic_label(_topic_label(item))
         if key in seen:
             continue
         selected.append(item)

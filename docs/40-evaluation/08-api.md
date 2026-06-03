@@ -7,6 +7,7 @@
 | POST | `/api/v1/evaluation` | 按 `project_id` 执行融合评审 |
 | POST | `/api/v1/evaluation/evaluate` | 同上（别名） |
 | POST | `/api/v1/evaluation/evaluate/file` | 上传文件执行融合评审 |
+| POST | `/api/v1/evaluation/platform` | 平台化评审入口，当前先支持奖励平台 |
 | POST | `/api/v1/evaluation/by-guide` | 按 `zndm` 查询真实项目并批量评审 |
 | POST | `/api/v1/evaluation/batch` | 批量评审 |
 | POST | `/api/v1/evaluation/chat/ask` | 基于评审结果问答（附页码证据） |
@@ -37,7 +38,7 @@ Content-Type: application/json
   },
   "include_sections": ["技术路线", "创新点"],
   "enable_highlight": true,
-  "enable_industry_fit": true,
+  "enable_industry_fit": false,
   "enable_benchmark": true,
   "enable_chat_index": true
 }
@@ -59,17 +60,11 @@ Content-Type: application/json
     "innovations": ["创新点1"],
     "technical_route": ["路线步骤1"]
   },
-  "industry_fit": {
-    "fit_score": 0.78,
-    "matched": ["指南条目A"],
-    "gaps": ["缺少产业化路径量化指标"],
-    "suggestions": ["补充产线验证数据和时间表"]
-  },
   "benchmark": {
     "novelty_level": "medium_high",
     "literature_position": "与近三年同类研究相比具备方法改进",
-    "patent_overlap": "存在部分交叉，需要进一步规避设计",
-    "conclusion": "技术水平处于国内前列"
+    "patent_overlap": "专利对比待接入",
+    "conclusion": "当前公开论文对比显示技术方案具备一定比较优势"
   },
   "evidence": [
     {
@@ -102,6 +97,7 @@ Content-Type: multipart/form-data
 - `dimensions`：逗号分隔
 - `weights`：JSON 字符串
 - `enable_highlight` / `enable_industry_fit` / `enable_benchmark` / `enable_chat_index`
+- 当前建议：`enable_industry_fit=false`，因为指南正文尚未形成可靠可核验的数据源
 
 ### 说明
 
@@ -128,7 +124,112 @@ Content-Type: application/json
 
 返回 `total/success/failed/results/summary/errors`。
 
-## 4. 按指南代码批量评审
+## 4. 平台化评审
+
+### 请求
+
+```http
+POST /api/v1/evaluation/platform
+Content-Type: application/json
+```
+
+```json
+{
+  "platform": "reward",
+  "project_id": "202520001",
+  "dimensions": null,
+  "weights": null,
+  "enable_highlight": true,
+  "enable_industry_fit": false,
+  "enable_benchmark": false,
+  "enable_chat_index": true
+}
+```
+
+### 入参说明
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `platform` | string | 是 | 平台类型；当前只支持 `reward` |
+| `project_id` | string | 是 | 平台项目编号；奖励平台下对应 `XMBH` |
+| `dimensions` | array | 否 | 指定评审维度；不传则使用默认九维 |
+| `weights` | object | 否 | 自定义权重；不传则按平台与奖种生成默认权重 |
+| `enable_highlight` | boolean | 否 | 是否启用结构化摘要 |
+| `enable_industry_fit` | boolean | 否 | 是否启用指南贴合；当前建议保持 `false` |
+| `enable_benchmark` | boolean | 否 | 是否启用技术摸底 |
+| `enable_chat_index` | boolean | 否 | 是否构建问答索引 |
+
+### 奖励平台规则
+
+奖励平台入口根据 `XMBH` 第 5 位识别奖种，并设置评审偏好与默认权重：
+
+| 第 5 位 | 奖种 |
+|------|------|
+| `1` | 突出贡献奖 |
+| `2` | 自然科学奖 |
+| `3` | 技术发明奖 |
+| `4` | 科学技术进步奖 |
+| `5` | 科学技术合作奖 |
+| `6` | 企业技术创新奖 |
+| `7` | 科学技术普及奖 |
+
+### 材料定位
+
+服务端根据 `XMBH` 查询奖励库，获取 `年度` 与 `提名号`，并自动组织三类材料：
+
+| 分组 | 来源 | 路径规则 |
+|------|------|------|
+| 主材料 | 提名书 | `FJCL\static\rpw\tjs{年度}\{提名号}.docx` |
+| 签字盖章类材料 | `t_xm_gzy` | `FJCL\static\rpw\gzy{年度}\{提名号}\{文件名}` |
+| 相关佐证材料 | `t_xm_qtfjcl`、`t_xm_gscl` | `FJCL\static\rpw\zmcl{年度}\{提名号}\{文件名}` |
+
+### 数据查询
+
+平台适配层至少需要读取以下奖励库数据：
+
+```sql
+SELECT XMBH, XMMC, XMTJH, ND, JZBH, XKDZMC, TJDWBH
+FROM t_xm_ggjbxx
+WHERE XMBH = %s
+LIMIT 1
+```
+
+```sql
+SELECT *
+FROM t_xm_cl
+WHERE XMBH = %s
+LIMIT 1
+```
+
+```sql
+SELECT id, LX, XH, FJMC, FJLJ, ND, wcr_id
+FROM t_xm_gzy
+WHERE XMBH = %s
+ORDER BY LX, XH, id
+```
+
+```sql
+SELECT id, LX, XH, FJMC, FJLJ, ND
+FROM t_xm_qtfjcl
+WHERE XMBH = %s
+ORDER BY LX, XH, id
+```
+
+```sql
+SELECT id, code, url, filepath, nd, xh
+FROM t_xm_gscl
+WHERE XMBH = %s
+ORDER BY xh, id
+```
+
+### 说明
+
+- 平台入口只负责适配奖励平台输入，最终仍调用正文评审统一主链路。
+- 如果调用方显式传入 `weights`，优先使用调用方权重；否则使用平台奖种默认权重。
+- 主材料缺失时应返回 `422`；部分附件缺失时可继续评审，并在 `partial/errors` 中标记。
+- 后续接入计划项目时，可继续扩展新的 `platform`，不改变 `/api/v1/evaluation` 原有语义。
+
+## 5. 按指南代码批量评审
 
 ### 请求
 
@@ -156,6 +257,7 @@ Content-Type: application/json
 - `limit` 为可选参数；不传则全量，传入时仅处理前 N 个项目
 - 正文固定读取：
   - `/mnt/remote_corpus/{year}/sbs/{id}/{id}.docx`
+- 当前批量真实评审建议默认关闭 `enable_industry_fit`
 
 ### 响应
 
@@ -166,7 +268,7 @@ Content-Type: application/json
 - `results`
 - `errors`
 
-## 5. 专家问答（带证据）
+## 6. 专家问答（带证据）
 
 ### 请求
 
@@ -209,7 +311,11 @@ Content-Type: application/json
 - `chat/ask` 主链路只返回 `answer + citations(file/page/snippet)`，以降低响应延迟
 - 正文高亮通过 `/chat/citation-highlight` 懒加载补全，前端在用户点击具体证据时再请求 `packet_page/highlight_rects`
 
+<<<<<<< HEAD
 ## 6. 专家流式问答
+=======
+## 7. 专家流式问答
+>>>>>>> upstream/main
 
 ### 请求
 
@@ -254,7 +360,11 @@ Accept: text/event-stream
 - 为避免主链路再次变慢，流式阶段也不补齐 `highlight_rects`
 - 建议前端优先使用 `ask-stream`，仅在浏览器或代理不支持 SSE 时回退到 `chat/ask`
 
+<<<<<<< HEAD
 ## 7. 聊天引用高亮
+=======
+## 8. 聊天引用高亮
+>>>>>>> upstream/main
 
 ### 请求
 
@@ -288,12 +398,22 @@ Content-Type: application/json
 - 该接口用于正式 HTML 工作台中的“查看原文”懒加载高亮
 - 若无法精确定位，允许返回 `packet_page>0` 且 `highlight_rects=[]`，前端至少完成页级跳转
 
+<<<<<<< HEAD
 ## 8. 权重与维度接口
+=======
+## 9. 权重与维度接口
+>>>>>>> upstream/main
 
 - `GET /api/v1/evaluation/dimensions`
 - `POST /api/v1/evaluation/weights/validate`
 - `GET /api/v1/evaluation/weights/default`
 - `GET /api/v1/evaluation/weights/templates`
+
+## 10. 搜索能力约束
+
+- `guide_search`：当前未作为正式能力启用
+- `tech_search`：当前先接 OpenAlex 公开论文检索
+- 专利对比：暂未接入，相关字段会明确返回“专利对比待接入”，而不是输出误导性否定结论
 
 ## 错误码（建议）
 
@@ -301,6 +421,8 @@ Content-Type: application/json
 |--------|-----------|------|
 | PROJECT_NOT_FOUND | 404 | 项目不存在 |
 | DOCUMENT_NOT_FOUND | 422 | 未找到项目申报文档 |
+| UNSUPPORTED_PLATFORM | 400 | 不支持的平台类型 |
+| INVALID_AWARD_TYPE | 400 | 奖励项目编号无法识别奖种 |
 | INVALID_WEIGHT | 400 | 权重配置无效 |
 | PARSE_ERROR | 422 | 文档解析失败 |
 | TOOL_UNAVAILABLE | 503 | 搜索工具不可用 |

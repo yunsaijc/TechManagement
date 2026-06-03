@@ -184,6 +184,20 @@ class GuideEvaluationRequest(BaseModel):
     concurrency: int = Field(default=3, ge=1, le=10, description="并发数")
 
 
+class PlatformEvaluationRequest(BaseModel):
+    """平台化评审请求"""
+    platform: str = Field(..., min_length=1, description="平台类型，当前支持 reward")
+    project_id: str = Field(..., min_length=1, description="平台项目编号")
+    dimensions: Optional[List[str]] = Field(default=None, description="评审维度列表，默认全部9个维度")
+    weights: Optional[Dict[str, float]] = Field(default=None, description="自定义权重")
+    include_sections: List[str] = Field(default_factory=list, description="指定解析的章节，默认全部")
+    enable_highlight: bool = Field(default=True, description="是否启用划重点")
+    enable_industry_fit: bool = Field(default=False, description="是否启用产业指南贴合评估")
+    enable_benchmark: bool = Field(default=False, description="是否启用技术摸底")
+    enable_chat_index: bool = Field(default=True, description="是否构建聊天索引")
+    options: Dict[str, Any] = Field(default_factory=dict, description="附加选项")
+
+
 class GuideEvaluationResult(BaseModel):
     """按指南代码批量评审结果"""
     zndm: str = Field(..., description="指南代码")

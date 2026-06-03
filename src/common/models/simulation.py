@@ -103,6 +103,7 @@ class PolicyAction(SandboxModel):
     action_id: str
     action_type: str
     target_scope: TargetScope = Field(default_factory=TargetScope)
+    basis_document_ids: list[str] = Field(default_factory=list)
     stage: str | None = None
     rule: PolicyRule | None = None
     effective_window: dict[str, int] = Field(default_factory=dict)
@@ -118,6 +119,7 @@ class PolicyAction(SandboxModel):
 
 class ScenarioConstraint(SandboxModel):
     constraint_type: str
+    basis_document_ids: list[str] = Field(default_factory=list)
     operator: str = "hold"
     value: Any = None
     hard_limit: bool = False
@@ -153,6 +155,17 @@ class ValidationDisclosure(SandboxModel):
     field_path: str | None = None
 
 
+class BasisDocumentRef(SandboxModel):
+    document_id: str = ""
+    document_type: str = ""
+    title: str = ""
+    publish_date: str | None = None
+    source_system: str | None = None
+    support_scope: list[str] = Field(default_factory=list)
+    link_keys: dict[str, Any] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
 class ScenarioContract(SandboxModel):
     scenario_id: str
     forecast_window: str = ""
@@ -162,6 +175,7 @@ class ScenarioContract(SandboxModel):
         validation_alias=AliasChoices("baseline", "baseline_scope"),
     )
     intent: ScenarioIntent | None = Field(default_factory=ScenarioIntent)
+    basis_documents: list[BasisDocumentRef] = Field(default_factory=list)
     actions: list[PolicyAction] = Field(
         default_factory=list,
         validation_alias=AliasChoices("actions", "policy_package"),
@@ -179,10 +193,12 @@ class CompiledPolicyAction(SandboxModel):
     action_type: str
     stage: str | None = None
     support_level: str = "proxy_supported"
+    basis_document_ids: list[str] = Field(default_factory=list)
     resolved_topic_ids: list[str] = Field(default_factory=list)
     resolved_topic_labels: list[str] = Field(default_factory=list)
     rule: PolicyRule | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
+    compiled_guardrails: dict[str, Any] = Field(default_factory=dict)
     evidence_requirement: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
@@ -195,6 +211,7 @@ class ScenarioDefinition(SandboxModel):
     constraints: ScenarioConstraints | None = None
     tags: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CompiledScenario(SandboxModel):
@@ -204,6 +221,8 @@ class CompiledScenario(SandboxModel):
     disclosures: list[ValidationDisclosure] = Field(default_factory=list)
     baseline_topic_ids: list[str] = Field(default_factory=list)
     action_target_topic_ids: dict[str, list[str]] = Field(default_factory=dict)
+    basis_document_ids: list[str] = Field(default_factory=list)
+    compiled_actions: list[CompiledPolicyAction] = Field(default_factory=list)
 
 
 class SimulationTopicImpact(SandboxModel):

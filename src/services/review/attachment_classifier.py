@@ -16,6 +16,7 @@ from src.services.review.project_config import (
     ATTACHMENT_FILENAME_HINTS,
     get_attachment_kind_definitions,
     normalize_attachment_doc_kind,
+    resolve_doc_type,
 )
 
 
@@ -53,6 +54,7 @@ class AttachmentClassifier:
 
         llm_result = {
             "doc_kind": self.UNKNOWN_DOC_KIND,
+            "doc_type": resolve_doc_type(self.UNKNOWN_DOC_KIND),
             "confidence": 0.0,
             "reason": "未执行 LLM 分类",
             "visible_clues": [],
@@ -63,6 +65,7 @@ class AttachmentClassifier:
             "enabled": bool(preview.get("image_data") and self.multi_llm),
             "applied": False,
             "doc_kind": self.UNKNOWN_DOC_KIND,
+            "doc_type": resolve_doc_type(self.UNKNOWN_DOC_KIND),
             "confidence": 0.0,
             "reason": "",
             "raw_response": "",
@@ -133,6 +136,7 @@ class AttachmentClassifier:
                             {
                                 "page": sample["page"],
                                 "doc_kind": page_result["doc_kind"],
+                                "doc_type": page_result["doc_type"],
                                 "confidence": page_result["confidence"],
                                 "reason": page_result["reason"],
                             }
@@ -149,6 +153,7 @@ class AttachmentClassifier:
                         secondary_refine["page_candidates"] = page_candidates
                         top_page = max(page_candidates, key=lambda item: float(item.get("confidence", 0.0) or 0.0))
                         secondary_refine["doc_kind"] = str(top_page.get("doc_kind", "")).strip() or self.UNKNOWN_DOC_KIND
+                        secondary_refine["doc_type"] = str(top_page.get("doc_type", "")).strip() or resolve_doc_type(self.UNKNOWN_DOC_KIND)
                         secondary_refine["confidence"] = float(top_page.get("confidence", 0.0) or 0.0)
                         secondary_refine["reason"] = str(top_page.get("reason", "")).strip()
                     if best_doc_kind != final_doc_kind:
@@ -166,6 +171,7 @@ class AttachmentClassifier:
                     secondary_refine.update(
                         {
                             "doc_kind": refine_result["doc_kind"],
+                            "doc_type": refine_result["doc_type"],
                             "confidence": refine_result["confidence"],
                             "reason": refine_result["reason"],
                             "raw_response": refine_raw,
@@ -186,9 +192,12 @@ class AttachmentClassifier:
             llm_result=llm_result,
             secondary_refine=secondary_refine,
         )
+        contains_doc_types = [resolve_doc_type(item) for item in contains_doc_kinds if item]
+        final_doc_type = resolve_doc_type(final_doc_kind)
 
         result = {
             "doc_kind": final_doc_kind,
+            "doc_type": final_doc_type,
             "confidence": final_confidence,
             "source": final_source,
             "reason": final_reason,
@@ -199,10 +208,12 @@ class AttachmentClassifier:
                 "text_excerpt": preview.get("text_excerpt", ""),
                 "filename_hint": {
                     "doc_kind": hint_kind,
+                    "doc_type": resolve_doc_type(hint_kind),
                     "confidence": hint_confidence,
                 },
                 "llm": {
                     "doc_kind": llm_doc_kind,
+                    "doc_type": llm_result["doc_type"],
                     "confidence": llm_confidence,
                     "reason": llm_result["reason"],
                     "visible_clues": llm_result["visible_clues"],
@@ -211,7 +222,9 @@ class AttachmentClassifier:
                 },
                 "llm_secondary_refine": secondary_refine,
                 "contains_doc_kinds": contains_doc_kinds,
+                "contains_doc_types": contains_doc_types,
                 "final_doc_kind": final_doc_kind,
+                "final_doc_type": final_doc_type,
                 "final_source": final_source,
                 "final_confidence": final_confidence,
                 "confidence_threshold": self.confidence_threshold,
@@ -243,7 +256,36 @@ class AttachmentClassifier:
             cache_file = self._cache_file_path(cache_key)
             if not cache_file.exists():
                 return None
-            return json.loads(cache_file.read_text(encoding="utf-8"))
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return None
+            doc_kind = str(data.get("doc_kind") or "").strip()
+            if doc_kind and not data.get("doc_type"):
+                data["doc_type"] = resolve_doc_type(doc_kind)
+            details = data.get("details", {})
+            if isinstance(details, dict):
+                final_doc_kind = str(details.get("final_doc_kind") or doc_kind).strip()
+                if final_doc_kind and not details.get("final_doc_type"):
+                    details["final_doc_type"] = resolve_doc_type(final_doc_kind)
+                filename_hint = details.get("filename_hint", {})
+                if isinstance(filename_hint, dict) and filename_hint.get("doc_kind") and not filename_hint.get("doc_type"):
+                    filename_hint["doc_type"] = resolve_doc_type(str(filename_hint.get("doc_kind") or ""))
+                llm_info = details.get("llm", {})
+                if isinstance(llm_info, dict) and llm_info.get("doc_kind") and not llm_info.get("doc_type"):
+                    llm_info["doc_type"] = resolve_doc_type(str(llm_info.get("doc_kind") or ""))
+                secondary_refine = details.get("llm_secondary_refine", {})
+                if isinstance(secondary_refine, dict):
+                    if secondary_refine.get("doc_kind") and not secondary_refine.get("doc_type"):
+                        secondary_refine["doc_type"] = resolve_doc_type(str(secondary_refine.get("doc_kind") or ""))
+                    page_candidates = secondary_refine.get("page_candidates", [])
+                    if isinstance(page_candidates, list):
+                        for item in page_candidates:
+                            if isinstance(item, dict) and item.get("doc_kind") and not item.get("doc_type"):
+                                item["doc_type"] = resolve_doc_type(str(item.get("doc_kind") or ""))
+                contains_doc_kinds = details.get("contains_doc_kinds", [])
+                if isinstance(contains_doc_kinds, list) and not details.get("contains_doc_types"):
+                    details["contains_doc_types"] = [resolve_doc_type(str(item)) for item in contains_doc_kinds if str(item).strip()]
+            return data
         except Exception:
             return None
 
@@ -450,6 +492,7 @@ class AttachmentClassifier:
             visible_clues = [str(visible_clues)]
         return {
             "doc_kind": doc_kind,
+            "doc_type": resolve_doc_type(doc_kind),
             "confidence": confidence,
             "reason": str(data.get("reason") or "").strip()[:120] or "模型未提供原因",
             "visible_clues": [str(item).strip()[:80] for item in visible_clues if str(item).strip()][:6],

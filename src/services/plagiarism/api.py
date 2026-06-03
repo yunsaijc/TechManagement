@@ -618,6 +618,7 @@ async def run_reward_plagiarism_by_file(
 @router.post("")
 async def check_plagiarism(
     request: Request,
+    request: Request,
     files: List[UploadFile] = File(...),
     use_corpus: bool = Form(True),
     corpus_id: Optional[str] = Form(None),
@@ -627,6 +628,7 @@ async def check_plagiarism(
     doc_type: str = Form("default"),
     section_config: Optional[str] = Form(None),
     debug: bool = Form(False),
+    include_report: bool = Form(True),
     include_report: bool = Form(True),
 ) -> ApiResponse[dict]:
     """查重接口

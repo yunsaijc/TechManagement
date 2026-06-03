@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,11 +24,11 @@ except ModuleNotFoundError:
         return False
 
 try:
-    from src.services.sandbox.sandbox_llm import build_sandbox_llm, sandbox_llm_meta, truncate_graph_context
+    from src.common.llm.config import llm_config
+    from src.common.llm.factory import get_llm_client
 except ModuleNotFoundError:
-    build_sandbox_llm = None  # type: ignore[assignment]
-    sandbox_llm_meta = None  # type: ignore[assignment]
-    truncate_graph_context = None  # type: ignore[assignment]
+    llm_config = None  # type: ignore[assignment]
+    get_llm_client = None  # type: ignore[assignment]
 
 try:
     from langchain_core.prompts import ChatPromptTemplate
@@ -44,7 +43,7 @@ load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 
 DEFAULT_QUESTION = "请研判 2024 年我省基金项目中，哪些主题存在高增长低转化风险，并给出治理建议。"
-DEFAULT_OUTPUT_PATH = "debug_sandbox/Q1/graph_rag_answer_step5.json"
+DEFAULT_OUTPUT_PATH = "debug_sandbox/graph_rag_answer_step5.json"
 DEFAULT_MAX_HOPS = 2
 DEFAULT_SEED_LIMIT = 24
 DEFAULT_SUBGRAPH_NODE_LIMIT = 220
@@ -246,7 +245,7 @@ def extract_keywords(question: str, top_k: int) -> list[str]:
     return normalized
 
 
-def _pick_label(props: dict[str, Any], labels: list[str], node_id: Any) -> str:
+def _pick_label(props: dict[str, Any], labels: list[str], node_id: int) -> str:
     for field in DISPLAY_FIELDS:
         if field in props and props[field] not in (None, ""):
             return str(props[field])
@@ -276,7 +275,7 @@ def fetch_seed_nodes(session: Any, keywords: list[str], seed_limit: int) -> list
       AND any(k IN keys(n)
               WHERE k IN $display_fields
                 AND toLower(toString(n[k])) CONTAINS toLower(kw))
-    RETURN DISTINCT elementId(n) AS id, labels(n) AS labels, properties(n) AS props
+    RETURN DISTINCT id(n) AS id, labels(n) AS labels, properties(n) AS props
     LIMIT $seed_limit
     """
 
@@ -291,7 +290,7 @@ def fetch_seed_nodes(session: Any, keywords: list[str], seed_limit: int) -> list
 
     seeds: list[dict[str, Any]] = []
     for row in rows:
-        node_id = str(row["id"])
+        node_id = int(row["id"])
         labels = [str(x) for x in row["labels"]]
         props = _json_safe(dict(row["props"] or {}))
         seeds.append(
@@ -305,64 +304,37 @@ def fetch_seed_nodes(session: Any, keywords: list[str], seed_limit: int) -> list
     return seeds
 
 
-def fetch_subgraph(
-    driver: Any,
-    database: str,
-    seed_ids: list[str],
-    max_hops: int,
-    node_limit: int,
-    rel_limit: int,
-) -> dict[str, list[dict[str, Any]]]:
-    """双 session 并行拉取节点与关系子图，结果与串行两次查询一致。"""
+def fetch_subgraph(session: Any, seed_ids: list[int], max_hops: int, node_limit: int, rel_limit: int) -> dict[str, list[dict[str, Any]]]:
     if not seed_ids:
         return {"nodes": [], "relationships": []}
 
     node_query = f"""
     MATCH (s)
-    WHERE elementId(s) IN $seed_ids
+    WHERE id(s) IN $seed_ids
     MATCH p=(s)-[*1..{max_hops}]-(n)
     UNWIND nodes(p) AS x
-    RETURN DISTINCT elementId(x) AS id, labels(x) AS labels, properties(x) AS props
+    RETURN DISTINCT id(x) AS id, labels(x) AS labels, properties(x) AS props
     LIMIT $node_limit
     """
 
     rel_query = f"""
     MATCH (s)
-    WHERE elementId(s) IN $seed_ids
+    WHERE id(s) IN $seed_ids
     MATCH p=(s)-[*1..{max_hops}]-(n)
     UNWIND relationships(p) AS r
-    RETURN DISTINCT elementId(startNode(r)) AS source,
+    RETURN DISTINCT id(startNode(r)) AS source,
                     type(r) AS rel_type,
-                    elementId(endNode(r)) AS target,
+                    id(endNode(r)) AS target,
                     properties(r) AS props
     LIMIT $rel_limit
     """
 
-    def _run_nodes() -> list[dict[str, Any]]:
-        with driver.session(database=database) as sess:
-            result = sess.run(
-                node_query,
-                {"seed_ids": seed_ids, "node_limit": node_limit},
-            )
-            return [dict(row) for row in result]
-
-    def _run_rels() -> list[dict[str, Any]]:
-        with driver.session(database=database) as sess:
-            result = sess.run(
-                rel_query,
-                {"seed_ids": seed_ids, "rel_limit": rel_limit},
-            )
-            return [dict(row) for row in result]
-
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="graphrag-sg") as pool:
-        fut_n = pool.submit(_run_nodes)
-        fut_r = pool.submit(_run_rels)
-        node_rows = fut_n.result()
-        rel_rows = fut_r.result()
+    node_rows = session.run(node_query, {"seed_ids": seed_ids, "node_limit": node_limit})
+    rel_rows = session.run(rel_query, {"seed_ids": seed_ids, "rel_limit": rel_limit})
 
     nodes: list[dict[str, Any]] = []
     for row in node_rows:
-        node_id = str(row["id"])
+        node_id = int(row["id"])
         labels = [str(x) for x in row["labels"]]
         props = _json_safe(dict(row["props"] or {}))
         nodes.append(
@@ -378,8 +350,8 @@ def fetch_subgraph(
     for row in rel_rows:
         rels.append(
             {
-                "source": str(row["source"]),
-                "target": str(row["target"]),
+                "source": int(row["source"]),
+                "target": int(row["target"]),
                 "type": str(row["rel_type"]),
                 "props": _json_safe(dict(row["props"] or {})),
             }
@@ -414,9 +386,9 @@ def split_subgraph_layers(subgraph: dict[str, list[dict[str, Any]]]) -> dict[str
         "other": {"nodes": [], "relationships": []},
     }
 
-    node_layer_by_id: dict[str, str] = {}
+    node_layer_by_id: dict[int, str] = {}
     for node in nodes:
-        node_id = str(node.get("id", ""))
+        node_id = int(node.get("id", -1))
         labels = set([str(x) for x in (node.get("labels") or [])])
         if labels & MGMT_LABELS:
             layer = "management"
@@ -429,8 +401,8 @@ def split_subgraph_layers(subgraph: dict[str, list[dict[str, Any]]]) -> dict[str
 
     for rel in rels:
         rel_type = str(rel.get("type", ""))
-        source = str(rel.get("source", ""))
-        target = str(rel.get("target", ""))
+        source = int(rel.get("source", -1))
+        target = int(rel.get("target", -1))
         s_layer = node_layer_by_id.get(source, "other")
         t_layer = node_layer_by_id.get(target, "other")
 
@@ -450,11 +422,11 @@ def split_subgraph_layers(subgraph: dict[str, list[dict[str, Any]]]) -> dict[str
 
 def _layer_lines(nodes: list[dict[str, Any]], rels: list[dict[str, Any]], max_nodes: int, max_rels: int) -> str:
     node_lines = [
-        f"{str(n.get('id', ''))} | {','.join([str(x) for x in (n.get('labels') or [])])} | {str(n.get('label', ''))}"
+        f"{int(n.get('id', -1))} | {','.join([str(x) for x in (n.get('labels') or [])])} | {str(n.get('label', ''))}"
         for n in nodes[:max_nodes]
     ]
     rel_lines = [
-        f"{str(r.get('source', ''))} -[{str(r.get('type', ''))}]-> {str(r.get('target', ''))}"
+        f"{int(r.get('source', -1))} -[{str(r.get('type', ''))}]-> {int(r.get('target', -1))}"
         for r in rels[:max_rels]
     ]
     return "[NODES]\n" + "\n".join(node_lines) + "\n[RELATIONSHIPS]\n" + "\n".join(rel_lines)
@@ -491,6 +463,29 @@ def serialize_subgraph_dual_layer(subgraph: dict[str, list[dict[str, Any]]], max
     return text, stats
 
 
+def _build_llm() -> Any | None:
+    if llm_config is None or get_llm_client is None:
+        return None
+
+    if not llm_config.provider or not llm_config.api_key:
+        return None
+
+    try:
+        return get_llm_client(
+            provider=llm_config.provider,
+            model=llm_config.model,
+            api_key=llm_config.api_key,
+            base_url=llm_config.base_url,
+            temperature=float(llm_config.temperature),
+            max_tokens=int(llm_config.max_tokens),
+            timeout=float(llm_config.timeout),
+            max_retries=int(llm_config.max_retries),
+        )
+    except Exception as exc:
+        print(f"[WARN] Step5 初始化 LLM 客户端失败: {exc}")
+        return None
+
+
 def answer_with_graphrag(question: str, context_text: str) -> dict[str, Any]:
     if ChatPromptTemplate is None:
         return {
@@ -500,15 +495,7 @@ def answer_with_graphrag(question: str, context_text: str) -> dict[str, Any]:
             "confidence": 0.2,
         }
 
-    if build_sandbox_llm is None:
-        return {
-            "answer": "当前 LLM 未配置或不可用，已返回图检索上下文供规则引擎或人工继续处理。",
-            "keyFindings": [],
-            "actions": [],
-            "confidence": 0.2,
-        }
-
-    llm = build_sandbox_llm("graphrag")
+    llm = _build_llm()
     if llm is None:
         return {
             "answer": "当前 LLM 未配置或不可用，已返回图检索上下文供规则引擎或人工继续处理。",
@@ -517,18 +504,13 @@ def answer_with_graphrag(question: str, context_text: str) -> dict[str, Any]:
             "confidence": 0.2,
         }
 
-    ctx = context_text
-    if truncate_graph_context is not None:
-        ctx = truncate_graph_context(context_text)
-
     prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "你是科技管理 GraphRAG 研判助手。必须严格基于给定图上下文回答，禁止编造。"
-                "上下文已按管理层、知识层、桥接层分段，请先分层归纳再给综合结论。"
-                "必须输出一个 JSON 对象（json object），键为: answer, keyFindings, actions, confidence；"
-                "不要输出 markdown 代码块或多余说明。",
+                "你是科技管理 GraphRAG 研判助手。必须严格基于给定图上下文回答，"
+                "禁止编造。上下文已按管理层、知识层、桥接层分段，请先分层归纳再给综合结论。"
+                "输出严格 JSON: answer, keyFindings, actions, confidence。",
             ),
             (
                 "human",
@@ -539,7 +521,7 @@ def answer_with_graphrag(question: str, context_text: str) -> dict[str, Any]:
     )
 
     chain = prompt | llm
-    response = chain.invoke({"question": question, "context_text": ctx})
+    response = chain.invoke({"question": question, "context_text": context_text})
     content = getattr(response, "content", "")
     if isinstance(content, list):
         content = "\n".join(str(x) for x in content)
@@ -574,21 +556,17 @@ def run(cfg: GraphRAGConfig) -> dict[str, Any]:
     try:
         with driver.session(database=cfg.database) as session:
             seeds = fetch_seed_nodes(session, keywords, cfg.seed_limit)
-            seed_ids = [str(item["id"]) for item in seeds]
-
-        subgraph = fetch_subgraph(
-            driver,
-            cfg.database,
-            seed_ids,
-            cfg.max_hops,
-            cfg.subgraph_node_limit,
-            cfg.subgraph_rel_limit,
-        )
+            seed_ids = [int(item["id"]) for item in seeds]
+            subgraph = fetch_subgraph(
+                session,
+                seed_ids,
+                cfg.max_hops,
+                cfg.subgraph_node_limit,
+                cfg.subgraph_rel_limit,
+            )
 
         context_text, layer_stats = serialize_subgraph_dual_layer(subgraph)
         answer = answer_with_graphrag(cfg.question, context_text)
-
-        sandbox_lm = sandbox_llm_meta("graphrag") if sandbox_llm_meta is not None else {}
 
         return {
             "meta": {
@@ -603,7 +581,6 @@ def run(cfg: GraphRAGConfig) -> dict[str, Any]:
                 "retrievedNodes": len(subgraph.get("nodes", [])),
                 "retrievedRelationships": len(subgraph.get("relationships", [])),
                 "layerStats": layer_stats,
-                "sandboxLlm": sandbox_lm,
             },
             "retrieval": {
                 "seeds": seeds,

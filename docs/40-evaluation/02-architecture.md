@@ -5,32 +5,44 @@
 在现有评审服务内“融合”新能力，而不是外挂新服务：
 
 - 保留九维评审主链路
-- 同次请求内完成划重点、指南贴合、技术摸底
+- 同次请求内完成划重点、技术摸底；指南贴合能力保留但默认不启用
 - 支持评审后专家问答（带页码证据）
 - 输出一份统一 `EvaluationResult`
+- 保持现有聊天问答主链路稳定，只在其前后增加轻量增强层
+- 增加平台适配层，先支持奖励平台 `platform=reward`，不改变正文评审主链路
 
 ## 整体架构
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ API Layer (FastAPI)                                              │
-│ /evaluate  /evaluate/file  /batch  /chat/ask                     │
+│ /evaluate  /evaluate/file  /platform  /batch  /chat/ask          │
+└───────────────────────────────┬──────────────────────────────────┘
+                                │
+┌───────────────────────────────▼──────────────────────────────────┐
+│ Platform Adapter                                                  │
+│ reward: XMBH -> 提名书/签章材料/佐证材料 -> 权重与评审偏好        │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │
 ┌───────────────────────────────▼──────────────────────────────────┐
 │ EvaluationAgent (Orchestrator)                                   │
-│  1) 输入归一化  2) 并行调度  3) 结果合并  4) 存储落盘            │
+│  1) 输入归一化  2) 画像路由  3) 并行调度  4) 结果合并            │
 └───────┬──────────────┬──────────────┬──────────────┬─────────────┘
         │              │              │              │
         ▼              ▼              ▼              ▼
-  Doc Indexer      Highlight      Industry Fit     9D Checkers
-  (页码切片/索引)   (目标/创新/路线) (指南匹配/缺口)  (原有维度评审)
-        │
-        ▼
-   Chat QA Runtime  <---- Benchmark (文献/专利检索 + 对比)
-        │
-        ▼
- ToolGateway (doc_search / guide_search / tech_search)
+  Doc Indexer     Rubric Manager  Evidence Builder   9D Checkers
+  (页码切片/索引)  (类型口径/权重)  (维度证据包)      (基于证据判断)
+        │              │              │              │
+        └──────────────┴──────────────┴──────────────┘
+                               │
+                               ▼
+                    Highlight / Benchmark
+                               │
+                               ▼
+                         Chat QA Runtime
+                               │
+                               ▼
+             ToolGateway (doc_search / guide_search / tech_search)
 ```
 
 ## 分层说明
@@ -39,6 +51,28 @@
 
 - 组件：`src/app/routes/evaluation.py`
 - 职责：参数校验、错误码映射、返回统一响应模型
+
+### Layer 1.5: 平台适配层
+
+- 规划组件：`src/services/evaluation/platforms/`
+- 当前平台：`reward`
+- 职责：
+  - 校验 `platform`
+  - 将奖励项目编号 `XMBH` 解析为平台项目上下文
+  - 查询奖励库项目基本信息、提名号与年度
+  - 定位主材料、签字盖章类材料、相关佐证材料
+  - 根据 `XMBH` 第 5 位识别奖种，并生成评审偏好与默认权重
+  - 将平台输入转换为现有 `EvaluationRequest` 与本地可解析文件
+
+奖励平台材料分组：
+
+| 分组 | 来源 | 路径规则 |
+|------|------|------|
+| 主材料 | 提名书 | `FJCL\static\rpw\tjs{年度}\{提名号}.docx` |
+| 签字盖章类材料 | `t_xm_gzy` | `FJCL\static\rpw\gzy{年度}\{提名号}\{文件名}` |
+| 相关佐证材料 | `t_xm_qtfjcl`、`t_xm_gscl` | `FJCL\static\rpw\zmcl{年度}\{提名号}\{文件名}` |
+
+平台适配层只负责转换输入，不负责重写九维评审、报告、问答或证据跳转。
 
 ### Layer 2: 编排层（核心）
 
@@ -51,8 +85,9 @@
 ### Layer 3: 评审与增强能力层
 
 - 九维检查器：`src/services/evaluation/checkers/`
+- Rubric 管理：按 `project_profile` 输出维度解释口径、必要项、缺失容忍规则
+- 证据包构建：为评分、摘要、总评、问答提供统一 `evidence pack`
 - 划重点：`src/services/evaluation/highlight/`
-- 指南贴合：`src/services/evaluation/highlight/industry_fit.py`
 - 技术摸底：`src/services/evaluation/benchmark/`
 - 问答能力：`src/services/evaluation/chat/`
 
@@ -62,6 +97,7 @@
 - 职责：
   - 统一调用 `doc_search / guide_search / tech_search`
   - 统一返回结构化证据，避免各模块各自接工具
+  - 当前真实检索接线优先启用 `tech_search -> OpenAlex`
 
 ### Layer 5: 基础设施层
 
@@ -72,15 +108,18 @@
 
 ### 阶段划分
 
-1. 阶段 A（关键路径）：文档解析与页码索引
-2. 阶段 B（并行）：九维评审、划重点、指南贴合、技术摸底
-3. 阶段 C（合并）：统一打分、总结、证据去重与落盘
+0. 阶段 0（平台入口可选）：平台适配，获取主材料、附件材料、奖种偏好与默认权重
+1. 阶段 A（关键路径）：文档解析、页码索引、项目画像识别
+2. 阶段 B（关键路径）：按画像生成 `rubric` 并构建维度级 `evidence pack`
+3. 阶段 C（并行）：九维评审、划重点、技术摸底
+4. 阶段 D（合并）：统一打分、总结、证据去重与落盘
 
 ### 并发策略
 
 - 使用 `asyncio.gather` + `Semaphore`
 - 每个子任务单独超时
 - 单任务失败不阻断总流程，结果标记 `partial=true`
+- 聊天链路不参与本次评审并行重构，保持独立运行时入口，避免影响现有时延与稳定性
 
 ## 工具调用策略（关键说明）
 
@@ -96,12 +135,17 @@
 主结果保持 `EvaluationResult`，扩展字段：
 
 - `highlights`
-- `industry_fit`
+- `industry_fit`（保留字段，默认不启用）
 - `benchmark`
 - `evidence`
 - `chat_ready`
 - `partial`
 - `errors`
+
+其中结果生成原则为：
+
+- 评分、摘要、总评优先消费统一 `evidence pack`
+- 聊天继续消费 `page_chunks/chat index`，只允许增加轻量问题路由与证据整理，不替换主回答链
 
 ## 存储与追溯
 
@@ -109,14 +153,16 @@
 - 每次评审保存：
   - 评分结果
   - 结构化摘要
-  - 指南匹配与摸底结论
+  - 技术摸底结论
+  - 指南匹配结果（若显式启用）
   - 证据链（`file/page/snippet/source`）
 
 ## 降级策略
 
 - 外部搜索不可用：禁用 `benchmark` 的在线检索，保留本地评审结果
-- 指南库不可用：返回“待核验”并降低相关置信度
+- 指南正文不可可靠映射：不启用 `industry_fit` 主能力展示
 - 解析失败：返回可定位错误信息与可恢复建议
+- 若 `rubric` 所需证据不足，不强行输出确定性高分结论，应转为保守评分或标记材料不足
 
 ## 目录规划（融合后）
 
@@ -125,6 +171,8 @@ src/services/evaluation/
 ├── agent.py
 ├── checkers/
 ├── parsers/
+├── platforms/
+│   └── reward.py
 ├── scorers/
 ├── storage/
 ├── highlight/
@@ -137,5 +185,6 @@ src/services/evaluation/
 │   ├── indexer.py
 │   └── qa_agent.py
 └── tools/
-    └── gateway.py
+    ├── gateway.py
+    └── search_client.py
 ```

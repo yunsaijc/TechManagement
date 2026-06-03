@@ -8,6 +8,9 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from html import escape
 from pathlib import Path
@@ -45,7 +48,8 @@ class EvaluationPacketBuilder:
             path = Path(str(item.get("source_file") or "").strip())
             if not path.exists() or not path.is_file():
                 continue
-            merged_doc, merge_mode = self._open_mergeable_document(path)
+            merge_path = self._resolve_merge_path(path, str(item.get("source_kind") or "attachment"))
+            merged_doc, merge_mode = self._open_mergeable_document(merge_path)
             if merged_doc is None or merged_doc.page_count <= 0:
                 continue
 
@@ -90,7 +94,6 @@ class EvaluationPacketBuilder:
         page_map_file.write_text(json.dumps(page_map, ensure_ascii=False, indent=2), encoding="utf-8")
 
         viewer_assets = self._write_packet_viewer_assets(packet_root, packet_bytes, project_id)
-        subdoc_assets = self._write_virtual_subdoc_assets(packet_root, project_id, ordered_sources)
         return {
             "packet_file": str(packet_file.relative_to(output_dir)),
             "packet_abs_path": str(packet_file.resolve()),
@@ -100,8 +103,19 @@ class EvaluationPacketBuilder:
             "default_page": 1,
             "viewer_file": viewer_assets.get("viewer_file", ""),
             "page_images": viewer_assets.get("page_images", []),
-            "subdocs": subdoc_assets,
         }
+
+    def _resolve_merge_path(self, path: Path, source_kind: str) -> Path:
+        """解析实际参与 packet 合并的文件路径"""
+        if source_kind != "proposal":
+            return path
+        if path.suffix.lower() != ".docx":
+            return path
+
+        sibling_pdf = path.with_suffix(".pdf")
+        if sibling_pdf.exists() and sibling_pdf.is_file():
+            return sibling_pdf
+        return path
 
     def _collect_sources(
         self,
@@ -180,53 +194,6 @@ class EvaluationPacketBuilder:
             "page_images": page_images,
         }
 
-    def _write_virtual_subdoc_assets(
-        self,
-        packet_root: Path,
-        project_id: str,
-        ordered_sources: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        """生成虚拟子文档清单，用于把合并 PDF 里的条目按附件粒度展示。"""
-        subdocs: List[Dict[str, Any]] = []
-        seen_titles: set[str] = set()
-        for item in ordered_sources:
-            path = Path(str(item.get("source_file") or "").strip())
-            if not path.exists() or path.suffix.lower() != ".pdf":
-                continue
-            title = str(item.get("source_name") or path.name).strip()
-            if not title:
-                continue
-            normalized = self._normalize_subdoc_title(title)
-            if normalized in seen_titles:
-                continue
-            seen_titles.add(normalized)
-            subdocs.append(
-                {
-                    "project_id": project_id,
-                    "title": title,
-                    "source_file": str(path),
-                    "source_name": title,
-                    "viewer_file": str((packet_root / "packet_viewer.html").relative_to(packet_root.parent.parent)),
-                    "packet_file": str((packet_root / "evaluation_packet.pdf").relative_to(packet_root.parent.parent)),
-                    "subdoc_type": self._guess_subdoc_type(title),
-                }
-            )
-        (packet_root / "virtual_subdocs.json").write_text(json.dumps(subdocs, ensure_ascii=False, indent=2), encoding="utf-8")
-        return subdocs
-
-    def _normalize_subdoc_title(self, title: str) -> str:
-        return re.sub(r"\s+", "", title).lower()
-
-    def _guess_subdoc_type(self, title: str) -> str:
-        lower = title.lower()
-        if "专利" in title:
-            return "专利"
-        if any(token in lower for token in ("paper", "journal", "article")) or "论文" in title:
-            return "论文"
-        if "报告" in title:
-            return "报告"
-        return "附件"
-
     def _build_packet_viewer_html(self, title: str, page_images: List[Dict[str, Any]]) -> str:
         """构造 packet viewer HTML"""
         pages_html: List[str] = []
@@ -240,9 +207,7 @@ class EvaluationPacketBuilder:
                 "<section class='packet-page' "
                 f"id='packet-page-{page}' data-page='{page}'>"
                 f"<div class='page-index'>第 {page} 页</div>"
-                f"<div class='packet-page-canvas'>"
                 f"<img loading='lazy' src='{escape(image_src)}' alt='packet page {page}'>"
-                f"</div>"
                 "</section>"
             )
         pages_content = "".join(pages_html) or "<div class='empty'>当前材料暂无可预览页面。</div>"
@@ -270,7 +235,7 @@ class EvaluationPacketBuilder:
       font-family: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     }}
     body {{ overflow-y: auto; }}
-    .viewer-root {{ min-height: 100%; padding: 18px 0 28px; overflow-x: hidden; }}
+    .viewer-root {{ min-height: 100%; padding: 18px 0 28px; }}
     .viewer-head {{ display: flex; justify-content: center; padding: 0 12px 12px; }}
     .head-stack {{
       display: flex;
@@ -323,13 +288,12 @@ class EvaluationPacketBuilder:
     }}
     .packet-page {{
       position: relative;
-      width: min(920px, calc(100vw - 24px));
+      width: min(1380px, calc(100vw - 24px));
       background: var(--page-bg);
       border: 1px solid var(--line);
       border-radius: 16px;
       overflow: hidden;
       box-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
-      scroll-margin-top: 18px;
     }}
     .packet-page.active {{
       border-color: rgba(15, 118, 110, 0.36);
@@ -343,11 +307,7 @@ class EvaluationPacketBuilder:
       font-size: 12px;
       font-weight: 700;
     }}
-    .packet-page-canvas {{
-      position: relative;
-      width: 100%;
-    }}
-    .packet-page-canvas img {{
+    .packet-page img {{
       width: 100%;
       height: auto;
       display: block;
@@ -355,16 +315,15 @@ class EvaluationPacketBuilder:
     }}
     .highlight-layer {{
       position: absolute;
-      inset: 0;
+      inset: 33px 0 0 0;
       pointer-events: none;
     }}
     .highlight-rect {{
       position: absolute;
       border-radius: 10px;
       background: rgba(251, 191, 36, 0.22);
-      border: 2px solid rgba(245, 158, 11, 0.92);
+      border: 3px solid rgba(245, 158, 11, 0.92);
       box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75), 0 10px 24px rgba(245, 158, 11, 0.22);
-      scroll-margin-top: 120px;
     }}
     .empty {{
       padding: 32px;
@@ -411,37 +370,6 @@ class EvaluationPacketBuilder:
       target.scrollIntoView({{ behavior: smooth ? "smooth" : "auto", block: "start" }});
     }}
 
-    function getPageCanvas(pageNumber) {{
-      const target = document.getElementById(`packet-page-${{pageNumber}}`);
-      if (!target) return null;
-      let canvas = target.querySelector(".packet-page-canvas");
-      if (!canvas) {{
-        const img = target.querySelector("img");
-        if (!img) return target;
-        canvas = document.createElement("div");
-        canvas.className = "packet-page-canvas";
-        img.parentNode.insertBefore(canvas, img);
-        canvas.appendChild(img);
-      }}
-      return canvas;
-    }}
-
-    function centerOnRect(page, rects, smooth) {{
-      const pageNumber = Number(page || 0);
-      const canvas = getPageCanvas(pageNumber);
-      if (!canvas || !Array.isArray(rects) || !rects.length) return;
-      const validRects = rects.filter((item) => item && Number(item.w || 0) > 0 && Number(item.h || 0) > 0);
-      if (!validRects.length) return;
-      const first = validRects[0];
-      const canvasBox = canvas.getBoundingClientRect();
-      const rectCenterY = canvasBox.top + canvasBox.height * (Number(first.y || 0) + Number(first.h || 0) / 2);
-      const desiredTop = window.scrollY + rectCenterY - Math.max(220, window.innerHeight * 0.42);
-      window.scrollTo({{
-        top: Math.max(0, desiredTop),
-        behavior: smooth ? "smooth" : "auto",
-      }});
-    }}
-
     function clearHighlights() {{
       document.querySelectorAll(".highlight-layer").forEach((node) => node.remove());
     }}
@@ -449,14 +377,12 @@ class EvaluationPacketBuilder:
     function applyHighlights(page, rects) {{
       clearHighlights();
       const pageNumber = Number(page || 0);
-      const canvas = getPageCanvas(pageNumber);
-      if (!canvas || !Array.isArray(rects) || !rects.length) return;
-      const merged = rects
-        .filter((item) => item && Number(item.w || 0) > 0 && Number(item.h || 0) > 0)
-        .sort((a, b) => Number(a.y || 0) - Number(b.y || 0) || Number(a.x || 0) - Number(b.x || 0));
+      const target = document.getElementById(`packet-page-${{pageNumber}}`);
+      if (!target || !Array.isArray(rects) || !rects.length) return;
       const layer = document.createElement("div");
       layer.className = "highlight-layer";
-      merged.forEach((item) => {{
+      rects.forEach((item) => {{
+        if (!item) return;
         const x = Number(item.x || 0);
         const y = Number(item.y || 0);
         const w = Number(item.w || 0);
@@ -470,7 +396,7 @@ class EvaluationPacketBuilder:
         rect.style.height = `${{h * 100}}%`;
         layer.appendChild(rect);
       }});
-      if (layer.childElementCount) canvas.appendChild(layer);
+      if (layer.childElementCount) target.appendChild(layer);
     }}
 
     function updateFocusCard(payload) {{
@@ -486,49 +412,12 @@ class EvaluationPacketBuilder:
       focusCard?.classList.add("show");
     }}
 
-    function decodeRects(value) {{
-      if (!value) return [];
-      try {{
-        const decoded = JSON.parse(value);
-        return Array.isArray(decoded) ? decoded : [];
-      }} catch (error) {{
-        return [];
-      }}
-    }}
-
-    function readQueryPayload() {{
-      const params = new URLSearchParams(window.location.search);
-      const page = Number(params.get("page") || params.get("viewer_page") || 0);
-      const rects = decodeRects(params.get("rects") || params.get("viewer_rects") || "");
-      const text = params.get("text") || params.get("highlight_text") || "";
-      const label = params.get("label") || params.get("location_label") || "";
-      if (!(page > 0) && !rects.length && !text && !label) {{
-        return null;
-      }}
-      return {{
-        page: page > 0 ? page : 1,
-        highlight_rects: rects,
-        highlight_text: text,
-        location_label: label || "命中定位",
-      }};
-    }}
-
-    function handlePacketTarget(payload, smooth) {{
-      if (!payload) return;
-      gotoPage(payload.page, smooth);
-      applyHighlights(payload.page, payload.highlight_rects || []);
-      updateFocusCard(payload);
-      if (payload.highlight_rects && payload.highlight_rects.length) {{
-        requestAnimationFrame(() => {{
-          requestAnimationFrame(() => centerOnRect(payload.page, payload.highlight_rects, smooth));
-        }});
-      }}
-    }}
-
     window.addEventListener("message", (event) => {{
       const payload = event.data || {{}};
       if (payload.type !== "gotoPacketTarget") return;
-      handlePacketTarget(payload, true);
+      gotoPage(payload.page, true);
+      applyHighlights(payload.page, payload.highlight_rects || []);
+      updateFocusCard(payload);
     }});
 
     const observer = new IntersectionObserver((entries) => {{
@@ -544,10 +433,7 @@ class EvaluationPacketBuilder:
     }});
 
     document.querySelectorAll(".packet-page").forEach((node) => observer.observe(node));
-    handlePacketTarget(readQueryPayload(), false);
-    if (!readQueryPayload()) {{
-      gotoPage(1, false);
-    }}
+    gotoPage(1, false);
   </script>
 </body>
 </html>"""
@@ -560,8 +446,47 @@ class EvaluationPacketBuilder:
         if suffix in {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif", ".tif", ".tiff"}:
             return self._image_to_pdf_document(path), "image_to_pdf"
         if suffix == ".docx":
+            converted = self._docx_to_pdf_with_soffice(path)
+            if converted is not None:
+                return converted, "docx_soffice"
             return self._docx_to_fallback_pdf_document(path), "docx_fallback"
         return None, "unsupported"
+
+    def _docx_to_pdf_with_soffice(self, path: Path) -> fitz.Document | None:
+        """优先使用 libreoffice/soffice 把 docx 转成真正的 PDF。"""
+        soffice = shutil.which("soffice") or shutil.which("libreoffice")
+        if not soffice:
+            return None
+
+        with tempfile.TemporaryDirectory(prefix="reward_docx_pdf_") as tmp_dir:
+            output_dir = Path(tmp_dir)
+            cmd = [
+                soffice,
+                "--headless",
+                "--nologo",
+                "--nolockcheck",
+                "--nodefault",
+                "--nofirststartwizard",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(output_dir),
+                str(path),
+            ]
+            try:
+                completed = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception:
+                return None
+            if completed.returncode != 0:
+                return None
+
+            pdf_path = output_dir / f"{path.stem}.pdf"
+            if not pdf_path.exists() or not pdf_path.is_file():
+                return None
+            try:
+                return fitz.open(pdf_path)
+            except Exception:
+                return None
 
     def _image_to_pdf_document(self, path: Path) -> fitz.Document:
         """图片转单页 PDF"""
@@ -606,7 +531,6 @@ class EvaluationPacketBuilder:
         cursor = 0
         while cursor < len(lines):
             page = doc.new_page(width=page_width, height=page_height)
-            text_page = page.new_text_page()
             batch = lines[cursor:cursor + max_lines]
             for index, line in enumerate(batch):
                 page.insert_text(

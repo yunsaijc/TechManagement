@@ -78,7 +78,10 @@ from src.common.models.logicon import (
     RuleInfo,
     RuleConfigSnapshot,
     LogicOnResult,
+<<<<<<< HEAD
     LogicOnDimensionSummary,
+=======
+>>>>>>> upstream/main
     LogicOnTextRequest,
     LogicOnTask,
 )

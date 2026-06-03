@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from src.common.models import ApiResponse, BatchReviewRequest, BatchReviewResult, ProjectTypeInfo
 from src.services.review.batch_agent import BatchReviewAgent
-from src.services.review.project_config import PROJECT_CONFIG, get_project_label
+from src.services.review.project_config import PROJECT_CONFIG, get_project_config, get_project_label
 
 router = APIRouter()
 
@@ -49,7 +49,7 @@ async def get_project_types() -> ApiResponse[List[ProjectTypeInfo]]:
         ProjectTypeInfo(
             value=project_type,
             label=get_project_label(project_type),
-            required_doc_kinds=config.get("required_doc_kinds", []),
+            required_doc_types=(get_project_config(project_type) or {}).get("required_doc_types", []),
         )
         for project_type, config in PROJECT_CONFIG.items()
     ]

@@ -93,7 +93,12 @@ docs/
 │   │   ├── 03-scenario-engine.md
 │   │   ├── 04-outputs-and-api.md
 │   │   ├── 05-data-schema.md
+<<<<<<< HEAD
 │   │   └── 06-baseline-and-scenario-design.md
+=======
+│   │   ├── 06-baseline-and-scenario-design.md
+│   │   └── 07-leadership-page-design.md
+>>>>>>> upstream/main
 │   └── archive/                    # 🧱 历史原型材料
 │       ├── 01-neo4j-gds-step1.md
 │       ├── 02-hotspot-migration-step2.md
@@ -195,6 +200,9 @@ docs/
 - [正文评审服务 →](40-evaluation/01-overview.md)
 - [绩效核验服务 →](50-perfcheck/01-overview.md)
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> upstream/main
 - [研判与推演总览 →](70-sandbox/overview/01-overview.md)
 - [状态变量清单 →](70-sandbox/overview/04-state-variables.md)
 - [政策动作清单 →](70-sandbox/overview/05-policy-actions.md)
@@ -206,6 +214,11 @@ docs/
 - [沙盘推演总览 →](70-sandbox/simulation/01-overview.md)
 - [沙盘推演数据 Schema →](70-sandbox/simulation/05-data-schema.md)
 - [baseline 与 scenario 设计 →](70-sandbox/simulation/06-baseline-and-scenario-design.md)
+<<<<<<< HEAD
 - [旧原型探索 →](70-sandbox/archive/01-neo4j-gds-step1.md)
 =======
 >>>>>>> upstream/ljh
+=======
+- [领导页展示设计 →](70-sandbox/simulation/07-leadership-page-design.md)
+- [旧原型探索 →](70-sandbox/archive/01-neo4j-gds-step1.md)
+>>>>>>> upstream/main

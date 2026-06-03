@@ -346,10 +346,13 @@ def _build_shock_applications(
 
         spillover_scores: dict[str, ShockApplication] = {}
         direct_ids = set(target_ids)
+        allowed_spillover_topic_ids = _document_allowed_topic_ids(shock, direct_ids=direct_ids)
         for target_id in target_ids:
             source = topic_by_id[target_id]
             for candidate in topics:
                 if candidate.topic_id in direct_ids:
+                    continue
+                if allowed_spillover_topic_ids is not None and candidate.topic_id not in allowed_spillover_topic_ids:
                     continue
                 similarity = _topic_similarity(source, candidate)
                 if similarity < min_similarity:
@@ -508,6 +511,10 @@ def _merge_assumptions(
     if scenario.policy_shocks:
         assumptions.append("project_graph_policy_shocks_apply_budget_guardrails")
         assumptions.append("project_graph_policy_shocks_apply_risk_guardrails")
+    if any(_shock_parameter_float(shock, "document_budget_cap", -1.0) >= 0.0 for shock in scenario.policy_shocks):
+        assumptions.append("policy_documents_compile_budget_cap_guardrails")
+    if any(_document_eligibility_gate_enabled(shock) for shock in scenario.policy_shocks):
+        assumptions.append("policy_documents_compile_eligibility_guardrails")
     if any(_spillover_enabled(shock) for shock in scenario.policy_shocks):
         assumptions.append("project_graph_policy_shocks_apply_similarity_spillover")
         assumptions.append("project_graph_policy_shocks_apply_structural_similarity_spillover")
@@ -547,6 +554,33 @@ def _shock_strength(shock: PolicyShock) -> float:
 
 def _spillover_enabled(shock: PolicyShock) -> bool:
     return bool(shock.parameters.get("enable_spillover", False))
+
+
+def _document_eligibility_gate_enabled(shock: PolicyShock) -> bool:
+    compiled_guardrails = shock.parameters.get("compiled_guardrails")
+    if isinstance(compiled_guardrails, dict) and bool(compiled_guardrails.get("eligibility_gate")):
+        return True
+    constraint_types = shock.parameters.get("document_constraint_types")
+    if isinstance(constraint_types, (list, tuple, set)):
+        return "eligibility_gate" in {str(item).strip() for item in constraint_types}
+    return False
+
+
+def _document_allowed_topic_ids(
+    shock: PolicyShock,
+    *,
+    direct_ids: set[str],
+) -> set[str] | None:
+    if not _document_eligibility_gate_enabled(shock):
+        return None
+    compiled_guardrails = shock.parameters.get("compiled_guardrails")
+    if not isinstance(compiled_guardrails, dict):
+        return set(direct_ids)
+    topic_ids = compiled_guardrails.get("topic_ids")
+    if not isinstance(topic_ids, (list, tuple, set)):
+        return set(direct_ids)
+    normalized = {str(item).strip() for item in topic_ids if str(item).strip()}
+    return normalized or set(direct_ids)
 
 
 def _shock_parameter_float(shock: PolicyShock, key: str, default: float) -> float:
@@ -691,14 +725,30 @@ def _budget_scales(
         return {}
 
     shock = entries[0][1].shock
+    document_budget_cap = _shock_parameter_float(shock, "document_budget_cap", -1.0)
+    per_topic_document_scales: dict[str, float] = {}
+    if document_budget_cap >= 0.0:
+        for topic, _ in entries:
+            positive_delta = per_topic_positive_funding.get(topic.topic_id, 0.0)
+            if positive_delta <= 0.0:
+                per_topic_document_scales[topic.topic_id] = 1.0
+                continue
+            baseline_award_count = max(topic.funded_count, 1)
+            allowed_total_funding = document_budget_cap * baseline_award_count
+            allowed_positive_delta = max(0.0, allowed_total_funding - topic.funding_amount)
+            per_topic_document_scales[topic.topic_id] = min(1.0, allowed_positive_delta / positive_delta)
+
     explicit_budget_limit = _shock_parameter_float(shock, "budget_limit", -1.0)
     if explicit_budget_limit >= 0.0:
         proposed_positive_total = sum(per_topic_positive_funding.values())
         if proposed_positive_total <= 0.0:
-            return {}
+            return per_topic_document_scales
         scale = min(1.0, explicit_budget_limit / proposed_positive_total)
         return {
-            topic.topic_id: scale if per_topic_positive_funding.get(topic.topic_id, 0.0) > 0.0 else 1.0
+            topic.topic_id: min(
+                per_topic_document_scales.get(topic.topic_id, 1.0),
+                scale if per_topic_positive_funding.get(topic.topic_id, 0.0) > 0.0 else 1.0,
+            )
             for topic, _ in entries
         }
 
@@ -708,7 +758,7 @@ def _budget_scales(
         if application.is_direct
     )
     if direct_budget <= 0.0:
-        return {}
+        return per_topic_document_scales
 
     spillover_budget_share = max(0.0, _shock_parameter_float(shock, "spillover_budget_share", 0.25))
     direct_positive_total = sum(
@@ -726,7 +776,10 @@ def _budget_scales(
     spillover_scale = 1.0 if spillover_positive_total <= 0.0 else min(1.0, spillover_budget / spillover_positive_total)
 
     return {
-        topic.topic_id: direct_scale if application.is_direct else spillover_scale
+        topic.topic_id: min(
+            per_topic_document_scales.get(topic.topic_id, 1.0),
+            direct_scale if application.is_direct else spillover_scale,
+        )
         for topic, application in entries
     }
 

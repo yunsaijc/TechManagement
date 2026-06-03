@@ -6,29 +6,136 @@ import re
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from docx import Document
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.common.models import ApiResponse, CheckResult, CheckStatus, ReviewResult
 from src.services.review.agent import ReviewAgent
+from src.services.review.doc_types import get_doc_type_label, normalize_doc_type
+from src.services.review.reward_review_service import REWARD_PATH_DOC_TYPES, RewardReviewService
 from src.services.review.rules.config import DOCUMENT_CONFIG
+from src.services.review.smb_file_reader import SMBReviewFileReader
+from src.common.review_runtime import ReviewRuntime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # 存储审查结果（生产环境应使用数据库）
 _review_results: dict[str, ReviewResult] = {}
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_REVIEW_RESULT_DIR = _PROJECT_ROOT / "data" / "review_results"
+_REVIEW_MAX_RETRIES = 2
+_REVIEW_QUEUE: Optional[asyncio.Queue] = None
+_REVIEW_WORKERS: List[asyncio.Task] = []
+_REVIEW_RETRY_QUEUE: Optional[asyncio.Queue] = None
+_REVIEW_RETRY_WORKERS: List[asyncio.Task] = []
 
 
 class ReviewRequest(BaseModel):
     """审查请求"""
-    document_type: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    doc_type: str = Field(..., validation_alias=AliasChoices("doc_type", "document_type", "type"))
     check_items: Optional[List[str]] = None
     enable_llm_analysis: bool = False  # 是否启用 LLM 深度分析
+
+    @field_validator("doc_type", mode="before")
+    @classmethod
+    def _normalize_doc_type(cls, value: Any) -> str:
+        return normalize_doc_type(str(value or ""))
+
+
+class ReviewPathRequest(BaseModel):
+    """按 SMB 路径提交审查请求。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    project_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("project_id", "xmbh"))
+    doc_type: str = Field(..., validation_alias=AliasChoices("doc_type", "document_type", "type"))
+    file_path: str
+    check_items: Optional[List[str]] = None
+    enable_llm_analysis: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict) and not data.get("type") and data.get("document_type"):
+            data = dict(data)
+            data["type"] = data["document_type"]
+        return data
+
+    @field_validator("doc_type", mode="before")
+    @classmethod
+    def _normalize_doc_type(cls, value: Any) -> str:
+        return normalize_doc_type(str(value or ""))
+
+
+def _parse_query_check_items(value: Optional[str]) -> Optional[List[str]]:
+    """解析 query 中的检查项。"""
+    if value is None:
+        return None
+    items = [item.strip() for item in str(value).split(",") if item.strip()]
+    return items or None
+
+
+def _parse_query_metadata(value: Optional[str]) -> Dict[str, Any]:
+    """解析 query 中的 metadata JSON。"""
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="metadata 必须是有效的 JSON 字符串") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="metadata 必须是 JSON 对象")
+    return parsed
+
+
+def _build_review_path_request(
+    request: Optional["ReviewPathRequest"],
+    project_id: Optional[str],
+    doc_type: Optional[str],
+    file_path: Optional[str],
+    check_items: Optional[str],
+    enable_llm_analysis: Optional[bool],
+    metadata: Optional[str],
+) -> ReviewPathRequest:
+    """兼容 JSON body 和 query 参数两种传法。"""
+    payload: Dict[str, Any] = {}
+    if request is not None:
+        payload.update(request.model_dump(mode="python", exclude_none=True))
+
+    if project_id is not None:
+        payload["project_id"] = project_id
+    if doc_type is not None:
+        payload["doc_type"] = doc_type
+    if file_path is not None:
+        payload["file_path"] = file_path
+    parsed_check_items = _parse_query_check_items(check_items)
+    if parsed_check_items is not None:
+        payload["check_items"] = parsed_check_items
+    if enable_llm_analysis is not None:
+        payload["enable_llm_analysis"] = enable_llm_analysis
+    parsed_metadata = _parse_query_metadata(metadata)
+    if parsed_metadata:
+        merged_metadata = dict(payload.get("metadata") or {})
+        merged_metadata.update(parsed_metadata)
+        payload["metadata"] = merged_metadata
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="请求体或 query 参数至少提供一组审查参数")
+
+    try:
+        return ReviewPathRequest.model_validate(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 class DocumentTypeInfo(BaseModel):
@@ -43,6 +150,902 @@ class CheckItemInfo(BaseModel):
     value: str
     label: str
     description: str
+
+
+DEFAULT_CHECK_ITEMS = ["signature", "stamp"]
+
+
+def _normalize_check_items(items: Optional[List[str]]) -> List[str]:
+    """规范化检查项，默认签字盖章。"""
+    if not items:
+        return list(DEFAULT_CHECK_ITEMS)
+    normalized = [str(item).strip() for item in items if str(item).strip()]
+    return normalized or list(DEFAULT_CHECK_ITEMS)
+
+
+def _default_check_items_for_doc_type(doc_type: str) -> List[str]:
+    """根据 doc_type 生成默认检查项。"""
+    config = DOCUMENT_CONFIG.get(normalize_doc_type(doc_type), {})
+    rules = list(config.get("rules", []))
+    llm_rules = list(config.get("llm_rules", []))
+    values = [str(item).strip() for item in [*rules, *llm_rules] if str(item).strip()]
+    return values or list(DEFAULT_CHECK_ITEMS)
+
+
+def _resolve_effective_check_items(doc_type: str, requested_items: Optional[List[str]]) -> List[str]:
+    """解析最终检查项。
+
+    对仍沿用旧接口的调用方，如果只传了 ``signature`` / ``stamp``，
+    则自动扩展为该 doc_type 的完整默认规则集。
+    """
+    default_items = _default_check_items_for_doc_type(doc_type)
+    if not requested_items:
+        return default_items
+
+    normalized = _normalize_check_items(requested_items)
+    if set(normalized) == set(DEFAULT_CHECK_ITEMS) and set(default_items) != set(DEFAULT_CHECK_ITEMS):
+        return default_items
+    return normalized
+
+
+def _compact_check_result(item: CheckResult, include_evidence: bool = False) -> Dict[str, Any]:
+    """压缩单条检查结果，供非 debug 响应使用。"""
+    payload = {
+        "code": item.item,
+        "status": item.status.value,
+        "message": item.message,
+    }
+    if include_evidence:
+        payload["evidence"] = dict(item.evidence or {})
+    return payload
+
+
+def _compact_verification(structured: Dict[str, Any]) -> Dict[str, Any]:
+    verification = structured.get("verification") or {}
+    if not isinstance(verification, dict):
+        return {}
+
+    compact: Dict[str, Any] = {}
+    for key, value in verification.items():
+        if isinstance(value, dict):
+            status = str(value.get("status") or "").strip()
+            if not status:
+                continue
+            reason = str(value.get("reason") or "").strip()
+            compact[key] = {"status": status} if not reason else {"status": status, "reason": reason}
+        else:
+            status = str(value or "").strip()
+            if status:
+                compact[key] = status
+    return compact
+
+
+def _compact_db_binding(structured: Dict[str, Any]) -> Dict[str, Any]:
+    binding = structured.get("db_binding") or {}
+    if not isinstance(binding, dict):
+        return {}
+
+    attachment = binding.get("attachment") or {}
+    compact: Dict[str, Any] = {
+        "project_id": binding.get("project_id", ""),
+        "matched_attachment": bool(binding.get("matched_attachment")),
+    }
+    if isinstance(attachment, dict) and attachment:
+        compact["attachment"] = {
+            "file_name": attachment.get("file_name", ""),
+            "title": attachment.get("title", ""),
+            "lx": attachment.get("lx", ""),
+        }
+    errors = [str(item) for item in binding.get("errors", []) if str(item).strip()]
+    if errors:
+        compact["errors"] = errors
+    return compact
+
+
+def _compact_structured_checks(structured: Dict[str, Any]) -> Dict[str, Any]:
+    checks = structured.get("checks") or {}
+    if not isinstance(checks, dict):
+        return {}
+
+    compact: Dict[str, Any] = {}
+    for group, items in checks.items():
+        if not isinstance(items, list) or not items:
+            continue
+        compact[group] = [
+            {
+                "code": str(item.get("code") or ""),
+                "label": str(item.get("label") or ""),
+                "status": str(item.get("status") or ""),
+                "message": str(item.get("message") or ""),
+            }
+            for item in items
+        ]
+    return compact
+
+
+def _compact_structured_result(structured: Dict[str, Any]) -> Dict[str, Any]:
+    compact: Dict[str, Any] = {}
+
+    recognized = structured.get("recognized") or {}
+    if isinstance(recognized, dict) and recognized:
+        compact["recognized"] = {
+            "signatures": list(recognized.get("signatures") or []),
+            "fields": dict(recognized.get("fields") or {}),
+        }
+        if "work_unit_stamps" in recognized or "completion_unit_stamps" in recognized:
+            compact["recognized"]["work_unit_stamps"] = list(recognized.get("work_unit_stamps") or [])
+            compact["recognized"]["completion_unit_stamps"] = list(recognized.get("completion_unit_stamps") or [])
+        else:
+            compact["recognized"]["stamps"] = list(recognized.get("stamps") or [])
+        notes = [str(item) for item in recognized.get("notes", []) if str(item).strip()]
+        if notes:
+            compact["recognized"]["notes"] = notes
+
+    verification = _compact_verification(structured)
+    if verification:
+        compact["verification"] = verification
+
+    db_binding = _compact_db_binding(structured)
+    if db_binding:
+        compact["db_binding"] = db_binding
+
+    compact_checks = _compact_structured_checks(structured)
+    if compact_checks:
+        compact["checks"] = compact_checks
+
+    retry = structured.get("retry") or {}
+    if isinstance(retry, dict) and retry:
+        compact["retry"] = {
+            "attempts": int(retry.get("attempts") or 0),
+            "used_retries": int(retry.get("used_retries") or 0),
+            "stop_reason": str(retry.get("stop_reason") or ""),
+        }
+        if "max_attempts" in retry:
+            compact["retry"]["max_attempts"] = int(retry.get("max_attempts") or 0)
+        if "stage" in retry:
+            compact["retry"]["stage"] = str(retry.get("stage") or "")
+        if "in_progress" in retry:
+            compact["retry"]["in_progress"] = bool(retry.get("in_progress"))
+        if "last_summary" in retry:
+            compact["retry"]["last_summary"] = str(retry.get("last_summary") or "")
+
+    retry_queue = structured.get("retry_queue") or {}
+    if isinstance(retry_queue, dict) and retry_queue:
+        compact["retry_queue"] = {
+            "phase": str(retry_queue.get("phase") or ""),
+            "queue_position": int(retry_queue.get("queue_position") or 0),
+            "worker_concurrency": int(retry_queue.get("worker_concurrency") or 0),
+            "queue_max_size": int(retry_queue.get("queue_max_size") or 0),
+        }
+
+    queue = structured.get("queue") or {}
+    if isinstance(queue, dict) and queue:
+        compact["queue"] = {
+            "phase": str(queue.get("phase") or ""),
+            "queue_position": int(queue.get("queue_position") or 0),
+            "worker_concurrency": int(queue.get("worker_concurrency") or 0),
+            "queue_max_size": int(queue.get("queue_max_size") or 0),
+        }
+
+    return compact
+
+
+def _build_compact_review_data(result: ReviewResult, debug: bool = False) -> Dict[str, Any]:
+    """构造更适合人工阅读的查询结果。"""
+    doc_type_label = get_doc_type_label(result.doc_type)
+    data: Dict[str, Any] = {
+        "id": result.id,
+        "status": result.status,
+        "doc_type": result.doc_type,
+        "doc_type_label": doc_type_label,
+        "summary": result.summary,
+        "processed_at": result.processed_at,
+        "processing_time": result.processing_time,
+    }
+
+    structured = dict(result.structured_result or {})
+    if structured:
+        data.update(_compact_structured_result(structured))
+    else:
+        data["checks"] = [_compact_check_result(item) for item in result.results]
+
+    if result.suggestions:
+        data["suggestions"] = list(result.suggestions)
+
+    if debug:
+        data["debug"] = {
+            "doc_type_raw": result.doc_type_raw,
+            "results": [_compact_check_result(item, include_evidence=True) for item in result.results],
+            "structured_result": structured,
+            "extracted_data": result.extracted_data,
+            "llm_analysis": result.llm_analysis,
+            "ocr_text": result.ocr_text,
+            "document_type": result.document_type,
+            "document_type_raw": result.document_type_raw,
+        }
+
+    return data
+
+
+def _review_result_path(review_id: str) -> Path:
+    """返回审查结果文件路径。"""
+    safe_review_id = re.sub(r"[^a-zA-Z0-9_.-]", "_", str(review_id or "").strip())
+    return _REVIEW_RESULT_DIR / f"{safe_review_id}.json"
+
+
+def _persist_review_result(result: ReviewResult) -> None:
+    """将审查结果落盘，避免进程重启后丢失。"""
+    try:
+        _REVIEW_RESULT_DIR.mkdir(parents=True, exist_ok=True)
+        payload = result.model_dump(mode="json")
+        _review_result_path(result.id).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        logger.exception("审查结果落盘失败: %s", result.id)
+
+
+def _load_persisted_review_result(review_id: str) -> Optional[ReviewResult]:
+    """从磁盘加载已持久化的审查结果。"""
+    path = _review_result_path(review_id)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return ReviewResult.model_validate(payload)
+    except Exception:
+        logger.exception("审查结果读取失败: %s", review_id)
+        return None
+
+
+def _build_review_response(review_id: str, debug: bool = False) -> Response:
+    """构造审查结果查询响应。"""
+    result = _review_results.get(review_id)
+    persisted = _load_persisted_review_result(review_id)
+
+    if result and persisted:
+        memory_status = str(result.status or "").strip().lower()
+        persisted_status = str(persisted.status or "").strip().lower()
+        if (
+            (memory_status == "processing" and persisted_status != "processing")
+            or (
+                str(persisted.processed_at or "").strip()
+                and str(persisted.processed_at or "").strip() > str(result.processed_at or "").strip()
+            )
+        ):
+            result = persisted
+            _review_results[review_id] = persisted
+    elif not result and persisted:
+        result = persisted
+        _review_results[review_id] = persisted
+    elif not result:
+        raise HTTPException(status_code=404, detail="审查结果不存在")
+
+    payload = ApiResponse(
+        status="success",
+        data=_build_compact_review_data(result, debug=debug),
+    )
+    body = json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    return Response(content=body, media_type="application/json; charset=utf-8")
+
+
+def _build_placeholder_result(review_id: str, doc_type: str) -> ReviewResult:
+    """构造处理中占位结果。"""
+    return ReviewResult(
+        id=review_id,
+        status="queued",
+        doc_type=doc_type,
+        doc_type_raw="",
+        results=[],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary="排队中",
+        suggestions=[],
+        processing_time=0.0,
+    )
+
+
+def _get_review_queue() -> asyncio.Queue:
+    global _REVIEW_QUEUE
+    if _REVIEW_QUEUE is None:
+        _REVIEW_QUEUE = asyncio.Queue(maxsize=max(1, int(ReviewRuntime.REVIEW_QUEUE_MAX_SIZE)))
+    return _REVIEW_QUEUE
+
+
+def _get_review_retry_queue() -> asyncio.Queue:
+    global _REVIEW_RETRY_QUEUE
+    if _REVIEW_RETRY_QUEUE is None:
+        _REVIEW_RETRY_QUEUE = asyncio.Queue(maxsize=max(1, int(ReviewRuntime.REVIEW_RETRY_QUEUE_MAX_SIZE)))
+    return _REVIEW_RETRY_QUEUE
+
+
+async def _review_worker(worker_index: int) -> None:
+    queue = _get_review_queue()
+    while True:
+        review_id, doc_type, job = await queue.get()
+        try:
+            _update_queue_status(
+                review_id=review_id,
+                doc_type=doc_type,
+                status="processing",
+                summary=f"处理中：队列任务已开始（worker {worker_index}）",
+                phase="running",
+            )
+            await job()
+        except Exception:
+            logger.exception("Review queue job failed unexpectedly: %s", review_id)
+            failure = _build_failure_result(
+                review_id=review_id,
+                doc_type=doc_type,
+                error=RuntimeError("后台审查任务异常退出"),
+                start_time=time.time(),
+            )
+            _review_results[review_id] = failure
+            _persist_review_result(failure)
+        finally:
+            queue.task_done()
+
+
+async def _review_retry_worker(worker_index: int) -> None:
+    queue = _get_review_retry_queue()
+    while True:
+        review_id, doc_type, job = await queue.get()
+        try:
+            await job()
+        except Exception:
+            logger.exception("Review retry queue job failed unexpectedly: %s", review_id)
+        finally:
+            queue.task_done()
+
+
+def _ensure_review_workers_started() -> None:
+    target = max(1, int(ReviewRuntime.REVIEW_WORKER_CONCURRENCY))
+    active_workers = [task for task in _REVIEW_WORKERS if not task.done()]
+    _REVIEW_WORKERS[:] = active_workers
+    while len(_REVIEW_WORKERS) < target:
+        worker_index = len(_REVIEW_WORKERS) + 1
+        _REVIEW_WORKERS.append(asyncio.create_task(_review_worker(worker_index)))
+
+
+def _ensure_review_retry_workers_started() -> None:
+    target = max(0, int(ReviewRuntime.REVIEW_RETRY_WORKER_CONCURRENCY))
+    active_workers = [task for task in _REVIEW_RETRY_WORKERS if not task.done()]
+    _REVIEW_RETRY_WORKERS[:] = active_workers
+    while len(_REVIEW_RETRY_WORKERS) < target:
+        worker_index = len(_REVIEW_RETRY_WORKERS) + 1
+        _REVIEW_RETRY_WORKERS.append(asyncio.create_task(_review_retry_worker(worker_index)))
+
+
+def _update_queue_status(
+    review_id: str,
+    doc_type: str,
+    status: str,
+    summary: str,
+    phase: str,
+    queue_position: Optional[int] = None,
+) -> None:
+    current = _review_results.get(review_id) or _build_placeholder_result(review_id, doc_type)
+    current.status = status
+    current.doc_type = doc_type
+    current.summary = summary
+    current.processed_at = datetime.now()
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    queue_info = {
+        "phase": phase,
+        "queue_position": int(queue_position or 0),
+        "worker_concurrency": int(ReviewRuntime.REVIEW_WORKER_CONCURRENCY),
+        "queue_max_size": int(ReviewRuntime.REVIEW_QUEUE_MAX_SIZE),
+    }
+    current.extracted_data["queue"] = queue_info
+    current.structured_result["queue"] = queue_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
+
+
+def _update_retry_queue_status(
+    review_id: str,
+    doc_type: str,
+    queue_position: Optional[int] = None,
+) -> None:
+    current = _review_results.get(review_id)
+    if current is None:
+        return
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    retry_queue_info = {
+        "phase": "queued",
+        "queue_position": int(queue_position or 0),
+        "worker_concurrency": int(ReviewRuntime.REVIEW_RETRY_WORKER_CONCURRENCY),
+        "queue_max_size": int(ReviewRuntime.REVIEW_RETRY_QUEUE_MAX_SIZE),
+    }
+    current.extracted_data["retry_queue"] = retry_queue_info
+    current.structured_result["retry_queue"] = retry_queue_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
+
+
+async def _enqueue_review_job(
+    review_id: str,
+    doc_type: str,
+    job: Callable[[], Awaitable[None]],
+) -> None:
+    queue = _get_review_queue()
+    _ensure_review_workers_started()
+    queue_position = queue.qsize() + 1
+    try:
+        queue.put_nowait((review_id, doc_type, job))
+    except asyncio.QueueFull as exc:
+        raise HTTPException(status_code=429, detail="审查队列已满，请稍后重试") from exc
+    _update_queue_status(
+        review_id=review_id,
+        doc_type=doc_type,
+        status="queued",
+        summary=f"排队中：前方 {max(0, queue_position - 1)} 个任务",
+        phase="queued",
+        queue_position=queue_position,
+    )
+
+
+async def _enqueue_review_retry_job(
+    review_id: str,
+    doc_type: str,
+    job: Callable[[], Awaitable[None]],
+) -> bool:
+    if int(ReviewRuntime.REVIEW_RETRY_WORKER_CONCURRENCY) <= 0:
+        return False
+    queue = _get_review_retry_queue()
+    _ensure_review_retry_workers_started()
+    queue_position = queue.qsize() + 1
+    try:
+        queue.put_nowait((review_id, doc_type, job))
+    except asyncio.QueueFull:
+        logger.warning("Review retry queue full, skip background retries: %s", review_id)
+        return False
+    _update_retry_queue_status(review_id, doc_type, queue_position=queue_position)
+    return True
+
+
+def _build_failure_result(review_id: str, doc_type: str, error: Exception, start_time: float) -> ReviewResult:
+    """构造失败结果。"""
+    return ReviewResult(
+        id=review_id,
+        status="failed",
+        doc_type=doc_type,
+        doc_type_raw="",
+        results=[
+            CheckResult(
+                item="system",
+                status=CheckStatus.FAILED,
+                message=str(error),
+                evidence={},
+                confidence=1.0,
+            )
+        ],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary=f"审查失败：{error}",
+        suggestions=[],
+        processing_time=time.time() - start_time,
+    )
+
+
+def _build_document_type_mismatch_result(
+    review_id: str,
+    doc_type: str,
+    type_check: CheckResult,
+    start_time: float,
+) -> ReviewResult:
+    """构造材料类型不一致的提前终止结果。"""
+    summary = "审查完成：通过 0 项，失败 1 项，警告 0 项"
+    suggestions = [f"请检查：{type_check.item} - {type_check.message}"]
+    result = ReviewResult(
+        id=review_id,
+        status="done",
+        doc_type=doc_type,
+        doc_type_raw=doc_type,
+        results=[type_check],
+        ocr_text="",
+        extracted_data={},
+        llm_analysis=None,
+        summary=summary,
+        suggestions=suggestions,
+        processing_time=time.time() - start_time,
+    )
+    result.structured_result = {
+        "overview": {
+            "doc_type": doc_type,
+            "doc_type_label": get_doc_type_label(doc_type),
+            "summary": summary,
+            "status_counts": {"passed": 0, "failed": 1, "warning": 0},
+        },
+        "recognized": {
+            "signatures": [],
+            "fields": {},
+            "notes": [],
+            "stamps": [],
+        },
+        "verification": {},
+        "db_binding": {},
+        "checks": {
+            "recognition": [],
+            "form_consistency": [],
+            "database_consistency": [],
+            "system": [
+                {
+                    "code": type_check.item,
+                    "label": "材料类型一致性",
+                    "status": type_check.status.value,
+                    "message": type_check.message,
+                    "evidence": dict(type_check.evidence or {}),
+                }
+            ],
+        },
+    }
+    return result
+
+
+def _result_status_counts(result: ReviewResult) -> Dict[str, int]:
+    counts = {"passed": 0, "failed": 0, "warning": 0}
+    for item in result.results:
+        status = str(item.status.value if hasattr(item.status, "value") else item.status).strip().lower()
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _is_full_pass(result: ReviewResult) -> bool:
+    counts = _result_status_counts(result)
+    return str(result.status or "").strip().lower() == "done" and counts["failed"] == 0 and counts["warning"] == 0
+
+
+def _has_document_type_mismatch(result: ReviewResult) -> bool:
+    for item in result.results or []:
+        item_name = str(getattr(item, "item", "") or "").strip()
+        status = str(getattr(getattr(item, "status", ""), "value", getattr(item, "status", "")) or "").strip().lower()
+        if item_name == "document_type_consistency" and status == "failed":
+            return True
+    return False
+
+
+def _result_rank(result: ReviewResult) -> tuple[int, int, int, int, float]:
+    counts = _result_status_counts(result)
+    not_done_penalty = 0 if str(result.status or "").strip().lower() == "done" else 1
+    return (
+        counts["failed"],
+        counts["warning"],
+        not_done_penalty,
+        -counts["passed"],
+        float(result.processing_time or 0.0),
+    )
+
+
+def _attach_retry_metadata(
+    result: ReviewResult,
+    attempts: int,
+    used_retries: int,
+    stop_reason: str,
+    total_elapsed: float,
+    max_attempts: Optional[int] = None,
+) -> ReviewResult:
+    retry_info = {
+        "attempts": attempts,
+        "used_retries": used_retries,
+        "stop_reason": stop_reason,
+        "max_attempts": int(max_attempts or attempts),
+        "in_progress": False,
+    }
+    result.processing_time = total_elapsed
+    result.extracted_data = dict(result.extracted_data or {})
+    result.extracted_data["retry"] = retry_info
+    structured = dict(result.structured_result or {})
+    structured["retry"] = retry_info
+    result.structured_result = structured
+    return result
+
+
+def _attach_deferred_retry_metadata(
+    result: ReviewResult,
+    attempts: int,
+    used_retries: int,
+    stage: str,
+    total_elapsed: float,
+    max_attempts: int,
+) -> ReviewResult:
+    result = _attach_retry_metadata(
+        result,
+        attempts=attempts,
+        used_retries=used_retries,
+        stop_reason="initial_done",
+        total_elapsed=total_elapsed,
+        max_attempts=max_attempts,
+    )
+    retry_info = {
+        "attempts": attempts,
+        "used_retries": used_retries,
+        "stop_reason": "initial_done",
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+        "last_summary": str(result.summary or ""),
+    }
+    result.extracted_data = dict(result.extracted_data or {})
+    result.extracted_data["retry"] = retry_info
+    structured = dict(result.structured_result or {})
+    structured["retry"] = retry_info
+    result.structured_result = structured
+    return result
+
+
+def _publish_retry_snapshot(
+    review_id: str,
+    result: ReviewResult,
+    attempts: int,
+    used_retries: int,
+    stop_reason: str,
+    max_attempts: int,
+    stage: str,
+    start_time: float,
+) -> None:
+    """Expose a completed attempt while background retries continue."""
+    snapshot = _attach_retry_metadata(
+        result,
+        attempts=attempts,
+        used_retries=used_retries,
+        stop_reason=stop_reason,
+        total_elapsed=time.time() - start_time,
+        max_attempts=max_attempts,
+    )
+    retry_info = {
+        "attempts": attempts,
+        "used_retries": used_retries,
+        "stop_reason": stop_reason,
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+    }
+    snapshot.extracted_data = dict(snapshot.extracted_data or {})
+    snapshot.extracted_data["retry"] = retry_info
+    structured = dict(snapshot.structured_result or {})
+    structured["retry"] = retry_info
+    snapshot.structured_result = structured
+    _review_results[review_id] = snapshot
+    _persist_review_result(snapshot)
+
+
+def _update_processing_retry_status(
+    review_id: str,
+    doc_type: str,
+    attempt: int,
+    max_attempts: int,
+    stage: str,
+    last_result: Optional[ReviewResult] = None,
+) -> None:
+    """在重试/复核期间把可见状态写回内存和磁盘。"""
+    current = _review_results.get(review_id)
+    if current is None:
+        current = _build_placeholder_result(review_id, doc_type)
+
+    used_retries = max(0, attempt - 1)
+    if last_result is not None:
+        current.results = list(last_result.results or [])
+        current.ocr_text = str(last_result.ocr_text or "")
+        current.extracted_data = dict(last_result.extracted_data or {})
+        current.llm_analysis = last_result.llm_analysis
+        current.suggestions = list(last_result.suggestions or [])
+        current.processing_time = float(last_result.processing_time or 0.0)
+        current.structured_result = dict(last_result.structured_result or {})
+        current.doc_type_raw = str(last_result.doc_type_raw or current.doc_type_raw or "")
+
+    current.status = str(last_result.status or "done") if last_result is not None else "processing"
+    current.doc_type = doc_type
+    if last_result is None:
+        current.summary = f"正在复核第 {attempt} 次（共 {max_attempts} 次）" if max_attempts > 1 else "处理中"
+        if stage:
+            current.summary = f"{current.summary}：{stage}"
+    else:
+        current.summary = str(last_result.summary or current.summary or "")
+    current.processed_at = datetime.now()
+    current.extracted_data = dict(current.extracted_data or {})
+    current.structured_result = dict(current.structured_result or {})
+    retry_info = {
+        "attempts": attempt,
+        "used_retries": used_retries,
+        "max_attempts": max_attempts,
+        "stage": stage,
+        "in_progress": True,
+    }
+    if last_result is not None:
+        retry_info["last_summary"] = str(last_result.summary or "")
+    current.extracted_data["retry"] = retry_info
+    current.structured_result["retry"] = retry_info
+    _review_results[review_id] = current
+    _persist_review_result(current)
+
+
+async def _run_with_retries(
+    review_id: str,
+    doc_type: str,
+    run_attempt,
+    start_time: float,
+    defer_retries: bool = False,
+) -> ReviewResult:
+    best_result: Optional[ReviewResult] = None
+    attempts = _REVIEW_MAX_RETRIES + 1
+    completed_attempts = 0
+    stop_reason = "max_retries_reached"
+
+    for attempt in range(1, attempts + 1):
+        completed_attempts = attempt
+        _update_processing_retry_status(
+            review_id=review_id,
+            doc_type=doc_type,
+            attempt=attempt,
+            max_attempts=attempts,
+            stage="开始审查" if attempt == 1 else "开始复核",
+            last_result=best_result,
+        )
+        try:
+            current = await run_attempt(attempt)
+        except Exception as exc:
+            logger.exception("Review attempt failed: %s attempt=%s", review_id, attempt)
+            current = _build_failure_result(
+                review_id=review_id,
+                doc_type=doc_type,
+                error=exc,
+                start_time=start_time,
+            )
+
+        if best_result is None or _result_rank(current) < _result_rank(best_result):
+            best_result = current
+
+        if _is_full_pass(current):
+            best_result = current
+            stop_reason = "full_pass"
+            break
+        if _has_document_type_mismatch(current):
+            best_result = current
+            stop_reason = "document_type_mismatch"
+            break
+
+        if attempt < attempts:
+            if attempt == 1 and best_result is not None:
+                _publish_retry_snapshot(
+                    review_id=review_id,
+                    result=best_result,
+                    attempts=1,
+                    used_retries=0,
+                    stop_reason="initial_done",
+                    max_attempts=attempts,
+                    stage="后台复核中",
+                    start_time=start_time,
+                )
+                if defer_retries:
+                    async def _run_deferred_retries(
+                        initial_best: ReviewResult,
+                        next_attempt: int,
+                    ) -> None:
+                        best_retry_result = initial_best
+                        completed_retry_attempts = next_attempt - 1
+                        retry_stop_reason = "max_retries_reached"
+                        for retry_attempt in range(next_attempt, attempts + 1):
+                            completed_retry_attempts = retry_attempt
+                            _update_processing_retry_status(
+                                review_id=review_id,
+                                doc_type=doc_type,
+                                attempt=retry_attempt,
+                                max_attempts=attempts,
+                                stage="后台复核中",
+                                last_result=best_retry_result,
+                            )
+                            try:
+                                retry_result = await run_attempt(retry_attempt)
+                            except Exception as exc:
+                                logger.exception("Review retry attempt failed: %s attempt=%s", review_id, retry_attempt)
+                                retry_result = _build_failure_result(
+                                    review_id=review_id,
+                                    doc_type=doc_type,
+                                    error=exc,
+                                    start_time=start_time,
+                                )
+                            if _result_rank(retry_result) < _result_rank(best_retry_result):
+                                best_retry_result = retry_result
+                            if _is_full_pass(retry_result):
+                                best_retry_result = retry_result
+                                retry_stop_reason = "full_pass"
+                                break
+                            if _has_document_type_mismatch(retry_result):
+                                best_retry_result = retry_result
+                                retry_stop_reason = "document_type_mismatch"
+                                break
+                        final_retry_result = _attach_retry_metadata(
+                            best_retry_result,
+                            attempts=completed_retry_attempts,
+                            used_retries=max(0, completed_retry_attempts - 1),
+                            stop_reason=retry_stop_reason,
+                            total_elapsed=time.time() - start_time,
+                            max_attempts=attempts,
+                        )
+                        _review_results[review_id] = final_retry_result
+                        _persist_review_result(final_retry_result)
+
+                    enqueued = await _enqueue_review_retry_job(
+                        review_id=review_id,
+                        doc_type=doc_type,
+                        job=lambda: _run_deferred_retries(best_result, attempt + 1),
+                    )
+                    if enqueued:
+                        return _attach_deferred_retry_metadata(
+                            best_result,
+                            attempts=attempt,
+                            used_retries=max(0, attempt - 1),
+                            stage="后台复核中",
+                            total_elapsed=time.time() - start_time,
+                            max_attempts=attempts,
+                        )
+            _update_processing_retry_status(
+                review_id=review_id,
+                doc_type=doc_type,
+                attempt=attempt + 1,
+                max_attempts=attempts,
+                stage=f"第 {attempt} 次结果需复核，准备重试",
+                last_result=current,
+            )
+
+    assert best_result is not None
+    return _attach_retry_metadata(
+        best_result,
+        attempts=completed_attempts,
+        used_retries=max(0, completed_attempts - 1),
+        stop_reason=stop_reason,
+        total_elapsed=time.time() - start_time,
+        max_attempts=attempts,
+    )
+
+
+async def _run_review_job(
+    review_id: str,
+    file_data: bytes,
+    filename: str,
+    doc_type: str,
+    check_items: List[str],
+    enable_llm_analysis: bool,
+    metadata: Dict[str, Any],
+    persist_result: bool = True,
+) -> ReviewResult:
+    """执行后台审查任务。"""
+    start_time = time.time()
+    agent = ReviewAgent()
+    try:
+        result = await agent.process(
+            file_data=file_data,
+            file_type=filename.split(".")[-1].lower() if "." in filename else "pdf",
+            doc_type=doc_type,
+            check_items=check_items,
+            enable_llm_analysis=enable_llm_analysis,
+            metadata=metadata,
+            review_id=review_id,
+        )
+        if persist_result:
+            _review_results[review_id] = result
+            _persist_review_result(result)
+        return result
+    except Exception as e:
+        logger.exception("Review job failed: %s", review_id)
+        failure = _build_failure_result(
+            review_id=review_id,
+            doc_type=doc_type,
+            error=e,
+            start_time=start_time,
+        )
+        if persist_result:
+            _review_results[review_id] = failure
+            _persist_review_result(failure)
+            return failure
+        raise
 
 
 def _read_docx_paragraphs(docx_path: Path, max_paragraphs: int = 1200) -> List[str]:
@@ -151,6 +1154,11 @@ def _safe_read_json(file_path: Path) -> dict:
 
 
 def _doc_kind_label(doc_kind: str) -> str:
+    normalized_doc_type = normalize_doc_type(doc_kind, default="")
+    if normalized_doc_type:
+        label = get_doc_type_label(normalized_doc_type)
+        if label and label != "未知":
+            return label
     labels = {
         "commitment_letter": "承诺书",
         "ethics_approval": "伦理审查意见",
@@ -207,36 +1215,6 @@ def _match_rule_code_by_requirement(row_text: str, review_points: List[dict]) ->
 @router.get("/debug-batch-view")
 async def get_debug_batch_view(limit: int = 300) -> ApiResponse[dict]:
     """读取固定调试批次结果，供前端直接展示双栏页面。"""
-    exact_html_path = Path(
-        "/home/tdkx/ljh/Tech/debug_review/batch_review_db832d940a2843e6b3c33970336d0e9e/index.html"
-    )
-    if exact_html_path.exists():
-        try:
-            html_text = exact_html_path.read_text(encoding="utf-8")
-            marker = "const REPORT_DATA = "
-            start = html_text.find(marker)
-            if start >= 0:
-                start += len(marker)
-                end = html_text.find(";\n\n    const state", start)
-                if end < 0:
-                    end = html_text.find(";\n    const state", start)
-                if end > start:
-                    report_data = json.loads(html_text[start:end])
-                    return ApiResponse(
-                        status="success",
-                        data={
-                            "reportData": report_data,
-                            "reportAssetsBase": "/debug-review/batch_review_db832d940a2843e6b3c33970336d0e9e",
-                            "guideline": {"file_name": "2026年度中央引导地方形式审查要点.docx"},
-                            "stats": {
-                                "total_projects": len(report_data.get("projects") or []),
-                                "total_review_points": 0,
-                            },
-                        },
-                    )
-        except Exception as e:
-            logger.warning("解析固定调试页 REPORT_DATA 失败，将回退旧逻辑: %s", e)
-
     root = Path("/home/tdkx/ljh/Tech/debug_review")
     docx_path = root / "2026年度中央引导地方形式审查要点.docx"
     projects_dir = root / "batch_review_1775034762632" / "projects"
@@ -334,9 +1312,10 @@ async def get_debug_batch_view(limit: int = 300) -> ApiResponse[dict]:
 
         missing_attachments = []
         for item in result_payload.get("missing_attachments", []):
-            kind = str(item.get("doc_kind") or "").strip()
+            kind = str(item.get("doc_type") or item.get("doc_kind") or "").strip()
             missing_attachments.append(
                 {
+                    "doc_type": kind,
                     "doc_kind": kind,
                     "doc_label": _doc_kind_label(kind),
                     "reason": str(item.get("reason") or "").strip(),
@@ -448,7 +1427,9 @@ async def get_debug_batch_view(limit: int = 300) -> ApiResponse[dict]:
 @router.post("")
 async def submit_review(
     file: UploadFile = File(...),
-    document_type: str = Form(...),
+    doc_type: Optional[str] = Form(None),
+    document_type: Optional[str] = Form(None),
+    type_: Optional[str] = Form(None, alias="type"),
     check_items: Optional[str] = Form(None),
     enable_llm_analysis: bool = Form(False),
     metadata: Optional[str] = Form(None),
@@ -457,7 +1438,7 @@ async def submit_review(
 
     Args:
         file: 上传的文件
-        document_type: 文档类型（必填，由调用方指定）
+        doc_type: 文档类型（必填，由调用方指定）
         check_items: 检查项，逗号分隔（可选）
         enable_llm_analysis: 是否启用 LLM 深度分析（可选）
         metadata: 元数据 JSON 字符串（可选）
@@ -465,12 +1446,15 @@ async def submit_review(
     Returns:
         审查结果
     """
-    import json
+    selected_doc_type = normalize_doc_type(str(doc_type or document_type or type_ or "").strip())
+    if not selected_doc_type or selected_doc_type == "unknown":
+        raise HTTPException(status_code=400, detail="doc_type/document_type/type 为必填参数，且必须是受支持类型")
 
     # 解析检查项
-    items = None
-    if check_items:
-        items = [i.strip() for i in check_items.split(",")]
+    items = _resolve_effective_check_items(
+        selected_doc_type,
+        [i.strip() for i in check_items.split(",")] if check_items else None,
+    )
 
     # 解析元数据
     meta_dict = {}
@@ -485,72 +1469,186 @@ async def submit_review(
 
     try:
         review_id = f"review_{int(time.time() * 1000)}"
-        placeholder = ReviewResult(
-            id=review_id,
-            status="processing",
-            document_type=document_type,
-            document_type_raw="",
-            results=[],
-            ocr_text="",
-            extracted_data={},
-            llm_analysis=None,
-            summary="处理中",
-            suggestions=[],
-            processing_time=0.0,
-        )
+        placeholder = _build_placeholder_result(review_id, selected_doc_type)
         _review_results[review_id] = placeholder
+        _persist_review_result(placeholder)
 
         async def _run_review() -> None:
-            start_time = time.time()
-            agent = ReviewAgent()
-            try:
-                result = await agent.process(
+            final = await _run_with_retries(
+                review_id=review_id,
+                doc_type=selected_doc_type,
+                start_time=time.time(),
+                run_attempt=lambda _attempt: _run_review_job(
+                    review_id=review_id,
                     file_data=file_data,
-                    file_type=file.filename.split(".")[-1] if "." in file.filename else "pdf",
-                    document_type=document_type,
+                    filename=file.filename or "upload.pdf",
+                    doc_type=selected_doc_type,
                     check_items=items,
                     enable_llm_analysis=enable_llm_analysis,
                     metadata=meta_dict,
-                    review_id=review_id,
-                )
-                _review_results[review_id] = result
-            except Exception as e:
-                logger.exception("Review job failed: %s", review_id)
-                _review_results[review_id] = ReviewResult(
-                    id=review_id,
-                    status="failed",
-                    document_type=document_type,
-                    document_type_raw="",
-                    results=[
-                        CheckResult(
-                            item="system",
-                            status=CheckStatus.FAILED,
-                            message=str(e),
-                            evidence={},
-                            confidence=1.0,
-                        )
-                    ],
-                    ocr_text="",
-                    extracted_data={},
-                    llm_analysis=None,
-                    summary=f"审查失败：{e}",
-                    suggestions=[],
-                    processing_time=time.time() - start_time,
-                )
+                    persist_result=False,
+                ),
+                defer_retries=True,
+            )
+            _review_results[review_id] = final
+            _persist_review_result(final)
 
-        asyncio.create_task(_run_review())
+        try:
+            await _enqueue_review_job(review_id, selected_doc_type, _run_review)
+        except HTTPException:
+            _review_results.pop(review_id, None)
+            raise
 
         return ApiResponse(
             status="success",
             data=placeholder,
-            message="已提交审查任务，请稍后使用 review_id 查询结果",
+            message="已提交审查任务，已进入队列，请稍后使用 review_id 查询结果",
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/path")
+async def submit_review_by_path(
+    request: Optional[ReviewPathRequest] = Body(None),
+    project_id: Optional[str] = Query(None),
+    doc_type: Optional[str] = Query(None),
+    file_path: Optional[str] = Query(None),
+    check_items: Optional[str] = Query(None),
+    enable_llm_analysis: Optional[bool] = Query(None),
+    metadata: Optional[str] = Query(None),
+) -> ApiResponse[ReviewResult]:
+    """按 SMB 路径提交文件进行形式审查。"""
+    request = _build_review_path_request(
+        request=request,
+        project_id=project_id,
+        doc_type=doc_type,
+        file_path=file_path,
+        check_items=check_items,
+        enable_llm_analysis=enable_llm_analysis,
+        metadata=metadata,
+    )
+
+    review_id = f"review_{int(time.time() * 1000)}"
+    normalized_doc_type = normalize_doc_type(request.doc_type)
+    if normalized_doc_type in REWARD_PATH_DOC_TYPES and not str(request.project_id or "").strip():
+        raise HTTPException(status_code=400, detail="奖励平台材料必须传入 project_id")
+    placeholder = _build_placeholder_result(review_id, normalized_doc_type)
+    _review_results[review_id] = placeholder
+    _persist_review_result(placeholder)
+    items = _resolve_effective_check_items(normalized_doc_type, request.check_items)
+    start_time = time.time()
+
+    async def _run_review_from_smb() -> None:
+        try:
+            reader = SMBReviewFileReader()
+            file_data = await asyncio.to_thread(reader.read_bytes, request.file_path)
+            filename = Path(reader.normalize_share_path(request.file_path)).name or "remote.pdf"
+            metadata = dict(request.metadata)
+            metadata.setdefault("source", "smb")
+            metadata.setdefault("file_path", request.file_path)
+            if request.project_id:
+                metadata.setdefault("project_id", request.project_id)
+
+            reward_service: Optional[RewardReviewService] = None
+            reward_context: Optional[Dict[str, Any]] = None
+            if normalized_doc_type in REWARD_PATH_DOC_TYPES:
+                reward_service = RewardReviewService()
+                reward_context = await asyncio.to_thread(
+                    reward_service.build_context,
+                    str(request.project_id or ""),
+                    request.file_path,
+                    normalized_doc_type,
+                )
+                metadata["reward_review_context"] = reward_context
+                type_check = await asyncio.to_thread(
+                    reward_service._build_document_type_consistency_check,
+                    file_data,
+                    normalized_doc_type,
+                )
+                if type_check:
+                    current = _build_document_type_mismatch_result(
+                        review_id=review_id,
+                        doc_type=normalized_doc_type,
+                        type_check=type_check,
+                        start_time=start_time,
+                    )
+                    current = _attach_retry_metadata(
+                        current,
+                        attempts=1,
+                        used_retries=0,
+                        stop_reason="document_type_mismatch",
+                        total_elapsed=time.time() - start_time,
+                        max_attempts=1,
+                    )
+                    _review_results[review_id] = current
+                    _persist_review_result(current)
+                    return
+
+            async def _run_single_attempt(_attempt: int) -> ReviewResult:
+                current = await _run_review_job(
+                    review_id=review_id,
+                    file_data=file_data,
+                    filename=filename,
+                    doc_type=normalized_doc_type,
+                    check_items=items,
+                    enable_llm_analysis=request.enable_llm_analysis,
+                    metadata=metadata,
+                    persist_result=False,
+                )
+                if reward_service and reward_context and current and current.status == "done":
+                    current = await asyncio.to_thread(
+                        reward_service.enrich_result,
+                        current,
+                        reward_context,
+                        items,
+                        file_data,
+                    )
+                return current
+
+            current = await _run_with_retries(
+                review_id=review_id,
+                doc_type=normalized_doc_type,
+                start_time=start_time,
+                run_attempt=_run_single_attempt,
+                defer_retries=True,
+            )
+            if reward_service and reward_context and current.status == "done":
+                await asyncio.to_thread(reward_service.persist_recognition, reward_context, current)
+            _review_results[review_id] = current
+            _persist_review_result(current)
+        except Exception as e:
+            logger.exception("SMB review job failed: %s", review_id)
+            failure = _build_failure_result(
+                review_id=review_id,
+                doc_type=normalized_doc_type,
+                error=e,
+                start_time=start_time,
+            )
+            _review_results[review_id] = failure
+            _persist_review_result(failure)
+
+    try:
+        await _enqueue_review_job(review_id, normalized_doc_type, _run_review_from_smb)
+    except HTTPException:
+        _review_results.pop(review_id, None)
+        raise
+
+    return ApiResponse(
+        status="success",
+        data=placeholder,
+        message="已提交路径审查任务，已进入队列，请稍后使用 review_id 查询结果",
+    )
+
+
+@router.get("")
+async def get_review_by_query(review_id: str = Query(...), debug: bool = False) -> Response:
+    """兼容 query 参数方式查询审查结果。"""
+    return _build_review_response(review_id, debug=debug)
+
+
 @router.get("/{review_id}")
-async def get_review(review_id: str) -> ApiResponse[ReviewResult]:
+async def get_review(review_id: str, debug: bool = False) -> Response:
     """根据 ID 查询审查结果
 
     Args:
@@ -559,14 +1657,7 @@ async def get_review(review_id: str) -> ApiResponse[ReviewResult]:
     Returns:
         审查结果
     """
-    result = _review_results.get(review_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="审查结果不存在")
-
-    return ApiResponse(
-        status="success",
-        data=result,
-    )
+    return _build_review_response(review_id, debug=debug)
 
 
 @router.get("/document-types")
@@ -582,7 +1673,7 @@ async def get_document_types() -> ApiResponse[List[DocumentTypeInfo]]:
         rules = config.get("rules", [])
         llm_rules = config.get("llm_rules", [])
         # 展示优先中文首标签；无标签则回退到 code
-        label = labels[0] if labels else doc_type
+        label = get_doc_type_label(doc_type) if labels else doc_type
         # 对外统一返回该类型可用检查项（规则引擎 + llm规则）
         check_items = [*rules, *llm_rules]
         types.append(

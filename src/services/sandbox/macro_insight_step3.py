@@ -12,8 +12,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,11 +27,10 @@ from neo4j.exceptions import Neo4jError
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 
-CURRENT_YEAR = datetime.now().year
-DEFAULT_YEAR_A_START = CURRENT_YEAR - 1
-DEFAULT_YEAR_A_END = CURRENT_YEAR - 1
-DEFAULT_YEAR_B_START = CURRENT_YEAR
-DEFAULT_YEAR_B_END = CURRENT_YEAR
+DEFAULT_YEAR_A_START = 2023
+DEFAULT_YEAR_A_END = 2023
+DEFAULT_YEAR_B_START = 2024
+DEFAULT_YEAR_B_END = 2024
 DEFAULT_TOPIC_EXPR = "coalesce(p.guideName, p.department, p.office, '<未知主题>')"
 DEFAULT_MIN_APPLICATIONS = 20
 DEFAULT_GROWTH_ALERT_THRESHOLD = 0.30
@@ -286,16 +283,14 @@ def fetch_topic_knowledge_metrics(
     start_year: int,
     end_year: int,
     topics: list[str],
-    rel_types: set[str] | None = None,
 ) -> dict[str, dict[str, float]]:
     if not topics:
         return {}
 
-    if rel_types is None:
-        rel_types = {
-            str(r["relationshipType"])
-            for r in session.run("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType")
-        }
+    rel_types = {
+        str(r["relationshipType"])
+        for r in session.run("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType")
+    }
     if "involves_concept" not in rel_types:
         return {}
 
@@ -698,52 +693,20 @@ def build_briefing(cfg: InsightConfig, findings: list[dict[str, Any]], summary: 
     }
 
 
-def _fetch_window_topic_metrics_threadsafe(
-    driver: Any,
-    cfg: InsightConfig,
-    start_year: int,
-    end_year: int,
-) -> dict[str, dict[str, float]]:
-    """单窗指标查询；独立 session，可与另一时间窗并行。"""
-    with driver.session(database=cfg.database) as session:
-        return fetch_window_topic_metrics(session, cfg, start_year, end_year)
-
-
 def run(cfg: InsightConfig) -> dict[str, Any]:
     driver = GraphDatabase.driver(cfg.uri, auth=(cfg.user, cfg.password))
     try:
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="insight-window") as pool:
-            fut_a = pool.submit(
-                _fetch_window_topic_metrics_threadsafe,
-                driver,
-                cfg,
-                cfg.year_a_start,
-                cfg.year_a_end,
-            )
-            fut_b = pool.submit(
-                _fetch_window_topic_metrics_threadsafe,
-                driver,
-                cfg,
-                cfg.year_b_start,
-                cfg.year_b_end,
-            )
-            metrics_a = fut_a.result()
-            metrics_b = fut_b.result()
-
-        topics_focus: list[str] | None = None
-        if cfg.fast_mode:
-            merged = sorted(
-                metrics_b.items(),
-                key=lambda item: float(item[1].get("applications", 0.0)),
-                reverse=True,
-            )
-            topics_focus = [topic for topic, _ in merged[: cfg.fast_focus_topics]]
-
         with driver.session(database=cfg.database) as session:
-            rel_types = {
-                str(r["relationshipType"])
-                for r in session.run("CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType")
-            }
+            metrics_a = fetch_window_topic_metrics(session, cfg, cfg.year_a_start, cfg.year_a_end)
+            metrics_b = fetch_window_topic_metrics(session, cfg, cfg.year_b_start, cfg.year_b_end)
+            topics_focus: list[str] | None = None
+            if cfg.fast_mode:
+                merged = sorted(
+                    metrics_b.items(),
+                    key=lambda item: float(item[1].get("applications", 0.0)),
+                    reverse=True,
+                )
+                topics_focus = [topic for topic, _ in merged[: cfg.fast_focus_topics]]
 
             try:
                 talent = fetch_talent_metrics(session, cfg, topics=topics_focus)
@@ -754,29 +717,14 @@ def run(cfg: InsightConfig) -> dict[str, Any]:
                 else:
                     raise
 
-            # 快速模式：知识层只对「头部主题」查 involves_concept，避免 topic IN 数千项拖垮 Neo4j。
-            if cfg.fast_mode:
-                cap = max(10, int(os.getenv("INSIGHT_FAST_KNOWLEDGE_TOPICS", str(cfg.fast_focus_topics))))
-                if topics_focus:
-                    knowledge_topics = topics_focus[:cap]
-                else:
-                    merged_keys = sorted(
-                        set(metrics_a.keys()) | set(metrics_b.keys()),
-                        key=lambda t: float(metrics_b.get(t, {}).get("applications", 0.0)),
-                        reverse=True,
-                    )
-                    knowledge_topics = merged_keys[:cap]
-            else:
-                knowledge_topics = sorted(set(metrics_a.keys()) | set(metrics_b.keys()))
-
+            topic_set = sorted(set(metrics_a.keys()) | set(metrics_b.keys()))
             try:
                 knowledge = fetch_topic_knowledge_metrics(
                     session,
                     cfg,
                     cfg.year_b_start,
                     cfg.year_b_end,
-                    knowledge_topics,
-                    rel_types=rel_types,
+                    topic_set,
                 )
             except Neo4jError as exc:
                 print(f"[WARN] 知识层语义检索失败，已降级为空结果继续产出: {exc}")

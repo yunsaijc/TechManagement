@@ -19,11 +19,12 @@ from src.common.models import (
 )
 from src.common.review_runtime import ReviewRuntime
 from src.services.review.agent import ReviewAgent
+from src.services.review.doc_types import doc_type_to_legacy_doc_kind
 from src.services.review.project_config import (
-    get_attachment_review_doc_kinds,
+    get_attachment_review_doc_types,
     get_effective_policy_review_points,
     get_project_config,
-    resolve_document_type,
+    resolve_doc_type,
 )
 from src.services.review.project_rules import ProjectRuleRegistry
 
@@ -34,7 +35,7 @@ class ProjectReviewAgent:
     def __init__(self, review_agent: ReviewAgent | None = None):
         self.review_agent = review_agent or ReviewAgent()
         self.attachment_review_concurrency = max(1, int(ReviewRuntime.ATTACHMENT_REVIEW_CONCURRENCY))
-        self.reviewable_doc_kinds = set(get_attachment_review_doc_kinds())
+        self.reviewable_doc_types = set(get_attachment_review_doc_types())
 
     async def process(self, request: ProjectReviewRequest) -> ProjectReviewResult:
         """执行项目级形式审查"""
@@ -90,18 +91,17 @@ class ProjectReviewAgent:
         candidates = [
             attachment
             for attachment in attachments
-            if attachment.document_type and attachment.doc_kind in self.reviewable_doc_kinds
+            if attachment.doc_type in self.reviewable_doc_types
         ]
 
         async def _review(attachment: ProjectAttachment) -> tuple[str, ReviewResult]:
             async with semaphore:
                 file_data = self._load_file_data(attachment.file_ref)
-                document_type = resolve_document_type(attachment.doc_kind, attachment.document_type)
                 review_result = await self.review_agent.process(
                     file_data=file_data,
                     file_type=self._detect_file_type(attachment.file_name),
-                    document_type=document_type,
-                    metadata={"doc_kind": attachment.doc_kind},
+                    doc_type=attachment.doc_type,
+                    metadata={"doc_type": attachment.doc_type, "doc_kind": attachment.doc_kind},
                 )
                 return attachment.attachment_id, review_result
 
@@ -148,7 +148,8 @@ class ProjectReviewAgent:
                 failures.append(
                     {
                         "attachment_id": attachment_id,
-                        "document_type": result.document_type,
+                        "doc_type": result.doc_type,
+                        "document_type": result.doc_type,
                         "failed_items": [item.item for item in failed_items],
                     }
                 )
@@ -168,13 +169,13 @@ class ProjectReviewAgent:
         missing: List[MissingAttachment] = []
         for result in results:
             if result.item == "required_attachments" and result.status == CheckStatus.FAILED:
-                for doc_kind in result.evidence.get("missing_doc_kinds", []):
-                    missing.append(MissingAttachment(doc_kind=doc_kind, reason="缺少必需附件"))
+                for doc_type in result.evidence.get("missing_doc_types", []) or result.evidence.get("missing_doc_kinds", []):
+                    missing.append(MissingAttachment(doc_type=doc_type, reason="缺少必需附件"))
             elif result.item == "conditional_attachments" and result.status == CheckStatus.FAILED:
                 for item in result.evidence.get("missing_conditional_attachments", []):
                     missing.append(
                         MissingAttachment(
-                            doc_kind=item.get("doc_kind", ""),
+                            doc_type=item.get("doc_type", "") or item.get("doc_kind", ""),
                             reason=item.get("reason", "缺少条件性附件"),
                         )
                     )
@@ -191,7 +192,7 @@ class ProjectReviewAgent:
         unknown_attachments = [
             attachment
             for attachment in context.attachments
-            if attachment.doc_kind == "unknown_attachment"
+            if attachment.doc_type == "project_unknown_attachment"
         ]
         if unknown_attachments:
             existing_items.add("attachment_classification_uncertain")
@@ -280,7 +281,7 @@ class ProjectReviewAgent:
         reason = point.get("reason", "")
         metadata = self._resolve_policy_point_mapping(code)
         source_rule = metadata["source_rule"]
-        doc_kind = metadata.get("doc_kind", "")
+        doc_type = metadata.get("doc_type", "")
         condition_field = metadata.get("condition_field", "")
 
         if condition_field and not getattr(context.project_info, condition_field, False):
@@ -299,7 +300,7 @@ class ProjectReviewAgent:
             status, evidence, resolved_reason = self._resolve_status_from_result(
                 code=code,
                 source_result=source_result,
-                doc_kind=doc_kind,
+                doc_type=doc_type,
             )
             if status:
                 return PolicyRuleCheck(
@@ -372,30 +373,47 @@ class ProjectReviewAgent:
         self,
         code: str,
         source_result: CheckResult,
-        doc_kind: str = "",
+        doc_type: str = "",
     ) -> tuple[str, Dict[str, Any], str]:
         """从项目级规则结果推导 docx 单条规则状态"""
+        doc_kind = doc_type_to_legacy_doc_kind(doc_type) if doc_type else ""
         if source_result.item == "required_attachments":
-            missing = set(source_result.evidence.get("missing_doc_kinds", []))
-            if doc_kind in missing:
+            missing_doc_types = {
+                resolve_doc_type(item)
+                for item in source_result.evidence.get("missing_doc_types", []) or source_result.evidence.get("missing_doc_kinds", [])
+                if str(item).strip()
+            }
+            if doc_type and doc_type in missing_doc_types:
                 return source_result.status.value, source_result.evidence, source_result.message
             if source_result.status == CheckStatus.PASSED:
                 return "passed", source_result.evidence, source_result.message
             if source_result.status == CheckStatus.WARNING:
                 return "warning", source_result.evidence, "附件识别不稳定，暂无法确认该条附件规则"
-            return "passed", {"doc_kind": doc_kind}, "该附件规则已满足"
+            return "passed", {"doc_type": doc_type, "doc_kind": doc_kind}, "该附件规则已满足"
 
         if source_result.item == "conditional_attachments":
             missing_items = source_result.evidence.get("missing_conditional_attachments", [])
-            missing_doc_kinds = {item.get("doc_kind", "") for item in missing_items}
-            if doc_kind in missing_doc_kinds:
-                evidence = next((item for item in missing_items if item.get("doc_kind") == doc_kind), source_result.evidence)
+            missing_doc_types = {
+                resolve_doc_type(str(item.get("doc_type") or item.get("doc_kind") or ""))
+                for item in missing_items
+                if isinstance(item, dict)
+            }
+            if doc_type and doc_type in missing_doc_types:
+                evidence = next(
+                    (
+                        item
+                        for item in missing_items
+                        if isinstance(item, dict)
+                        and resolve_doc_type(str(item.get("doc_type") or item.get("doc_kind") or "")) == doc_type
+                    ),
+                    source_result.evidence,
+                )
                 return source_result.status.value, evidence, source_result.message
             if source_result.status == CheckStatus.PASSED:
                 return "passed", source_result.evidence, source_result.message
             if source_result.status == CheckStatus.WARNING:
                 return "warning", source_result.evidence, "附件识别不稳定，暂无法确认该条条件性附件规则"
-            return "passed", {"doc_kind": doc_kind}, "该条件性附件规则已满足"
+            return "passed", {"doc_type": doc_type, "doc_kind": doc_kind}, "该条件性附件规则已满足"
 
         if source_result.item == "external_status_check":
             if code == "duplicate_submission_check":
@@ -431,35 +449,35 @@ class ProjectReviewAgent:
             "applicant_unit_type_check": {"source_rule": "applicant_unit_type_check"},
             "commitment_letter_required": {
                 "source_rule": "required_attachments",
-                "doc_kind": "commitment_letter",
+                "doc_type": "project_commitment_letter",
             },
             "base_staff_proof_required": {
                 "source_rule": "required_attachments",
-                "doc_kind": "base_staff_proof",
+                "doc_type": "project_base_staff_proof",
             },
             "ethics_approval_required": {
                 "source_rule": "conditional_attachments",
-                "doc_kind": "ethics_approval",
+                "doc_type": "project_ethics_approval",
                 "condition_field": "has_clinical_research",
             },
             "industry_permit_required": {
                 "source_rule": "conditional_attachments",
-                "doc_kind": "industry_permit",
+                "doc_type": "project_industry_permit",
                 "condition_field": "has_special_industry_requirement",
             },
             "biosafety_commitment_required": {
                 "source_rule": "conditional_attachments",
-                "doc_kind": "biosafety_commitment",
+                "doc_type": "project_biosafety_commitment",
                 "condition_field": "has_biosafety_activity",
             },
             "cooperation_agreement_required": {
                 "source_rule": "conditional_attachments",
-                "doc_kind": "cooperation_agreement",
+                "doc_type": "project_cooperation_agreement",
                 "condition_field": "has_cooperation_unit",
             },
             "recommendation_letter_required": {
                 "source_rule": "conditional_attachments",
-                "doc_kind": "recommendation_letter",
+                "doc_type": "project_recommendation_letter",
                 "condition_field": "has_cooperation_unit",
             },
             "cooperation_region_check": {

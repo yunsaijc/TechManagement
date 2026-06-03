@@ -57,27 +57,34 @@ class FeasibilityChecker(BaseChecker):
         """
         # 提取相关章节
         sections = self._extract_sections(content, self.required_sections)
+        required_hits = self.get_required_evidence_hits(content)
+        alternative_hits = self.get_alternative_evidence_hits(content)
+        use_alternative_only = not required_hits and bool(alternative_hits)
 
         # 如果没有相关内容，返回默认结果
-        if not sections:
+        if not sections or use_alternative_only:
             if self.profile_matches(
                 content,
                 self.PROJECT_PROFILE_PLATFORM,
                 self.PROJECT_PROFILE_SCIENCE_POPULARIZATION,
+                "demonstration",
             ):
                 alternative_sections = self._extract_sections(
                     content,
                     self.get_alternative_sections(self.ALTERNATIVE_SECTION_KEYS),
                 )
                 if alternative_sections:
-                    matched_names = list(alternative_sections.keys())
+                    matched_names = required_hits or alternative_hits or list(alternative_sections.keys())
                     return CheckResult(
                         dimension=self.dimension,
                         dimension_name=self.dimension_name,
                         score=6.0,
-                        confidence=0.5,
-                        opinion="该项目更偏平台建设或科普实施类，已基于实施内容与建设方案进行基础可行性判断，不再强制要求独立技术路线章节。",
-                        issues=["未设置独立技术路线章节，已按实施方案类内容替代评估"],
+                        confidence=0.45,
+                        opinion=(
+                            "该项目更偏平台建设、科普实施或示范应用类，当前未命中独立技术路线章节，"
+                            f"已基于{chr(12289).join(matched_names[:3])}等替代材料进行基础可行性判断，不再强制要求独立技术路线章节。"
+                        ),
+                        issues=[f"未设置独立技术路线章节，已按{chr(12289).join(matched_names[:2])}等替代内容评估"],
                         highlights=[f"已识别章节：{name}" for name in matched_names[:3]],
                         items=[],
                     )

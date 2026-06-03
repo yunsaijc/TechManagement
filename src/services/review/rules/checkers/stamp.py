@@ -7,6 +7,7 @@
 """
 from src.common.models.review import CheckResult, CheckStatus
 from src.common.extractors import StampExtractor
+from src.services.review.doc_types import normalize_doc_type
 from src.services.review.rules.base import BaseRule, ReviewContext
 from src.services.review.rules.registry import RuleRegistry
 
@@ -31,6 +32,43 @@ class StampCheckRule(BaseRule):
         使用 StampExtractor 提取印章内容。
         能提取到则 PASS，否则 FAILED。
         """
+        llm_analysis = context.extracted.get("llm_analysis") if context.extracted else {}
+        if isinstance(llm_analysis, dict):
+            if normalize_doc_type(context.doc_type) in {"wcr", "wjwcr"} and llm_analysis.get("error"):
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.WARNING,
+                    message=f"专项分析已降级，跳过通用印章提取：{llm_analysis.get('error')}",
+                    evidence={"stage": "llm_analysis"},
+                )
+            llm_stamps = llm_analysis.get("stamps_result")
+            if isinstance(llm_stamps, dict):
+                stamps = llm_stamps.get("stamps", [])
+                if stamps:
+                    return CheckResult(
+                        item=self.name,
+                        status=CheckStatus.PASSED,
+                        message=f"提取到 {len(stamps)} 个印章",
+                        evidence={
+                            "stamps": [
+                                {
+                                    "text": s.get("text") or s.get("unit", ""),
+                                    "bbox": s.get("bbox", {}),
+                                    "confidence": s.get("confidence", 0),
+                                    "location": s.get("location", ""),
+                                }
+                                for s in stamps
+                            ],
+                        },
+                        confidence=0.9,
+                    )
+                return CheckResult(
+                    item=self.name,
+                    status=CheckStatus.FAILED,
+                    message="未提取到印章",
+                    evidence={"stamps": []},
+                )
+
         extractor = StampExtractor()
         
         try:
