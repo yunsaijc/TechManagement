@@ -146,7 +146,7 @@ class EvaluationPacketBuilder:
             sources.append(
                 {
                     "source_file": file_ref,
-                    "source_name": str(item.get("file_name") or path.name),
+                    "source_name": str(item.get("title") or item.get("display_name") or item.get("file_name") or path.name),
                     "source_kind": "attachment",
                     "doc_kind": str(item.get("doc_kind") or ""),
                 }
@@ -202,12 +202,17 @@ class EvaluationPacketBuilder:
             image_file = str(item.get("image_file") or "").strip()
             if not page or not image_file:
                 continue
+            width = int(item.get("width", 0) or 0)
+            height = int(item.get("height", 0) or 0)
+            size_attrs = ""
+            if width > 0 and height > 0:
+                size_attrs = f" width='{width}' height='{height}'"
             image_src = f"packet_pages/{Path(image_file).name}"
             pages_html.append(
                 "<section class='packet-page' "
                 f"id='packet-page-{page}' data-page='{page}'>"
                 f"<div class='page-index'>第 {page} 页</div>"
-                f"<img loading='lazy' src='{escape(image_src)}' alt='packet page {page}'>"
+                f"<img loading='lazy'{size_attrs} src='{escape(image_src)}' alt='packet page {page}'>"
                 "</section>"
             )
         pages_content = "".join(pages_html) or "<div class='empty'>当前材料暂无可预览页面。</div>"
@@ -367,7 +372,12 @@ class EvaluationPacketBuilder:
       const target = document.getElementById(`packet-page-${{pageNumber}}`);
       if (!target) return;
       setActivePage(pageNumber);
-      target.scrollIntoView({{ behavior: smooth ? "smooth" : "auto", block: "start" }});
+      const jump = (behavior) => target.scrollIntoView({{ behavior, block: "start" }});
+      jump(smooth ? "smooth" : "auto");
+      if (smooth) {{
+        window.setTimeout(() => jump("auto"), 180);
+        window.setTimeout(() => jump("auto"), 420);
+      }}
     }}
 
     function clearHighlights() {{

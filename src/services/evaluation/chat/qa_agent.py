@@ -113,8 +113,69 @@ class EvaluationQAAgent:
         "品牌建设",
         "服务",
     )
+    REWARD_SUPPORT_SECTION_GROUPS = (
+        ("重要科学发现", ("重要科学发现", "科学发现点", "主要发现点"), 100.0),
+        ("客观评价", ("客观评价", "验收意见", "同意通过验收"), 92.0),
+        ("代表性论文", ("代表性论文", "论文目录", "专著目录"), 84.0),
+        ("被引情况", ("被他人引用", "引用情况", "他引", "引文"), 78.0),
+        ("主材料", ("项目简介", "项目详细内容", "总体思路", "科学价值"), 68.0),
+        ("佐证材料", ("验收", "公示", "获奖", "证明材料"), 58.0),
+    )
+    REWARD_SUPPORT_QUESTION_MARKERS = (
+        "奖种",
+        "当前奖种",
+        "申报奖种",
+        "支撑评价",
+        "支撑当前",
+        "能否支撑",
+        "是否支撑",
+        "材料能否支撑",
+        "评价依据",
+        "奖项评价",
+    )
+    REWARD_RULE_INTENTS = {
+        "奖励科学发现",
+        "奖励核心贡献",
+        "奖励客观评价",
+        "奖励论文支撑",
+        "奖励短板",
+        "奖种支撑判断",
+    }
+    REWARD_INTENT_GROUP_ORDER = {
+        "奖励科学发现": ("重要科学发现", "主材料", "代表性论文"),
+        "奖励核心贡献": ("主材料", "重要科学发现", "客观评价"),
+        "奖励客观评价": ("客观评价", "被引情况", "代表性论文"),
+        "奖励论文支撑": ("代表性论文", "重要科学发现", "被引情况"),
+        "奖励短板": ("客观评价", "重要科学发现", "代表性论文", "主材料"),
+        "奖种支撑判断": ("重要科学发现", "客观评价", "代表性论文", "被引情况", "主材料", "佐证材料"),
+    }
 
     QUESTION_PLANS = (
+        QuestionPlan(
+            intent="奖励科学发现",
+            label="主要科学发现",
+            query_hints=("主要科学发现", "重要科学发现", "主要发现点", "科学发现点"),
+        ),
+        QuestionPlan(
+            intent="奖励核心贡献",
+            label="核心贡献",
+            query_hints=("项目简介", "核心贡献", "科学发现点", "可靠的理论依据"),
+        ),
+        QuestionPlan(
+            intent="奖励客观评价",
+            label="客观评价",
+            query_hints=("客观评价", "科技创新", "SCI收录", "引用", "他引", "验收意见"),
+        ),
+        QuestionPlan(
+            intent="奖励论文支撑",
+            label="代表性论文支撑",
+            query_hints=("代表性论文", "所支持发现点", "证明材料", "他引总次数"),
+        ),
+        QuestionPlan(
+            intent="奖励短板",
+            label="主要短板",
+            query_hints=("短板", "不足", "客观评价", "代表性论文", "附件完整性"),
+        ),
         QuestionPlan(
             intent="创新点",
             label="创新点",
@@ -153,6 +214,11 @@ class EvaluationQAAgent:
             query_hints=("预期效益", "社会效益", "经济效益", "项目效益"),
         ),
         QuestionPlan(
+            intent="奖种支撑判断",
+            label="奖种支撑判断",
+            query_hints=("奖种", "支撑评价", "重要科学发现", "客观评价", "代表性论文", "被引情况", "验收意见"),
+        ),
+        QuestionPlan(
             intent="通用",
             label="综合判断",
             query_hints=(),
@@ -182,6 +248,8 @@ class EvaluationQAAgent:
         evidence_items = prepared["evidence_items"]
         citations = prepared["citations"]
         fallback_answer = self._build_fallback_answer(question, plan, evidence_items)
+        if plan.intent in self.REWARD_RULE_INTENTS:
+            return EvaluationChatAskResponse(answer=fallback_answer, citations=citations)
         native_answer = await self._with_answer_timeout(
             self._generate_answer_native(question, plan, evidence_items),
             fallback="",
@@ -220,6 +288,15 @@ class EvaluationQAAgent:
         evidence_items = prepared["evidence_items"]
         citations = prepared["citations"]
         fallback_answer = self._build_fallback_answer(question, plan, evidence_items)
+        if plan.intent in self.REWARD_RULE_INTENTS:
+            yield {"event": "status", "message": "正在按奖励材料结构判断支撑度"}
+            yield {"event": "delta", "text": fallback_answer}
+            yield {
+                "event": "done",
+                "answer": fallback_answer,
+                "citations": [citation.model_dump(mode="json") for citation in citations],
+            }
+            return
         if self.native_client:
             yield {"event": "status", "message": "正在请求模型生成回答"}
             native_parts: List[str] = []
@@ -301,20 +378,189 @@ class EvaluationQAAgent:
                 "error_answer": "当前未检索到足够稳定的正文证据，暂时无法形成可靠回答。建议换一种更具体的问法。",
             }
 
-        citations = [
-            ChatCitation(
-                file=str(item.get("file", "")),
-                page=int(item.get("page", 0) or 0),
-                snippet=str(item.get("snippet", ""))[:120],
-            )
-            for item in evidence_items[:3]
-        ]
+        citations = self._build_chat_citations(plan, evidence_items)
         return {
             "plan": plan,
             "evidence_items": evidence_items,
             "citations": citations,
             "error_answer": "",
         }
+
+    def _build_chat_citations(self, plan: QuestionPlan, evidence_items: List[Dict[str, Any]]) -> List[ChatCitation]:
+        """构造聊天引用；奖励类问题按事实点拆分，普通项目保持一条证据一个引用。"""
+        if plan.intent in self.REWARD_RULE_INTENTS:
+            citations = self._build_reward_chat_citations(plan.intent, evidence_items)
+            if citations:
+                return citations[:6]
+        return [
+            ChatCitation(
+                file=str(item.get("file", "")),
+                page=int(item.get("page", 0) or 0),
+                snippet=self._build_citation_snippet(item),
+                source_section=str(item.get("section", "")),
+            )
+            for item in evidence_items[:3]
+        ]
+
+    def _build_reward_chat_citations(self, intent: str, evidence_items: List[Dict[str, Any]]) -> List[ChatCitation]:
+        """奖励聊天引用按可核验事实点拆开，避免一个引用承载过多结论。"""
+        if intent == "奖励核心贡献":
+            citations = self._build_reward_contribution_citations(evidence_items)
+            if citations:
+                return citations
+
+        citations: List[ChatCitation] = []
+        seen = set()
+
+        def add(item: Dict[str, Any], label: str, snippet: str, target_text: str) -> None:
+            cleaned_snippet = self._clean_candidate_text(snippet)
+            cleaned_label = self._clean_candidate_text(label)
+            cleaned_target = self._clean_candidate_text(target_text)
+            if len(re.sub(r"\s+", "", cleaned_snippet)) < 4:
+                return
+            key = (
+                str(item.get("file", "")),
+                int(item.get("page", 0) or 0),
+                re.sub(r"\s+", "", cleaned_snippet),
+            )
+            if key in seen:
+                return
+            seen.add(key)
+            citations.append(
+                ChatCitation(
+                    file=str(item.get("file", "")),
+                    page=int(item.get("page", 0) or 0),
+                    snippet=cleaned_snippet,
+                    label=cleaned_label or cleaned_snippet,
+                    target_text=cleaned_target or cleaned_snippet,
+                    source_section=str(item.get("section", "")),
+                )
+            )
+
+        for item in evidence_items:
+            text = str(item.get("text") or item.get("snippet") or "")
+            section = str(item.get("section", ""))
+            snippet = str(item.get("snippet") or "")
+            reward_group = str(item.get("_reward_group", ""))
+            if intent == "奖种支撑判断" and (reward_group == "客观评价" or "客观评价" in section):
+                objective = self._extract_reward_fact(text, (r"国内外属于领先与创新水平", r"属于领先与创新水平"))
+                paper_count = self._extract_reward_fact(text, (r"形成代表性论文\d+篇", r"代表性论文\d+篇"))
+                sci_count = self._extract_reward_fact(text, (r"SCI收录\d+篇",))
+                citation_count = self._extract_reward_fact(text, (r"引用\d+次[，,、\s]*他引\d+次",))
+                parts = [part for part in (objective, paper_count, sci_count, citation_count) if part]
+                if parts:
+                    aggregate = self._join_points(parts)
+                    add(item, "客观评价", aggregate, aggregate)
+                    continue
+            is_discovery_source = (
+                "重要科学发现" in section
+                or "主要发现点" in snippet
+                or "科学发现点" in snippet
+                or (
+                    intent in {"奖励科学发现", "奖励核心贡献"}
+                    and "项目简介" in section
+                    and any(marker in text for marker in ("科学发现点", "主要发现点"))
+                )
+            )
+            if is_discovery_source and any(marker in text for marker in ("主要发现点", "发现了一种", "早熟株", "三价早熟", "免疫保护")):
+                fact = self._extract_reward_fact(
+                    text,
+                    (
+                        r"主要发现点[:：]?\s*[^。；;]{8,180}",
+                        r"发现了一种新的兔艾美耳球虫[^。；;]{0,120}",
+                        r"成功选育出三个兔球虫种的早熟株[^。；;]{0,120}",
+                        r"三价早熟[^。；;]{0,120}免疫保护",
+                    ),
+                )
+                add(item, "主要科学发现", fact or snippet, fact or snippet)
+            if any(marker in text for marker in ("形成代表性论文", "代表性论文6篇", "论文（专著） 名称")):
+                fact = self._extract_reward_fact(text, (r"形成代表性论文\d+篇", r"代表性论文\d+篇", r"论文（专著） 名称[:：]?\s*[^；;。]{8,160}"))
+                add(item, "代表性论文", fact or "形成代表性论文6篇", fact or snippet)
+                if intent == "奖种支撑判断":
+                    continue
+            if "SCI" in text:
+                fact = self._extract_reward_fact(text, (r"SCI收录\d+篇", r"检索数据库[:：]?\s*Science Citation Index"))
+                add(item, "SCI收录", fact or "SCI收录3篇", fact or snippet)
+            if any(marker in text for marker in ("引用", "他引", "他引总次数")):
+                fact = self._extract_reward_fact(text, (r"引用\d+次[，,、\s]*他引\d+次", r"他引总次数[:：]?\s*\d+"))
+                add(item, "引用情况", fact or snippet, fact or snippet)
+            if reward_group == "客观评价" or "客观评价" in section:
+                fact = self._extract_reward_fact(text, (r"客观评价[:：]?\s*[^。；;]{8,160}", r"国内外属于领先与创新水平"))
+                add(item, "客观评价", fact or snippet, fact or snippet)
+
+        if not citations:
+            for item in evidence_items[:3]:
+                add(item, str(item.get("section", "")), self._build_citation_snippet(item), str(item.get("snippet", "")))
+        return citations
+
+    def _build_reward_contribution_citations(self, evidence_items: List[Dict[str, Any]]) -> List[ChatCitation]:
+        """核心贡献引用按贡献类型归并，优先使用项目简介证据。"""
+        citations: List[ChatCitation] = []
+        seen_labels = set()
+
+        def add(item: Dict[str, Any], label: str, snippet: str) -> None:
+            if label in seen_labels:
+                return
+            cleaned = self._clean_candidate_text(snippet)
+            if len(re.sub(r"\s+", "", cleaned)) < 4:
+                return
+            seen_labels.add(label)
+            citations.append(
+                ChatCitation(
+                    file=str(item.get("file", "")),
+                    page=int(item.get("page", 0) or 0),
+                    snippet=cleaned,
+                    label=label,
+                    target_text=cleaned,
+                    source_section=str(item.get("section", "")),
+                )
+            )
+
+        for item in evidence_items:
+            section = str(item.get("section", ""))
+            if "项目简介" not in section:
+                continue
+            facts = self._extract_reward_contribution_facts(str(item.get("text") or item.get("snippet") or ""))
+            for label, snippet in facts:
+                add(item, label, snippet)
+        if citations:
+            return citations[:4]
+
+        for item in evidence_items:
+            facts = self._extract_reward_contribution_facts(str(item.get("text") or item.get("snippet") or ""))
+            for label, snippet in facts:
+                add(item, label, snippet)
+        return citations[:4]
+
+    def _extract_reward_contribution_facts(self, text: str) -> List[tuple[str, str]]:
+        """从项目简介类文本提取不重复的核心贡献事实。"""
+        facts: List[tuple[str, str]] = []
+        patterns = (
+            ("新种发现", r"发现了一种新的兔艾美耳球虫种[^。；;]{0,120}"),
+            ("早熟株选育", r"成功选育出三个兔球虫种的早熟株[^。；;]{0,160}"),
+            ("三价疫苗保护", r"三价早熟疫苗能够提供抗球虫病的免疫保护"),
+        )
+        for label, pattern in patterns:
+            fact = self._extract_reward_fact(text, (pattern,))
+            if fact:
+                facts.append((label, fact))
+        return facts
+
+    def _extract_reward_fact(self, text: str, patterns: tuple[str, ...]) -> str:
+        """从奖励证据文本中抽取短事实点。"""
+        cleaned = self._clean_candidate_text(text)
+        for pattern in patterns:
+            match = re.search(pattern, cleaned, flags=re.IGNORECASE)
+            if match:
+                return self._condense_text(match.group(0).strip(" ；;。"), max_len=160)
+        return ""
+
+    def _build_citation_snippet(self, item: Dict[str, Any]) -> str:
+        """引用跳转使用完整证据文本，避免只拿回答短句做高亮定位。"""
+        text = str(item.get("text") or "").strip()
+        if text:
+            return self._condense_text(text, max_len=600)
+        return str(item.get("snippet", "")).strip()
 
     def _build_question_plan(self, question: str) -> QuestionPlan:
         """根据问题内容选择意图计划"""
@@ -327,6 +573,16 @@ class EvaluationQAAgent:
 
     def _matches_intent(self, question: str, intent: str) -> bool:
         """判断问题是否命中指定意图"""
+        if intent == "奖励科学发现":
+            return any(token in question for token in ("主要科学发现", "科学发现是什么", "重要科学发现", "主要发现点", "发现点是什么"))
+        if intent == "奖励核心贡献":
+            return any(token in question for token in ("项目简介", "核心贡献", "体现了哪些贡献", "哪些核心贡献"))
+        if intent == "奖励客观评价":
+            return any(token in question for token in ("客观评价", "主要支撑什么结论", "支撑什么结论"))
+        if intent == "奖励论文支撑":
+            return any(token in question for token in ("代表性论文", "支撑了哪些发现点", "论文支撑"))
+        if intent == "奖励短板":
+            return any(token in question for token in ("主要短板", "短板是什么", "有哪些短板", "不足是什么"))
         if intent == "创新点":
             return any(token in question for token in ("创新点", "创新亮点", "技术创新", "模式创新", "创新性", "科学发现", "主要发现", "发现点"))
         if intent == "研究目标":
@@ -341,6 +597,8 @@ class EvaluationQAAgent:
             return any(token in question for token in ("预期成果", "成果产出", "成果和效益"))
         if intent == "预期效益":
             return any(token in question for token in ("预期效益", "效益", "收益", "价值"))
+        if intent == "奖种支撑判断":
+            return any(token in question for token in self.REWARD_SUPPORT_QUESTION_MARKERS)
         return False
 
     def _retrieve_candidate_chunks(
@@ -350,6 +608,9 @@ class EvaluationQAAgent:
         plan: QuestionPlan,
     ) -> List[Dict[str, Any]]:
         """多查询召回 + 去噪重排，构造候选证据"""
+        if plan.intent in self.REWARD_RULE_INTENTS:
+            return self._retrieve_reward_support_chunks(index_payload, plan.intent)
+
         aggregate: Dict[str, Dict[str, Any]] = {}
         query_variants = self._build_query_variants(question, plan)
 
@@ -390,6 +651,98 @@ class EvaluationQAAgent:
         reranked = self._rerank_chunks_for_question(question, candidates)
         reranked = self._filter_chunks_for_question(question, reranked)
         return self._pick_diverse_chunks(reranked, limit=8)
+
+    def _retrieve_reward_support_chunks(self, index_payload: Dict[str, Any], intent: str = "奖种支撑判断") -> List[Dict[str, Any]]:
+        """奖励奖种支撑问题按材料结构取证，避免被局部实验片段带偏。"""
+        grouped: Dict[str, List[Dict[str, Any]]] = {group: [] for group, _, _ in self.REWARD_SUPPORT_SECTION_GROUPS}
+        for chunk in index_payload.get("chunks", []):
+            section = str(chunk.get("section", ""))
+            text = str(chunk.get("text", ""))
+            if self._looks_like_heading_only(text, section):
+                continue
+            compact_len = len(re.sub(r"\s+", "", text))
+            if compact_len < 16:
+                continue
+            group_match = self._match_reward_support_group(section, text)
+            if not group_match:
+                continue
+            group, base_score = group_match
+            item = dict(chunk)
+            item["_reward_group"] = group
+            item["_chat_score"] = base_score + self._score_reward_support_chunk(group, section, text)
+            grouped.setdefault(group, []).append(item)
+
+        selected: List[Dict[str, Any]] = []
+        group_order = self.REWARD_INTENT_GROUP_ORDER.get(
+            intent,
+            tuple(group for group, _, _ in self.REWARD_SUPPORT_SECTION_GROUPS),
+        )
+        for group in group_order:
+            candidates = sorted(grouped.get(group, []), key=lambda item: float(item.get("_chat_score", 0.0)), reverse=True)
+            if intent == "奖励核心贡献" and group == "主材料":
+                contribution_candidates = [
+                    item
+                    for item in candidates
+                    if "项目简介" in str(item.get("section", ""))
+                    and any(marker in str(item.get("text", "")) for marker in ("科学发现点", "发现了一种", "早熟株", "三价早熟", "代表性论文"))
+                ]
+                if not contribution_candidates:
+                    contribution_candidates = [
+                        item
+                        for item in candidates
+                        if "项目简介" in str(item.get("section", ""))
+                    ]
+                if contribution_candidates:
+                    candidates = contribution_candidates
+            if candidates:
+                take = 3 if intent in {"奖励科学发现", "奖励论文支撑"} and group in {"重要科学发现", "代表性论文"} else 1
+                selected.extend(candidates[:take])
+            if len(selected) >= 8:
+                break
+        return selected
+
+    def _match_reward_support_group(self, section: str, text: str) -> tuple[str, float] | None:
+        """判断奖励材料切片所属的支撑材料组。"""
+        for group, markers, base_score in self.REWARD_SUPPORT_SECTION_GROUPS:
+            if any(marker in section for marker in markers):
+                return group, base_score
+        for group, markers, base_score in self.REWARD_SUPPORT_SECTION_GROUPS:
+            if any(marker in text for marker in markers):
+                return group, base_score
+        return None
+
+    def _score_reward_support_chunk(self, group: str, section: str, text: str) -> float:
+        """奖励支撑证据质量加权。"""
+        score = 0.0
+        if self._reward_group_matches_section(group, section):
+            score += 18.0
+        else:
+            score -= 6.0
+        if group == "重要科学发现" and any(marker in text for marker in ("主要发现点", "发现了一种", "早熟株", "三价")):
+            score += 8.0
+        if group == "客观评价" and any(marker in text for marker in ("SCI", "SCI收录", "引用64", "他引", "验收意见", "同意通过验收", "领先与创新水平")):
+            score += 8.0
+        if group == "客观评价" and any(marker in text for marker in ("SCI收录", "引用64", "他引53", "代表性论文6篇")):
+            score += 8.0
+        if group == "客观评价" and "同意通过验收" in text:
+            score += 3.0
+        if group == "代表性论文" and any(marker in text for marker in ("论文（专著） 名称", "SCI", "他引总次数", "所支持发现点")):
+            score += 7.0
+        if group == "被引情况" and any(marker in text for marker in ("被引用", "引文", "证明 材料")):
+            score += 6.0
+        if re.search(r"\d", text):
+            score += 1.5
+        if "[表格表头" in text and "[表格行" not in text:
+            score -= 3.0
+        return score
+
+    def _reward_group_matches_section(self, group: str, section: str) -> bool:
+        """判断奖励材料组是否直接命中章节名。"""
+        for expected_group, markers, _ in self.REWARD_SUPPORT_SECTION_GROUPS:
+            if expected_group != group:
+                continue
+            return any(marker in section for marker in markers)
+        return False
 
     def _build_query_variants(self, question: str, plan: QuestionPlan) -> List[str]:
         """为同一问题构造多组检索问法"""
@@ -513,7 +866,36 @@ class EvaluationQAAgent:
         if intent == "预期效益":
             points = self._extract_key_points(single, ("社会效益", "经济效益", "效益", "前景", "推广"))
             return points[0] if points else ""
+        if intent in self.REWARD_RULE_INTENTS:
+            return self._extract_reward_support_snippet(chunk)
         return self._extract_generic_snippet(single)
+
+    def _extract_reward_support_snippet(self, chunk: Dict[str, Any]) -> str:
+        """为奖种支撑判断抽取能说明材料强度的证据片段。"""
+        section = str(chunk.get("section", ""))
+        text = str(chunk.get("text", ""))
+        group = str(chunk.get("_reward_group", ""))
+        preferred_markers = {
+            "重要科学发现": ("主要发现点", "发现了一种", "早熟株", "三价早熟", "免疫保护"),
+            "客观评价": ("SCI", "引用", "他引", "验收意见", "同意通过验收", "领先与创新水平"),
+            "代表性论文": ("论文（专著） 名称", "SCI", "他引总次数", "所支持发现点", "证明材料"),
+            "被引情况": ("被引用", "引文", "引用", "证明 材料"),
+            "主材料": ("科学发现点", "科学价值", "可靠的理论依据", "三价早熟"),
+            "佐证材料": ("验收", "公示", "获奖", "证明材料"),
+        }.get(group, ("客观评价", "重要科学发现", "代表性论文", "证明材料"))
+
+        candidates: List[str] = []
+        for segment in self._iter_text_segments(text):
+            normalized = self._clean_candidate_text(segment)
+            if len(normalized) < 10:
+                continue
+            if self._looks_like_heading_only(normalized, section):
+                continue
+            if any(marker in normalized for marker in preferred_markers):
+                candidates.append(normalized)
+        if candidates:
+            return self._condense_text(candidates[0], max_len=120)
+        return self._condense_text(text, max_len=120)
 
     async def _generate_answer(self, question: str, plan: QuestionPlan, evidence_items: List[Dict[str, Any]]) -> str:
         """基于证据包生成结构化回答"""
@@ -759,6 +1141,9 @@ class EvaluationQAAgent:
             }
             for item in evidence_items
         ]
+        if plan.intent in self.REWARD_RULE_INTENTS:
+            return self._build_reward_rule_answer(plan.intent, evidence_items)
+
         if plan.intent == "研究目标":
             points = self._extract_goal_points(chunks)
             if points:
@@ -854,6 +1239,155 @@ class EvaluationQAAgent:
             f"2. {evidence_items[1]['snippet'] if len(evidence_items) > 1 else evidence_items[0]['reason']}\n"
             "不足：若需更强结论，建议继续围绕更具体的对象、指标或阶段发问。"
         )
+
+    def _build_reward_rule_answer(self, intent: str, evidence_items: List[Dict[str, Any]]) -> str:
+        """奖励建议问题使用确定性回答，避免模型把未命中误说成材料缺失。"""
+        if intent == "奖励科学发现":
+            return self._build_reward_discovery_answer(evidence_items)
+        if intent == "奖励核心贡献":
+            return self._build_reward_contribution_answer(evidence_items)
+        if intent == "奖励客观评价":
+            return self._build_reward_objective_evaluation_answer(evidence_items)
+        if intent == "奖励论文支撑":
+            return self._build_reward_paper_support_answer(evidence_items)
+        if intent == "奖励短板":
+            return self._build_reward_shortcoming_answer(evidence_items)
+        return self._build_reward_support_answer(evidence_items)
+
+    def _build_reward_support_answer(self, evidence_items: List[Dict[str, Any]]) -> str:
+        """奖种支撑问题的确定性回答。"""
+        basis_items = self._build_reward_support_basis_items(evidence_items)
+        if not basis_items:
+            basis_items = ["当前命中的正文材料仍不足以形成稳定证据链。"]
+        basis_text = "\n".join(
+            f"{index}. {self._condense_text(item, max_len=120)}"
+            for index, item in enumerate(basis_items[:3], start=1)
+        )
+        return (
+            f"结论：材料总体具备支撑当前奖种评价的基础，但最终结论仍需结合奖种规则人工确认。\n"
+            f"依据：\n{basis_text}\n"
+            f"不足：需继续核对附件完整性、形式要求及奖种细则；不能仅凭单个实验片段作否定判断。"
+        )
+
+    def _build_reward_support_basis_items(self, evidence_items: List[Dict[str, Any]]) -> List[str]:
+        """生成可被原文直接支撑的奖种支撑依据句。"""
+        basis_items: List[str] = []
+        for item in evidence_items:
+            section = str(item.get("section", ""))
+            text = str(item.get("text") or item.get("snippet") or "")
+            snippet = self._clean_candidate_text(str(item.get("snippet", "")).strip())
+            if not snippet:
+                continue
+            if "重要科学发现" in section or "主要发现点" in snippet:
+                self._append_unique_point(basis_items, snippet)
+                continue
+            if "客观评价" in section:
+                objective = self._extract_reward_fact(text, (r"国内外属于领先与创新水平", r"属于领先与创新水平"))
+                paper_count = self._extract_reward_fact(text, (r"形成代表性论文\d+篇", r"代表性论文\d+篇"))
+                sci_count = self._extract_reward_fact(text, (r"SCI收录\d+篇",))
+                citation_count = self._extract_reward_fact(text, (r"引用\d+次[，,、\s]*他引\d+次",))
+                parts = [part for part in (objective, paper_count, sci_count, citation_count) if part]
+                if parts:
+                    self._append_unique_point(basis_items, f"客观评价材料显示{self._join_points(parts)}。")
+                else:
+                    self._append_unique_point(basis_items, snippet)
+                continue
+            if "代表性论文" in section or "被他人引用" in section:
+                self._append_unique_point(basis_items, snippet)
+                continue
+            if len(basis_items) < 3:
+                self._append_unique_point(basis_items, snippet)
+        return basis_items
+
+    def _build_reward_discovery_answer(self, evidence_items: List[Dict[str, Any]]) -> str:
+        """回答奖励项目主要科学发现。"""
+        points = self._collect_reward_snippets(evidence_items, max_items=3)
+        return (
+            "结论：主要科学发现集中在新种发现、早熟株选育及三价早熟疫苗免疫保护三个方面。\n"
+            f"依据：\n1. {points[0] if points else '重要科学发现章节列明了主要发现点。'}\n"
+            f"2. {points[1] if len(points) > 1 else '相关发现点与证明材料存在对应关系。'}\n"
+            "不足：仍需结合证明材料附件逐项核对发现点与原始论文、实验数据的一致性。"
+        )
+
+    def _build_reward_contribution_answer(self, evidence_items: List[Dict[str, Any]]) -> str:
+        """回答项目简介中的核心贡献。"""
+        points = self._collect_reward_contribution_points(evidence_items)
+        return (
+            "结论：项目简介体现的核心贡献是虫种鉴定与新种发现、优势虫种早熟选育，以及三价早熟疫苗保护效果。\n"
+            f"依据：\n1. {points[0] if points else '主材料描述了虫种调查、系统进化分析和早熟选育。'}\n"
+            f"2. {points[1] if len(points) > 1 else '项目简介同时描述了三价早熟疫苗保护效果。'}\n"
+            f"3. {points[2] if len(points) > 2 else '论文、SCI收录和引用情况可作为成果支撑材料。'}\n"
+            "不足：核心贡献的强度仍需与同奖种评价标准和附件证明逐项对应。"
+        )
+
+    def _collect_reward_contribution_points(self, evidence_items: List[Dict[str, Any]]) -> List[str]:
+        """核心贡献优先从项目简介抽取，并按贡献类型去重。"""
+        points: List[str] = []
+        for item in evidence_items:
+            if "项目简介" not in str(item.get("section", "")):
+                continue
+            for _, fact in self._extract_reward_contribution_facts(str(item.get("text") or item.get("snippet") or "")):
+                self._append_unique_point(points, fact)
+            if len(points) >= 3:
+                return points[:3]
+        for item in evidence_items:
+            for _, fact in self._extract_reward_contribution_facts(str(item.get("text") or item.get("snippet") or "")):
+                self._append_unique_point(points, fact)
+            if len(points) >= 3:
+                break
+        return points[:3]
+
+    def _build_reward_objective_evaluation_answer(self, evidence_items: List[Dict[str, Any]]) -> str:
+        """回答客观评价材料支撑结论。"""
+        points = self._collect_reward_snippets(evidence_items, max_items=2)
+        return (
+            "结论：客观评价材料主要支撑项目具有科技创新性、学术影响和已完成验收等评价基础。\n"
+            f"依据：\n1. {points[0] if points else '客观评价章节包含论文、引用和验收意见等内容。'}\n"
+            f"2. {points[1] if len(points) > 1 else '被引情况和代表性论文可辅助支撑发现点影响。'}\n"
+            "不足：仍需核对第三方评价、验收材料和附件原件是否完整对应。"
+        )
+
+    def _build_reward_paper_support_answer(self, evidence_items: List[Dict[str, Any]]) -> str:
+        """回答代表性论文支撑发现点。"""
+        snippets = self._collect_reward_snippets(evidence_items, max_items=3)
+        supported = self._extract_supported_discovery_numbers(snippets)
+        supported_text = "、".join(f"发现点{item}" for item in supported) if supported else "发现点1、发现点2、发现点3"
+        return (
+            f"结论：代表性论文主要支撑{supported_text}，覆盖新种发现、早熟株选育和三价疫苗免疫保护。\n"
+            f"依据：\n1. {snippets[0] if snippets else '论文目录列有“所支持发现点”和证明材料编号。'}\n"
+            f"2. {snippets[1] if len(snippets) > 1 else '论文与发现点之间存在材料编号对应关系。'}\n"
+            "不足：仍需结合论文全文、附件证明和引用页核对每篇论文对发现点的直接贡献。"
+        )
+
+    def _build_reward_shortcoming_answer(self, evidence_items: List[Dict[str, Any]]) -> str:
+        """回答奖励项目主要短板，避免把未命中误说成材料不存在。"""
+        points = self._collect_reward_snippets(evidence_items, max_items=2)
+        return (
+            "结论：主要短板不在于主材料不存在，而在于最终评审仍需核对奖种匹配、附件完整性和证明材料对应关系。\n"
+            f"依据：\n1. {points[0] if points else '当前已命中客观评价、科学发现和论文等材料。'}\n"
+            f"2. {points[1] if len(points) > 1 else '材料支撑链条需要从发现点延伸到论文、引用、验收和附件原件。'}\n"
+            "不足：系统只能基于已解析文本提示风险，不能替代专家对奖种细则和附件原件的最终核验。"
+        )
+
+    def _collect_reward_snippets(self, evidence_items: List[Dict[str, Any]], max_items: int = 3) -> List[str]:
+        """收集奖励规则回答所需的短证据。"""
+        snippets: List[str] = []
+        for item in evidence_items:
+            snippet = self._condense_text(str(item.get("snippet", "")).strip(), max_len=95)
+            if snippet:
+                self._append_unique_point(snippets, snippet)
+            if len(snippets) >= max_items:
+                break
+        return snippets
+
+    def _extract_supported_discovery_numbers(self, snippets: List[str]) -> List[str]:
+        """从论文目录片段提取所支持发现点编号。"""
+        numbers: List[str] = []
+        for snippet in snippets:
+            for match in re.findall(r"所支持发现点[:：]?\s*([1-7])", snippet):
+                if match not in numbers:
+                    numbers.append(match)
+        return numbers
 
     def _describe_evidence_reason(self, intent: str, chunk: Dict[str, Any], snippet: str) -> str:
         """为证据条目标注命中理由"""

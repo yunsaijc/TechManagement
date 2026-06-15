@@ -65,6 +65,7 @@ def test_packet_builder_build_creates_packet_pdf_and_viewer(tmp_path: Path):
             {
                 "file_ref": str(attachment_png),
                 "file_name": attachment_png.name,
+                "title": "成果证明材料",
                 "doc_kind": "other_supporting_material",
             }
         ],
@@ -78,8 +79,12 @@ def test_packet_builder_build_creates_packet_pdf_and_viewer(tmp_path: Path):
     assert len(assets["page_map"]) == 2
     assert assets["page_map"][0]["source_kind"] == "proposal"
     assert assets["page_map"][1]["source_kind"] == "attachment"
+    assert assets["page_map"][1]["source_name"] == "成果证明材料"
     assert assets["page_map"][0]["start_page"] == 1
     assert assets["page_images"]
+    viewer_html = (tmp_path / assets["viewer_file"]).read_text(encoding="utf-8")
+    assert "loading='lazy' width='" in viewer_html
+    assert 'window.setTimeout(() => jump("auto"), 180)' in viewer_html
 
 
 def test_packet_builder_proposal_prefers_sibling_pdf_over_docx_fallback(tmp_path: Path):

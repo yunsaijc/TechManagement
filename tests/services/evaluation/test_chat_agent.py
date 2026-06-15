@@ -155,6 +155,11 @@ async def test_qa_agent_ask_times_out_to_fallback(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(qa_agent_module.EvaluationQAAgent, "_build_native_client", lambda self, llm: None)
     monkeypatch.setenv("EVALUATION_CHAT_TIMEOUT", "1")
     agent = EvaluationQAAgent(llm=HangingLLM())
+    long_discovery_text = (
+        "重要科学发现：发现了一种新的兔艾美耳球虫，并成功选育出三个兔球虫种的早熟株。"
+        "该虫种的18S rDNA序列与11种兔艾美耳球虫聚为一支，ITS-1序列相似性较低，"
+        "三价早熟疫苗能够提供抗球虫病的免疫保护。"
+    )
     index_payload = agent.indexer.build(
         evaluation_id="EVAL_TIMEOUT",
         page_chunks=[
@@ -162,7 +167,7 @@ async def test_qa_agent_ask_times_out_to_fallback(monkeypatch: pytest.MonkeyPatc
                 "file": "reward.docx",
                 "page": 4,
                 "section": "重要科学发现",
-                "text": "重要科学发现：发现了一种新的兔艾美耳球虫，并成功选育出三个兔球虫种的早熟株。",
+                "text": long_discovery_text,
             }
         ],
     )
@@ -175,6 +180,10 @@ async def test_qa_agent_ask_times_out_to_fallback(monkeypatch: pytest.MonkeyPatc
     assert answer.citations
     assert answer.citations[0].file == "reward.docx"
     assert answer.citations[0].page in {4, 5}
+    assert any("新的兔艾美耳球虫" in citation.snippet for citation in answer.citations)
+    assert all(citation.label for citation in answer.citations)
+    assert all(citation.target_text for citation in answer.citations)
+    assert all(len(citation.snippet) < 180 for citation in answer.citations)
 
 
 @pytest.mark.asyncio
@@ -330,14 +339,16 @@ async def test_evaluation_agent_resolve_chat_citation_highlight_supports_lazy_lo
             }
         },
     )
-    monkeypatch.setattr(
-        agent.report_generator,
-        "_resolve_packet_jump_payload",
-        lambda packet_assets, source_file, page, snippet: {
+    captured_jump_kwargs = {}
+
+    def fake_resolve_packet_jump_payload(**kwargs):
+        captured_jump_kwargs.update(kwargs)
+        return {
             "packet_page": 12,
             "highlight_rects": [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05}],
-        },
-    )
+        }
+
+    monkeypatch.setattr(agent.report_generator, "_resolve_packet_jump_payload", fake_resolve_packet_jump_payload)
 
     answer = await agent.ask(result.evaluation_id, "这个项目的研究目标是什么？")
 
@@ -354,6 +365,7 @@ async def test_evaluation_agent_resolve_chat_citation_highlight_supports_lazy_lo
 
     assert highlight.packet_page == 12
     assert highlight.highlight_rects == [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05}]
+    assert captured_jump_kwargs["strict_highlight"] is True
 
 
 @pytest.mark.asyncio
@@ -994,6 +1006,181 @@ async def test_qa_agent_ask_innovation_prefers_innovation_section():
     assert "AI智能问答" in answer.answer or "模式创新" in answer.answer
     assert answer.citations
     assert answer.citations[0].page == 7
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_reward_support_question_uses_reward_material_sections():
+    """奖种支撑问题应按奖励材料结构取证，不能把客观评价误判为缺失"""
+    agent = EvaluationQAAgent(llm=HangingLLM())
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_REWARD_SUPPORT",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "reward.docx",
+                "page": 4,
+                "section": "重要科学发现",
+                "text": "主要发现点: 发现了一种新的兔艾美耳球虫，并成功选育出三个兔球虫种的早熟株。三价早熟疫苗能够提供抗球虫病的免疫保护。",
+            },
+            {
+                "id": 2,
+                "file": "reward.docx",
+                "page": 4,
+                "section": "客观评价（不超过2页）",
+                "text": "客观评价: 形成代表性论文6篇，其中SCI收录3篇，引用64次，他引53次。验收组专家认为项目完成计划书规定的各项指标，同意通过验收。",
+            },
+            {
+                "id": 3,
+                "file": "reward.docx",
+                "page": 5,
+                "section": "代表性论文(专著)目录（不超过6篇）",
+                "text": "论文（专著） 名称: Immune protection provided by a precocious line trivalent vaccine against rabbit Eimeria ; 检索数据库: Science Citation Index ; 所支持发现点: 3 ; 他引总次数: 14。",
+            },
+            {
+                "id": 4,
+                "file": "reward.docx",
+                "page": 8,
+                "section": "项目详细内容",
+                "text": "为评估不同剂量的卵囊对兔的致病性和免疫原性，对早熟株进行了预试验，随后用相应的亲本株进行攻毒。",
+            },
+        ],
+    )
+
+    answer = await agent.ask("这些材料能否支撑当前奖种评价？", index_payload=index_payload)
+
+    assert "材料总体具备支撑当前奖种评价的基础" in answer.answer
+    assert "客观评价" in answer.answer
+    assert "不能支撑" not in answer.answer
+    assert "客观评价缺失" not in answer.answer
+    assert answer.citations
+    citation_sections = {citation.snippet for citation in answer.citations}
+    citation_labels = {citation.label for citation in answer.citations}
+    assert len(answer.citations) >= 3
+    assert any("SCI收录3篇" in snippet or "引用64次" in snippet for snippet in citation_sections)
+    assert any("主要发现点" in snippet or "新的兔艾美耳球虫" in snippet for snippet in citation_sections)
+    assert "客观评价" in citation_labels
+    objective_citations = [citation for citation in answer.citations if citation.label == "客观评价"]
+    assert objective_citations
+    assert "SCI收录3篇" in objective_citations[0].snippet
+    assert "引用64次" in objective_citations[0].snippet
+    assert all(len(citation.snippet) < 180 for citation in answer.citations)
+    assert all(citation.target_text for citation in answer.citations)
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_reward_support_stream_returns_rule_answer():
+    """流式奖种支撑问答也应走确定性规则回答"""
+    agent = EvaluationQAAgent(llm=HangingLLM())
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_REWARD_SUPPORT_STREAM",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "reward.docx",
+                "page": 4,
+                "section": "客观评价（不超过2页）",
+                "text": "客观评价: 形成代表性论文6篇，其中SCI收录3篇，引用64次，他引53次，同意通过验收。",
+            },
+            {
+                "id": 2,
+                "file": "reward.docx",
+                "page": 5,
+                "section": "重要科学发现",
+                "text": "主要发现点: 发现新种、选育早熟株，并形成三价早熟疫苗免疫保护证据。",
+            },
+        ],
+    )
+
+    events = [
+        event
+        async for event in agent.ask_stream("这些材料能否支撑当前奖种评价？", index_payload=index_payload)
+    ]
+
+    assert events[-1]["event"] == "done"
+    assert "材料总体具备支撑当前奖种评价的基础" in events[-1]["answer"]
+    assert "客观评价缺失" not in events[-1]["answer"]
+
+
+@pytest.mark.asyncio
+async def test_qa_agent_reward_suggestion_questions_use_reward_rule_answers():
+    """奖励页固定建议问题都应走奖励材料结构，不应回落到通用无法判断"""
+    agent = EvaluationQAAgent(llm=HangingLLM())
+    index_payload = agent.indexer.build(
+        evaluation_id="EVAL_REWARD_SUGGESTIONS",
+        page_chunks=[
+            {
+                "id": 1,
+                "file": "reward.docx",
+                "page": 2,
+                "section": "项目简介（限1200字）",
+                "text": "获得了如下的科学发现点：1.发现了一种新的兔艾美耳球虫种。2.成功选育出三个兔球虫种的早熟株。3.三价早熟疫苗能够提供抗球虫病的免疫保护。形成代表性论文6篇。",
+            },
+            {
+                "id": 2,
+                "file": "reward.docx",
+                "page": 4,
+                "section": "重要科学发现",
+                "text": "主要发现点: 根据形态学与系统进化分析，发现了一种新的兔艾美耳球虫。证明材料:1.1.1。所支持发现点:1。",
+            },
+            {
+                "id": 3,
+                "file": "reward.docx",
+                "page": 4,
+                "section": "重要科学发现",
+                "text": "主要发现点: 分离、鉴定和纯化大型、中型、肠艾美耳球虫原始株，成功选育出三个兔球虫种的早熟株。证明材料:1.1.3。所支持发现点:2。",
+            },
+            {
+                "id": 4,
+                "file": "reward.docx",
+                "page": 4,
+                "section": "客观评价（不超过2页）",
+                "text": "形成代表性论文6篇，其中SCI收录3篇，引用64次，他引53次。专家组同意通过验收。",
+            },
+            {
+                "id": 5,
+                "file": "reward.docx",
+                "page": 5,
+                "section": "代表性论文(专著)目录（不超过6篇）",
+                "text": "论文（专著） 名称:A new species of Eimeria ; 检索数据库:Science Citation Index ; 证明材料:1.1.1 ; 所支持发现点:1 ; 他引总次数:4。",
+            },
+            {
+                "id": 6,
+                "file": "reward.docx",
+                "page": 5,
+                "section": "代表性论文(专著)目录（不超过6篇）",
+                "text": "论文（专著） 名称:Immune protection provided by a precocious line trivalent vaccine ; 检索数据库:Science Citation Index ; 证明材料:1.1.2 ; 所支持发现点:3 ; 他引总次数:14。",
+            },
+            {
+                "id": 7,
+                "file": "reward.docx",
+                "page": 6,
+                "section": "代表性论文(专著)被他人引用情况（不超过6篇）",
+                "text": "被引用的代表性论文名称:A new species of Eimeria ; 引文发表时间:2025-04-11 ; 证明材料:3.6.1。",
+            },
+            {
+                "id": 8,
+                "file": "reward.docx",
+                "page": 3,
+                "section": "项目详细内容",
+                "text": "对早熟株进行了预试验，随后用相应的亲本株进行攻毒。",
+            },
+        ],
+    )
+    expectations = {
+        "这个奖励项目的主要科学发现是什么？": "新种发现",
+        "项目简介里体现了哪些核心贡献？": "核心贡献",
+        "客观评价材料主要支撑什么结论？": "科技创新性",
+        "代表性论文支撑了哪些发现点？": "发现点1",
+        "这个项目的主要短板是什么？": "奖种匹配",
+        "这些材料能否支撑当前奖种评价？": "具备支撑当前奖种评价的基础",
+    }
+    bad_phrases = ("无法确定", "无法判断", "客观评价缺失", "项目简介原文", "表格表头", "缺乏项目简介")
+
+    for question, expected in expectations.items():
+        answer = await agent.ask(question, index_payload=index_payload)
+        assert expected in answer.answer
+        assert not any(phrase in answer.answer for phrase in bad_phrases)
+        assert answer.citations
 
 
 @pytest.mark.asyncio

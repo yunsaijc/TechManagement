@@ -452,6 +452,7 @@ class ReportGenerator:
         workspace_projects = data.get("_workspace_projects") or []
         evidence_map = self._build_evidence_map(evidence)
         evaluation_id = str(result.get("evaluation_id") or "")
+        show_benchmark = platform != "reward"
 
         score = result.get("overall_score", 0)
         grade = result.get("grade", "-")
@@ -462,14 +463,15 @@ class ReportGenerator:
         right_tail = ""
         source_name = data.get("source_name") or data.get("meta", {}).get("file_name") or "-"
         project_nav = self._render_project_nav(workspace_projects, debug_mode)
-        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode)
+        document_panel = self._render_document_panel(page_chunks, data.get("meta") or {}, packet_assets, debug_mode, sections)
         layout_class = "content-grid debug-layout" if debug_mode else "content-grid evaluation-layout"
         result_tabs = [
             ("report-overview", "评审结论"),
             ("report-dimensions", "维度评分"),
             ("report-chat", "专家聊天"),
-            ("report-benchmark", "技术摸底"),
         ]
+        if show_benchmark:
+            result_tabs.append(("report-benchmark", "技术摸底"))
         if industry_fit:
             result_tabs.append(("report-fit", "指南贴合"))
         result_tabs_html = ""
@@ -486,7 +488,8 @@ class ReportGenerator:
                 + "</div>"
             )
         optional_panels = ""
-        optional_panels += f"""
+        if show_benchmark:
+            optional_panels += f"""
               <section class="result-panel" id="report-benchmark">
                 {self._render_benchmark(benchmark, page_chunks, packet_assets)}
               </section>
@@ -871,6 +874,160 @@ class ReportGenerator:
       display: grid;
       grid-template-rows: minmax(0, 1fr);
     }}
+    .doc-packet-layout {{
+      height: 100%;
+      min-height: 68vh;
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      gap: 12px;
+      min-width: 0;
+      min-height: 0;
+    }}
+    .doc-local-nav {{
+      min-height: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--line);
+      padding-right: 12px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
+    }}
+    .doc-local-nav-head {{
+      display: grid;
+      gap: 4px;
+    }}
+    .doc-local-nav-title {{
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .doc-local-nav-meta {{
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }}
+    .doc-local-nav-scroll {{
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      padding-right: 2px;
+    }}
+    .doc-local-nav .rail-group-title {{
+      font-size: 11px;
+    }}
+    .doc-local-nav .rail-links {{
+      gap: 2px;
+    }}
+    .doc-local-nav .rail-link {{
+      position: relative;
+      padding: 6px 8px 6px 16px;
+      border-radius: 6px;
+      border: 0;
+      background: transparent;
+      font-size: 12px;
+      gap: 8px;
+    }}
+    .doc-local-nav .rail-link:hover,
+    .doc-local-nav .rail-link.is-active {{
+      background: var(--brand-soft);
+      border-color: transparent;
+    }}
+    .doc-local-nav .rail-link::before {{
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #9aa8b8;
+      transform: translateY(-50%);
+    }}
+    .doc-local-nav .rail-link-meta {{
+      font-size: 11px;
+    }}
+    .doc-local-nav .rail-link-label {{
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      line-height: 1.45;
+    }}
+    .doc-nav-tree {{
+      display: grid;
+      gap: 4px;
+      align-content: start;
+    }}
+    .doc-nav-group,
+    .doc-nav-subgroup {{
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      overflow: visible;
+    }}
+    .doc-nav-summary {{
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 4px;
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.5;
+    }}
+    .doc-nav-summary::-webkit-details-marker {{
+      display: none;
+    }}
+    .doc-nav-summary::before {{
+      content: "";
+      color: var(--muted);
+      width: 6px;
+      height: 6px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(0deg);
+      transition: transform 0.15s ease;
+      flex-shrink: 0;
+    }}
+    .doc-nav-group[open] > .doc-nav-summary::before,
+    .doc-nav-subgroup[open] > .doc-nav-summary::before {{
+      transform: rotate(45deg);
+    }}
+    .doc-nav-group:not([open]) > .doc-nav-summary::before,
+    .doc-nav-subgroup:not([open]) > .doc-nav-summary::before {{
+      transform: rotate(-45deg);
+    }}
+    .doc-nav-summary-label {{
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .doc-nav-summary-meta {{
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }}
+    .doc-nav-group-body {{
+      display: grid;
+      gap: 4px;
+      margin-left: 7px;
+      padding: 0 0 6px 12px;
+      border-left: 1px solid #d6e0ea;
+    }}
+    .doc-nav-subgroup .doc-nav-group-body {{
+      padding-left: 12px;
+      padding-right: 0;
+    }}
+    .doc-nav-subgroup {{
+      margin-left: 2px;
+    }}
     .doc-viewer {{
       overflow: auto;
       padding-right: 2px;
@@ -985,6 +1142,38 @@ class ReportGenerator:
       gap: 8px;
       flex-wrap: wrap;
       margin-top: 8px;
+    }}
+    .inline-citation {{
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      margin-left: 4px;
+      border: 1px solid #c8d6e5;
+      border-radius: 999px;
+      background: #f5f8fb;
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+      text-decoration: none;
+      vertical-align: super;
+      transform: translateY(-1px);
+      cursor: pointer;
+    }}
+    .inline-citation:hover {{
+      background: #eaf1f7;
+      border-color: #9eb6cf;
+    }}
+    .inline-citation:focus-visible {{
+      outline: 2px solid rgba(15, 118, 110, 0.32);
+      outline-offset: 2px;
+    }}
+    .inline-citation-index {{
+      font-size: 10px;
+      transform: translateY(-4px);
+      margin-left: 1px;
     }}
     .panel-inner {{
       padding: 22px;
@@ -1659,46 +1848,6 @@ class ReportGenerator:
       flex-wrap: wrap;
       margin-top: 10px;
     }}
-    .chat-citations {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-    }}
-    .chat-citation {{
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #f8fbfe;
-      border: 1px solid #dde7f0;
-      font-size: 12px;
-      line-height: 1;
-    }}
-    .chat-citation-head {{
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-    }}
-    .chat-citation-page {{
-      flex-shrink: 0;
-      padding: 3px 8px;
-      border-radius: 999px;
-      background: #e8eef5;
-      color: var(--brand);
-      font-size: 11px;
-      font-weight: 700;
-    }}
-    .chat-citation-label {{
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 600;
-    }}
-    .chat-citation-actions {{
-      display: inline-flex;
-      align-items: center;
-    }}
     .chat-form {{
       display: grid;
       gap: 10px;
@@ -1868,6 +2017,17 @@ class ReportGenerator:
       .side-stack {{
         overflow: visible;
         padding-right: 0;
+      }}
+      .doc-packet-layout {{
+        grid-template-columns: 1fr;
+        height: auto;
+      }}
+      .doc-local-nav {{
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        padding-right: 0;
+        padding-bottom: 12px;
+        max-height: 220px;
       }}
     }}
     @media (max-width: 1120px) {{
@@ -2267,6 +2427,15 @@ class ReportGenerator:
               .doc-viewer {{
                 min-height: 68vh !important;
               }}
+              .doc-packet-layout {{
+                height: 100% !important;
+                min-height: 68vh !important;
+                grid-template-columns: 240px minmax(0, 1fr) !important;
+              }}
+              .doc-local-nav {{
+                min-height: 0 !important;
+                overflow: hidden !important;
+              }}
               .packet-frame {{
                 height: 74vh !important;
                 min-height: 68vh !important;
@@ -2396,6 +2565,7 @@ class ReportGenerator:
                     "opinion": str(score.get("opinion") or "暂无意见"),
                     "issues": score.get("issues") or [],
                     "highlights": score.get("highlights") or [],
+                    "details": score.get("details") if isinstance(score.get("details"), dict) else {},
                     "sector_id": sector["id"],
                     "sector_label": sector["label"],
                     "sector_color": sector["color"],
@@ -2440,7 +2610,8 @@ class ReportGenerator:
             issues = self._filter_dimension_issue_items(item.get("issues") or [])
             basis = self._build_dimension_basis_fallback(basis, highlights, issues)
             actions = self._build_dimension_action_items(issues)
-            summary_evidence = self._find_dimension_evidence(item, summary, basis, page_chunks)
+            reward_evidence = self._build_reward_dimension_evidence_map(item, page_chunks)
+            summary_evidence = None if reward_evidence else self._find_dimension_evidence(item, summary, basis, page_chunks)
             details.append(
                 f"""
                 <section
@@ -2460,16 +2631,95 @@ class ReportGenerator:
                     <div class="dimension-detail-meter-value">{html.escape(str(item["score"]))} / 10</div>
                   </div>
                   <div class="dimension-detail-blocks">
-                    {self._render_dimension_item_block("一句话判断", [summary], "暂无判断", summary_evidence, packet_assets)}
-                    {self._render_dimension_item_block("主要依据", basis, "暂无明确依据", summary_evidence, packet_assets)}
-                    {self._render_dimension_item_block("优势", highlights[:4], "暂无明显优势", summary_evidence, packet_assets)}
-                    {self._render_dimension_item_block("短板 / 待补充", issues[:4], "暂无明显短板", summary_evidence, packet_assets)}
-                    {self._render_dimension_item_block("建议动作", actions[:3], "暂无明确建议动作", summary_evidence, packet_assets)}
+                    {self._render_dimension_evidence_block("一句话判断", [summary], "暂无判断", reward_evidence, packet_assets) if reward_evidence else self._render_dimension_item_block("一句话判断", [summary], "暂无判断", summary_evidence, packet_assets)}
+                    {self._render_dimension_evidence_block("主要依据", basis, "暂无明确依据", reward_evidence, packet_assets) if reward_evidence else self._render_dimension_item_block("主要依据", basis, "暂无明确依据", summary_evidence, packet_assets)}
+                    {self._render_dimension_evidence_block("优势", highlights[:4], "暂无明显优势", reward_evidence, packet_assets) if reward_evidence else self._render_dimension_item_block("优势", highlights[:4], "暂无明显优势", summary_evidence, packet_assets)}
+                    {self._render_dimension_item_block("短板 / 待补充", issues[:4], "暂无明显短板", None if reward_evidence else summary_evidence, packet_assets)}
+                    {self._render_dimension_item_block("建议动作", actions[:3], "暂无明确建议动作", None if reward_evidence else summary_evidence, packet_assets)}
                   </div>
                 </section>
                 """
             )
         return f'<section class="dimension-detail-stage">{"".join(details)}</section>'
+
+    def _build_reward_dimension_evidence_map(
+        self,
+        item: Dict[str, Any],
+        page_chunks: List[Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """奖励评分使用结构化证据，不再从维度文案反向猜位置。"""
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        if not details.get("reward_scoring_adjusted"):
+            return {}
+        raw_items = details.get("evidence_items")
+        if not isinstance(raw_items, list):
+            return {}
+
+        evidence_map: Dict[str, Dict[str, Any]] = {}
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                continue
+            located = self._locate_reward_dimension_evidence(raw, page_chunks)
+            if not located:
+                continue
+            for key in [raw.get("basis"), raw.get("claim")]:
+                normalized = self._normalize_text_for_compare(str(key or ""))
+                if normalized and normalized not in evidence_map:
+                    evidence_map[normalized] = located
+        return evidence_map
+
+    def _locate_reward_dimension_evidence(
+        self,
+        evidence_item: Dict[str, Any],
+        page_chunks: List[Dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        """按来源章节和原文片段定位奖励评分证据。宁可不高亮，也不跨页猜。"""
+        section = str(evidence_item.get("source_section") or "").strip()
+        source_text = str(evidence_item.get("source_text") or "").strip()
+        highlight_text = str(evidence_item.get("highlight_text") or "").strip()
+        if not source_text and not highlight_text:
+            return None
+
+        source_norm = self._normalize_search_text(source_text)
+        highlight_norm = self._normalize_search_text(highlight_text)
+        section_norm = self._normalize_search_text(section)
+        best: Dict[str, Any] | None = None
+        best_score = 0
+
+        for chunk in page_chunks:
+            chunk_text = str(chunk.get("text") or "")
+            chunk_norm = self._normalize_search_text(chunk_text)
+            if not chunk_norm:
+                continue
+            chunk_section_norm = self._normalize_search_text(str(chunk.get("section") or ""))
+            section_score = 0
+            if section_norm and (section_norm in chunk_section_norm or chunk_section_norm in section_norm):
+                section_score = 25
+            text_score = 0
+            if source_norm and len(source_norm) >= 12 and source_norm in chunk_norm:
+                text_score = 90
+            elif highlight_norm and len(highlight_norm) >= 6 and highlight_norm in chunk_norm:
+                text_score = 70
+            elif source_norm and len(source_norm) >= 24:
+                text_score = min(self._sequence_overlap_score(source_norm, chunk_norm), 48)
+            if text_score <= 0:
+                continue
+            score = text_score + section_score
+            if score > best_score:
+                best_score = score
+                snippet_target = highlight_text or source_text
+                precise_highlight = self._build_reward_precise_highlight_snippet(source_text, highlight_text)
+                best = {
+                    "page": chunk.get("page"),
+                    "file": chunk.get("file") or "",
+                    "snippet": source_text or self._build_evidence_display_snippet(chunk_text, snippet_target),
+                    "highlight_snippet": precise_highlight,
+                    "packet_search_snippet": precise_highlight,
+                }
+
+        if best_score < 55:
+            return None
+        return best
 
     def _find_dimension_evidence(
         self,
@@ -2537,7 +2787,86 @@ class ReportGenerator:
 
     def _build_evidence_highlight_snippet(self, source_text: str, target_text: str, max_len: int = 120) -> str:
         """给跳转高亮使用的短定位片段，避免把整页原文写进 HTML 属性。"""
-        return self._build_evidence_snippet(source_text, target_text, max_len=max_len)
+        return self._build_precise_highlight_text(source_text, target_text, max_len=max_len)
+
+    def _build_precise_highlight_text(self, source_text: str, target_text: str, max_len: int = 120) -> str:
+        """只返回要高亮的证据本身，不自动携带前后文。"""
+        source = self._clean_reward_preview_text(source_text)
+        target = self._clean_reward_preview_text(target_text)
+        if not source:
+            return target[:max_len].rstrip()
+        if target and self._is_precise_highlight_text(target):
+            if target in source or self._normalize_search_text(target) in self._normalize_search_text(source):
+                return target[:max_len].rstrip()
+        derived = self._extract_reward_precise_fact(source)
+        if derived:
+            return derived[:max_len].rstrip()
+        if target:
+            sentence = self._extract_sentence_around_text(source, target)
+            if sentence:
+                return sentence[:max_len].rstrip()
+            return target[:max_len].rstrip()
+        return source[:max_len].rstrip()
+
+    def _build_reward_precise_highlight_snippet(self, source_text: str, preferred_text: str, max_len: int = 120) -> str:
+        """奖励结构化证据优先使用事实短句做高亮，展示文本另行保留上下文。"""
+        preferred = self._clean_reward_preview_text(preferred_text)
+        source = self._clean_reward_preview_text(source_text)
+        if preferred and self._is_precise_highlight_text(preferred):
+            return preferred[:max_len].rstrip()
+        derived = self._extract_reward_precise_fact(source)
+        if derived:
+            return derived[:max_len].rstrip()
+        if preferred:
+            sentence = self._extract_sentence_around_text(source, preferred)
+            if sentence:
+                return sentence[:max_len].rstrip()
+            return preferred[:max_len].rstrip()
+        return source[:max_len].rstrip()
+
+    def _extract_sentence_around_text(self, source_text: str, target_text: str) -> str:
+        """弱标签命中时返回所在短句，避免只高亮两三个字。"""
+        source = self._clean_reward_preview_text(source_text)
+        target = self._clean_reward_preview_text(target_text)
+        if not source or not target:
+            return ""
+        index = source.find(target)
+        if index < 0:
+            source_norm = self._normalize_search_text(source)
+            target_norm = self._normalize_search_text(target)
+            compact_index = source_norm.find(target_norm) if target_norm else -1
+            if compact_index < 0:
+                return ""
+            index = int(len(source) * compact_index / max(len(source_norm), 1))
+        left = max(source.rfind(mark, 0, index) for mark in ("。", "；", ";", "\n"))
+        right_candidates = [source.find(mark, index + len(target)) for mark in ("。", "；", ";", "\n")]
+        right_candidates = [pos for pos in right_candidates if pos >= 0]
+        start = left + 1 if left >= 0 else max(0, index - 32)
+        end = min(right_candidates) + 1 if right_candidates else min(len(source), index + len(target) + 48)
+        sentence = source[start:end].strip()
+        return sentence if len(self._normalize_search_text(sentence)) >= 6 else ""
+
+    def _extract_reward_precise_fact(self, text: str) -> str:
+        """从奖励证据上下文中抽取可核验事实，避免高亮整段上下文。"""
+        source = self._clean_reward_preview_text(text)
+        if not source:
+            return ""
+        patterns = (
+            r"形成代表性论文\d+篇，其中SCI收录\d+篇，引用\d+次，他引\d+次[^。；;]{0,60}",
+            r"国内外属于领先与创新水平",
+            r"SCI\s*收录\D{0,8}\d+\s*篇",
+            r"引用\D{0,8}\d+\s*次[，,、\s]*他引\D{0,8}\d+\s*次",
+            r"代表性论文\D{0,8}\d+\s*篇",
+            r"发现了?一种新的[^。；;]{0,60}",
+            r"成功选育出[^。；;]{0,80}早熟株",
+            r"三价早熟疫苗[^。；;]{0,80}免疫保护",
+            r"检索数据库[:：]?\s*Science\s+Citation\s+Index",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, source, flags=re.IGNORECASE)
+            if match:
+                return match.group(0).strip(" ；;。")
+        return ""
 
     def _build_evidence_snippet(self, source_text: str, target_text: str, max_len: int) -> str:
         """从长原文中截取命中附近的片段，并清理 DOCX 表格解析标记。"""
@@ -2740,28 +3069,107 @@ class ReportGenerator:
         if not cleaned:
             body = f'<div class="dimension-empty">{html.escape(empty_text)}</div>'
         elif len(cleaned) == 1:
-            body = f'<div class="dimension-detail-summary">{html.escape(cleaned[0])}</div>'
+            citation = ""
+            if evidence:
+                snippet = evidence.get("snippet") or ""
+                highlight_snippet = evidence.get("highlight_snippet") or snippet
+                citation = self._render_inline_citation(
+                    evidence.get("page"),
+                    highlight_snippet,
+                    str(evidence.get("file") or ""),
+                    packet_assets,
+                )
+            body = f'<div class="dimension-detail-summary">{html.escape(cleaned[0])}{citation}</div>'
         else:
+            citation = ""
+            if evidence:
+                snippet = evidence.get("snippet") or ""
+                highlight_snippet = evidence.get("highlight_snippet") or snippet
+                citation = self._render_inline_citation(
+                    evidence.get("page"),
+                    highlight_snippet,
+                    str(evidence.get("file") or ""),
+                    packet_assets,
+                )
             body = (
                 '<div class="dimension-detail-list">'
-                + "".join(f'<div class="dimension-detail-list-item">{html.escape(item)}</div>' for item in cleaned)
+                + "".join(
+                    f'<div class="dimension-detail-list-item">{html.escape(item)}{citation if index == 0 else ""}</div>'
+                    for index, item in enumerate(cleaned)
+                )
                 + "</div>"
             )
         if cleaned and evidence:
             snippet = evidence.get("snippet") or ""
-            highlight_snippet = evidence.get("highlight_snippet") or snippet
-            source_file = str(evidence.get("file") or "")
-            jump_link = self._render_jump_link(evidence.get("page"), highlight_snippet, source_file, packet_assets)
             if snippet:
                 body += f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
-            if jump_link:
-                body += f'<div class="jump-link-row">{jump_link}</div>'
         return (
             '<section class="dimension-detail-block">'
             f'<div class="dimension-detail-label">{html.escape(label)}</div>'
             f'{body}'
             '</section>'
         )
+
+    def _render_dimension_evidence_block(
+        self,
+        label: str,
+        items: List[str],
+        empty_text: str,
+        evidence_by_text: Dict[str, Dict[str, Any]],
+        packet_assets: Dict[str, Any],
+    ) -> str:
+        """奖励评分详情逐条显示自己的证据和跳转。"""
+        cleaned = [str(item).strip() for item in items if str(item).strip()]
+        if not cleaned:
+            body = f'<div class="dimension-empty">{html.escape(empty_text)}</div>'
+        else:
+            rows: List[str] = []
+            for text in cleaned:
+                evidence = self._match_dimension_evidence_for_text(text, evidence_by_text)
+                extra = ""
+                citation = ""
+                if evidence:
+                    snippet = self._clean_reward_preview_text(str(evidence.get("snippet") or "")).strip()
+                    highlight_snippet = str(evidence.get("highlight_snippet") or snippet).strip()
+                    source_file = str(evidence.get("file") or "")
+                    citation = self._render_inline_citation(
+                        evidence.get("page"),
+                        highlight_snippet,
+                        source_file,
+                        packet_assets,
+                        strict_highlight=True,
+                        search_snippet=str(evidence.get("packet_search_snippet") or highlight_snippet),
+                    )
+                    if snippet:
+                        extra += f'<div class="highlight-item-evidence">证据：{html.escape(snippet)}</div>'
+                rows.append(f'<div class="dimension-detail-list-item">{html.escape(text)}{citation}{extra}</div>')
+            body = '<div class="dimension-detail-list">' + "".join(rows) + "</div>"
+        return (
+            '<section class="dimension-detail-block">'
+            f'<div class="dimension-detail-label">{html.escape(label)}</div>'
+            f'{body}'
+            '</section>'
+        )
+
+    def _match_dimension_evidence_for_text(
+        self,
+        text: str,
+        evidence_by_text: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        normalized = self._normalize_text_for_compare(text)
+        if normalized in evidence_by_text:
+            return evidence_by_text[normalized]
+        for key, evidence in evidence_by_text.items():
+            if key and (key in normalized or normalized in key):
+                return evidence
+        return None
+
+    def _is_precise_highlight_text(self, text: str) -> bool:
+        normalized = self._normalize_search_text(text)
+        if len(normalized) < 6:
+            return False
+        weak_terms = {"引用", "公示", "客观评价", "代表性论文", "主要附件目录", "项目详细内容", "主要完成人", "主要完成单位"}
+        return normalized not in {self._normalize_search_text(term) for term in weak_terms}
 
     def _render_dimension_radar(self, items: List[Dict[str, Any]], default_index: int) -> str:
         center_x = 240.0
@@ -2852,6 +3260,7 @@ class ReportGenerator:
         meta: Dict[str, Any],
         packet_assets: Dict[str, Any],
         debug_mode: bool,
+        sections: Dict[str, str] | None = None,
     ) -> str:
         """渲染左侧正文阅读区"""
         if debug_mode:
@@ -2859,16 +3268,20 @@ class ReportGenerator:
 
         viewer_file = str(packet_assets.get("viewer_file") or "").strip() if isinstance(packet_assets, dict) else ""
         if viewer_file:
+            document_nav = self._render_packet_document_nav(packet_assets, meta, sections or {})
             return f"""
             <section class="panel doc-panel" id="report-document">
               <div class="panel-inner doc-panel-inner">
                 <div class="doc-toast" id="doc-toast"></div>
-                <iframe
-                  class="packet-frame"
-                  id="packet-viewer-frame"
-                  src="{html.escape(viewer_file)}"
-                  title="统一材料阅读区"
-                ></iframe>
+                <div class="doc-packet-layout">
+                  {document_nav}
+                  <iframe
+                    class="packet-frame"
+                    id="packet-viewer-frame"
+                    src="{html.escape(viewer_file)}"
+                    title="统一材料阅读区"
+                  ></iframe>
+                </div>
               </div>
             </section>
             {self._render_document_jump_script(packet_assets)}
@@ -2937,6 +3350,465 @@ class ReportGenerator:
         </section>
         {self._render_document_jump_script(packet_assets)}
         """
+
+    def _render_packet_document_nav(
+        self,
+        packet_assets: Dict[str, Any],
+        meta: Dict[str, Any] | None = None,
+        sections: Dict[str, str] | None = None,
+    ) -> str:
+        """渲染统一材料阅读区内的文件导航"""
+        page_map = packet_assets.get("page_map") if isinstance(packet_assets, dict) else []
+        if not isinstance(page_map, list):
+            page_map = []
+        meta = meta if isinstance(meta, dict) else {}
+        sections = sections if isinstance(sections, dict) else {}
+        material_title_map = self._build_reward_material_title_map(meta)
+        material_group_map = self._build_reward_material_group_map(meta)
+
+        material_entries: List[Dict[str, Any]] = []
+        seen_materials: set[tuple[int, str]] = set()
+        packet_end_page = 0
+        for item in page_map:
+            if not isinstance(item, dict):
+                continue
+            try:
+                start_page = int(item.get("start_page", 0) or 0)
+                end_page = int(item.get("end_page", start_page) or start_page)
+            except (TypeError, ValueError):
+                continue
+            if start_page <= 0:
+                continue
+            packet_end_page = max(packet_end_page, start_page, end_page)
+            source_name = self._format_packet_nav_source_name(item, material_title_map)
+            key = (start_page, source_name)
+            if key in seen_materials:
+                continue
+            seen_materials.add(key)
+            page_label = f"P{start_page}" if end_page <= start_page else f"P{start_page}-P{end_page}"
+            active_class = " is-active" if not material_entries else ""
+            material_entries.append(
+                {
+                    "label": source_name,
+                    "page_label": page_label,
+                    "start_page": start_page,
+                    "end_page": end_page,
+                    "active": active_class,
+                    "group": self._resolve_packet_nav_group(item, material_group_map),
+                    "subgroup": self._resolve_packet_nav_subgroup(item, source_name),
+                    "link": self._render_packet_nav_link(
+                        label=source_name,
+                        page_label=page_label,
+                        page=start_page,
+                        file_name=source_name,
+                        active_class=active_class,
+                    ),
+                }
+            )
+
+        packet_page_count = self._resolve_packet_page_count(packet_assets, packet_end_page)
+        section_links = self._build_packet_section_nav_links(packet_assets, sections)
+        page_links: List[str] = []
+        if packet_page_count:
+            page_numbers = self._build_packet_nav_page_numbers(packet_page_count)
+            for page in page_numbers:
+                page_links.append(self._render_packet_nav_link("第 {page} 页".format(page=page), "跳转", page, "统一材料"))
+
+        nav_tree = self._render_packet_nav_tree(material_entries, section_links, page_links)
+        meta_text = f"{len(material_entries)} 份材料 · {packet_page_count or packet_end_page or '-'} 页"
+        return f"""
+        <nav class="doc-local-nav" aria-label="材料导航">
+          <div class="doc-local-nav-head">
+            <div class="doc-local-nav-title">文件导航</div>
+            <div class="doc-local-nav-meta">{html.escape(meta_text)}</div>
+          </div>
+          <div class="doc-local-nav-scroll">
+            {nav_tree}
+          </div>
+        </nav>
+        """
+
+    def _render_packet_nav_link(
+        self,
+        label: str,
+        page_label: str,
+        page: int,
+        file_name: str,
+        active_class: str = "",
+    ) -> str:
+        return (
+            f'<a class="rail-link{active_class}" href="#packet-page-{page}" '
+            f'data-doc-jump="true" data-page="{page}" data-packet-page="{page}" '
+            f'data-file="{html.escape(file_name)}" data-highlight-text="" data-highlight-rects="[]" '
+            f'data-packet-nav="true">'
+            f'<span class="rail-link-label">{html.escape(label)}</span>'
+            f'<span class="rail-link-meta">{html.escape(page_label)}</span>'
+            "</a>"
+        )
+
+    def _render_packet_nav_tree(
+        self,
+        material_entries: List[Dict[str, Any]],
+        section_links: List[str],
+        page_links: List[str],
+    ) -> str:
+        grouped: Dict[str, List[Dict[str, Any]]] = {
+            "主材料": [],
+            "签字盖章类材料": [],
+            "相关佐证材料": [],
+            "其他材料": [],
+        }
+        for entry in material_entries:
+            group = str(entry.get("group") or "其他材料")
+            grouped.setdefault(group, []).append(entry)
+
+        blocks: List[str] = []
+        main_body: List[str] = []
+        if grouped.get("主材料"):
+            main_body.append('<div class="rail-links">' + "".join(str(entry.get("link") or "") for entry in grouped["主材料"]) + "</div>")
+        if section_links:
+            main_body.append(self._render_doc_nav_subgroup("提名书章节", section_links, open_group=True))
+        if main_body:
+            blocks.append(self._render_doc_nav_group("主材料", "".join(main_body), len(grouped.get("主材料", [])), open_group=True))
+
+        sign_entries = grouped.get("签字盖章类材料") or []
+        if sign_entries:
+            body = '<div class="rail-links">' + "".join(str(entry.get("link") or "") for entry in sign_entries) + "</div>"
+            blocks.append(self._render_doc_nav_group("签字盖章类材料", body, len(sign_entries), open_group=True))
+
+        support_entries = grouped.get("相关佐证材料") or []
+        if support_entries:
+            subgroups: Dict[str, List[str]] = {}
+            for entry in support_entries:
+                subgroup = str(entry.get("subgroup") or "其他证明")
+                subgroups.setdefault(subgroup, []).append(str(entry.get("link") or ""))
+            subgroup_order = ["代表性论文", "检索报告", "引用佐证", "验收 / 获奖 / 承诺", "公示材料", "其他证明"]
+            body_parts: List[str] = []
+            for subgroup in subgroup_order:
+                links = subgroups.pop(subgroup, [])
+                if links:
+                    body_parts.append(self._render_doc_nav_subgroup(subgroup, links, open_group=subgroup in {"代表性论文", "公示材料"}))
+            for subgroup, links in subgroups.items():
+                body_parts.append(self._render_doc_nav_subgroup(subgroup, links, open_group=False))
+            blocks.append(self._render_doc_nav_group("相关佐证材料", "".join(body_parts), len(support_entries), open_group=False))
+
+        other_entries = grouped.get("其他材料") or []
+        if other_entries:
+            body = '<div class="rail-links">' + "".join(str(entry.get("link") or "") for entry in other_entries) + "</div>"
+            blocks.append(self._render_doc_nav_group("其他材料", body, len(other_entries), open_group=False))
+
+        if page_links:
+            body = '<div class="rail-links">' + "".join(page_links) + "</div>"
+            blocks.append(self._render_doc_nav_group("页码导航", body, len(page_links), open_group=False))
+
+        return '<div class="doc-nav-tree">' + "".join(blocks) + "</div>"
+
+    def _render_doc_nav_group(self, title: str, body: str, count: int, open_group: bool) -> str:
+        open_attr = " open" if open_group else ""
+        return (
+            f'<details class="doc-nav-group"{open_attr}>'
+            f'<summary class="doc-nav-summary"><span class="doc-nav-summary-label">{html.escape(title)}</span>'
+            f'<span class="doc-nav-summary-meta">{count}</span></summary>'
+            f'<div class="doc-nav-group-body">{body}</div>'
+            "</details>"
+        )
+
+    def _render_doc_nav_subgroup(self, title: str, links: List[str], open_group: bool) -> str:
+        open_attr = " open" if open_group else ""
+        return (
+            f'<details class="doc-nav-subgroup"{open_attr}>'
+            f'<summary class="doc-nav-summary"><span class="doc-nav-summary-label">{html.escape(title)}</span>'
+            f'<span class="doc-nav-summary-meta">{len(links)}</span></summary>'
+            f'<div class="doc-nav-group-body"><div class="rail-links">{"".join(links)}</div></div>'
+            "</details>"
+        )
+
+    def _resolve_packet_nav_group(self, item: Dict[str, Any], group_map: Dict[str, str] | None = None) -> str:
+        group_map = group_map or {}
+        for key in self._packet_item_title_keys(item):
+            if key in group_map:
+                return group_map[key]
+        if str(item.get("source_kind") or "") == "proposal":
+            return "主材料"
+        source_file = str(item.get("source_file") or "").replace("\\", "/")
+        if "/签字盖章类材料/" in source_file:
+            return "签字盖章类材料"
+        if "/相关佐证材料/" in source_file:
+            return "相关佐证材料"
+        return "其他材料"
+
+    def _resolve_packet_nav_subgroup(self, item: Dict[str, Any], display_name: str) -> str:
+        name = str(display_name or "")
+        source_name = str(item.get("source_name") or "")
+        text = f"{name} {source_name}"
+        if "公示" in text:
+            return "公示材料"
+        if "检索报告" in text:
+            return "检索报告"
+        if any(keyword in text for keyword in ("引用", "Identification", "Recombinant", "Assessment")):
+            return "引用佐证"
+        if any(keyword in text for keyword in ("验收", "获奖", "承诺", "合作关系")):
+            return "验收 / 获奖 / 承诺"
+        if re.match(r"^\d{2}\.\s", name) and not any(keyword in text for keyword in ("检索报告", "引用", "验收", "获奖", "承诺", "公示")):
+            return "代表性论文"
+        return "其他证明"
+
+    def _build_reward_material_title_map(self, meta: Dict[str, Any]) -> Dict[str, str]:
+        """从奖励材料分组中建立存储文件名到业务标题的映射。"""
+        groups = meta.get("reward_local_material_groups") or meta.get("reward_material_groups") or {}
+        if not isinstance(groups, dict):
+            return {}
+        title_map: Dict[str, str] = {}
+        for group_name, items in groups.items():
+            if not isinstance(items, list):
+                continue
+            for index, item in enumerate(items, start=1):
+                if not isinstance(item, dict):
+                    continue
+                raw_title = str(item.get("title") or "").strip()
+                if not raw_title:
+                    continue
+                title = self._clean_packet_nav_title(raw_title)
+                if not title:
+                    continue
+                if str(group_name or "") == "主材料" and title == "提名书":
+                    display_title = "提名书"
+                else:
+                    display_title = f"{index:02d}. {title}"
+                for key in self._material_title_keys(item):
+                    title_map.setdefault(key, display_title)
+        return title_map
+
+    def _build_reward_material_group_map(self, meta: Dict[str, Any]) -> Dict[str, str]:
+        """从奖励材料分组中建立存储文件名到材料大类的映射。"""
+        groups = meta.get("reward_local_material_groups") or meta.get("reward_material_groups") or {}
+        if not isinstance(groups, dict):
+            return {}
+        group_map: Dict[str, str] = {}
+        valid_groups = {"主材料", "签字盖章类材料", "相关佐证材料"}
+        for group_name, items in groups.items():
+            group = str(group_name or "").strip()
+            if group not in valid_groups or not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                for key in self._material_title_keys(item):
+                    group_map.setdefault(key, group)
+        return group_map
+
+    def _material_title_keys(self, item: Dict[str, Any]) -> List[str]:
+        keys: List[str] = []
+        for field in ("local_path", "path", "file_name"):
+            value = str(item.get(field) or "").strip()
+            if not value:
+                continue
+            normalized = value.replace("\\", "/")
+            basename = Path(normalized).name
+            for key in (value, normalized, basename):
+                if key and key not in keys:
+                    keys.append(key)
+            if basename:
+                stripped = re.sub(r"^\d{3}_", "", basename)
+                if stripped and stripped not in keys:
+                    keys.append(stripped)
+        return keys
+
+    def _clean_packet_nav_title(self, title: str) -> str:
+        cleaned = re.sub(r"\s+", " ", str(title or "")).strip()
+        cleaned = cleaned.strip(" -_")
+        return cleaned[:80]
+
+    def _format_packet_nav_source_name(self, item: Dict[str, Any], title_map: Dict[str, str] | None = None) -> str:
+        """生成材料导航显示名"""
+        title_map = title_map or {}
+        for key in self._packet_item_title_keys(item):
+            if key in title_map:
+                return title_map[key]
+        if str(item.get("source_kind") or "") == "proposal":
+            return "提名书"
+        source_file = str(item.get("source_file") or "").strip()
+        if source_file:
+            name = Path(source_file).name
+            if name:
+                stripped = re.sub(r"^\d{3}_", "", name)
+                if stripped in title_map:
+                    return title_map[stripped]
+        source_name = str(item.get("source_name") or "").strip()
+        if source_name:
+            return re.sub(r"^\d{3}_", "", source_name)
+        return "材料"
+
+    def _packet_item_title_keys(self, item: Dict[str, Any]) -> List[str]:
+        keys: List[str] = []
+        for field in ("source_file", "source_name"):
+            value = str(item.get(field) or "").strip()
+            if not value:
+                continue
+            normalized = value.replace("\\", "/")
+            basename = Path(normalized).name
+            for key in (value, normalized, basename):
+                if key and key not in keys:
+                    keys.append(key)
+            if basename:
+                stripped = re.sub(r"^\d{3}_", "", basename)
+                if stripped and stripped not in keys:
+                    keys.append(stripped)
+        return keys
+
+    def _build_packet_section_nav_links(
+        self,
+        packet_assets: Dict[str, Any],
+        sections: Dict[str, str],
+    ) -> List[str]:
+        """在 packet PDF 中定位提名书章节标题，定位不到就不展示。"""
+        if not sections:
+            return []
+        candidate_titles = [
+            "项目基本情况",
+            "提名意见",
+            "项目简介",
+            "项目详细内容",
+            "重要科学发现",
+            "客观评价",
+            "代表性论文",
+            "代表性论文被他人引用情况",
+            "主要完成人情况表",
+            "主要附件目录",
+        ]
+        available_titles: List[str] = []
+        for title in candidate_titles:
+            title_norm = self._normalize_search_text(title)
+            if any(title_norm and title_norm in self._normalize_search_text(str(key)) for key in sections.keys()):
+                available_titles.append(title)
+        if not available_titles:
+            return []
+
+        packet_abs_path = str(packet_assets.get("packet_abs_path") or "").strip() if isinstance(packet_assets, dict) else ""
+        if not packet_abs_path or not os.path.exists(packet_abs_path):
+            return []
+        proposal_range = self._resolve_source_packet_range(packet_assets, "")
+        if not proposal_range:
+            page_map = packet_assets.get("page_map") if isinstance(packet_assets, dict) else []
+            proposal = next((item for item in page_map if isinstance(item, dict) and str(item.get("source_kind") or "") == "proposal"), None) if isinstance(page_map, list) else None
+            if isinstance(proposal, dict):
+                try:
+                    proposal_range = (int(proposal.get("start_page", 0) or 0), int(proposal.get("end_page", 0) or 0))
+                except (TypeError, ValueError):
+                    proposal_range = None
+        if not proposal_range:
+            return []
+        start_page, end_page = proposal_range
+        if start_page <= 0 or end_page <= 0:
+            return []
+        if start_page > end_page:
+            start_page, end_page = end_page, start_page
+
+        links: List[str] = []
+        try:
+            with fitz.open(packet_abs_path) as packet_doc:
+                max_page = min(end_page, packet_doc.page_count)
+                for title in available_titles:
+                    page = self._find_packet_title_page(packet_doc, title, start_page, max_page)
+                    if not page:
+                        continue
+                    links.append(
+                        f'<a class="rail-link" href="#packet-page-{page}" '
+                        f'data-doc-jump="true" data-page="{page}" data-packet-page="{page}" '
+                        f'data-file="提名书" data-highlight-text="{html.escape(title)}" '
+                        f'data-highlight-rects="[]" data-packet-nav="true">'
+                        f'<span class="rail-link-label">{html.escape(title)}</span>'
+                        f'<span class="rail-link-meta">P{page}</span>'
+                        "</a>"
+                    )
+        except Exception:
+            return []
+        return links
+
+    def _find_packet_title_page(
+        self,
+        packet_doc: fitz.Document,
+        title: str,
+        start_page: int,
+        end_page: int,
+    ) -> int:
+        title_candidates = self._build_packet_section_title_candidates(title)
+        if not title_candidates:
+            return 0
+        for page_number in range(start_page, end_page + 1):
+            if page_number <= 0 or page_number > packet_doc.page_count:
+                continue
+            try:
+                lines = packet_doc.load_page(page_number - 1).get_text("text").splitlines()
+            except Exception:
+                continue
+            for raw_line in lines[:80]:
+                normalized_line = self._normalize_search_text(raw_line)
+                if not normalized_line or len(normalized_line) > 90:
+                    continue
+                if self._packet_section_line_matches(normalized_line, title_candidates):
+                    return page_number
+        return 0
+
+    def _build_packet_section_title_candidates(self, title: str) -> List[str]:
+        candidate_map = {
+            "代表性论文": ["代表性论文专著目录", "代表性论文目录"],
+            "代表性论文被他人引用情况": ["代表性论文专著被他人引用情况", "被他人引用情况"],
+        }
+        candidates = candidate_map.get(title, [title])
+        normalized: List[str] = []
+        for candidate in candidates:
+            value = self._normalize_search_text(candidate)
+            if value and value not in normalized:
+                normalized.append(value)
+        return normalized
+
+    def _packet_section_line_matches(self, normalized_line: str, title_candidates: List[str]) -> bool:
+        normalized_line = self._strip_packet_heading_prefix(normalized_line)
+        for candidate in title_candidates:
+            if normalized_line == candidate or normalized_line.startswith(candidate):
+                return True
+        return False
+
+    def _strip_packet_heading_prefix(self, normalized_line: str) -> str:
+        """去掉章节编号前缀，避免正文里偶然出现标题词时误命中。"""
+        return re.sub(r"^(?:[一二三四五六七八九十]+|[0-9]+)", "", normalized_line or "")
+
+    def _resolve_packet_page_count(self, packet_assets: Dict[str, Any], fallback: int = 0) -> int:
+        """获取 packet 总页数，优先使用映射信息，必要时读取 PDF。"""
+        if not isinstance(packet_assets, dict):
+            return max(0, fallback)
+        max_page = max(0, fallback)
+        page_map = packet_assets.get("page_map") or []
+        if isinstance(page_map, list):
+            for item in page_map:
+                if not isinstance(item, dict):
+                    continue
+                for key in ("end_page", "start_page"):
+                    try:
+                        max_page = max(max_page, int(item.get(key, 0) or 0))
+                    except (TypeError, ValueError):
+                        continue
+        packet_abs_path = str(packet_assets.get("packet_abs_path") or "").strip()
+        if packet_abs_path and os.path.exists(packet_abs_path):
+            try:
+                with fitz.open(packet_abs_path) as packet_doc:
+                    max_page = max(max_page, int(packet_doc.page_count or 0))
+            except Exception:
+                pass
+        return max_page
+
+    def _build_packet_nav_page_numbers(self, page_count: int) -> List[int]:
+        """生成左侧页码导航，页数多时保留可扫读的间隔。"""
+        if page_count <= 0:
+            return []
+        if page_count <= 40:
+            return list(range(1, page_count + 1))
+        pages = set(range(1, min(10, page_count) + 1))
+        pages.update(range(max(1, page_count - 4), page_count + 1))
+        step = 5 if page_count <= 120 else 10
+        pages.update(range(step, page_count + 1, step))
+        return sorted(page for page in pages if 1 <= page <= page_count)
 
     def _render_document_nav(
         self,
@@ -3076,6 +3948,8 @@ class ReportGenerator:
         source_file: str = "",
         packet_assets: Dict[str, Any] | None = None,
         label: str = "查看原文",
+        strict_highlight: bool = False,
+        search_snippet: str = "",
     ) -> str:
         """渲染统一的正文跳转入口"""
         try:
@@ -3088,10 +3962,12 @@ class ReportGenerator:
             packet_assets or {},
             source_file=source_file,
             page=page_no,
-            snippet=str(snippet or ""),
+            snippet=str(search_snippet or snippet or ""),
+            strict_highlight=strict_highlight,
         )
         packet_page = jump_payload.get("packet_page")
         rects_json = html.escape(json.dumps(jump_payload.get("highlight_rects") or [], ensure_ascii=False))
+        display_page = int(packet_page or page_no) if strict_highlight else page_no
         return (
             f'<a class="jump-link" href="#doc-page-{page_no}" '
             f'data-doc-jump="true" data-page="{page_no}" '
@@ -3100,7 +3976,49 @@ class ReportGenerator:
             f'data-highlight-text="{html.escape(str(snippet or ""))}" '
             f'data-packet-page="{html.escape(str(packet_page or ""))}" '
             f"data-highlight-rects='{rects_json}'>"
-            f'{html.escape(label)} · 第 {page_no} 页</a>'
+            f'{html.escape(label)} · 第 {display_page} 页</a>'
+        )
+
+    def _render_inline_citation(
+        self,
+        page: Any,
+        snippet: Any,
+        source_file: str = "",
+        packet_assets: Dict[str, Any] | None = None,
+        *,
+        strict_highlight: bool = False,
+        search_snippet: str = "",
+        index: int | None = None,
+    ) -> str:
+        """渲染行内角标引用，沿用统一正文跳转协议。"""
+        try:
+            page_no = int(page)
+        except (TypeError, ValueError):
+            page_no = 0
+        if page_no <= 0:
+            return ""
+        jump_payload = self._resolve_packet_jump_payload(
+            packet_assets or {},
+            source_file=source_file,
+            page=page_no,
+            snippet=str(search_snippet or snippet or ""),
+            strict_highlight=strict_highlight,
+        )
+        packet_page = jump_payload.get("packet_page")
+        rects_json = html.escape(json.dumps(jump_payload.get("highlight_rects") or [], ensure_ascii=False))
+        display_page = int(packet_page or page_no) if strict_highlight else page_no
+        title = f"查看原文 · 第 {display_page} 页"
+        index_html = f'<span class="inline-citation-index">{index}</span>' if index else ""
+        return (
+            f'<a class="inline-citation" href="#doc-page-{page_no}" '
+            f'data-doc-jump="true" data-page="{page_no}" '
+            f'data-file="{html.escape(str(source_file or ""))}" '
+            f'data-snippet="{html.escape(self._normalize_search_text(str(snippet or "")))}" '
+            f'data-highlight-text="{html.escape(str(snippet or ""))}" '
+            f'data-packet-page="{html.escape(str(packet_page or ""))}" '
+            f"data-highlight-rects='{rects_json}' "
+            f'title="{html.escape(title)}" aria-label="{html.escape(title)}">'
+            f'&#10078;{index_html}</a>'
         )
 
     def _render_document_jump_script(self, packet_assets: Dict[str, Any]) -> str:
@@ -3163,7 +4081,7 @@ class ReportGenerator:
               return Math.min(startPage + targetPage - 1, endPage || startPage + targetPage - 1);
             };
 
-            const postPacketJump = (page, highlightText, rects, fileName) => {
+            const postPacketJump = (page, highlightText, rects, fileName, options = {}) => {
               if (!packetFrame || !page) return;
               const payload = {
                 type: "gotoPacketTarget",
@@ -3172,7 +4090,7 @@ class ReportGenerator:
                 highlight_text: String(highlightText || ""),
                 highlight_rects: Array.isArray(rects) ? rects : [],
               };
-              if (!Array.isArray(rects) || !rects.length) {
+              if (!options.silent && (!Array.isArray(rects) || !rects.length)) {
                 showDocumentToast("未定位到精确片段，已跳转到对应页。");
               }
               const send = () => {
@@ -3239,6 +4157,7 @@ class ReportGenerator:
                   trigger.dataset.highlightText || "",
                   rects,
                   trigger.dataset.file || "",
+                  { silent: trigger.dataset.packetNav === "true" },
                 );
                 return;
               }
@@ -3264,13 +4183,18 @@ class ReportGenerator:
 
         rows = []
         for item in evidence:
+            citation = self._render_inline_citation(
+                item.get("page"),
+                item.get("snippet"),
+                str(item.get("file") or ""),
+                packet_assets,
+            )
             rows.append(
                 "<details class=\"fold\">"
                 f"<summary>{html.escape(str(item.get('source') or '证据'))} · 第 {html.escape(str(item.get('page') or '-'))} 页</summary>"
                 "<div class=\"fold-body\">"
                 f"<div><strong>文件：</strong>{html.escape(str(item.get('file') or '-'))}</div>"
-                f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}</div>"
-                f"<div class=\"jump-link-row\">{self._render_jump_link(item.get('page'), item.get('snippet'), str(item.get('file') or ''), packet_assets)}</div>"
+                f"<div><strong>片段：</strong>{html.escape(str(item.get('snippet') or '-'))}{citation}</div>"
                 "</div>"
                 "</details>"
             )
@@ -3313,17 +4237,23 @@ class ReportGenerator:
         cards: List[str] = []
         for item in expert_qna:
             citations = item.get("citations") or []
-            citation_html = "".join(
-                (
+            citation_rows: List[str] = []
+            for index, citation in enumerate(citations[:3], start=1):
+                citation_link = self._render_inline_citation(
+                    citation.get("page"),
+                    citation.get("snippet"),
+                    str(citation.get("file") or ""),
+                    packet_assets,
+                    index=index,
+                )
+                citation_rows.append(
                     "<div class=\"citation\">"
-                    f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页</div>"
+                    f"<div>页码：第 {html.escape(str(citation.get('page') or '-'))} 页{citation_link}</div>"
                     f"<div>文件：{html.escape(str(citation.get('file') or '-'))}</div>"
                     f"<div>片段：{html.escape(str(citation.get('snippet') or '-'))}</div>"
-                    f"<div class=\"jump-link-row\">{self._render_jump_link(citation.get('page'), citation.get('snippet'), str(citation.get('file') or ''), packet_assets)}</div>"
                     "</div>"
                 )
-                for citation in citations[:3]
-            ) or '<div class="empty">暂无可展示证据</div>'
+            citation_html = "".join(citation_rows) or '<div class="empty">暂无可展示证据</div>'
 
             cards.append(
                 "<div class=\"qa-card\">"
@@ -3348,7 +4278,7 @@ class ReportGenerator:
 
         default_port = os.getenv("APP_PORT", "8000")
         configured_api_base = str(os.getenv("EVALUATION_REPORT_API_BASE", "")).strip().rstrip("/")
-        default_api_base = configured_api_base or f"http://127.0.0.1:{default_port}"
+        default_api_base = configured_api_base
         if platform == "reward":
             suggestions = [
                 "这个奖励项目的主要科学发现是什么？",
@@ -3449,12 +4379,78 @@ class ReportGenerator:
 
             const configuredBase = shell.dataset.defaultApiBase || "";
             const configuredPort = shell.dataset.defaultPort || "";
+            const reportApiStorageKey = "tech_report_api_base";
+            const frontendApiStorageKey = "tech_api_base";
+
+            const normalizeBase = (value) => String(value || "").trim().replace(/\\/+$/, "");
+            const stripApiPrefix = (value) => normalizeBase(value).replace(/\\/api\\/v1$/, "");
+
+            const readQueryApiBase = () => {{
+              try {{
+                const params = new URLSearchParams(window.location.search || "");
+                return stripApiPrefix(params.get("apiBase") || params.get("api_base") || "");
+              }} catch (error) {{
+                return "";
+              }}
+            }};
+
+            const readStoredApiBase = () => {{
+              try {{
+                return stripApiPrefix(localStorage.getItem(reportApiStorageKey) || localStorage.getItem(frontendApiStorageKey) || "");
+              }} catch (error) {{
+                return "";
+              }}
+            }};
+
+            const rememberApiBase = (value) => {{
+              const normalized = stripApiPrefix(value);
+              if (!normalized) return;
+              try {{
+                localStorage.setItem(reportApiStorageKey, normalized);
+              }} catch (error) {{}}
+            }};
+
+            const isHttpPage = () => window.location.protocol === "http:" || window.location.protocol === "https:";
+            const isLoopbackBase = (value) => {{
+              try {{
+                const host = new URL(stripApiPrefix(value)).hostname;
+                return host === "127.0.0.1" || host === "localhost" || host === "::1";
+              }} catch (error) {{
+                return false;
+              }}
+            }};
+
+            const currentHostBackendBase = () => {{
+              if (!isHttpPage() || !window.location.hostname || !configuredPort) return "";
+              return `${{window.location.protocol}}//${{window.location.hostname}}:${{configuredPort}}`;
+            }};
+
+            const isLikelyStaticServer = () => {{
+              const port = String(window.location.port || "");
+              return ["5500", "5501", "5502", "5503", "5504", "5505", "5173", "5174", "4173", "3000"].includes(port);
+            }};
 
             const detectDefaultBase = () => {{
-              if (window.location.protocol === "http:" || window.location.protocol === "https:") {{
+              const queryBase = readQueryApiBase();
+              if (queryBase) {{
+                rememberApiBase(queryBase);
+                return queryBase;
+              }}
+
+              const storedBase = readStoredApiBase();
+              if (storedBase) return storedBase;
+
+              const configured = stripApiPrefix(configuredBase);
+              if (configured && !isLoopbackBase(configured)) return configured;
+
+              if (isHttpPage() && isLikelyStaticServer()) {{
+                return currentHostBackendBase() || window.location.origin;
+              }}
+
+              if (isHttpPage()) {{
                 return window.location.origin;
               }}
-              return configuredBase || `http://127.0.0.1:${{configuredPort || "8000"}}`;
+              return configured || `http://127.0.0.1:${{configuredPort || "8000"}}`;
             }};
 
             const apiBase = detectDefaultBase();
@@ -3586,45 +4582,123 @@ class ReportGenerator:
               return ["这项工作目前进展到什么程度了？", "申报书里有验证数据吗？", "这项技术有可能量产吗？"];
             }};
 
-            const buildCitationHtml = (citations = [], question = "") => {{
-              if (!citations.length) return "";
-              return `<div class="chat-citations">${{citations.map((citation, index) => `
-                <div class="chat-citation">
-                  <div class="chat-citation-head">
-                    <div class="chat-citation-label">证据 ${{index + 1}}</div>
-                    <div class="chat-citation-page">第 ${{escapeHtml(citation.page || "-")}} 页</div>
-                  </div>
-                  <div class="chat-citation-actions">
-                    <a
-                      class="jump-link"
-                      href="#doc-page-${{escapeHtml(citation.page || "-")}}"
-                      data-doc-jump="true"
-                      data-chat-citation="true"
-                      data-evaluation-id="${{escapeHtml(evaluationId)}}"
-                      data-page="${{escapeHtml(citation.page || "")}}"
-                      data-file="${{escapeHtml(citation.file || "")}}"
-                      data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
-                      data-highlight-text="${{escapeHtml(citation.snippet || "")}}"
-                      data-packet-page="${{escapeHtml(citation.packet_page || "")}}"
-                      data-highlight-rects='${{escapeHtml(JSON.stringify(citation.highlight_rects || []))}}'
-                    >查看原文</a>
-                  </div>
-                </div>
-              `).join("")}}</div>`;
+            const buildCitationLink = (citation, index) => {{
+              if (!citation) return "";
+              const page = citation.page || "-";
+              return `<a
+                class="inline-citation"
+                href="#doc-page-${{escapeHtml(page)}}"
+                data-doc-jump="true"
+                data-chat-citation="true"
+                data-evaluation-id="${{escapeHtml(evaluationId)}}"
+                data-page="${{escapeHtml(citation.page || "")}}"
+                data-file="${{escapeHtml(citation.file || "")}}"
+                data-snippet="${{escapeHtml(String(citation.snippet || '').replace(/\\s+/g, '').slice(0, 120))}}"
+                data-highlight-text="${{escapeHtml(citation.snippet || "")}}"
+                data-packet-page="${{escapeHtml(citation.packet_page || "")}}"
+                data-highlight-rects='${{escapeHtml(JSON.stringify(citation.highlight_rects || []))}}'
+                title="查看原文 · 第 ${{escapeHtml(page)}} 页"
+                aria-label="查看原文 · 第 ${{escapeHtml(page)}} 页"
+              >&#10078;<span class="inline-citation-index">${{index + 1}}</span></a>`;
+            }};
+
+            const buildCitationLinks = (citations = [], startIndex = 0) => {{
+              return citations.map((citation, index) => buildCitationLink(citation, startIndex + index)).join("");
+            }};
+
+            const findCitationInsertIndex = (text, citation) => {{
+              const candidates = [
+                citation.target_text,
+                citation.snippet,
+              ].filter(Boolean).map((value) => String(value).trim()).filter((value) => value.length >= 2);
+              for (const candidate of candidates) {{
+                const directIndex = text.indexOf(candidate);
+                if (directIndex >= 0) return directIndex + candidate.length;
+                const compactCandidate = candidate.replace(/\\s+/g, "");
+                if (compactCandidate.length < 3) continue;
+                for (let start = 0; start < text.length; start += 1) {{
+                  let cursor = start;
+                  let matched = "";
+                  while (cursor < text.length && matched.length < compactCandidate.length) {{
+                    const char = text[cursor];
+                    if (!/\\s/.test(char)) matched += char;
+                    cursor += 1;
+                  }}
+                  if (matched === compactCandidate) return cursor;
+                }}
+              }}
+              return -1;
+            }};
+
+            const renderBasisWithCitations = (text, entries = []) => {{
+              const source = String(text || "");
+              if (!entries.length) return escapeHtml(source);
+              const anchored = [];
+              const trailing = [];
+              entries.forEach((entry) => {{
+                const position = findCitationInsertIndex(source, entry.citation || {{}});
+                if (position >= 0) {{
+                  anchored.push({{ ...entry, position }});
+                }} else {{
+                  trailing.push(entry);
+                }}
+              }});
+              anchored.sort((left, right) => left.position - right.position || left.citationIndex - right.citationIndex);
+              let html = "";
+              let cursor = 0;
+              anchored.forEach((entry) => {{
+                const position = Math.max(cursor, Math.min(source.length, entry.position));
+                html += escapeHtml(source.slice(cursor, position));
+                html += buildCitationLink(entry.citation, entry.citationIndex);
+                cursor = position;
+              }});
+              html += escapeHtml(source.slice(cursor));
+              if (trailing.length) {{
+                html += trailing.map((entry) => buildCitationLink(entry.citation, entry.citationIndex)).join("");
+              }}
+              return html;
+            }};
+
+            const normalizeCitationTarget = (value) => String(value || "")
+              .replace(/\\s+/g, "")
+              .replace(/[，。；：、“”‘’（）()【】《》,.!?\\-]/g, "")
+              .trim();
+
+            const groupCitationsByBasis = (basisItems = [], citations = []) => {{
+              const groups = basisItems.map(() => []);
+              const used = new Set();
+              basisItems.forEach((item, basisIndex) => {{
+                const basisText = normalizeCitationTarget(item);
+                citations.forEach((citation, citationIndex) => {{
+                  if (used.has(citationIndex)) return;
+                  const target = normalizeCitationTarget(citation.target_text || citation.snippet || "");
+                  if (!target) return;
+                  if (
+                    basisText.includes(target) ||
+                    target.includes(basisText.slice(0, 32))
+                  ) {{
+                    groups[basisIndex].push({{ citation, citationIndex }});
+                    used.add(citationIndex);
+                  }}
+                }});
+              }});
+              return groups;
             }};
 
             const buildMessageHtml = (role, text, citations = [], followUps = [], question = "") => {{
               const parsed = role === "assistant" ? parseStructuredAnswer(text) : null;
-              const citationHtml = buildCitationHtml(citations, question);
               const followUpHtml = followUps.length
                 ? `<div class="chat-followups">${{followUps.map((item) => `<button type="button" class="chat-followup" data-question="${{escapeHtml(item)}}">${{escapeHtml(item)}}</button>`).join("")}}</div>`
                 : "";
 
               if (parsed) {{
                 const tag = detectQuestionTag(question);
+                const citationGroups = groupCitationsByBasis(parsed.basisItems, citations);
                 const basisHtml = parsed.basisItems.length
-                  ? `<ol class="chat-answer-list">${{parsed.basisItems.map((item) => `<li>${{escapeHtml(item)}}</li>`).join("")}}</ol>`
-                  : `<div class="chat-answer-text">${{escapeHtml(text)}}</div>`;
+                  ? `<ol class="chat-answer-list">${{parsed.basisItems.map((item, index) => {{
+                      return `<li>${{renderBasisWithCitations(item, citationGroups[index] || [])}}</li>`;
+                    }}).join("")}}</ol>`
+                  : `<div class="chat-answer-text">${{escapeHtml(text)}}${{buildCitationLinks(citations)}}</div>`;
                 const gapHtml = parsed.gap
                   ? `<section class="chat-answer-block"><div class="chat-answer-head">不足</div><div class="chat-answer-text">${{escapeHtml(parsed.gap)}}</div></section>`
                   : "";
@@ -3645,14 +4719,12 @@ class ReportGenerator:
                     </section>
                     ${{gapHtml}}
                   </div>
-                  ${{citationHtml}}
                   ${{followUpHtml}}
                 `;
               }}
               return `
                 <div class="chat-role">${{escapeHtml(role)}}</div>
-                <div class="chat-body">${{escapeHtml(text)}}</div>
-                ${{citationHtml}}
+                <div class="chat-body">${{escapeHtml(text)}}${{buildCitationLinks(citations)}}</div>
                 ${{followUpHtml}}
               `;
             }};
@@ -3725,7 +4797,6 @@ class ReportGenerator:
               }};
             }};
 
-            const normalizeBase = (value) => String(value || "").trim().replace(/\\/+$/, "");
             const apiRoot = normalizeBase(apiBase);
 
             const fetchWithFriendlyError = async (url, options, label) => {{
@@ -3998,6 +5069,7 @@ class ReportGenerator:
         source_file: str,
         page: int,
         snippet: str,
+        strict_highlight: bool = False,
     ) -> Dict[str, Any]:
         """把原文件页码与片段映射到统一 packet 页与高亮框"""
         packet_page = self._resolve_packet_page(packet_assets, source_file, page)
@@ -4006,9 +5078,15 @@ class ReportGenerator:
             packet_page,
             snippet,
             source_file=source_file,
+            strict_highlight=strict_highlight,
         )
+        resolved_packet_page = packet_page
+        if highlight_payload.get("rects") and highlight_payload.get("page"):
+            resolved_packet_page = int(highlight_payload.get("page") or packet_page)
+        elif not strict_highlight:
+            resolved_packet_page = int(highlight_payload.get("page") or packet_page)
         return {
-            "packet_page": highlight_payload.get("page") or packet_page,
+            "packet_page": resolved_packet_page,
             "highlight_rects": highlight_payload.get("rects") or [],
         }
 
@@ -4053,6 +5131,7 @@ class ReportGenerator:
         packet_page: int,
         snippet: str,
         source_file: str = "",
+        strict_highlight: bool = False,
     ) -> Dict[str, Any]:
         """在 packet 中搜索最可能的片段位置并生成高亮框"""
         if not isinstance(packet_assets, dict):
@@ -4060,15 +5139,75 @@ class ReportGenerator:
         packet_abs_path = str(packet_assets.get("packet_abs_path") or "").strip()
         if not packet_abs_path or not os.path.exists(packet_abs_path) or packet_page <= 0:
             return {"page": packet_page, "rects": []}
+        full_text = self._clean_highlight_scope_text(snippet)
         text = self._condense_highlight_text(snippet)
-        if not text:
+        if not text and not full_text:
             return {"page": packet_page, "rects": []}
-        candidates = self._build_packet_highlight_candidates(text)
+        range_candidates = self._build_packet_range_highlight_candidates(full_text)
+        candidates = self._build_strict_packet_highlight_candidates(text) if strict_highlight else self._build_packet_highlight_candidates(text)
         if not candidates:
             return {"page": packet_page, "rects": []}
 
         with fitz.open(packet_abs_path) as packet_doc:
             if packet_page > packet_doc.page_count:
+                return {"page": packet_page, "rects": []}
+            if strict_highlight:
+                range_page, range_rects = self._search_packet_pages_range_rects(
+                    packet_doc,
+                    [packet_page],
+                    range_candidates,
+                    min_hits=2,
+                )
+                if range_rects:
+                    return {"page": range_page or packet_page, "rects": range_rects}
+                _, _, rects = self._search_packet_pages_highlights(
+                    packet_doc,
+                    [packet_page],
+                    candidates,
+                    packet_page,
+                )
+                if rects:
+                    return {"page": packet_page, "rects": rects}
+                _, line_rects = self._search_packet_pages_line_rects(
+                    packet_doc,
+                    [packet_page],
+                    candidates,
+                    min_score=1000,
+                )
+                if line_rects:
+                    return {"page": packet_page, "rects": line_rects}
+
+                correction_pages = self._build_strict_packet_correction_pages(
+                    packet_assets,
+                    source_file,
+                    packet_page,
+                    packet_doc.page_count,
+                )
+                if correction_pages:
+                    range_page, range_rects = self._search_packet_pages_range_rects(
+                        packet_doc,
+                        correction_pages,
+                        range_candidates,
+                        min_hits=2,
+                    )
+                    if range_rects:
+                        return {"page": range_page or packet_page, "rects": range_rects}
+                    matched_page, _, rects = self._search_packet_pages_highlights(
+                        packet_doc,
+                        correction_pages,
+                        candidates,
+                        packet_page,
+                    )
+                    if rects:
+                        return {"page": matched_page or packet_page, "rects": rects}
+                    line_page, line_rects = self._search_packet_pages_line_rects(
+                        packet_doc,
+                        correction_pages,
+                        candidates,
+                        min_score=1000,
+                    )
+                    if line_rects:
+                        return {"page": line_page or packet_page, "rects": line_rects}
                 return {"page": packet_page, "rects": []}
             primary_pages, fallback_pages = self._build_packet_search_pages(
                 packet_assets,
@@ -4076,6 +5215,20 @@ class ReportGenerator:
                 packet_page,
                 packet_doc.page_count,
             )
+            range_page, range_rects = self._search_packet_pages_range_rects(
+                packet_doc,
+                primary_pages,
+                range_candidates,
+            )
+            if not range_rects and fallback_pages:
+                range_page, range_rects = self._search_packet_pages_range_rects(
+                    packet_doc,
+                    fallback_pages,
+                    range_candidates,
+                )
+            if range_rects:
+                return {"page": range_page or packet_page, "rects": range_rects}
+
             matched_page, _, rects = self._search_packet_pages_highlights(
                 packet_doc,
                 primary_pages,
@@ -4106,6 +5259,65 @@ class ReportGenerator:
             if line_rects:
                 return {"page": line_page or packet_page, "rects": line_rects}
         return {"page": packet_page, "rects": []}
+
+    def _build_strict_packet_correction_pages(
+        self,
+        packet_assets: Dict[str, Any],
+        source_file: str,
+        packet_page: int,
+        packet_page_count: int,
+    ) -> List[int]:
+        """DOCX 转 PDF 后解析页码可能偏移，只在同一源文件页段内做校正。"""
+        page_range = self._resolve_source_packet_range(packet_assets, source_file)
+        if not page_range:
+            return []
+        start_page, end_page = page_range
+        if start_page > end_page:
+            start_page, end_page = end_page, start_page
+        start_page = max(1, start_page)
+        end_page = min(packet_page_count, end_page)
+        pages = [page for page in range(start_page, end_page + 1) if page != packet_page]
+        return sorted(pages, key=lambda page: abs(page - packet_page))
+
+    def _build_strict_packet_highlight_candidates(self, text: str) -> List[str]:
+        """奖励维度证据只用明确长片段高亮，避免公共短词乱命中。"""
+        normalized = self._clean_reward_preview_text(str(text or ""))
+        normalized = re.sub(r"\s+", " ", normalized).strip(" -:：;；,.，。")
+        if not normalized:
+            return []
+        candidates: List[str] = []
+        for pattern in (
+            r"[一二三四五六七八九十]+、[^。；;\n]{4,32}(?:情况表|目录|项目简介|项目详细内容|客观评价|附件)",
+            r"(?:主要完成人情况表|主要完成单位情况表|代表性论文\(?专著\)?目录|被他人引用情况|主要附件目录|项目详细内容|客观评价|项目简介)",
+        ):
+            for match in re.finditer(pattern, normalized):
+                candidate = match.group(0).strip()
+                if candidate:
+                    candidates.append(candidate)
+        compact = re.sub(r"\s+", "", normalized)
+        if len(compact) >= 6:
+            candidates.append(normalized)
+        for line in re.split(r"[\n\r]+", normalized):
+            line = line.strip(" -:：;；,.，。")
+            if len(re.sub(r"\s+", "", line)) >= 8:
+                candidates.append(line)
+        for part in re.split(r"[|｜;；]", normalized):
+            part = part.strip(" -:：;；,.，。")
+            if len(re.sub(r"\s+", "", part)) >= 8:
+                candidates.append(part)
+        if re.search(r"[\u4e00-\u9fff]", compact) and len(compact) >= 12:
+            candidates.extend(self._build_chinese_fragment_candidates(compact)[:6])
+        deduped: List[str] = []
+        seen = set()
+        for candidate in sorted(candidates, key=lambda value: len(re.sub(r"\s+", "", value)), reverse=True):
+            key = re.sub(r"\s+", "", candidate)[:120]
+            if len(key) < 6 or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate[:120])
+            if len(deduped) >= 8:
+                break
+        return deduped
 
     def _build_packet_highlight_candidates(self, text: str) -> List[str]:
         """为 packet 检索生成逐级降级候选文本"""
@@ -4145,6 +5357,55 @@ class ReportGenerator:
             seen.add(key)
             deduped.append(candidate[:120])
             if len(deduped) >= 12:
+                break
+        return deduped
+
+    def _clean_highlight_scope_text(self, text: str) -> str:
+        """清理完整证据文本，用于生成视觉高亮范围。"""
+        value = self._clean_reward_preview_text(str(text or ""))
+        value = re.sub(r"\[[^\]]{1,24}\]", " ", value)
+        value = re.sub(r"\s+", " ", value).strip(" -:：;；,.，。")
+        return value
+
+    def _build_packet_range_highlight_candidates(self, text: str) -> List[str]:
+        """为完整证据范围生成多个较长片段，命中多个片段后高亮整段相关行。"""
+        normalized = self._clean_highlight_scope_text(text)
+        compact = re.sub(r"\s+", "", normalized)
+        if len(compact) < 18:
+            return []
+
+        candidates: List[str] = []
+        for part in re.split(r"[。；;\n\r]", normalized):
+            part = part.strip(" -:：;；,.，。")
+            part_compact = re.sub(r"\s+", "", part)
+            if len(part_compact) >= 18:
+                candidates.append(part)
+
+        for part in re.split(r"[|｜]", normalized):
+            part = part.strip(" -:：;；,.，。")
+            part_compact = re.sub(r"\s+", "", part)
+            if len(part_compact) >= 18:
+                candidates.append(part)
+
+        if len(compact) >= 24:
+            for window in (42, 32, 24):
+                if len(compact) < window:
+                    continue
+                step = max(10, window // 2)
+                for start in range(0, len(compact) - window + 1, step):
+                    candidates.append(compact[start:start + window])
+                candidates.append(compact[-window:])
+
+        deduped: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            key = re.sub(r"\s+", "", candidate)
+            key = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", key)
+            if len(key) < 18 or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate[:160])
+            if len(deduped) >= 16:
                 break
         return deduped
 
@@ -4257,6 +5518,7 @@ class ReportGenerator:
             for candidate in normalized_candidates:
                 search_hits = page.search_for(candidate)
                 if search_hits:
+                    search_hits = self._filter_nearby_search_hits(search_hits, page_rect)
                     rect_payload = self._merge_highlight_rects(search_hits[:6], page_rect)
                     if not rect_payload:
                         continue
@@ -4283,6 +5545,106 @@ class ReportGenerator:
                 best_rects = matched_rects
         return best_page, best_text, best_rects
 
+    def _filter_nearby_search_hits(self, hits: List[fitz.Rect], page_rect: fitz.Rect) -> List[fitz.Rect]:
+        """去掉同一候选在页面远处产生的孤立碎片，避免高亮框跨到无关区域。"""
+        if len(hits) <= 1 or page_rect.height <= 0:
+            return hits
+        ordered = sorted((fitz.Rect(hit) for hit in hits), key=lambda rect: (rect.y0, rect.x0))
+        first = ordered[0]
+        max_vertical_span = page_rect.height * 0.08
+        nearby = [rect for rect in ordered if rect.y0 <= first.y1 + max_vertical_span]
+        return nearby or ordered[:1]
+
+    def _filter_dense_search_hits(self, hits: List[fitz.Rect], page_rect: fitz.Rect) -> List[fitz.Rect]:
+        """保留最密集的连续命中区域，剔除远处孤立重复命中。"""
+        if len(hits) <= 2 or page_rect.height <= 0:
+            return hits
+        ordered = sorted((fitz.Rect(hit) for hit in hits), key=lambda rect: (rect.y0, rect.x0))
+        max_vertical_span = page_rect.height * 0.08
+        best_group: List[fitz.Rect] = []
+        for index, rect in enumerate(ordered):
+            group = [item for item in ordered[index:] if item.y0 <= rect.y1 + max_vertical_span]
+            if len(group) > len(best_group):
+                best_group = group
+        return best_group or ordered
+
+    def _search_packet_pages_range_rects(
+        self,
+        packet_doc: fitz.Document,
+        page_numbers: List[int],
+        candidates: List[str],
+        min_hits: int = 2,
+    ) -> tuple[int | None, List[Dict[str, float]]]:
+        """按完整证据候选定位多个相关行，返回覆盖范围更完整的高亮框。"""
+        if not candidates:
+            return None, []
+        best_page: int | None = None
+        best_rects: List[Dict[str, float]] = []
+        best_score = 0
+
+        for page_number in page_numbers:
+            if page_number <= 0 or page_number > packet_doc.page_count:
+                continue
+            page = packet_doc.load_page(page_number - 1)
+            page_rect = page.rect
+            if page_rect.width <= 0 or page_rect.height <= 0:
+                continue
+
+            direct_rects: List[fitz.Rect] = []
+            direct_hits = 0
+            for candidate in candidates:
+                hits = page.search_for(candidate)
+                if not hits:
+                    continue
+                direct_hits += 1
+                direct_rects.extend(hits[:4])
+            if direct_hits >= min_hits and direct_rects:
+                direct_rects = self._filter_dense_search_hits(direct_rects, page_rect)
+                rects = self._merge_highlight_rects(direct_rects[:12], page_rect)
+                score = direct_hits * 1000 + len(rects) * 20
+                if rects and score > best_score:
+                    best_score = score
+                    best_page = page_number
+                    best_rects = rects
+                continue
+
+            line_items = self._extract_page_line_items(page)
+            if not line_items:
+                continue
+            matched_lines: List[fitz.Rect] = []
+            matched_indexes: set[int] = set()
+            hit_count = 0
+            for candidate in candidates:
+                normalized_candidate = self._normalize_packet_text(candidate)
+                if len(normalized_candidate) < 12:
+                    continue
+                for index, item in enumerate(line_items):
+                    normalized_line = item["normalized_text"]
+                    if not normalized_line:
+                        continue
+                    if normalized_candidate in normalized_line or normalized_line in normalized_candidate:
+                        score = min(len(normalized_candidate), len(normalized_line))
+                    else:
+                        score = self._shared_substring_score(normalized_candidate, normalized_line)
+                    if score < 10:
+                        continue
+                    hit_count += 1
+                    matched_indexes.add(index)
+                    break
+            if hit_count < min_hits or not matched_indexes:
+                continue
+
+            for index in sorted(matched_indexes):
+                matched_lines.append(fitz.Rect(line_items[index]["rect"]))
+            rects = self._merge_highlight_rects(matched_lines[:14], page_rect)
+            score = hit_count * 1000 + len(rects) * 20
+            if rects and score > best_score:
+                best_score = score
+                best_page = page_number
+                best_rects = rects
+
+        return best_page, best_rects[:8]
+
     def _condense_highlight_text(self, snippet: str, max_len: int = 180) -> str:
         """压缩片段文本，避免长段导致高亮漂移"""
         text = re.sub(r"\s+", " ", str(snippet or "")).strip()
@@ -4295,6 +5657,7 @@ class ReportGenerator:
         packet_doc: fitz.Document,
         page_numbers: List[int],
         candidates: List[str],
+        min_score: int = 600,
     ) -> tuple[int | None, List[Dict[str, float]]]:
         """当 search_for 失败时，退化为行级近似匹配"""
         best_page: int | None = None
@@ -4307,7 +5670,7 @@ class ReportGenerator:
             page_rect = page.rect
             if page_rect.width <= 0 or page_rect.height <= 0:
                 continue
-            line_rect, score = self._find_line_rect_by_candidates(page, candidates)
+            line_rect, score = self._find_line_rect_by_candidates(page, candidates, min_score=min_score)
             if line_rect is None or score <= best_score:
                 continue
             best_page = page_number
@@ -4315,7 +5678,12 @@ class ReportGenerator:
             best_rects = self._merge_highlight_rects([line_rect], page_rect)
         return best_page, best_rects
 
-    def _find_line_rect_by_candidates(self, page: fitz.Page, candidates: List[str]) -> tuple[fitz.Rect | None, int]:
+    def _find_line_rect_by_candidates(
+        self,
+        page: fitz.Page,
+        candidates: List[str],
+        min_score: int = 600,
+    ) -> tuple[fitz.Rect | None, int]:
         """按行文本近似匹配候选片段"""
         line_items = self._extract_page_line_items(page)
         if not line_items:
@@ -4337,7 +5705,7 @@ class ReportGenerator:
                 if score > best_score:
                     best_score = score
                     best_rect = fitz.Rect(item["rect"])
-        if best_score < 600:
+        if best_score < min_score:
             return None, 0
         return best_rect, best_score
 
@@ -4459,10 +5827,12 @@ class ReportGenerator:
             else:
                 merged.append(current)
 
+        display_rects = self._merge_highlight_rects_to_display_blocks(merged, page_rect)
+
         result: List[Dict[str, float]] = []
         pad_x = page_rect.width * 0.012
         pad_y = page_rect.height * 0.008
-        for rect in merged[:4]:
+        for rect in display_rects[:4]:
             expanded = fitz.Rect(
                 max(page_rect.x0, rect.x0 - pad_x),
                 max(page_rect.y0, rect.y0 - pad_y),
@@ -4478,6 +5848,48 @@ class ReportGenerator:
                 }
             )
         return result
+
+    def _merge_highlight_rects_to_display_blocks(
+        self,
+        rects: List[fitz.Rect],
+        page_rect: fitz.Rect,
+    ) -> List[fitz.Rect]:
+        """把连续证据行合成一个展示框，避免一段证据被切成多条高亮。"""
+        if len(rects) <= 1 or page_rect.width <= 0 or page_rect.height <= 0:
+            return rects
+
+        sorted_rects = sorted((fitz.Rect(rect) for rect in rects), key=lambda rect: (rect.y0, rect.x0))
+        blocks: List[fitz.Rect] = []
+        max_line_gap = page_rect.height * 0.045
+        max_block_height = page_rect.height * 0.38
+        max_block_width = page_rect.width * 0.96
+
+        for rect in sorted_rects:
+            if not blocks:
+                blocks.append(rect)
+                continue
+            current = blocks[-1]
+            proposed = fitz.Rect(
+                min(current.x0, rect.x0),
+                min(current.y0, rect.y0),
+                max(current.x1, rect.x1),
+                max(current.y1, rect.y1),
+            )
+            vertical_close = rect.y0 <= current.y1 + max_line_gap
+            horizontal_overlap = max(0.0, min(current.x1, rect.x1) - max(current.x0, rect.x0))
+            min_width = max(1.0, min(current.width, rect.width))
+            same_column = (
+                horizontal_overlap / min_width >= 0.2
+                or abs(current.x0 - rect.x0) <= page_rect.width * 0.14
+                or abs(current.x1 - rect.x1) <= page_rect.width * 0.14
+            )
+            block_not_too_large = proposed.height <= max_block_height and proposed.width <= max_block_width
+            if vertical_close and same_column and block_not_too_large:
+                blocks[-1] = proposed
+            else:
+                blocks.append(rect)
+
+        return blocks
 
     def _extract_project_name_from_payload(self, payload: Dict[str, Any]) -> str:
         """尽量从现有调试载荷中提取真实项目名称，避免 index 回退成文件名"""
@@ -4543,17 +5955,21 @@ class ReportGenerator:
             text = str(item)
             evidence = evidence_map.get((category, text))
             meta_html = ""
+            citation = ""
             if evidence:
                 page = evidence.get("page")
                 snippet = evidence.get("snippet") or ""
-                meta_html = (
-                    f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
-                    f'<div class="jump-link-row">{self._render_jump_link(page, snippet, str(evidence.get("file") or ""), packet_assets)}</div>'
+                citation = self._render_inline_citation(
+                    page,
+                    snippet,
+                    str(evidence.get("file") or ""),
+                    packet_assets,
                 )
+                meta_html = f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
             rows.append(
                 f"""
                 <div class="highlight-item">
-                  <div class="highlight-item-text">{html.escape(text)}</div>
+                  <div class="highlight-item-text">{html.escape(text)}{citation}</div>
                   {meta_html}
                 </div>
                 """
@@ -4576,19 +5992,18 @@ class ReportGenerator:
         for text in cleaned:
             evidence = evidence_by_text.get(text)
             meta_html = ""
+            citation = ""
             if evidence:
                 page = evidence.get("page")
                 snippet = evidence.get("snippet") or text
                 highlight_snippet = evidence.get("highlight_snippet") or snippet
                 source_file = str(evidence.get("file") or "")
-                jump_link = self._render_jump_link(page, highlight_snippet, source_file, packet_assets)
+                citation = self._render_inline_citation(page, highlight_snippet, source_file, packet_assets)
                 meta_html = f'<div class="highlight-item-evidence">证据：{html.escape(str(snippet))}</div>'
-                if jump_link:
-                    meta_html += f'<div class="jump-link-row">{jump_link}</div>'
             rows.append(
                 f"""
                 <div class="highlight-item">
-                  <div class="highlight-item-text">{html.escape(text)}</div>
+                  <div class="highlight-item-text">{html.escape(text)}{citation}</div>
                   {meta_html}
                 </div>
                 """
@@ -5073,18 +6488,21 @@ class ReportGenerator:
             source = str(item.get("source") or "").strip().lower()
             source_label = self.BENCHMARK_SOURCE_LABELS.get(source, "参考")
             year = str(item.get("year") or "").strip()
-            meta_parts = [source_label]
+            source_text = source if str(item.get("url") or "").strip() else source_label
+            parts = [source_text or source_label, title]
             if year:
-                meta_parts.append(year)
+                parts.append(year)
+            label_parts = [source_label]
+            if year:
+                label_parts.append(year)
+            label_text = " · ".join(label_parts)
             rows.append(
-                '<div class="benchmark-reference-item">'
-                f'<div class="benchmark-reference-title">{index}. {html.escape(title)}</div>'
-                f'<div class="benchmark-reference-meta">{" · ".join(html.escape(part) for part in meta_parts)}</div>'
-                '</div>'
+                f'<div class="flat-item benchmark-reference-item">{index}. {html.escape(" / ".join(parts))}'
+                f'<span class="benchmark-reference-meta">（{html.escape(label_text)}）</span></div>'
             )
         if not rows:
             return '<div class="empty">暂无参考条目</div>'
-        return '<div class="benchmark-reference-list">' + "".join(rows) + "</div>"
+        return '<div class="flat-list">' + "".join(rows) + "</div>"
 
     def _render_errors(self, errors: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
         error_html = self._render_list(

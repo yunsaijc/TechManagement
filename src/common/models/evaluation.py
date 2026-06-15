@@ -399,6 +399,9 @@ class ChatCitation(BaseModel):
     file: str = Field(default="", description="文件名")
     page: int = Field(default=0, ge=0, description="页码")
     snippet: str = Field(default="", description="引用片段")
+    label: str = Field(default="", description="引用事实点")
+    target_text: str = Field(default="", description="引用对应的回答文本")
+    source_section: str = Field(default="", description="引用来源章节")
     packet_page: int = Field(default=0, ge=0, description="统一材料页码")
     highlight_rects: List[Dict[str, float]] = Field(default_factory=list, description="统一材料高亮框")
 

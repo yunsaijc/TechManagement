@@ -46,6 +46,7 @@ from .chat import ChatIndexer, EvaluationQAAgent
 from .highlight import HighlightExtractor, IndustryFitAnalyzer
 from .parsers import DocumentParser
 from .platforms import RewardEvaluationAdapter
+from .platforms.reward_scoring import apply_reward_scoring_adjustments
 from .packet_builder import EvaluationPacketBuilder
 from .profile import PROFILE_GENERIC, ProjectProfileResult, ProjectProfiler, RubricManager
 from .scorers import EvaluationScorer, ReportGenerator
@@ -198,7 +199,11 @@ class EvaluationAgent:
             dimension_contexts=dimension_contexts,
         )
 
-        check_results = module_outputs.get("checks", [])
+        check_results = apply_reward_scoring_adjustments(
+            module_outputs.get("checks", []),
+            sections=sections,
+            options=request.options,
+        )
         result = self.scorer.build_result(
             project_id=request.project_id,
             project_name=project_name or sections.get("项目名称") or meta.get("file_name") or None,
@@ -432,6 +437,7 @@ class EvaluationAgent:
             source_file=str(file or ""),
             page=int(page or 0),
             snippet=str(snippet or ""),
+            strict_highlight=True,
         )
         response = EvaluationCitationHighlightResponse(
             packet_page=int(jump_payload.get("packet_page") or 0),
@@ -1102,10 +1108,12 @@ class EvaluationAgent:
             page_chunks=page_chunks,
         )
         attachment_files = meta.get("attachment_files") or []
+        material_titles = self._build_material_title_lookup(meta)
         attachments = [
             {
                 "file_ref": str(path),
                 "file_name": Path(str(path)).name,
+                "title": material_titles.get(str(path)) or material_titles.get(Path(str(path)).name) or "",
                 "doc_kind": "",
             }
             for path in attachment_files
@@ -1142,6 +1150,35 @@ class EvaluationAgent:
         await self.report_generator.build_from_debug_file_async(json_path, html_path, debug_mode=False)
         await self.report_generator.build_from_debug_file_async(json_path, debug_html_path, debug_mode=True)
         self._refresh_debug_index(debug_dir)
+
+    def _build_material_title_lookup(self, meta: Dict[str, Any]) -> Dict[str, str]:
+        """从奖励材料分组中提取可读材料标题。"""
+        groups = meta.get("reward_local_material_groups") or meta.get("reward_material_groups") or {}
+        if not isinstance(groups, dict):
+            return {}
+        lookup: Dict[str, str] = {}
+        for group_name, items in groups.items():
+            if not isinstance(items, list):
+                continue
+            for index, item in enumerate(items, start=1):
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or "").strip()
+                if not title:
+                    continue
+                display_title = "提名书" if str(group_name or "") == "主材料" and title == "提名书" else f"{index:02d}. {title}"
+                for field in ("local_path", "path", "file_name"):
+                    value = str(item.get(field) or "").strip()
+                    if not value:
+                        continue
+                    normalized = value.replace("\\", "/")
+                    basename = Path(normalized).name
+                    lookup.setdefault(value, display_title)
+                    lookup.setdefault(normalized, display_title)
+                    if basename:
+                        lookup.setdefault(basename, display_title)
+                        lookup.setdefault(re.sub(r"^\d{3}_", "", basename), display_title)
+        return lookup
 
     async def _build_expert_qna(
         self,

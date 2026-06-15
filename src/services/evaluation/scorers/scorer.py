@@ -51,6 +51,8 @@ class EvaluationScorer:
         weighted_sum = 0.0
         
         for dim_score in dimension_scores:
+            if (dim_score.details or {}).get("exclude_from_total"):
+                continue
             weight = dim_score.weight
             total_weight += weight
             weighted_sum += dim_score.score * weight
@@ -91,6 +93,9 @@ class EvaluationScorer:
         if weight is None:
             weight = self.weights.get(check_result.dimension, 0.1)
         
+        if (check_result.details or {}).get("exclude_from_total"):
+            weight = 0.0
+
         weighted_score = round(check_result.score * weight, 3)
         
         return DimensionScore(

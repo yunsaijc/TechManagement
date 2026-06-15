@@ -28,6 +28,16 @@ def _write_multi_page_pdf(path: Path, page_texts: list[str]) -> None:
     doc.close()
 
 
+def _write_multiline_pdf(path: Path, lines: list[str]) -> None:
+    """写入多行 PDF，供完整证据范围高亮测试使用"""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    for index, line in enumerate(lines):
+        page.insert_text((72, 96 + index * 24), line, fontsize=14)
+    doc.save(path)
+    doc.close()
+
+
 def _build_debug_payload(chat_ready: bool = True) -> dict:
     """构造最小调试载荷"""
     return {
@@ -110,7 +120,11 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert "/api/v1/evaluation/chat/citation-highlight" in html
     assert 'data-evaluation-id="EVAL_DEMO"' in html
     expected_port = os.getenv("APP_PORT", "8000")
-    assert f'data-default-api-base="http://127.0.0.1:{expected_port}"' in html
+    assert 'data-default-api-base=""' in html
+    assert f'data-default-port="{expected_port}"' in html
+    assert 'params.get("apiBase")' in html
+    assert "tech_report_api_base" in html
+    assert "currentHostBackendBase" in html
     assert "return window.location.origin;" in html
     assert "请确认正文评审服务已启动" in html
     assert "研究目标是什么" in html
@@ -132,10 +146,40 @@ def test_report_generator_formal_html_contains_interactive_chat_panel():
     assert 'eventName === "status"' in html
     assert "streamMessage.setPhase" in html
     assert "setProgressState" in html
-    assert "chat-citation-label" in html
+    assert "buildCitationLink" in html
+    assert "buildCitationLinks" in html
+    assert "chat-citation-label" not in html
     assert "chat-citation-snippet" not in html
     assert "chat-live-skeleton" in html
     assert "text/event-stream" not in html
+
+
+def test_report_generator_chat_extra_citations_attach_to_last_basis_item():
+    """聊天证据多于依据时，应按目标文本分组，不单独空行展示。"""
+    generator = ReportGenerator()
+
+    html = generator.build_html(_build_debug_payload(), debug_mode=False)
+
+    assert "extraCitationHtml" not in html
+    assert "groupCitationsByBasis" in html
+    assert "citation.target_text" in html
+
+
+def test_report_generator_reward_html_hides_benchmark_without_affecting_project():
+    """奖励平台不展示技术摸底；计划项目仍保留该模块。"""
+    generator = ReportGenerator()
+    reward_payload = _build_debug_payload()
+    reward_payload["meta"] = {"platform": "reward"}
+
+    reward_html = generator.build_html(reward_payload, debug_mode=False)
+    project_html = generator.build_html(_build_debug_payload(), debug_mode=False)
+
+    assert 'data-tab-target="report-benchmark"' not in reward_html
+    assert 'id="report-benchmark"' not in reward_html
+    assert "技术摸底" not in reward_html
+    assert 'data-tab-target="report-benchmark"' in project_html
+    assert 'id="report-benchmark"' in project_html
+    assert "技术摸底" in project_html
 
 
 def test_report_generator_benchmark_uses_readable_chinese_labels_and_reference_cards():
@@ -246,6 +290,202 @@ def test_report_generator_dimension_detail_filters_neutral_notes_from_issues_and
     assert "已覆盖科普基础设施建设、科普内容产出等实施内容" in html
 
 
+def test_report_generator_reward_dimension_corrects_docx_packet_page_with_structured_evidence(tmp_path):
+    """奖励维度证据应按结构化来源校正 DOCX packet 页，并保持页码与高亮一致。"""
+    packet_path = tmp_path / "packet.pdf"
+    _write_multi_page_pdf(
+        packet_path,
+        [
+            "cover",
+            "source page one",
+            "SCI included 3 papers",
+            "mapped source page without target",
+        ],
+    )
+    generator = ReportGenerator()
+    payload = _build_debug_payload()
+    payload["meta"] = {"platform": "reward"}
+    payload["packet_assets"] = {
+        "packet_abs_path": str(packet_path),
+        "page_map": [
+            {
+                "source_file": "reward.docx",
+                "source_kind": "proposal",
+                "start_page": 3,
+                "end_page": 4,
+            }
+        ],
+    }
+    payload["page_chunks"] = [
+        {
+            "id": 1,
+            "file": "reward.docx",
+            "page": 2,
+            "section": "代表性论文",
+            "text": "SCI included 3 papers and citation data.",
+        }
+    ]
+    payload["result"]["dimension_scores"] = [
+        {
+            "dimension": "outcome",
+            "dimension_name": "代表性成果",
+            "score": 7.5,
+            "weight": 0.2,
+            "opinion": "材料已通过 SCI 收录支撑代表性成果判断，证据较充分。主要依据：材料体现 SCI 收录 3 篇。",
+            "issues": [],
+            "highlights": ["材料体现 SCI 收录 3 篇"],
+            "details": {
+                "reward_scoring_adjusted": True,
+                "evidence_items": [
+                    {
+                        "claim": "SCI 收录",
+                        "basis": "材料体现 SCI 收录 3 篇",
+                        "source_section": "代表性论文",
+                        "source_text": "SCI included 3 papers and citation data.",
+                        "highlight_text": "SCI included 3 papers",
+                    }
+                ],
+            },
+        }
+    ]
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert "证据：SCI included 3 papers and citation data." in html
+    assert 'data-page="2"' in html
+    assert 'data-packet-page="3"' in html
+    assert 'class="inline-citation"' in html
+    assert "查看原文 · 第 3 页" in html
+    assert "data-highlight-rects='[]" not in html
+
+
+def test_report_generator_reward_dimension_highlight_uses_precise_fact_not_context(tmp_path):
+    """奖励证据展示可保留上下文，但 PDF 高亮只定位事实句。"""
+    packet_path = tmp_path / "packet.pdf"
+    _write_multi_page_pdf(
+        packet_path,
+        [
+            "cover",
+            (
+                "三价早熟疫苗能够提供抗球虫病的免疫保护。"
+                "该项目形成代表性论文6篇，其中SCI收录3篇，引用64次，他引53次，"
+                "为球虫的虫种鉴定与早熟活疫苗的研究提供了可靠的理论依据。"
+            ),
+        ],
+    )
+    generator = ReportGenerator()
+    payload = _build_debug_payload()
+    payload["meta"] = {"platform": "reward"}
+    payload["packet_assets"] = {
+        "packet_abs_path": str(packet_path),
+        "page_map": [
+            {
+                "source_file": "reward.docx",
+                "source_kind": "proposal",
+                "start_page": 2,
+                "end_page": 2,
+            }
+        ],
+    }
+    source_text = (
+        "三价早熟疫苗能够提供抗球虫病的免疫保护。"
+        "该项目形成代表性论文6篇，其中SCI收录3篇，引用64次，他引53次，"
+        "为球虫的虫种鉴定与早熟活疫苗的研究提供了可靠的理论依据。"
+    )
+    payload["page_chunks"] = [
+        {
+            "id": 1,
+            "file": "reward.docx",
+            "page": 1,
+            "section": "项目简介（限1200字）",
+            "text": source_text,
+        }
+    ]
+    payload["result"]["dimension_scores"] = [
+        {
+            "dimension": "outcome",
+            "dimension_name": "代表性成果",
+            "score": 7.5,
+            "weight": 0.2,
+            "opinion": "材料已通过代表性论文支撑成果判断，证据较充分。主要依据：形成代表性论文6篇。",
+            "issues": [],
+            "highlights": ["形成代表性论文6篇"],
+            "details": {
+                "reward_scoring_adjusted": True,
+                "evidence_items": [
+                    {
+                        "claim": "代表性论文",
+                        "basis": "形成代表性论文6篇",
+                        "source_section": "项目简介（限1200字）",
+                        "source_text": source_text,
+                        "highlight_text": "代表性论文",
+                    }
+                ],
+            },
+        }
+    ]
+
+    html = generator.build_html(payload, debug_mode=False)
+
+    assert "证据：三价早熟疫苗能够提供抗球虫病的免疫保护" in html
+    assert 'data-highlight-text="形成代表性论文6篇，其中SCI收录3篇，引用64次，他引53次，为球虫的虫种鉴定与早熟活疫苗的研究提供了可靠的理论依据"' in html
+    highlight_attr = html.split('data-highlight-text="', 1)[1].split('"', 1)[0]
+    assert "三价早熟疫苗能够提供抗球虫病的免疫保护" not in highlight_attr
+
+
+def test_report_generator_reward_dimension_weak_highlight_uses_sentence_not_tiny_word():
+    """弱标签命中时应高亮所在短句，不能只高亮两三个字。"""
+    generator = ReportGenerator()
+
+    highlight = generator._build_reward_precise_highlight_snippet(
+        "兔球虫病是一类寄生性原虫病，给养兔业造成重大经济损失，对我国养兔业危害较严重。",
+        "养兔业",
+    )
+
+    assert highlight == "兔球虫病是一类寄生性原虫病，给养兔业造成重大经济损失，对我国养兔业危害较严重。"
+
+
+def test_report_generator_packet_highlight_prefers_full_evidence_range(tmp_path):
+    """长证据应优先高亮完整相关范围，且连续文本尽量合成一个展示框。"""
+    packet_path = tmp_path / "packet.pdf"
+    _write_multiline_pdf(
+        packet_path,
+        [
+            "Project team materials are listed below.",
+            "Main contributor form includes member information.",
+            "Completion unit is Hebei North University with unit statement.",
+            "Work unit statement confirms materials are valid.",
+        ],
+    )
+    generator = ReportGenerator()
+
+    payload = generator._resolve_packet_jump_payload(
+        {
+            "packet_abs_path": str(packet_path),
+            "page_map": [
+                {
+                    "source_file": "reward.docx",
+                    "source_kind": "proposal",
+                    "start_page": 1,
+                    "end_page": 1,
+                }
+            ],
+        },
+        "reward.docx",
+        1,
+        (
+            "Main contributor form includes member information. "
+            "Completion unit is Hebei North University with unit statement. "
+            "Work unit statement confirms materials are valid."
+        ),
+        strict_highlight=True,
+    )
+
+    assert payload["packet_page"] == 1
+    assert len(payload["highlight_rects"]) == 1
+    assert payload["highlight_rects"][0]["h"] > 0.08
+
+
 def test_report_generator_formal_html_flattens_result_panel_shells():
     """正式报告右侧结果区不应再叠加多层 panel 容器"""
     generator = ReportGenerator()
@@ -350,9 +590,10 @@ def test_report_generator_reward_overview_cleans_docx_table_markers():
     assert "成果支撑" in html
     assert "兔球虫病是一类由艾美耳属兔球虫引起的寄生性原虫病" in html
     assert "证据：" in html
-    assert 'class="jump-link"' in html
+    assert 'class="inline-citation"' in html
     assert 'data-file="reward.docx"' in html
     overview_html = html.split('id="report-overview"', 1)[1].split('id="report-dimensions"', 1)[0]
+    assert 'class="jump-link-row"' not in overview_html
     visible_evidence = overview_html.split('data-highlight-text="', 1)[0]
     assert ("无关开头。" * 20) not in visible_evidence
     assert ("无关开头。" * 20) not in overview_html
@@ -516,6 +757,24 @@ def test_report_generator_formal_html_prefers_packet_viewer_when_available():
     generator = ReportGenerator()
 
     payload = _build_debug_payload()
+    payload["meta"] = {
+        "reward_local_material_groups": {
+            "主材料": [
+                {
+                    "title": "提名书",
+                    "file_name": "demo.pdf",
+                    "local_path": "/tmp/demo.pdf",
+                }
+            ],
+            "相关佐证材料": [
+                {
+                    "title": "成果证明材料",
+                    "file_name": "proof.pdf",
+                    "local_path": "/tmp/proof.pdf",
+                }
+            ],
+        }
+    }
     payload["packet_assets"] = {
         "viewer_file": "projects/demo-project/packet_viewer.html",
         "packet_abs_path": "/tmp/demo-project/evaluation_packet.pdf",
@@ -526,6 +785,13 @@ def test_report_generator_formal_html_prefers_packet_viewer_when_available():
                 "source_kind": "proposal",
                 "start_page": 1,
                 "end_page": 3,
+            },
+            {
+                "source_file": "/tmp/proof.pdf",
+                "source_name": "proof.pdf",
+                "source_kind": "support",
+                "start_page": 4,
+                "end_page": 5,
             }
         ],
     }
@@ -549,6 +815,15 @@ def test_report_generator_formal_html_prefers_packet_viewer_when_available():
 
     assert 'id="packet-viewer-frame"' in html
     assert 'src="projects/demo-project/packet_viewer.html"' in html
+    assert 'class="doc-local-nav"' in html
+    assert 'class="doc-nav-group"' in html
+    assert "文件导航" in html
+    assert "主材料" in html
+    assert "相关佐证材料" in html
+    assert "提名书" in html
+    assert "01. 成果证明材料" in html
+    assert 'data-packet-nav="true"' in html
+    assert 'data-packet-page="4"' in html
     assert 'data-file="demo.pdf"' in html
     assert 'data-packet-page="2"' in html
     assert "const pageMap = [{" in html
